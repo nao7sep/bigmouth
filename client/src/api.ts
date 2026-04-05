@@ -1,4 +1,4 @@
-import type { Post, PostListResponse, Settings, Target } from "./types";
+import type { Post, PostListResponse, Prompt, Settings, Target } from "./types";
 
 export async function fetchPosts(
   publishedOffset = 0,
@@ -76,5 +76,41 @@ export async function fetchTargets(): Promise<Target[]> {
 export async function fetchSettings(): Promise<Settings> {
   const res = await fetch("/api/settings");
   if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
+  return res.json();
+}
+
+export async function saveSettings(settings: Settings): Promise<Settings> {
+  const res = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error(`Failed to save settings: ${res.status}`);
+  return res.json();
+}
+
+export async function saveTargets(targets: Target[]): Promise<Target[]> {
+  const res = await fetch("/api/targets", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(targets),
+  });
+  if (!res.ok) throw new Error(`Failed to save targets: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPrompts(): Promise<Prompt[]> {
+  const res = await fetch("/api/prompts");
+  if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
+  return res.json();
+}
+
+export async function savePrompts(prompts: Prompt[]): Promise<Prompt[]> {
+  const res = await fetch("/api/prompts", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prompts),
+  });
+  if (!res.ok) throw new Error(`Failed to save prompts: ${res.status}`);
   return res.json();
 }

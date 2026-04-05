@@ -12,6 +12,7 @@ interface LeftPaneProps {
   onLoadMorePublished: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onOpenSettings: () => void;
 }
 
 export function LeftPane({
@@ -25,6 +26,7 @@ export function LeftPane({
   onLoadMorePublished,
   searchQuery,
   onSearchChange,
+  onOpenSettings,
 }: LeftPaneProps) {
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [readyOpen, setReadyOpen] = useState(true);
@@ -54,7 +56,7 @@ export function LeftPane({
       <div className="left-header">
         <h1>
           BigMouth
-          <button className="btn-hamburger" title="Menu">
+          <button className="btn-hamburger" title="Settings" onClick={onOpenSettings}>
             &#9776;
           </button>
         </h1>

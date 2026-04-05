@@ -4,6 +4,7 @@ import { CenterPane } from "./components/CenterPane";
 import { RightPane } from "./components/RightPane";
 import { ExportModal } from "./components/ExportModal";
 import { NewPostModal } from "./components/NewPostModal";
+import { SettingsModal } from "./components/SettingsModal";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
@@ -27,6 +28,7 @@ export function App() {
   const [currentPost, setCurrentPost] = useState<Post | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [newPostOpen, setNewPostOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -52,6 +54,16 @@ export function App() {
       })
       .catch(() => {});
   }, [loadPosts]);
+
+  const reloadConfig = () => {
+    fetchTargets().then(setTargets).catch(() => {});
+    fetchSettings()
+      .then((s) => {
+        if (s.editorWatermark) setWatermark(s.editorWatermark);
+        if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
+      })
+      .catch(() => {});
+  };
 
   const handleNewPost = () => {
     setNewPostOpen(true);
@@ -90,6 +102,7 @@ export function App() {
         onLoadMorePublished={handleLoadMorePublished}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       {selectedPostId ? (
         <>
@@ -120,6 +133,12 @@ export function App() {
         </>
       ) : (
         <div className="pane-empty">Select a post or create a new one</div>
+      )}
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          onSettingsChanged={reloadConfig}
+        />
       )}
       {newPostOpen && (
         <NewPostModal

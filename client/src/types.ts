@@ -41,6 +41,11 @@ export interface Target {
   requiresMetadata: boolean;
 }
 
+export interface Prompt {
+  name: string;
+  text: string;
+}
+
 export interface Settings {
   timezone: string;
   itemsPerPage: number;
