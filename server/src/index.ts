@@ -12,6 +12,7 @@ import { settingsRouter } from "./routes/settings.js";
 import { targetsRouter } from "./routes/targets.js";
 import { promptsRouter } from "./routes/prompts.js";
 import { analyzeRouter } from "./routes/analyze.js";
+import { generateRouter } from "./routes/generate.js";
 import { initConfigStore } from "./services/configStore.js";
 
 // Resolve data directory (creates defaults on first run)
@@ -41,6 +42,7 @@ app.use("/api/settings", settingsRouter);
 app.use("/api/targets", targetsRouter);
 app.use("/api/prompts", promptsRouter);
 app.use("/api/analyze", analyzeRouter);
+app.use("/api/generate", generateRouter);
 
 app.listen(port, "127.0.0.1", () => {
   info(`Server started on port ${port}, data directory: ${dataDirectory}`);

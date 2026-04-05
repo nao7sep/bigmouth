@@ -495,7 +495,14 @@ body {
   color: #555;
 }
 
-.meta-field-copy {
+.meta-field-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta-field-copy,
+.meta-field-generate {
   padding: 1px 6px;
   font-size: 11px;
   background: none;
@@ -505,9 +512,15 @@ body {
   cursor: pointer;
 }
 
-.meta-field-copy:hover {
+.meta-field-copy:hover,
+.meta-field-generate:hover:not(:disabled) {
   background: #f0f0f0;
   color: #333;
+}
+
+.meta-field-generate:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .meta-field-input {
@@ -546,6 +559,27 @@ body {
 }
 
 .metadata-divider span {
+  cursor: default;
+}
+
+.btn-generate-all {
+  padding: 2px 10px;
+  font-size: 12px;
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-generate-all:hover:not(:disabled) {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.btn-generate-all:disabled {
+  opacity: 0.5;
   cursor: default;
 }
 

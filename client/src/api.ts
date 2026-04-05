@@ -115,6 +115,25 @@ export async function savePrompts(prompts: Prompt[]): Promise<Prompt[]> {
   return res.json();
 }
 
+export async function generateMetadata(
+  postId: string,
+  field: string
+): Promise<string> {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postId, field }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Generate failed: ${res.status}`
+    );
+  }
+  const data = (await res.json()) as { value: string };
+  return data.value;
+}
+
 export async function runAnalysis(
   postId: string,
   promptName: string
