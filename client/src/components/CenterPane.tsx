@@ -10,6 +10,7 @@ interface CenterPaneProps {
   onPostDeleted: () => void;
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
+  onExport: () => void;
   watermark: string;
 }
 
@@ -21,6 +22,7 @@ export function CenterPane({
   onPostDeleted,
   onContentChange: notifyContentChange,
   onPostLoaded,
+  onExport,
   watermark,
 }: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
@@ -177,6 +179,9 @@ export function CenterPane({
         </select>
         {dirty && <span className="toolbar-dirty">*</span>}
         <span style={{ flex: 1 }} />
+        <button className="btn-toolbar" onClick={onExport}>
+          Export
+        </button>
         <button className="btn-delete" onClick={handleDelete}>
           Delete
         </button>

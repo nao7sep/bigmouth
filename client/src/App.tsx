@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane } from "./components/RightPane";
+import { ExportModal } from "./components/ExportModal";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
@@ -23,6 +24,7 @@ export function App() {
   const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
   const [editorContent, setEditorContent] = useState("");
   const [currentPost, setCurrentPost] = useState<Post | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -90,6 +92,7 @@ export function App() {
             onPostDeleted={handlePostDeleted}
             onContentChange={setEditorContent}
             onPostLoaded={setCurrentPost}
+            onExport={() => setExportOpen(true)}
             watermark={watermark}
           />
           <RightPane
@@ -109,6 +112,13 @@ export function App() {
         </>
       ) : (
         <div className="pane-empty">Select a post or create a new one</div>
+      )}
+      {exportOpen && selectedPostId && (
+        <ExportModal
+          content={editorContent}
+          slug={currentPost?.frontMatter.slug ?? selectedPostId}
+          onClose={() => setExportOpen(false)}
+        />
       )}
     </div>
   );
