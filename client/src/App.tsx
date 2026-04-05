@@ -3,7 +3,7 @@ import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane } from "./components/RightPane";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
-import type { PostSummary, Target } from "./types";
+import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
 
 const BATCH_SIZE = 50;
@@ -20,7 +20,9 @@ export function App() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
+  const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
   const [editorContent, setEditorContent] = useState("");
+  const [currentPost, setCurrentPost] = useState<Post | null>(null);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -42,6 +44,7 @@ export function App() {
     fetchSettings()
       .then((s) => {
         if (s.editorWatermark) setWatermark(s.editorWatermark);
+        if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
       })
       .catch(() => {});
   }, [loadPosts]);
@@ -86,9 +89,23 @@ export function App() {
             onPostSaved={loadPosts}
             onPostDeleted={handlePostDeleted}
             onContentChange={setEditorContent}
+            onPostLoaded={setCurrentPost}
             watermark={watermark}
           />
-          <RightPane content={editorContent} postId={selectedPostId} />
+          <RightPane
+            content={editorContent}
+            postId={selectedPostId}
+            frontMatter={currentPost?.frontMatter ?? null}
+            target={
+              currentPost
+                ? targets.find(
+                    (t) => t.name === currentPost.frontMatter.target
+                  ) ?? null
+                : null
+            }
+            extraFieldWatermark={extraFieldWatermark}
+            onMetadataSaved={loadPosts}
+          />
         </>
       ) : (
         <div className="pane-empty">Select a post or create a new one</div>

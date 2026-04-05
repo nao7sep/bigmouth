@@ -381,3 +381,82 @@ body {
   max-width: 100%;
   border-radius: 4px;
 }
+
+/* Metadata tab */
+.metadata-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+.meta-field-copy {
+  padding: 1px 6px;
+  font-size: 11px;
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+  color: #666;
+  cursor: pointer;
+}
+
+.meta-field-copy:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.meta-field-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.meta-field-input:focus {
+  border-color: #2563eb;
+}
+
+.meta-field-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.metadata-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: #999;
+  font-size: 12px;
+}
+
+.metadata-divider::before,
+.metadata-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid #d0d0d0;
+}
+
+.metadata-divider span {
+  cursor: default;
+}

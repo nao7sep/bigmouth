@@ -9,6 +9,7 @@ interface CenterPaneProps {
   onPostSaved: () => void;
   onPostDeleted: () => void;
   onContentChange: (content: string) => void;
+  onPostLoaded: (post: Post) => void;
   watermark: string;
 }
 
@@ -19,6 +20,7 @@ export function CenterPane({
   onPostSaved,
   onPostDeleted,
   onContentChange: notifyContentChange,
+  onPostLoaded,
   watermark,
 }: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
@@ -63,6 +65,7 @@ export function CenterPane({
       setPost(loaded);
       setContent(loaded.content);
       notifyContentChange(loaded.content);
+      onPostLoaded(loaded);
       setDirty(false);
       setStatusError(null);
     };
