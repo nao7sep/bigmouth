@@ -149,15 +149,18 @@ function GeneralTab({
   return (
     <div className="settings-section">
       <div className="form-field">
-        <label className="form-label">Timezone (IANA)</label>
+        <label className="form-label">Port</label>
         <input
           className="form-input"
-          value={settings.timezone}
-          onChange={(e) => update({ timezone: e.target.value })}
+          type="number"
+          value={settings.port}
+          onChange={(e) =>
+            update({ port: parseInt(e.target.value) || 3141 })
+          }
         />
       </div>
       <div className="form-field">
-        <label className="form-label">Items per page</label>
+        <label className="form-label">Published posts per load</label>
         <input
           className="form-input"
           type="number"
@@ -168,14 +171,11 @@ function GeneralTab({
         />
       </div>
       <div className="form-field">
-        <label className="form-label">Port</label>
+        <label className="form-label">Timezone (IANA)</label>
         <input
           className="form-input"
-          type="number"
-          value={settings.port}
-          onChange={(e) =>
-            update({ port: parseInt(e.target.value) || 3141 })
-          }
+          value={settings.timezone}
+          onChange={(e) => update({ timezone: e.target.value })}
         />
       </div>
       <div className="form-field">

@@ -12,7 +12,6 @@ import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
 
-const BATCH_SIZE = 50;
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
 
@@ -38,9 +37,11 @@ export function App() {
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
 
+  const batchSizeRef = useRef(50);
+
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
-      const data = await fetchPosts(pubOffset, BATCH_SIZE);
+      const data = await fetchPosts(pubOffset, batchSizeRef.current);
       setDrafts(data.drafts);
       setReady(data.ready);
       setPublished((prev) =>
@@ -57,6 +58,7 @@ export function App() {
     fetchTargets().then(setTargets).catch(() => {});
     fetchSettings()
       .then((s) => {
+        if (s.itemsPerPage) batchSizeRef.current = s.itemsPerPage;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
       })
@@ -67,6 +69,7 @@ export function App() {
     fetchTargets().then(setTargets).catch(() => {});
     fetchSettings()
       .then((s) => {
+        if (s.itemsPerPage) batchSizeRef.current = s.itemsPerPage;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
       })
