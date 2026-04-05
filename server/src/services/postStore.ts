@@ -1,44 +1,80 @@
 /**
  * Post file I/O layer.
  *
- * Each post is a Markdown file with YAML front matter, stored in {dataDirectory}/posts/.
- * This module handles reading, writing, listing, deleting, and renaming post files.
+ * Posts are stored in subdirectories by status:
+ *   posts/drafts/      — all loaded on startup (always small)
+ *   posts/ready/       — all loaded on startup (always small)
+ *   posts/published/   — loaded in batches by filename sort (grows over time)
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { nanoid } from "nanoid";
-import type { Post, PostFrontMatter, PostSummary, PostStatus } from "../shared/types.js";
+import type {
+  Post,
+  PostFrontMatter,
+  PostSummary,
+  PostStatus,
+} from "../shared/types.js";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
-import { postFilename, draftFilename } from "../shared/filenames.js";
+import {
+  draftFilename,
+  readyFilename,
+  publishedFilename,
+  statusSubdir,
+} from "../shared/filenames.js";
 
 let postsDir = "";
+let dataDir = "";
 
-/**
- * Must be called once at startup with the resolved data directory.
- */
 export function initPostStore(dataDirectory: string): void {
+  dataDir = dataDirectory;
   postsDir = path.join(dataDirectory, "posts");
 }
 
+// --- List ---
+
 /**
- * Lists all posts (front matter only, no content) from the posts directory.
+ * Lists all drafts (front matter only). Always fully loaded.
  */
-export function listPosts(): PostSummary[] {
-  const files = fs.readdirSync(postsDir).filter((f) => f.endsWith(".md"));
+export function listDrafts(): PostSummary[] {
+  return loadAllSummaries("drafts");
+}
+
+/**
+ * Lists all ready posts (front matter only). Always fully loaded.
+ */
+export function listReady(): PostSummary[] {
+  return loadAllSummaries("ready");
+}
+
+/**
+ * Lists a batch of published posts (front matter only).
+ * Filenames are sorted descending (newest first). Offset and limit
+ * control pagination. Front matter is parsed only for the requested batch.
+ */
+export function listPublished(offset: number, limit: number): PostSummary[] {
+  const dir = path.join(postsDir, "published");
+  if (!fs.existsSync(dir)) return [];
+
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+    .reverse(); // newest first by filename (publishedAtUtc)
+
+  const batch = files.slice(offset, offset + limit);
   const summaries: PostSummary[] = [];
 
-  for (const file of files) {
-    const filePath = path.join(postsDir, file);
+  for (const file of batch) {
+    const filePath = path.join(dir, file);
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
-      summaries.push({
-        frontMatter: parsed.data as PostFrontMatter,
-      });
+      summaries.push({ frontMatter: parsed.data as PostFrontMatter });
     } catch {
-      // Skip malformed files — logged elsewhere if needed
+      // Skip malformed files
     }
   }
 
@@ -46,9 +82,16 @@ export function listPosts(): PostSummary[] {
 }
 
 /**
- * Reads a single post by its nanoid.
- * Returns null if not found.
+ * Returns the total number of published posts (for pagination).
  */
+export function countPublished(): number {
+  const dir = path.join(postsDir, "published");
+  if (!fs.existsSync(dir)) return 0;
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).length;
+}
+
+// --- Read ---
+
 export function getPost(id: string): Post | null {
   const filePath = findPostFile(id);
   if (!filePath) return null;
@@ -63,9 +106,8 @@ export function getPost(id: string): Post | null {
   };
 }
 
-/**
- * Creates a new draft post. Returns the created post.
- */
+// --- Create ---
+
 export function createPost(target: string, language: string): Post {
   const now = utcNow();
   const id = nanoid();
@@ -80,18 +122,15 @@ export function createPost(target: string, language: string): Post {
   };
 
   const fileName = draftFilename(now, id);
-  const filePath = path.join(postsDir, fileName);
-  const content = "";
+  const filePath = path.join(postsDir, "drafts", fileName);
 
-  writePostFile(filePath, frontMatter, content);
+  writePostFile(filePath, frontMatter, "");
 
-  return { frontMatter, content, filePath };
+  return { frontMatter, content: "", filePath };
 }
 
-/**
- * Updates a post's content and/or front matter fields.
- * Always updates updatedAtUtc.
- */
+// --- Update ---
+
 export function updatePost(
   id: string,
   updates: {
@@ -102,20 +141,16 @@ export function updatePost(
   const post = getPost(id);
   if (!post) return null;
 
-  const now = utcNow();
-
-  // Merge front matter updates
   if (updates.frontMatter) {
     Object.assign(post.frontMatter, updates.frontMatter);
   }
-  post.frontMatter.updatedAtUtc = formatForFrontMatter(now);
+  post.frontMatter.updatedAtUtc = formatForFrontMatter(utcNow());
 
-  // Update content if provided
   if (updates.content !== undefined) {
     post.content = updates.content;
   }
 
-  // id, status, and timestamps managed by the app — don't allow overwriting
+  // Protect immutable fields
   post.frontMatter.id = id;
 
   writePostFile(post.filePath, post.frontMatter, post.content);
@@ -123,20 +158,13 @@ export function updatePost(
   return post;
 }
 
+// --- Status change ---
+
 /**
- * Changes a post's status. Handles timestamp updates and file renames.
- *
- * Transitions:
- *   draft -> ready:     sets readyAtUtc, renames to {readyAtUtc}-{slug}.md
- *   ready -> published: sets publishedAtUtc
- *   published -> ready: clears publishedAtUtc, preserves readyAtUtc, no rename
- *   ready -> draft:     clears readyAtUtc, renames to {createdAtUtc}-{nanoid}.md
- *   published -> draft: clears readyAtUtc and publishedAtUtc, renames to {createdAtUtc}-{nanoid}.md
+ * Changes a post's status. Handles timestamp updates, file renames,
+ * and moves between subdirectories.
  */
-export function changeStatus(
-  id: string,
-  newStatus: PostStatus
-): Post | null {
+export function changeStatus(id: string, newStatus: PostStatus): Post | null {
   const post = getPost(id);
   if (!post) return null;
 
@@ -146,7 +174,7 @@ export function changeStatus(
   const now = utcNow();
   const oldFilePath = post.filePath;
 
-  // Apply status transition logic
+  // Apply timestamp logic
   if (newStatus === "ready") {
     if (!post.frontMatter.slug) {
       throw new Error("Slug is required to move a post to ready status");
@@ -156,6 +184,12 @@ export function changeStatus(
     }
     post.frontMatter.publishedAtUtc = undefined;
   } else if (newStatus === "published") {
+    if (!post.frontMatter.slug) {
+      throw new Error("Slug is required to publish a post");
+    }
+    if (!post.frontMatter.readyAtUtc) {
+      post.frontMatter.readyAtUtc = formatForFrontMatter(now);
+    }
     post.frontMatter.publishedAtUtc = formatForFrontMatter(now);
   } else if (newStatus === "draft") {
     post.frontMatter.readyAtUtc = undefined;
@@ -165,19 +199,14 @@ export function changeStatus(
   post.frontMatter.status = newStatus;
   post.frontMatter.updatedAtUtc = formatForFrontMatter(now);
 
-  // Determine new filename
-  const newFileName = postFilename(
-    newStatus,
-    new Date(post.frontMatter.createdAtUtc),
-    post.frontMatter.id,
-    post.frontMatter.readyAtUtc
-      ? new Date(post.frontMatter.readyAtUtc)
-      : undefined,
-    post.frontMatter.slug
+  // Determine new filename and subdirectory
+  const newFileName = buildFilename(post.frontMatter);
+  const newFilePath = path.join(
+    postsDir,
+    statusSubdir(newStatus),
+    newFileName
   );
-  const newFilePath = path.join(postsDir, newFileName);
 
-  // Write to new path, delete old if path changed
   writePostFile(newFilePath, post.frontMatter, post.content);
   if (newFilePath !== oldFilePath) {
     fs.unlinkSync(oldFilePath);
@@ -187,17 +216,16 @@ export function changeStatus(
   return post;
 }
 
-/**
- * Deletes a post and its asset directory.
- */
-export function deletePost(id: string, dataDirectory: string): boolean {
+// --- Delete ---
+
+export function deletePost(id: string): boolean {
   const filePath = findPostFile(id);
   if (!filePath) return false;
 
   fs.unlinkSync(filePath);
 
   // Also delete asset directory if it exists
-  const assetDir = path.join(dataDirectory, "assets", id);
+  const assetDir = path.join(dataDir, "assets", id);
   if (fs.existsSync(assetDir)) {
     fs.rmSync(assetDir, { recursive: true });
   }
@@ -205,42 +233,78 @@ export function deletePost(id: string, dataDirectory: string): boolean {
   return true;
 }
 
+// --- Target rename ---
+
 /**
- * Renames a target across all post files.
+ * Renames a target across all post files in all subdirectories.
  * Returns the number of posts updated.
  */
 export function renameTarget(oldName: string, newName: string): number {
-  const files = fs.readdirSync(postsDir).filter((f) => f.endsWith(".md"));
   let count = 0;
+  for (const sub of ["drafts", "ready", "published"]) {
+    const dir = path.join(postsDir, sub);
+    if (!fs.existsSync(dir)) continue;
 
-  for (const file of files) {
-    const filePath = path.join(postsDir, file);
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = matter(raw);
-    const fm = parsed.data as PostFrontMatter;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+    for (const file of files) {
+      const filePath = path.join(dir, file);
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = matter(raw);
+      const fm = parsed.data as PostFrontMatter;
 
-    if (fm.target === oldName) {
-      fm.target = newName;
-      writePostFile(filePath, fm, parsed.content);
-      count++;
+      if (fm.target === oldName) {
+        fm.target = newName;
+        writePostFile(filePath, fm, parsed.content);
+        count++;
+      }
     }
   }
-
   return count;
 }
 
 // --- Internal helpers ---
 
 /**
- * Finds the file path of a post by scanning all .md files for a matching id.
+ * Builds the correct filename for a post based on its front matter.
+ */
+function buildFilename(fm: PostFrontMatter): string {
+  if (fm.status === "draft") {
+    return draftFilename(new Date(fm.createdAtUtc), fm.id);
+  }
+  if (fm.status === "ready") {
+    return readyFilename(new Date(fm.readyAtUtc!), fm.slug!);
+  }
+  // published
+  return publishedFilename(new Date(fm.publishedAtUtc!), fm.slug!);
+}
+
+/**
+ * Finds the file path of a post by scanning subdirectories.
+ * Checks drafts first (nanoid is in the filename), then ready and published.
  */
 function findPostFile(id: string): string | null {
-  const files = fs.readdirSync(postsDir).filter((f) => f.endsWith(".md"));
+  for (const sub of ["drafts", "ready", "published"]) {
+    const dir = path.join(postsDir, sub);
+    if (!fs.existsSync(dir)) continue;
 
-  for (const file of files) {
-    // Quick check: draft filenames end with the nanoid
-    if (file.includes(id)) {
-      const filePath = path.join(postsDir, file);
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+
+    // Quick check: drafts have nanoid in filename
+    for (const file of files) {
+      if (file.includes(id)) {
+        const filePath = path.join(dir, file);
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = matter(raw);
+        if ((parsed.data as PostFrontMatter).id === id) {
+          return filePath;
+        }
+      }
+    }
+
+    // Fallback: parse all files in this subdir
+    for (const file of files) {
+      if (file.includes(id)) continue; // already checked
+      const filePath = path.join(dir, file);
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
       if ((parsed.data as PostFrontMatter).id === id) {
@@ -249,29 +313,14 @@ function findPostFile(id: string): string | null {
     }
   }
 
-  // Fallback: scan all files (for ready/published where nanoid is not in filename)
-  for (const file of files) {
-    if (file.includes(id)) continue; // already checked
-    const filePath = path.join(postsDir, file);
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = matter(raw);
-    if ((parsed.data as PostFrontMatter).id === id) {
-      return filePath;
-    }
-  }
-
   return null;
 }
 
-/**
- * Writes a post file with YAML front matter and Markdown content.
- */
 function writePostFile(
   filePath: string,
   frontMatter: PostFrontMatter,
   content: string
 ): void {
-  // Clean up undefined values so they don't appear in YAML
   const cleanFm: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(frontMatter)) {
     if (value !== undefined) {
@@ -281,4 +330,28 @@ function writePostFile(
 
   const output = matter.stringify(content, cleanFm);
   fs.writeFileSync(filePath, output);
+}
+
+/**
+ * Loads all post summaries from a subdirectory.
+ */
+function loadAllSummaries(subdir: string): PostSummary[] {
+  const dir = path.join(postsDir, subdir);
+  if (!fs.existsSync(dir)) return [];
+
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+  const summaries: PostSummary[] = [];
+
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    try {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = matter(raw);
+      summaries.push({ frontMatter: parsed.data as PostFrontMatter });
+    } catch {
+      // Skip malformed files
+    }
+  }
+
+  return summaries;
 }

@@ -4,7 +4,9 @@
  * On first run, creates:
  *   ~/.bigmouth/app.json          (fixed location, contains dataDirectory path)
  *   ~/.bigmouth/data/             (default data directory)
- *   ~/.bigmouth/data/posts/
+ *   ~/.bigmouth/data/posts/drafts/
+ *   ~/.bigmouth/data/posts/ready/
+ *   ~/.bigmouth/data/posts/published/
  *   ~/.bigmouth/data/assets/
  *   ~/.bigmouth/data/logs/
  *   ~/.bigmouth/data/settings.json
@@ -54,7 +56,13 @@ export function resolveDataDirectory(): string {
  */
 function initializeDataDirectory(dataDir: string): void {
   // Create directories
-  for (const sub of ["posts", "assets", "logs"]) {
+  for (const sub of [
+    "posts/drafts",
+    "posts/ready",
+    "posts/published",
+    "assets",
+    "logs",
+  ]) {
     fs.mkdirSync(path.join(dataDir, sub), { recursive: true });
   }
 
