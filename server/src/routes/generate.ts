@@ -4,6 +4,12 @@
  *
  * Body: { postId: string, field: string }
  * Response: { value: string }
+ *
+ * POST /api/generate/batch
+ * Generates multiple metadata fields in parallel.
+ *
+ * Body: { postId: string, fields: string[] }
+ * Response: { results: Record<string, { value: string } | { error: string }> }
  */
 
 import { Router } from "express";
@@ -57,4 +63,57 @@ generateRouter.post("/", async (req, res) => {
     logError(`Generate failed for post ${postId} field ${field}: ${msg}`);
     res.status(502).json({ error: msg });
   }
+});
+
+generateRouter.post("/batch", async (req, res) => {
+  const { postId, fields } = req.body as {
+    postId?: string;
+    fields?: string[];
+  };
+
+  if (!postId || !Array.isArray(fields) || fields.length === 0) {
+    res.status(400).json({ error: "postId and fields[] are required" });
+    return;
+  }
+
+  const post = getPost(postId);
+  if (!post) {
+    res.status(404).json({ error: "Post not found" });
+    return;
+  }
+
+  let provider;
+  try {
+    const settings = getSettings();
+    provider = createProvider(settings.ai);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "AI provider error";
+    res.status(503).json({ error: msg });
+    return;
+  }
+
+  const results = await Promise.all(
+    fields.map(async (field) => {
+      const systemPrompt = systemPromptForField(field);
+      if (!systemPrompt) {
+        return { field, error: `Field is not generatable: ${field}` };
+      }
+      try {
+        const raw = await provider.generateText(systemPrompt, post.content);
+        const value = raw.trim().replace(/^["']|["']$/g, "");
+        return { field, value };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "AI request failed";
+        logError(`Generate failed for post ${postId} field ${field}: ${msg}`);
+        return { field, error: msg };
+      }
+    })
+  );
+
+  const resultMap: Record<string, { value: string } | { error: string }> = {};
+  for (const r of results) {
+    resultMap[r.field] = "value" in r ? { value: r.value } : { error: r.error };
+  }
+
+  res.json({ results: resultMap });
 });

@@ -164,6 +164,25 @@ export async function generateMetadata(
   return data.value;
 }
 
+export async function generateMetadataBatch(
+  postId: string,
+  fields: string[]
+): Promise<Record<string, { value: string } | { error: string }>> {
+  const res = await fetch("/api/generate/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postId, fields }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Batch generate failed: ${res.status}`
+    );
+  }
+  const data = await res.json() as { results: Record<string, { value: string } | { error: string }> };
+  return data.results;
+}
+
 export async function runAnalysis(
   postId: string,
   promptName: string

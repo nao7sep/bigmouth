@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PostFrontMatter, Target } from "../types";
-import { updatePost, generateMetadata } from "../api";
+import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 
 interface MetadataTabProps {
   postId: string;
@@ -110,8 +110,35 @@ export function MetadataTab({
   const anyGenerating = Object.values(generating).some(Boolean);
 
   const generateAll = async () => {
-    for (const { key, isTags } of allFields) {
-      await generate(key, isTags);
+    const fieldKeys = allFields.map((f) => f.key);
+    // Mark all as generating
+    setGenerating((prev) => {
+      const next = { ...prev };
+      for (const key of fieldKeys) next[key] = true;
+      return next;
+    });
+    try {
+      const results = await generateMetadataBatch(postId, fieldKeys);
+      for (const { key, isTags } of allFields) {
+        const result = results[key];
+        if (!result || "error" in result) continue;
+        const value = result.value;
+        updateField(key, value);
+        if (isTags) {
+          const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
+          await saveField(key, tags);
+        } else {
+          await saveField(key, value);
+        }
+      }
+    } catch {
+      // Batch failed — silently skip
+    } finally {
+      setGenerating((prev) => {
+        const next = { ...prev };
+        for (const key of fieldKeys) next[key] = false;
+        return next;
+      });
     }
   };
 
