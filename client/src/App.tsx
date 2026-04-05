@@ -3,6 +3,7 @@ import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane } from "./components/RightPane";
 import { ExportModal } from "./components/ExportModal";
+import { NewPostModal } from "./components/NewPostModal";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
@@ -25,6 +26,7 @@ export function App() {
   const [editorContent, setEditorContent] = useState("");
   const [currentPost, setCurrentPost] = useState<Post | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [newPostOpen, setNewPostOpen] = useState(false);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -51,12 +53,17 @@ export function App() {
       .catch(() => {});
   }, [loadPosts]);
 
-  const handleNewPost = async () => {
-    const target = targets.length > 0 ? targets[0].name : "default";
-    const language =
-      targets.length > 0 ? targets[0].defaultLanguage : "en";
+  const handleNewPost = () => {
+    setNewPostOpen(true);
+  };
 
-    const post = await createPost(target, language);
+  const handleCreatePost = async (
+    target: string,
+    language: string,
+    sourceId?: string
+  ) => {
+    const post = await createPost(target, language, sourceId);
+    setNewPostOpen(false);
     setSelectedPostId(post.frontMatter.id);
     await loadPosts();
   };
@@ -93,6 +100,7 @@ export function App() {
             onContentChange={setEditorContent}
             onPostLoaded={setCurrentPost}
             onExport={() => setExportOpen(true)}
+            onSelectPost={setSelectedPostId}
             watermark={watermark}
           />
           <RightPane
@@ -112,6 +120,14 @@ export function App() {
         </>
       ) : (
         <div className="pane-empty">Select a post or create a new one</div>
+      )}
+      {newPostOpen && (
+        <NewPostModal
+          targets={targets}
+          allPosts={[...drafts, ...ready, ...published]}
+          onClose={() => setNewPostOpen(false)}
+          onCreate={handleCreatePost}
+        />
       )}
       {exportOpen && selectedPostId && (
         <ExportModal

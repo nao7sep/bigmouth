@@ -11,6 +11,7 @@ interface CenterPaneProps {
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
   onExport: () => void;
+  onSelectPost: (id: string) => void;
   watermark: string;
 }
 
@@ -23,6 +24,7 @@ export function CenterPane({
   onContentChange: notifyContentChange,
   onPostLoaded,
   onExport,
+  onSelectPost,
   watermark,
 }: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
@@ -178,6 +180,18 @@ export function CenterPane({
           <option value="published">Published</option>
         </select>
         {dirty && <span className="toolbar-dirty">*</span>}
+        {fm.sourceId && (
+          <>
+            <span className="toolbar-sep">|</span>
+            <span
+              className="toolbar-source"
+              onClick={() => onSelectPost(fm.sourceId!)}
+              title={`Source: ${fm.sourceId}`}
+            >
+              Source
+            </span>
+          </>
+        )}
         <span style={{ flex: 1 }} />
         <button className="btn-toolbar" onClick={onExport}>
           Export

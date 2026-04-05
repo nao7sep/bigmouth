@@ -21,12 +21,13 @@ export async function fetchPost(id: string): Promise<Post> {
 
 export async function createPost(
   target: string,
-  language: string
+  language: string,
+  sourceId?: string
 ): Promise<Post> {
   const res = await fetch("/api/posts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, language }),
+    body: JSON.stringify({ target, language, sourceId }),
   });
   if (!res.ok) throw new Error(`Failed to create post: ${res.status}`);
   return res.json();

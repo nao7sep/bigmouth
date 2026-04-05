@@ -68,14 +68,14 @@ postsRouter.get("/:id", (req, res) => {
  * Body: { target: string, language: string }
  */
 postsRouter.post("/", (req, res) => {
-  const { target, language } = req.body;
+  const { target, language, sourceId } = req.body;
 
   if (!target || !language) {
     res.status(400).json({ error: "target and language are required" });
     return;
   }
 
-  const post = createPost(target, language);
+  const post = createPost(target, language, sourceId);
   logger.info(`Post created: id=${post.frontMatter.id}, target=${target}`);
 
   res.status(201).json({

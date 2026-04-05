@@ -108,7 +108,7 @@ export function getPost(id: string): Post | null {
 
 // --- Create ---
 
-export function createPost(target: string, language: string): Post {
+export function createPost(target: string, language: string, sourceId?: string): Post {
   const now = utcNow();
   const id = nanoid();
 
@@ -117,6 +117,7 @@ export function createPost(target: string, language: string): Post {
     target,
     status: "draft",
     language,
+    ...(sourceId ? { sourceId } : {}),
     createdAtUtc: formatForFrontMatter(now),
     updatedAtUtc: formatForFrontMatter(now),
   };
