@@ -232,9 +232,12 @@ body {
 
 .center-editor {
   flex: 1;
-  overflow: auto;
-  padding: 16px;
+  overflow: hidden;
   background: #fff;
+}
+
+.cm-container {
+  height: 100%;
 }
 
 .center-counts {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 interface CenterPaneProps {
   postId: string;
@@ -88,18 +89,6 @@ export function CenterPane({
     }, AUTO_SAVE_DELAY);
   };
 
-  // Cmd+S / Ctrl+S immediate save
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        save();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [save]);
-
   // Save on unmount
   useEffect(() => {
     return () => {
@@ -173,21 +162,11 @@ export function CenterPane({
         <div className="toolbar-error">{statusError}</div>
       )}
       <div className="center-editor">
-        <textarea
-          value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
-          placeholder={watermark}
-          spellCheck
-          style={{
-            width: "100%",
-            height: "100%",
-            border: "none",
-            outline: "none",
-            resize: "none",
-            fontFamily: "inherit",
-            fontSize: 14,
-            lineHeight: 1.6,
-          }}
+        <MarkdownEditor
+          content={content}
+          onContentChange={handleContentChange}
+          onSave={save}
+          watermark={watermark}
         />
       </div>
       <div className="center-counts">
