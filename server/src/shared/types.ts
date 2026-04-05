@@ -53,7 +53,7 @@ export interface Target {
 
 export interface Settings {
   timezone: string; // IANA timezone (e.g., "Asia/Tokyo")
-  itemsPerPage: number; // batch size for post lists (default: 50)
+  publishedPostsPerLoad: number; // batch size for the published posts list (default: 50)
   port: number; // local server port (default: 3141)
   editorWatermark: string; // placeholder text in the empty editor
   extraFieldWatermark: string; // placeholder text in the extra textarea

@@ -56,9 +56,9 @@ export interface AssetMeta {
 }
 
 export interface Settings {
-  timezone: string;
-  itemsPerPage: number;
   port: number;
+  timezone: string;
+  publishedPostsPerLoad: number;
   editorWatermark: string;
   extraFieldWatermark: string;
   ai: {

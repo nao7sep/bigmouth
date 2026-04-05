@@ -7,9 +7,9 @@ import type { Settings, Prompt } from "./types.js";
 export const DEFAULT_PORT = 3141;
 
 export const DEFAULT_SETTINGS: Settings = {
-  timezone: "Asia/Tokyo",
-  itemsPerPage: 50,
   port: DEFAULT_PORT,
+  timezone: "Asia/Tokyo",
+  publishedPostsPerLoad: 50,
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:

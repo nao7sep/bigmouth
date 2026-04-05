@@ -171,9 +171,9 @@ function GeneralTab({
         <input
           className="form-input"
           type="number"
-          value={settings.itemsPerPage}
+          value={settings.publishedPostsPerLoad}
           onChange={(e) =>
-            update({ itemsPerPage: parseInt(e.target.value) || 50 })
+            update({ publishedPostsPerLoad: parseInt(e.target.value) || 50 })
           }
         />
       </div>

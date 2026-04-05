@@ -58,7 +58,7 @@ export function App() {
     fetchTargets().then(setTargets).catch(() => {});
     fetchSettings()
       .then((s) => {
-        if (s.itemsPerPage) batchSizeRef.current = s.itemsPerPage;
+        if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
       })
@@ -69,7 +69,7 @@ export function App() {
     fetchTargets().then(setTargets).catch(() => {});
     fetchSettings()
       .then((s) => {
-        if (s.itemsPerPage) batchSizeRef.current = s.itemsPerPage;
+        if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
       })
