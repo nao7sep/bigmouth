@@ -185,6 +185,51 @@ body {
   flex-wrap: wrap;
 }
 
+.toolbar-label {
+  color: #555;
+}
+
+.toolbar-sep {
+  color: #ccc;
+}
+
+.toolbar-status {
+  padding: 2px 6px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolbar-dirty {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.btn-delete {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  color: #dc2626;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: #fef2f2;
+  border-color: #dc2626;
+}
+
+.toolbar-error {
+  padding: 6px 16px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  border-bottom: 1px solid #fecaca;
+}
+
 .center-editor {
   flex: 1;
   overflow: auto;

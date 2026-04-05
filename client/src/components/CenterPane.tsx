@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Post } from "../types";
-import { fetchPost, updatePost } from "../api";
+import type { Post, PostStatus } from "../types";
+import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 
 interface CenterPaneProps {
   postId: string;
   onPostSaved: () => void;
+  onPostDeleted: () => void;
   watermark: string;
 }
 
 const AUTO_SAVE_DELAY = 2000;
 
-export function CenterPane({ postId, onPostSaved, watermark }: CenterPaneProps) {
+export function CenterPane({
+  postId,
+  onPostSaved,
+  onPostDeleted,
+  watermark,
+}: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const postIdRef = useRef(postId);
@@ -52,9 +59,9 @@ export function CenterPane({ postId, onPostSaved, watermark }: CenterPaneProps) 
       setPost(loaded);
       setContent(loaded.content);
       setDirty(false);
+      setStatusError(null);
     };
 
-    // Save previous post if dirty, then load new one
     if (dirtyRef.current) {
       save().then(loadPost);
     } else {
@@ -97,13 +104,39 @@ export function CenterPane({ postId, onPostSaved, watermark }: CenterPaneProps) 
   useEffect(() => {
     return () => {
       if (dirtyRef.current) {
-        // Fire-and-forget save
         updatePost(postIdRef.current, { content: contentRef.current }).catch(
           () => {}
         );
       }
     };
   }, []);
+
+  const handleStatusChange = async (newStatus: PostStatus) => {
+    if (!post || post.frontMatter.status === newStatus) return;
+
+    // Save any pending content first
+    if (dirtyRef.current) await save();
+
+    try {
+      setStatusError(null);
+      const updated = await changePostStatus(postId, newStatus);
+      setPost(updated);
+      onPostSaved();
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : "Status change failed");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Delete this post? This cannot be undone.")) return;
+
+    try {
+      await deletePost(postId);
+      onPostDeleted();
+    } catch {
+      // Deletion failed — keep the post open
+    }
+  };
 
   if (!post) return null;
 
@@ -117,15 +150,28 @@ export function CenterPane({ postId, onPostSaved, watermark }: CenterPaneProps) 
   return (
     <div className="pane-center">
       <div className="center-toolbar">
-        <span>{fm.target}</span>
-        <span>|</span>
-        <span>{fm.language}</span>
-        <span>|</span>
-        <span>
-          {fm.status}
-          {dirty && " *"}
-        </span>
+        <span className="toolbar-label">{fm.target}</span>
+        <span className="toolbar-sep">|</span>
+        <span className="toolbar-label">{fm.language}</span>
+        <span className="toolbar-sep">|</span>
+        <select
+          className="toolbar-status"
+          value={fm.status}
+          onChange={(e) => handleStatusChange(e.target.value as PostStatus)}
+        >
+          <option value="draft">Draft</option>
+          <option value="ready">Ready</option>
+          <option value="published">Published</option>
+        </select>
+        {dirty && <span className="toolbar-dirty">*</span>}
+        <span style={{ flex: 1 }} />
+        <button className="btn-delete" onClick={handleDelete}>
+          Delete
+        </button>
       </div>
+      {statusError && (
+        <div className="toolbar-error">{statusError}</div>
+      )}
       <div className="center-editor">
         <textarea
           value={content}

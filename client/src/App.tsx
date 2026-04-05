@@ -55,6 +55,11 @@ export function App() {
     await loadPosts();
   };
 
+  const handlePostDeleted = () => {
+    setSelectedPostId(null);
+    loadPosts();
+  };
+
   const handleLoadMorePublished = () => {
     loadPosts(publishedOffset, true);
   };
@@ -78,6 +83,7 @@ export function App() {
           <CenterPane
             postId={selectedPostId}
             onPostSaved={loadPosts}
+            onPostDeleted={handlePostDeleted}
             watermark={watermark}
           />
           <RightPane />

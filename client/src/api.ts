@@ -45,6 +45,27 @@ export async function updatePost(
   return res.json();
 }
 
+export async function changePostStatus(
+  id: string,
+  status: "draft" | "ready" | "published"
+): Promise<Post> {
+  const res = await fetch(`/api/posts/${id}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to change status: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deletePost(id: string): Promise<void> {
+  const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
+}
+
 export async function fetchTargets(): Promise<Target[]> {
   const res = await fetch("/api/targets");
   if (!res.ok) throw new Error(`Failed to fetch targets: ${res.status}`);
