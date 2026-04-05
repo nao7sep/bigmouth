@@ -114,3 +114,22 @@ export async function savePrompts(prompts: Prompt[]): Promise<Prompt[]> {
   if (!res.ok) throw new Error(`Failed to save prompts: ${res.status}`);
   return res.json();
 }
+
+export async function runAnalysis(
+  postId: string,
+  promptName: string
+): Promise<string> {
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postId, promptName }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Analysis failed: ${res.status}`
+    );
+  }
+  const data = (await res.json()) as { result: string };
+  return data.result;
+}
