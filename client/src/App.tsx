@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane } from "./components/RightPane";
-import { fetchPosts, createPost, fetchTargets } from "./api";
+import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { PostSummary, Target } from "./types";
 import "./App.css";
 
 const BATCH_SIZE = 50;
+const DEFAULT_WATERMARK =
+  "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
 
 export function App() {
   const [drafts, setDrafts] = useState<PostSummary[]>([]);
@@ -17,6 +19,7 @@ export function App() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -35,10 +38,14 @@ export function App() {
   useEffect(() => {
     loadPosts();
     fetchTargets().then(setTargets).catch(() => {});
+    fetchSettings()
+      .then((s) => {
+        if (s.editorWatermark) setWatermark(s.editorWatermark);
+      })
+      .catch(() => {});
   }, [loadPosts]);
 
   const handleNewPost = async () => {
-    // If no targets configured, use a default
     const target = targets.length > 0 ? targets[0].name : "default";
     const language =
       targets.length > 0 ? targets[0].defaultLanguage : "en";
@@ -68,7 +75,11 @@ export function App() {
       />
       {selectedPostId ? (
         <>
-          <CenterPane />
+          <CenterPane
+            postId={selectedPostId}
+            onPostSaved={loadPosts}
+            watermark={watermark}
+          />
           <RightPane />
         </>
       ) : (

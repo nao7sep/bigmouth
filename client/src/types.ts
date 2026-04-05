@@ -40,3 +40,16 @@ export interface Target {
   defaultLanguage: string;
   requiresMetadata: boolean;
 }
+
+export interface Settings {
+  timezone: string;
+  itemsPerPage: number;
+  port: number;
+  editorWatermark: string;
+  extraFieldWatermark: string;
+  ai: {
+    provider: string;
+    apiKey: string;
+    model: string;
+  };
+}

@@ -1,4 +1,4 @@
-import type { Post, PostListResponse, Target } from "./types";
+import type { Post, PostListResponse, Settings, Target } from "./types";
 
 export async function fetchPosts(
   publishedOffset = 0,
@@ -32,8 +32,27 @@ export async function createPost(
   return res.json();
 }
 
+export async function updatePost(
+  id: string,
+  updates: { content?: string; frontMatter?: Partial<Post["frontMatter"]> }
+): Promise<Post> {
+  const res = await fetch(`/api/posts/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`Failed to update post: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchTargets(): Promise<Target[]> {
   const res = await fetch("/api/targets");
   if (!res.ok) throw new Error(`Failed to fetch targets: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSettings(): Promise<Settings> {
+  const res = await fetch("/api/settings");
+  if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
   return res.json();
 }
