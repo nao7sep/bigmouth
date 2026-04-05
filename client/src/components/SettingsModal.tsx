@@ -14,7 +14,7 @@ interface SettingsModalProps {
   onSettingsChanged: () => void;
 }
 
-type Tab = "general" | "targets" | "prompts";
+type Tab = "general" | "targets" | "ai" | "prompts";
 
 export function SettingsModal({
   onClose,
@@ -80,7 +80,7 @@ export function SettingsModal({
         </div>
 
         <div className="settings-tabs">
-          {(["general", "targets", "prompts"] as Tab[]).map((t) => (
+          {(["general", "targets", "ai", "prompts"] as Tab[]).map((t) => (
             <button
               key={t}
               className={`settings-tab${tab === t ? " active" : ""}`}
@@ -94,6 +94,14 @@ export function SettingsModal({
         <div className="modal-body">
           {tab === "general" && settings && (
             <GeneralTab
+              settings={settings}
+              onChange={setSettings}
+              onSave={handleSaveSettings}
+              saving={saving}
+            />
+          )}
+          {tab === "ai" && settings && (
+            <AiTab
               settings={settings}
               onChange={setSettings}
               onSave={handleSaveSettings}
@@ -138,9 +146,6 @@ function GeneralTab({
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
-  const updateAi = (patch: Partial<Settings["ai"]>) =>
-    onChange({ ...settings, ai: { ...settings.ai, ...patch } });
-
   return (
     <div className="settings-section">
       <div className="form-field">
@@ -159,6 +164,17 @@ function GeneralTab({
           value={settings.itemsPerPage}
           onChange={(e) =>
             update({ itemsPerPage: parseInt(e.target.value) || 50 })
+          }
+        />
+      </div>
+      <div className="form-field">
+        <label className="form-label">Port</label>
+        <input
+          className="form-input"
+          type="number"
+          value={settings.port}
+          onChange={(e) =>
+            update({ port: parseInt(e.target.value) || 3141 })
           }
         />
       </div>
@@ -183,7 +199,38 @@ function GeneralTab({
         />
       </div>
 
-      <h3 className="settings-subheading">AI</h3>
+      <div className="settings-actions">
+        <button
+          className="btn-new-post"
+          style={{ width: "auto" }}
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- AI ---
+
+function AiTab({
+  settings,
+  onChange,
+  onSave,
+  saving,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const updateAi = (patch: Partial<Settings["ai"]>) =>
+    onChange({ ...settings, ai: { ...settings.ai, ...patch } });
+
+  return (
+    <div className="settings-section">
       <div className="form-field">
         <label className="form-label">Provider</label>
         <input
