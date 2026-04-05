@@ -13,7 +13,7 @@ export function createProvider(settings: AiSettings): AiProvider {
   }
 
   if (settings.provider === "claude") {
-    const model = settings.model || "claude-sonnet-4-5";
+    const model = settings.model || "claude-sonnet-4-6";
     return new ClaudeProvider(settings.apiKey, model);
   }
 

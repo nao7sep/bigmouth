@@ -10,7 +10,7 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getSettings } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { promptForField } from "../ai/generatePrompts.js";
+import { systemPromptForField } from "../ai/generatePrompts.js";
 import { error as logError } from "../services/logger.js";
 
 export const generateRouter = Router();
@@ -32,8 +32,8 @@ generateRouter.post("/", async (req, res) => {
     return;
   }
 
-  const prompt = promptForField(field, post.content);
-  if (!prompt) {
+  const systemPrompt = systemPromptForField(field);
+  if (!systemPrompt) {
     res.status(400).json({ error: `Field is not generatable: ${field}` });
     return;
   }
@@ -49,8 +49,7 @@ generateRouter.post("/", async (req, res) => {
   }
 
   try {
-    const raw = await provider.analyze(prompt);
-    // Strip surrounding quotes that some models add
+    const raw = await provider.generateText(systemPrompt, post.content);
     const value = raw.trim().replace(/^["']|["']$/g, "");
     res.json({ value });
   } catch (err) {

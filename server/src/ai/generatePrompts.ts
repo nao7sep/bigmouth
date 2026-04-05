@@ -1,9 +1,8 @@
 /**
- * Built-in prompt templates for metadata field generation.
+ * Built-in system prompt instructions for metadata field generation.
  *
- * Each template receives the post content via {content}.
- * Templates are keyed by field base name; language-specific variants
- * are built at runtime using the language name.
+ * These are pure instructions with no content embedded. The post content is
+ * passed separately as the user message so providers can route them correctly.
  */
 
 const LANG_NAMES: Record<string, string> = {
@@ -27,7 +26,7 @@ export function titlePrompt(lang: string): string {
   const name = languageName(lang);
   return (
     `Generate a concise, engaging blog post title in ${name} for the following content. ` +
-    `Return only the title text with no quotes and no extra explanation.\n\nContent:\n{content}`
+    `Return only the title text with no quotes and no extra explanation.`
   );
 }
 
@@ -35,7 +34,7 @@ export function slugPrompt(): string {
   return (
     `Generate a URL-friendly slug in English for the following blog post. ` +
     `Use only lowercase letters, numbers, and hyphens. Maximum 60 characters. ` +
-    `Return only the slug with no extra explanation.\n\nContent:\n{content}`
+    `Return only the slug with no extra explanation.`
   );
 }
 
@@ -43,7 +42,7 @@ export function tagsPrompt(lang: string): string {
   const name = languageName(lang);
   return (
     `Generate 5 to 8 relevant tags in ${name} for the following blog post. ` +
-    `Return only a comma-separated list of tags with no extra explanation.\n\nContent:\n{content}`
+    `Return only a comma-separated list of tags with no extra explanation.`
   );
 }
 
@@ -52,43 +51,28 @@ export function metaDescriptionPrompt(lang: string): string {
   return (
     `Write a compelling SEO meta description in ${name} for the following blog post. ` +
     `Keep it between 120 and 160 characters. ` +
-    `Return only the description text with no extra explanation.\n\nContent:\n{content}`
+    `Return only the description text with no extra explanation.`
   );
 }
 
 /**
- * Returns the rendered prompt for a given front matter field key and post content.
+ * Returns the system prompt instruction for a given front matter field key.
  * Returns null if the field is not generatable.
+ * The post content is passed separately as the user message — not embedded here.
  */
-export function promptForField(
-  field: string,
-  content: string
-): string | null {
-  let template: string | null = null;
+export function systemPromptForField(field: string): string | null {
+  if (field === "title") return titlePrompt("en");
+  if (field === "slug") return slugPrompt();
+  if (field === "tags") return tagsPrompt("en");
+  if (field === "metaDescription") return metaDescriptionPrompt("en");
 
-  if (field === "title") {
-    template = titlePrompt("en");
-  } else if (field === "slug") {
-    template = slugPrompt();
-  } else if (field === "tags") {
-    template = tagsPrompt("en");
-  } else if (field === "metaDescription") {
-    template = metaDescriptionPrompt("en");
-  } else {
-    // Language-specific variants: titleJa, tagsEs, metaDescriptionFr, etc.
-    const titleMatch = field.match(/^title([A-Z][a-z]+)$/);
-    const tagsMatch = field.match(/^tags([A-Z][a-z]+)$/);
-    const descMatch = field.match(/^metaDescription([A-Z][a-z]+)$/);
+  const titleMatch = field.match(/^title([A-Z][a-z]+)$/);
+  const tagsMatch = field.match(/^tags([A-Z][a-z]+)$/);
+  const descMatch = field.match(/^metaDescription([A-Z][a-z]+)$/);
 
-    if (titleMatch) {
-      template = titlePrompt(titleMatch[1].toLowerCase());
-    } else if (tagsMatch) {
-      template = tagsPrompt(tagsMatch[1].toLowerCase());
-    } else if (descMatch) {
-      template = metaDescriptionPrompt(descMatch[1].toLowerCase());
-    }
-  }
+  if (titleMatch) return titlePrompt(titleMatch[1].toLowerCase());
+  if (tagsMatch) return tagsPrompt(tagsMatch[1].toLowerCase());
+  if (descMatch) return metaDescriptionPrompt(descMatch[1].toLowerCase());
 
-  if (!template) return null;
-  return template.replace("{content}", content);
+  return null;
 }

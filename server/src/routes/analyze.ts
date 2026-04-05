@@ -2,6 +2,11 @@
  * POST /api/analyze
  * Runs a named prompt against the post content using the configured AI provider.
  *
+ * The prompt text uses {content} as a placeholder. Everything before {content}
+ * becomes the system prompt; the post content becomes the user message. If the
+ * prompt contains no {content} marker, the entire prompt text is used as the
+ * system prompt.
+ *
  * Body: { postId: string, promptName: string }
  * Response: { result: string }
  */
@@ -25,14 +30,12 @@ analyzeRouter.post("/", async (req, res) => {
     return;
   }
 
-  // Load the post
   const post = getPost(postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
   }
 
-  // Find the prompt
   const prompts = getPrompts();
   const prompt = prompts.find((p) => p.name === promptName);
   if (!prompt) {
@@ -40,10 +43,15 @@ analyzeRouter.post("/", async (req, res) => {
     return;
   }
 
-  // Substitute {content} placeholder
-  const renderedPrompt = prompt.text.replace("{content}", post.content);
+  // Split on {content}: text before it is the system prompt, post content is
+  // the user message. Fall back to using the full text as system prompt.
+  const markerIndex = prompt.text.indexOf("{content}");
+  const systemPrompt =
+    markerIndex >= 0
+      ? prompt.text.slice(0, markerIndex).trim()
+      : prompt.text.trim();
+  const userContent = post.content;
 
-  // Create the AI provider from current settings
   let provider;
   try {
     const settings = getSettings();
@@ -54,9 +62,8 @@ analyzeRouter.post("/", async (req, res) => {
     return;
   }
 
-  // Run the analysis
   try {
-    const result = await provider.analyze(renderedPrompt);
+    const result = await provider.generateText(systemPrompt, userContent);
     res.json({ result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "AI request failed";

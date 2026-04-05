@@ -1,5 +1,5 @@
 /**
- * Claude provider — calls Anthropic Messages API with a single user message.
+ * Claude provider — uses the Anthropic Messages API with a proper system/user split.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -14,14 +14,14 @@ export class ClaudeProvider implements AiProvider {
     this.model = model;
   }
 
-  async analyze(prompt: string): Promise<string> {
+  async generateText(systemPrompt: string, userContent: string): Promise<string> {
     const message = await this.client.messages.create({
       model: this.model,
       max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
     });
 
-    // Extract text from the first content block
     const block = message.content[0];
     if (block.type !== "text") {
       throw new Error("Unexpected response type from Claude");
