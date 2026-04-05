@@ -97,11 +97,11 @@ export function MetadataTab({
 
   const langSuffix = lang.charAt(0).toUpperCase() + lang.slice(1);
 
-  // Build the list of generatable fields for "Generate All"
+  // "Generate All" covers only the fields below the divider: tags and
+  // metaDescription (plus their language variants). Title and slug sit above
+  // the divider and have individual Gen buttons; they are intentionally excluded
+  // here to prevent overwriting carefully edited values.
   const allFields: Array<{ key: string; isTags?: boolean }> = [];
-  if (isNonEnglish) allFields.push({ key: `title${langSuffix}` });
-  allFields.push({ key: "title" });
-  allFields.push({ key: "slug" });
   if (isNonEnglish) allFields.push({ key: `tags${langSuffix}`, isTags: true });
   allFields.push({ key: "tags", isTags: true });
   if (isNonEnglish) allFields.push({ key: `metaDescription${langSuffix}` });
