@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
-import { MarkdownEditor } from "./MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { computeCounts, type ContentCounts } from "../util/counts";
 
 interface CenterPaneProps {
@@ -13,6 +13,7 @@ interface CenterPaneProps {
   onExport: () => void;
   onSelectPost: (id: string) => void;
   watermark: string;
+  editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
 const AUTO_SAVE_DELAY = 2000;
@@ -26,6 +27,7 @@ export function CenterPane({
   onExport,
   onSelectPost,
   watermark,
+  editorRef,
 }: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
@@ -205,6 +207,7 @@ export function CenterPane({
       )}
       <div className="center-editor">
         <MarkdownEditor
+          ref={editorRef}
           content={content}
           onContentChange={handleContentChange}
           onSave={save}

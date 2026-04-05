@@ -1,4 +1,5 @@
 import { AiAnalysisTab } from "./AiAnalysisTab";
+import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab } from "./MetadataTab";
 import type { PostFrontMatter, Target } from "../types";
@@ -16,6 +17,7 @@ interface RightPaneProps {
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
+  onInsertAtCursor: (text: string) => void;
 }
 
 export function RightPane({
@@ -28,6 +30,7 @@ export function RightPane({
   activeTab,
   onTabChange,
   analysisTrigger,
+  onInsertAtCursor,
 }: RightPaneProps) {
 
   return (
@@ -60,7 +63,7 @@ export function RightPane({
           />
         )}
         {activeTab === "Assets" && (
-          <p style={{ color: "#999" }}>Assets — coming soon</p>
+          <AssetsTab postId={postId} onInsertAtCursor={onInsertAtCursor} />
         )}
       </div>
     </div>

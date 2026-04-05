@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightTab } from "./components/RightPane";
+import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
 import { ExportModal } from "./components/ExportModal";
 import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
@@ -35,6 +36,7 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -168,6 +170,7 @@ export function App() {
             onExport={() => setExportOpen(true)}
             onSelectPost={setSelectedPostId}
             watermark={watermark}
+            editorRef={editorRef}
           />
           <RightPane
             content={editorContent}
@@ -185,6 +188,7 @@ export function App() {
             activeTab={rightTab}
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
+            onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
           />
         </>
       ) : (

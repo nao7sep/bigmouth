@@ -1,9 +1,13 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, placeholder, keymap } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { basicSetup } from "codemirror";
+
+export interface MarkdownEditorHandle {
+  insertAtCursor: (text: string) => void;
+}
 
 interface MarkdownEditorProps {
   content: string;
@@ -12,16 +16,28 @@ interface MarkdownEditorProps {
   watermark: string;
 }
 
-export function MarkdownEditor({
-  content,
-  onContentChange,
-  onSave,
-  watermark,
-}: MarkdownEditorProps) {
+export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
+  function MarkdownEditor(
+    { content, onContentChange, onSave, watermark }: MarkdownEditorProps,
+    ref
+  ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onContentChange);
   const onSaveRef = useRef(onSave);
+
+  useImperativeHandle(ref, () => ({
+    insertAtCursor(text: string) {
+      const view = viewRef.current;
+      if (!view) return;
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      });
+      view.focus();
+    },
+  }));
 
   // Keep callback refs current
   onChangeRef.current = onContentChange;
@@ -94,7 +110,7 @@ export function MarkdownEditor({
   }, [content]);
 
   return <div ref={containerRef} className="cm-container" />;
-}
+});
 
 const editorTheme = EditorView.theme({
   "&": {
