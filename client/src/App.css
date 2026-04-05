@@ -72,7 +72,7 @@ body {
   border-bottom: 1px solid #d0d0d0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .left-header h1 {
@@ -81,6 +81,28 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.left-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.btn-new-post-icon {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 5px;
+  color: #555;
+  border-radius: 4px;
+}
+
+.btn-new-post-icon:hover {
+  background: #e8e8e8;
+  color: #111;
 }
 
 .btn-new-post {

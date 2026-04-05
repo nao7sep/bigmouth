@@ -74,41 +74,43 @@ export function LeftPane({
       <div className="left-header">
         <h1>
           BigMouth
-          <div className="hamburger-wrap" ref={menuRef}>
-            <button
-              className="btn-hamburger"
-              title="Menu"
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              &#9776;
+          <div className="left-header-actions">
+            <button className="btn-new-post-icon" title="New Post" onClick={onNewPost}>
+              +
             </button>
-            {menuOpen && (
-              <div className="hamburger-menu">
-                <button
-                  className="hamburger-menu-item"
-                  onClick={() => { setMenuOpen(false); onOpenSettings(); }}
-                >
-                  Settings
-                </button>
-                <button
-                  className="hamburger-menu-item"
-                  onClick={() => { setMenuOpen(false); onOpenShortcuts(); }}
-                >
-                  Keyboard Shortcuts
-                </button>
-                <button
-                  className="hamburger-menu-item"
-                  onClick={() => { setMenuOpen(false); onOpenAbout(); }}
-                >
-                  About
-                </button>
-              </div>
-            )}
+            <div className="hamburger-wrap" ref={menuRef}>
+              <button
+                className="btn-hamburger"
+                title="Menu"
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                &#9776;
+              </button>
+              {menuOpen && (
+                <div className="hamburger-menu">
+                  <button
+                    className="hamburger-menu-item"
+                    onClick={() => { setMenuOpen(false); onOpenSettings(); }}
+                  >
+                    Settings
+                  </button>
+                  <button
+                    className="hamburger-menu-item"
+                    onClick={() => { setMenuOpen(false); onOpenShortcuts(); }}
+                  >
+                    Keyboard Shortcuts
+                  </button>
+                  <button
+                    className="hamburger-menu-item"
+                    onClick={() => { setMenuOpen(false); onOpenAbout(); }}
+                  >
+                    About
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </h1>
-        <button className="btn-new-post" onClick={onNewPost}>
-          + New Post
-        </button>
         <input
           className="search-box"
           type="text"
