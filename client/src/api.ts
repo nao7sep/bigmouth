@@ -1,4 +1,4 @@
-import type { Post, PostListResponse, Prompt, Settings, Target } from "./types";
+import type { Post, PostListResponse, Prompt, Settings, Target, AssetMeta } from "./types";
 
 export async function fetchPosts(
   publishedOffset = 0,
@@ -113,6 +113,36 @@ export async function savePrompts(prompts: Prompt[]): Promise<Prompt[]> {
   });
   if (!res.ok) throw new Error(`Failed to save prompts: ${res.status}`);
   return res.json();
+}
+
+export async function fetchAssets(postId: string): Promise<AssetMeta[]> {
+  const res = await fetch(`/api/assets/${postId}`);
+  if (!res.ok) throw new Error(`Failed to fetch assets: ${res.status}`);
+  return res.json();
+}
+
+export async function uploadAsset(
+  postId: string,
+  file: File
+): Promise<AssetMeta> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/assets/${postId}`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteAsset(
+  postId: string,
+  filename: string
+): Promise<void> {
+  const res = await fetch(`/api/assets/${postId}/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
 export async function generateMetadata(

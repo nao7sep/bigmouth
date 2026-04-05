@@ -46,6 +46,15 @@ export interface Prompt {
   text: string;
 }
 
+export interface AssetMeta {
+  filename: string;
+  size: number;
+  width?: number;
+  height?: number;
+  takenAt?: string;
+  uploadedAt: string;
+}
+
 export interface Settings {
   timezone: string;
   itemsPerPage: number;
