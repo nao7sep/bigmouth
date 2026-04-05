@@ -908,6 +908,22 @@ body {
   border-radius: 4px;
   overflow: hidden;
   background: #f4f4f4;
+  position: relative;
+}
+
+.asset-exif-badge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(234, 179, 8, 0.9);
+  color: #1a1a1a;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  padding: 1px 0;
+  line-height: 1.2;
+  pointer-events: none;
 }
 
 .asset-thumb img {

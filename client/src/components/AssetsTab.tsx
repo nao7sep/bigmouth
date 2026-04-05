@@ -153,6 +153,11 @@ function AssetCard({
         ) : (
           <div className="asset-file-icon">{ext(asset.filename).toUpperCase()}</div>
         )}
+        {asset.takenAt && (
+          <div className="asset-exif-badge" title={`EXIF location/time data present (taken: ${asset.takenAt})`}>
+            ⚠ EXIF
+          </div>
+        )}
       </div>
       <div className="asset-info">
         <div className="asset-name" title={asset.filename}>
