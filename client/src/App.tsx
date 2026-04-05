@@ -1,19 +1,26 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { LeftPane } from "./components/LeftPane";
+import { CenterPane } from "./components/CenterPane";
+import { RightPane } from "./components/RightPane";
+import "./App.css";
 
 export function App() {
-  const [health, setHealth] = useState<string>("loading...");
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((res) => res.json())
-      .then((data) => setHealth(JSON.stringify(data)))
-      .catch((err) => setHealth(`error: ${err.message}`));
-  }, []);
+  // null means no post selected — center+right merge into empty state
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   return (
-    <div style={{ fontFamily: "monospace", padding: "2rem" }}>
-      <h1>BigMouth</h1>
-      <p>Server health: {health}</p>
+    <div className="app-layout">
+      <LeftPane />
+      {selectedPostId ? (
+        <>
+          <CenterPane />
+          <RightPane />
+        </>
+      ) : (
+        <div className="pane-empty">
+          Select a post or create a new one
+        </div>
+      )}
     </div>
   );
 }
