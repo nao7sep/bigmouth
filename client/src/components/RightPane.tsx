@@ -1,9 +1,9 @@
-import { useState } from "react";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab } from "./MetadataTab";
 import type { PostFrontMatter, Target } from "../types";
 
-const TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as const;
+export const RIGHT_TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as const;
+export type RightTab = (typeof RIGHT_TABS)[number];
 
 interface RightPaneProps {
   content: string;
@@ -12,6 +12,8 @@ interface RightPaneProps {
   target: Target | null;
   extraFieldWatermark: string;
   onMetadataSaved: () => void;
+  activeTab: RightTab;
+  onTabChange: (tab: RightTab) => void;
 }
 
 export function RightPane({
@@ -21,17 +23,18 @@ export function RightPane({
   target,
   extraFieldWatermark,
   onMetadataSaved,
+  activeTab,
+  onTabChange,
 }: RightPaneProps) {
-  const [activeTab, setActiveTab] = useState<string>("AI Analysis");
 
   return (
     <div className="pane-right">
       <div className="right-tabs">
-        {TABS.map((tab) => (
+        {RIGHT_TABS.map((tab) => (
           <button
             key={tab}
             className={`right-tab${activeTab === tab ? " active" : ""}`}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => onTabChange(tab)}
           >
             {tab}
           </button>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PostSummary } from "../types";
 
 interface LeftPaneProps {
@@ -13,6 +13,8 @@ interface LeftPaneProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onOpenSettings: () => void;
+  onOpenShortcuts: () => void;
+  onOpenAbout: () => void;
 }
 
 export function LeftPane({
@@ -27,10 +29,26 @@ export function LeftPane({
   searchQuery,
   onSearchChange,
   onOpenSettings,
+  onOpenShortcuts,
+  onOpenAbout,
 }: LeftPaneProps) {
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [readyOpen, setReadyOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   const filter = (posts: PostSummary[]) => {
     if (!searchQuery) return posts;
@@ -56,9 +74,37 @@ export function LeftPane({
       <div className="left-header">
         <h1>
           BigMouth
-          <button className="btn-hamburger" title="Settings" onClick={onOpenSettings}>
-            &#9776;
-          </button>
+          <div className="hamburger-wrap" ref={menuRef}>
+            <button
+              className="btn-hamburger"
+              title="Menu"
+              onClick={() => setMenuOpen(!menuOpen)}
+            >
+              &#9776;
+            </button>
+            {menuOpen && (
+              <div className="hamburger-menu">
+                <button
+                  className="hamburger-menu-item"
+                  onClick={() => { setMenuOpen(false); onOpenSettings(); }}
+                >
+                  Settings
+                </button>
+                <button
+                  className="hamburger-menu-item"
+                  onClick={() => { setMenuOpen(false); onOpenShortcuts(); }}
+                >
+                  Keyboard Shortcuts
+                </button>
+                <button
+                  className="hamburger-menu-item"
+                  onClick={() => { setMenuOpen(false); onOpenAbout(); }}
+                >
+                  About
+                </button>
+              </div>
+            )}
+          </div>
         </h1>
         <button className="btn-new-post" onClick={onNewPost}>
           + New Post

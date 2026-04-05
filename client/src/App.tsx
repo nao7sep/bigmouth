@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane } from "./components/CenterPane";
-import { RightPane } from "./components/RightPane";
+import { RightPane, type RightTab } from "./components/RightPane";
 import { ExportModal } from "./components/ExportModal";
 import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { ShortcutsModal } from "./components/ShortcutsModal";
+import { AboutModal } from "./components/AboutModal";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
 import type { Post, PostSummary, Target } from "./types";
 import "./App.css";
@@ -29,6 +31,9 @@ export function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [newPostOpen, setNewPostOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -64,6 +69,50 @@ export function App() {
       })
       .catch(() => {});
   };
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const TAB_KEYS: Record<string, RightTab> = {
+      "1": "AI Analysis",
+      "2": "Assets",
+      "3": "Preview",
+      "4": "Metadata",
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      // Don't intercept shortcuts when focus is inside an input, textarea, or select
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "TEXTAREA" || tag === "SELECT") return;
+      if (tag === "INPUT" && e.key !== "n" && e.key !== "e") return;
+
+      if (e.key === "n") {
+        e.preventDefault();
+        setNewPostOpen(true);
+        return;
+      }
+      if (e.key === "e" && selectedPostId) {
+        e.preventDefault();
+        setExportOpen(true);
+        return;
+      }
+      if (e.key === "Enter" && selectedPostId) {
+        e.preventDefault();
+        setRightTab("AI Analysis");
+        return;
+      }
+      const tab = TAB_KEYS[e.key];
+      if (tab && selectedPostId) {
+        e.preventDefault();
+        setRightTab(tab);
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedPostId]);
 
   const handleNewPost = () => {
     setNewPostOpen(true);
@@ -103,6 +152,8 @@ export function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+        onOpenAbout={() => setAboutOpen(true)}
       />
       {selectedPostId ? (
         <>
@@ -129,6 +180,8 @@ export function App() {
             }
             extraFieldWatermark={extraFieldWatermark}
             onMetadataSaved={loadPosts}
+            activeTab={rightTab}
+            onTabChange={setRightTab}
           />
         </>
       ) : (
@@ -139,6 +192,12 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
           onSettingsChanged={reloadConfig}
         />
+      )}
+      {shortcutsOpen && (
+        <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
+      )}
+      {aboutOpen && (
+        <AboutModal onClose={() => setAboutOpen(false)} />
       )}
       {newPostOpen && (
         <NewPostModal
