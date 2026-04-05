@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { computeCounts, type ContentCounts } from "../util/counts";
 
 interface CenterPaneProps {
   postId: string;
@@ -127,14 +128,29 @@ export function CenterPane({
     }
   };
 
+  // Debounced character counts (~100ms)
+  const [counts, setCounts] = useState<ContentCounts>({
+    graphemes: 0,
+    xWeighted: 0,
+    paragraphs: 0,
+    avgParagraphLength: 0,
+    longestParagraphLength: 0,
+  });
+  const countsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (countsTimerRef.current) clearTimeout(countsTimerRef.current);
+    countsTimerRef.current = setTimeout(() => {
+      setCounts(computeCounts(content));
+    }, 100);
+    return () => {
+      if (countsTimerRef.current) clearTimeout(countsTimerRef.current);
+    };
+  }, [content]);
+
   if (!post) return null;
 
   const fm = post.frontMatter;
-  const charCount = content.length;
-  const paragraphs = content
-    .split(/\n\n+/)
-    .filter((p) => p.trim().length > 0);
-  const paragraphCount = paragraphs.length;
 
   return (
     <div className="pane-center">
@@ -170,8 +186,11 @@ export function CenterPane({
         />
       </div>
       <div className="center-counts">
-        <span>{charCount} characters</span>
-        <span>{paragraphCount} paragraphs</span>
+        <span>{counts.graphemes} graphemes</span>
+        <span>{counts.xWeighted} X chars</span>
+        <span>{counts.paragraphs} paragraphs</span>
+        <span>avg {counts.avgParagraphLength}</span>
+        <span>longest {counts.longestParagraphLength}</span>
       </div>
     </div>
   );
