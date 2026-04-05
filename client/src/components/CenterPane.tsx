@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
+import { SourcePickerModal } from "./SourcePickerModal";
 import { computeCounts, type ContentCounts } from "../util/counts";
 
 interface CenterPaneProps {
@@ -33,6 +34,7 @@ export function CenterPane({
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const postIdRef = useRef(postId);
@@ -161,6 +163,20 @@ export function CenterPane({
     };
   }, [content]);
 
+  const handleCopyContent = () => {
+    navigator.clipboard.writeText(content).catch(() => {});
+  };
+
+  const handleSetSource = async (sourceId: string) => {
+    const updated = await updatePost(postId, { frontMatter: { sourceId } }).catch(() => null);
+    if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
+  };
+
+  const handleClearSource = async () => {
+    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }).catch(() => null);
+    if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
+  };
+
   if (!post) return null;
 
   const fm = post.frontMatter;
@@ -182,9 +198,9 @@ export function CenterPane({
           <option value="published">Published</option>
         </select>
         {dirty && <span className="toolbar-dirty">*</span>}
-        {fm.sourceId && (
+        <span className="toolbar-sep">|</span>
+        {fm.sourceId ? (
           <>
-            <span className="toolbar-sep">|</span>
             <span
               className="toolbar-source"
               onClick={() => onSelectPost(fm.sourceId!)}
@@ -192,9 +208,22 @@ export function CenterPane({
             >
               Source
             </span>
+            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+              Change
+            </button>
+            <button className="btn-toolbar" onClick={handleClearSource}>
+              ×
+            </button>
           </>
+        ) : (
+          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+            Link Source
+          </button>
         )}
         <span style={{ flex: 1 }} />
+        <button className="btn-toolbar" onClick={handleCopyContent}>
+          Copy
+        </button>
         <button className="btn-toolbar" onClick={onExport}>
           Export
         </button>
@@ -221,6 +250,14 @@ export function CenterPane({
         <span>avg {counts.avgParagraphLength}</span>
         <span>longest {counts.longestParagraphLength}</span>
       </div>
+
+      {sourcePickerOpen && (
+        <SourcePickerModal
+          currentPostId={postId}
+          onSelect={handleSetSource}
+          onClose={() => setSourcePickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

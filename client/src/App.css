@@ -819,6 +819,31 @@ body {
   border-color: #dc2626;
 }
 
+/* ── Source Picker Modal ─────────────────────────────────── */
+
+.source-picker-item {
+  padding: 10px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+.source-picker-item:hover {
+  background: #f0f4ff;
+}
+
+.source-picker-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.source-picker-sub {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
 /* ── Assets Tab ─────────────────────────────────────────── */
 
 .assets-tab {

@@ -143,7 +143,13 @@ export function updatePost(
   if (!post) return null;
 
   if (updates.frontMatter) {
-    Object.assign(post.frontMatter, updates.frontMatter);
+    for (const [key, value] of Object.entries(updates.frontMatter)) {
+      if (value === null) {
+        delete (post.frontMatter as Record<string, unknown>)[key];
+      } else {
+        (post.frontMatter as Record<string, unknown>)[key] = value;
+      }
+    }
   }
   post.frontMatter.updatedAtUtc = formatForFrontMatter(utcNow());
 
