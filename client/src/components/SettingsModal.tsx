@@ -66,11 +66,10 @@ export function SettingsModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div
         className="modal"
         style={{ width: 560, maxHeight: "85vh" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
           <h2>Settings</h2>
@@ -160,6 +159,14 @@ function GeneralTab({
         />
       </div>
       <div className="form-field">
+        <label className="form-label">Timezone (IANA)</label>
+        <input
+          className="form-input"
+          value={settings.timezone}
+          onChange={(e) => update({ timezone: e.target.value })}
+        />
+      </div>
+      <div className="form-field">
         <label className="form-label">Published posts per load</label>
         <input
           className="form-input"
@@ -168,14 +175,6 @@ function GeneralTab({
           onChange={(e) =>
             update({ itemsPerPage: parseInt(e.target.value) || 50 })
           }
-        />
-      </div>
-      <div className="form-field">
-        <label className="form-label">Timezone (IANA)</label>
-        <input
-          className="form-input"
-          value={settings.timezone}
-          onChange={(e) => update({ timezone: e.target.value })}
         />
       </div>
       <div className="form-field">
