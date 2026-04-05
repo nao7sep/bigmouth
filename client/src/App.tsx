@@ -34,6 +34,7 @@ export function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
+  const [analysisTrigger, setAnalysisTrigger] = useState(0);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -101,6 +102,7 @@ export function App() {
       if (e.key === "Enter" && selectedPostId) {
         e.preventDefault();
         setRightTab("AI Analysis");
+        setAnalysisTrigger((n) => n + 1);
         return;
       }
       const tab = TAB_KEYS[e.key];
@@ -182,6 +184,7 @@ export function App() {
             onMetadataSaved={loadPosts}
             activeTab={rightTab}
             onTabChange={setRightTab}
+            analysisTrigger={analysisTrigger}
           />
         </>
       ) : (

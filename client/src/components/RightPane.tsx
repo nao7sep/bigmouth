@@ -1,3 +1,4 @@
+import { AiAnalysisTab } from "./AiAnalysisTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab } from "./MetadataTab";
 import type { PostFrontMatter, Target } from "../types";
@@ -14,6 +15,7 @@ interface RightPaneProps {
   onMetadataSaved: () => void;
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
+  analysisTrigger: number;
 }
 
 export function RightPane({
@@ -25,6 +27,7 @@ export function RightPane({
   onMetadataSaved,
   activeTab,
   onTabChange,
+  analysisTrigger,
 }: RightPaneProps) {
 
   return (
@@ -41,6 +44,9 @@ export function RightPane({
         ))}
       </div>
       <div className="right-content">
+        {activeTab === "AI Analysis" && (
+          <AiAnalysisTab postId={postId} analysisTrigger={analysisTrigger} />
+        )}
         {activeTab === "Preview" && (
           <PreviewTab content={content} postId={postId} />
         )}
@@ -53,8 +59,8 @@ export function RightPane({
             onMetadataSaved={onMetadataSaved}
           />
         )}
-        {activeTab !== "Preview" && activeTab !== "Metadata" && (
-          <p style={{ color: "#999" }}>{activeTab} — coming soon</p>
+        {activeTab === "Assets" && (
+          <p style={{ color: "#999" }}>Assets — coming soon</p>
         )}
       </div>
     </div>
