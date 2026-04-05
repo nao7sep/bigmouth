@@ -1,0 +1,17 @@
+{
+  "name": "bigmouth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first writing preflight tool",
+  "author": "Yoshinao Inoguchi <nao7sep@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently --names server,client --prefix-colors blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix server && npm run build --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
