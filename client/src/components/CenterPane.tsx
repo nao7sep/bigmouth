@@ -8,6 +8,7 @@ interface CenterPaneProps {
   postId: string;
   onPostSaved: () => void;
   onPostDeleted: () => void;
+  onContentChange: (content: string) => void;
   watermark: string;
 }
 
@@ -17,6 +18,7 @@ export function CenterPane({
   postId,
   onPostSaved,
   onPostDeleted,
+  onContentChange: notifyContentChange,
   watermark,
 }: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
@@ -60,6 +62,7 @@ export function CenterPane({
       if (cancelled) return;
       setPost(loaded);
       setContent(loaded.content);
+      notifyContentChange(loaded.content);
       setDirty(false);
       setStatusError(null);
     };
@@ -82,6 +85,7 @@ export function CenterPane({
   // Debounced auto-save on content change
   const handleContentChange = (value: string) => {
     setContent(value);
+    notifyContentChange(value);
     setDirty(true);
 
     if (timerRef.current) clearTimeout(timerRef.current);

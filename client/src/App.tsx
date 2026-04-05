@@ -20,6 +20,7 @@ export function App() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
+  const [editorContent, setEditorContent] = useState("");
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -84,9 +85,10 @@ export function App() {
             postId={selectedPostId}
             onPostSaved={loadPosts}
             onPostDeleted={handlePostDeleted}
+            onContentChange={setEditorContent}
             watermark={watermark}
           />
-          <RightPane />
+          <RightPane content={editorContent} postId={selectedPostId} />
         </>
       ) : (
         <div className="pane-empty">Select a post or create a new one</div>

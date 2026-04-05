@@ -1,8 +1,14 @@
 import { useState } from "react";
+import { PreviewTab } from "./PreviewTab";
 
 const TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as const;
 
-export function RightPane() {
+interface RightPaneProps {
+  content: string;
+  postId: string;
+}
+
+export function RightPane({ content, postId }: RightPaneProps) {
   const [activeTab, setActiveTab] = useState<string>("AI Analysis");
 
   return (
@@ -19,7 +25,11 @@ export function RightPane() {
         ))}
       </div>
       <div className="right-content">
-        <p style={{ color: "#999" }}>{activeTab} — coming soon</p>
+        {activeTab === "Preview" ? (
+          <PreviewTab content={content} postId={postId} />
+        ) : (
+          <p style={{ color: "#999" }}>{activeTab} — coming soon</p>
+        )}
       </div>
     </div>
   );

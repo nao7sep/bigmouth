@@ -300,3 +300,84 @@ body {
 .btn-hamburger:hover {
   color: #333;
 }
+
+/* Preview tab */
+.preview-content {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.preview-content h1,
+.preview-content h2,
+.preview-content h3,
+.preview-content h4,
+.preview-content h5,
+.preview-content h6 {
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  font-weight: 600;
+}
+
+.preview-content h1 { font-size: 1.5em; }
+.preview-content h2 { font-size: 1.3em; }
+.preview-content h3 { font-size: 1.15em; }
+
+.preview-content p {
+  margin: 0.6em 0;
+}
+
+.preview-content ul,
+.preview-content ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+
+.preview-content pre {
+  background: #f0f0f0;
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.preview-content code {
+  background: #f0f0f0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.preview-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.preview-content blockquote {
+  border-left: 3px solid #d0d0d0;
+  margin: 0.6em 0;
+  padding-left: 12px;
+  color: #555;
+}
+
+.preview-content table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  width: 100%;
+}
+
+.preview-content th,
+.preview-content td {
+  border: 1px solid #d0d0d0;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.preview-content th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.preview-content img {
+  max-width: 100%;
+  border-radius: 4px;
+}
