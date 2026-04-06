@@ -54,7 +54,7 @@ export function LeftPane({
           BigMouth
           <div className="left-header-actions">
             <button className="btn-new-post-icon" title="New Post" onClick={onNewPost}>
-              +
+              <span className="plus-icon"><span /><span /></span>
             </button>
             <div className="hamburger-wrap" ref={menuRef}>
               <button
@@ -62,7 +62,9 @@ export function LeftPane({
                 title="Menu"
                 onClick={() => setMenuOpen(!menuOpen)}
               >
-                &#9776;
+                <span className="hamburger-icon">
+                  <span /><span /><span />
+                </span>
               </button>
               {menuOpen && (
                 <div className="hamburger-menu">

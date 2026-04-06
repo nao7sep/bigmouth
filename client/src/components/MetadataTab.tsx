@@ -29,6 +29,7 @@ export function MetadataTab({
 
   const [fields, setFields] = useState(() => extractFields(frontMatter));
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const [generatingAll, setGeneratingAll] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -103,7 +104,9 @@ export function MetadataTab({
     }
   };
 
-  const isGenerating = (key: string) => noContent || !!generating[key];
+  const isGenerating = (key: string) => !!generating[key];
+
+  const anyGenerating = generatingAll || Object.values(generating).some(Boolean);
 
   if (!requiresMetadata) {
     return (
@@ -123,35 +126,30 @@ export function MetadataTab({
           copied={copiedKey === 'slug'}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
+          generateDisabled={anyGenerating || noContent}
         />
       </div>
     );
   }
 
-  // "Generate All" covers only the fields below the divider: tags and
-  // metaDescription (plus their English variants). Title and slug sit above
-  // the divider and have individual Gen buttons; they are intentionally excluded
-  // here to prevent overwriting carefully edited values.
-  const allFields: Array<{ key: string; isTags?: boolean }> = [];
+  // Generate All covers every generatable field for this post.
+  const allFields: Array<{ key: string; isTags?: boolean }> = [
+    { key: "title" },
+  ];
+  if (isNonEnglish) allFields.push({ key: "titleEn" });
+  allFields.push({ key: "slug" });
   if (isNonEnglish) allFields.push({ key: "tagsEn", isTags: true });
   allFields.push({ key: "tags", isTags: true });
   if (isNonEnglish) allFields.push({ key: "metaDescriptionEn" });
   allFields.push({ key: "metaDescription" });
 
-  const anyGenerating = Object.values(generating).some(Boolean);
-
   const generateAll = async () => {
     if (!content.trim()) return;
     const fieldKeys = allFields.map((f) => f.key);
-    // Cancel any pending debounced saves for these fields
     for (const key of fieldKeys) {
       if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
     }
-    setGenerating((prev) => {
-      const next = { ...prev };
-      for (const key of fieldKeys) next[key] = true;
-      return next;
-    });
+    setGeneratingAll(true);
     try {
       const results = await generateMetadataBatch(postId, fieldKeys, content);
       const failed: string[] = [];
@@ -176,11 +174,7 @@ export function MetadataTab({
     } catch (err) {
       showGenError(err instanceof Error ? err.message : "Batch generation failed");
     } finally {
-      setGenerating((prev) => {
-        const next = { ...prev };
-        for (const key of fieldKeys) next[key] = false;
-        return next;
-      });
+      setGeneratingAll(false);
     }
   };
 
@@ -192,6 +186,15 @@ export function MetadataTab({
           <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>×</button>
         </div>
       )}
+      <div className="metadata-generate-all-row">
+        <button
+          className="btn-generate-all"
+          onClick={generateAll}
+          disabled={anyGenerating || noContent}
+        >
+          {generatingAll ? "Generating All…" : "Generate All"}
+        </button>
+      </div>
       <MetaField
         label="Title"
         value={fields.title}
@@ -201,6 +204,7 @@ export function MetadataTab({
         copied={copiedKey === 'title'}
         onGenerate={() => generate("title")}
         generating={isGenerating("title")}
+        generateDisabled={anyGenerating || noContent}
       />
       {isNonEnglish && (
         <MetaField
@@ -212,6 +216,7 @@ export function MetadataTab({
           copied={copiedKey === 'titleEn'}
           onGenerate={() => generate("titleEn")}
           generating={isGenerating("titleEn")}
+          generateDisabled={anyGenerating || noContent}
         />
       )}
       <MetaField
@@ -223,17 +228,8 @@ export function MetadataTab({
         copied={copiedKey === 'slug'}
         onGenerate={() => generate("slug")}
         generating={isGenerating("slug")}
+        generateDisabled={anyGenerating || noContent}
       />
-
-      <div className="metadata-divider">
-        <button
-          className="btn-generate-all"
-          onClick={generateAll}
-          disabled={anyGenerating || noContent}
-        >
-          {anyGenerating ? "Generating…" : "Generate All"}
-        </button>
-      </div>
 
       <MetaField
         label="Tags"
@@ -244,6 +240,7 @@ export function MetadataTab({
         copied={copiedKey === 'tags'}
         onGenerate={() => generate("tags", true)}
         generating={isGenerating("tags")}
+        generateDisabled={anyGenerating || noContent}
         placeholder="tag1, tag2, tag3"
       />
       {isNonEnglish && (
@@ -256,6 +253,7 @@ export function MetadataTab({
           copied={copiedKey === 'tagsEn'}
           onGenerate={() => generate("tagsEn", true)}
           generating={isGenerating("tagsEn")}
+          generateDisabled={anyGenerating || noContent}
           placeholder="tag1, tag2, tag3"
         />
       )}
@@ -268,6 +266,7 @@ export function MetadataTab({
         copied={copiedKey === 'metaDescription'}
         onGenerate={() => generate("metaDescription")}
         generating={isGenerating("metaDescription")}
+        generateDisabled={anyGenerating || noContent}
         multiline
       />
       {isNonEnglish && (
@@ -280,6 +279,7 @@ export function MetadataTab({
           copied={copiedKey === 'metaDescriptionEn'}
           onGenerate={() => generate("metaDescriptionEn")}
           generating={isGenerating("metaDescriptionEn")}
+          generateDisabled={anyGenerating || noContent}
           multiline
         />
       )}
@@ -308,6 +308,7 @@ function MetaField({
   copied,
   onGenerate,
   generating,
+  generateDisabled,
   multiline,
   placeholder,
 }: {
@@ -319,6 +320,7 @@ function MetaField({
   copied?: boolean;
   onGenerate?: () => void;
   generating?: boolean;
+  generateDisabled?: boolean;
   multiline?: boolean;
   placeholder?: string;
 }) {
@@ -338,10 +340,10 @@ function MetaField({
             <button
               className="meta-field-generate"
               onClick={onGenerate}
-              disabled={generating}
+              disabled={generating || generateDisabled}
               title="Generate with AI"
             >
-              {generating ? "…" : "Generate"}
+              {generating ? "Generating…" : "Generate"}
             </button>
           )}
         </div>

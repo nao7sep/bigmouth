@@ -530,61 +530,57 @@ function GenerationTab({
   };
 
   return (
-    <div className="settings-section">
+    <div className="generation-tab">
       <p className="settings-hint">
         System prompts used when generating metadata fields with AI. The post content is passed as the user message.
       </p>
 
-      <div className="settings-list-item">
-        <div className="form-field">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <label className="form-label">Preamble</label>
-            {!isPreambleDefault && (
-              <button
-                className="btn-toolbar"
-                style={{ fontSize: 11, padding: "2px 8px" }}
-                onClick={() => updatePreamble(DEFAULT_GENERATION_PREAMBLE)}
-              >
-                Reset to default
-              </button>
-            )}
-          </div>
-          <textarea
-            className="form-input"
-            rows={4}
-            value={data.preamble}
-            onChange={(e) => updatePreamble(e.target.value)}
-            style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
-          />
+      <div className="form-field">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label className="form-label">Preamble</label>
+          {!isPreambleDefault && (
+            <button
+              className="btn-toolbar"
+              style={{ fontSize: 11, padding: "2px 8px" }}
+              onClick={() => updatePreamble(DEFAULT_GENERATION_PREAMBLE)}
+            >
+              Reset to default
+            </button>
+          )}
         </div>
+        <textarea
+          className="form-input"
+          rows={4}
+          value={data.preamble}
+          onChange={(e) => updatePreamble(e.target.value)}
+          style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+        />
       </div>
 
       {Object.keys(DEFAULT_GENERATION_PROMPTS).map((key) => {
         const current = data.prompts?.[key] ?? DEFAULT_GENERATION_PROMPTS[key];
         const isDefault = current === DEFAULT_GENERATION_PROMPTS[key];
         return (
-          <div key={key} className="settings-list-item">
-            <div className="form-field">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
-                {!isDefault && (
-                  <button
-                    className="btn-toolbar"
-                    style={{ fontSize: 11, padding: "2px 8px" }}
-                    onClick={() => resetPrompt(key)}
-                  >
-                    Reset to default
-                  </button>
-                )}
-              </div>
-              <textarea
-                className="form-input"
-                rows={3}
-                value={current}
-                onChange={(e) => updatePrompt(key, e.target.value)}
-                style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
-              />
+          <div key={key} className="form-field">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
+              {!isDefault && (
+                <button
+                  className="btn-toolbar"
+                  style={{ fontSize: 11, padding: "2px 8px" }}
+                  onClick={() => resetPrompt(key)}
+                >
+                  Reset to default
+                </button>
+              )}
             </div>
+            <textarea
+              className="form-input"
+              rows={3}
+              value={current}
+              onChange={(e) => updatePrompt(key, e.target.value)}
+              style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+            />
           </div>
         );
       })}
