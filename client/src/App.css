@@ -324,6 +324,10 @@ body {
   padding: 16px;
 }
 
+.tab-hidden {
+  display: none;
+}
+
 /* Hamburger menu */
 .btn-hamburger {
   background: none;

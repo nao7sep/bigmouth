@@ -47,24 +47,26 @@ export function RightPane({
         ))}
       </div>
       <div className="right-content">
-        {activeTab === "AI Analysis" && (
+        <div className={activeTab === "AI Analysis" ? "" : "tab-hidden"}>
           <AiAnalysisTab postId={postId} analysisTrigger={analysisTrigger} />
-        )}
-        {activeTab === "Preview" && (
+        </div>
+        <div className={activeTab === "Preview" ? "" : "tab-hidden"}>
           <PreviewTab content={content} postId={postId} />
-        )}
-        {activeTab === "Metadata" && frontMatter && (
-          <MetadataTab
-            postId={postId}
-            frontMatter={frontMatter}
-            target={target}
-            extraFieldWatermark={extraFieldWatermark}
-            onMetadataSaved={onMetadataSaved}
-          />
-        )}
-        {activeTab === "Assets" && (
+        </div>
+        <div className={activeTab === "Metadata" ? "" : "tab-hidden"}>
+          {frontMatter && (
+            <MetadataTab
+              postId={postId}
+              frontMatter={frontMatter}
+              target={target}
+              extraFieldWatermark={extraFieldWatermark}
+              onMetadataSaved={onMetadataSaved}
+            />
+          )}
+        </div>
+        <div className={activeTab === "Assets" ? "" : "tab-hidden"}>
           <AssetsTab postId={postId} onInsertAtCursor={onInsertAtCursor} />
-        )}
+        </div>
       </div>
     </div>
   );
