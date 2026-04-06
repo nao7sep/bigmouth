@@ -41,6 +41,44 @@ export function SettingsModal({
     fetchPrompts().then(setPrompts).catch(() => {});
   }, []);
 
+  const isValid = (): boolean => {
+    if (!settings) return false;
+
+    // General
+    const port = settings.port;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+
+    const ppl = settings.publishedPostsPerLoad;
+    if (!Number.isInteger(ppl) || ppl < 1) return false;
+
+    const langs = settings.supportedLanguages;
+    if (langs.length === 0) return false;
+    if (langs.some((l) => !/^[a-z]{2}$/.test(l))) return false;
+    if (new Set(langs).size !== langs.length) return false;
+
+    if (!settings.timezone.trim()) return false;
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: settings.timezone });
+    } catch {
+      return false;
+    }
+
+    // AI configs
+    if (settings.aiConfigs.some((c) => !c.name.trim() || !c.model.trim())) return false;
+
+    // Targets
+    if (targets.some((t) => !t.name.trim())) return false;
+    const targetNames = targets.map((t) => t.name.trim());
+    if (new Set(targetNames).size !== targetNames.length) return false;
+
+    // Prompts
+    if (prompts.some((p) => !p.name.trim() || !p.text.trim())) return false;
+
+    return true;
+  };
+
+  const canSave = !saving && isValid();
+
   const handleSaveAll = async () => {
     if (!settings) return;
     setSaving(true);
@@ -116,7 +154,7 @@ export function SettingsModal({
             className="btn-new-post"
             style={{ width: "auto" }}
             onClick={handleSaveAll}
-            disabled={saving}
+            disabled={!canSave}
           >
             {saving ? "Saving..." : "Save"}
           </button>

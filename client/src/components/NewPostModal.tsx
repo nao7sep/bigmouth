@@ -1,37 +1,80 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchPosts } from "../api";
 import type { PostSummary, Target } from "../types";
 
 interface NewPostModalProps {
   targets: Target[];
-  allPosts: PostSummary[];
+  supportedLanguages: string[];
   onClose: () => void;
   onCreate: (target: string, language: string, sourceId?: string) => void;
 }
 
+function resolveLanguage(
+  lang: string | undefined,
+  supportedLanguages: string[]
+): string {
+  if (lang && supportedLanguages.includes(lang)) return lang;
+  if (supportedLanguages.includes("en")) return "en";
+  return supportedLanguages[0] ?? "en";
+}
+
 export function NewPostModal({
   targets,
-  allPosts,
+  supportedLanguages,
   onClose,
   onCreate,
 }: NewPostModalProps) {
-  const [selectedTarget, setSelectedTarget] = useState(
-    targets.length > 0 ? targets[0].name : ""
+  const [selectedTarget, setSelectedTarget] = useState("");
+  const [selectedLanguage, setSelectedLanguage] = useState(() =>
+    resolveLanguage(undefined, supportedLanguages)
   );
-  const [sourceId, setSourceId] = useState("");
 
-  const target = targets.find((t) => t.name === selectedTarget);
-  const language = target?.defaultLanguage ?? "en";
+  const [posts, setPosts] = useState<PostSummary[]>([]);
+  const [query, setQuery] = useState("");
+  const [sourceId, setSourceId] = useState("");
+  const [sourceTitle, setSourceTitle] = useState("");
+
+  useEffect(() => {
+    fetchPosts(0, 500)
+      .then((data) => {
+        setPosts([...data.drafts, ...data.ready, ...data.published]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleTargetChange = (name: string) => {
+    setSelectedTarget(name);
+    const t = targets.find((t) => t.name === name);
+    setSelectedLanguage(resolveLanguage(t?.defaultLanguage, supportedLanguages));
+  };
+
+  const filtered = query.trim()
+    ? posts.filter((p) => {
+        const fm = p.frontMatter;
+        const haystack = [fm.id, fm.target, fm.language, fm.title ?? ""]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      })
+    : posts;
+
+  const handleSelectSource = (id: string, title: string) => {
+    setSourceId(id);
+    setSourceTitle(title);
+    setQuery("");
+  };
 
   const handleCreate = () => {
     const tName = selectedTarget || "default";
-    onCreate(tName, language, sourceId || undefined);
+    onCreate(tName, selectedLanguage, sourceId || undefined);
   };
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal"
-        style={{ width: 420 }}
+        style={{ width: 440 }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
           <h2>New Post</h2>
@@ -46,8 +89,9 @@ export function NewPostModal({
               <select
                 className="form-select"
                 value={selectedTarget}
-                onChange={(e) => setSelectedTarget(e.target.value)}
+                onChange={(e) => handleTargetChange(e.target.value)}
               >
+                <option value="" disabled>Please select…</option>
                 {targets.map((t) => (
                   <option key={t.name} value={t.name}>
                     {t.name} ({t.defaultLanguage})
@@ -67,42 +111,78 @@ export function NewPostModal({
 
           <div className="form-field">
             <label className="form-label">Language</label>
-            <input
-              className="form-input"
-              type="text"
-              value={language}
-              disabled
-            />
+            <select
+              className="form-select"
+              value={selectedLanguage}
+              onChange={(e) => setSelectedLanguage(e.target.value)}
+            >
+              {supportedLanguages.map((lang) => (
+                <option key={lang} value={lang}>
+                  {lang}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="form-field">
             <label className="form-label">Source post (optional)</label>
-            <select
-              className="form-select"
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
-            >
-              <option value="">None</option>
-              {allPosts.map((p) => {
-                const fm = p.frontMatter;
-                const label = fm.title || fm.slug || fm.id;
-                return (
-                  <option key={fm.id} value={fm.id}>
-                    {label} ({fm.target})
-                  </option>
-                );
-              })}
-            </select>
+            {sourceId ? (
+              <div className="source-selected">
+                <span className="source-selected-title">{sourceTitle}</span>
+                <button
+                  className="btn-toolbar"
+                  onClick={() => { setSourceId(""); setSourceTitle(""); }}
+                >
+                  Unlink
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  className="form-input"
+                  placeholder="Search posts…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {query.trim() && (
+                  <div className="source-picker-list">
+                    {filtered.length === 0 ? (
+                      <p className="source-picker-empty">No posts found</p>
+                    ) : (
+                      filtered.map((p) => {
+                        const fm = p.frontMatter;
+                        const label = fm.title ?? fm.id;
+                        const sub = `${fm.target} · ${fm.language} · ${fm.status}`;
+                        return (
+                          <div
+                            key={fm.id}
+                            className="source-picker-item"
+                            onClick={() => handleSelectSource(fm.id, label)}
+                          >
+                            <div className="source-picker-title">{label}</div>
+                            <div className="source-picker-sub">{sub}</div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
-
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-            <button className="btn-toolbar" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="btn-new-post" style={{ width: "auto" }} onClick={handleCreate}>
-              Create
-            </button>
-          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-toolbar" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-new-post"
+            style={{ width: "auto" }}
+            onClick={handleCreate}
+            disabled={!selectedTarget}
+          >
+            Create
+          </button>
         </div>
       </div>
     </div>

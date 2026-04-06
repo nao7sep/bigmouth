@@ -23,6 +23,7 @@ export function App() {
   const [publishedOffset, setPublishedOffset] = useState(0);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>(["en"]);
   const [searchQuery, setSearchQuery] = useState("");
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
   const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
@@ -62,6 +63,7 @@ export function App() {
         if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
+        if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
       })
       .catch(() => {});
   }, [loadPosts]);
@@ -73,6 +75,7 @@ export function App() {
         if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
         if (s.editorWatermark) setWatermark(s.editorWatermark);
         if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
+        if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
       })
       .catch(() => {});
   };
@@ -219,7 +222,7 @@ export function App() {
       {newPostOpen && (
         <NewPostModal
           targets={targets}
-          allPosts={[...drafts, ...ready, ...published]}
+          supportedLanguages={supportedLanguages}
           onClose={() => setNewPostOpen(false)}
           onCreate={handleCreatePost}
         />

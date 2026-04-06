@@ -121,6 +121,11 @@ body {
   background: #1d4ed8;
 }
 
+.btn-new-post:disabled {
+  background: #b0c4f5;
+  cursor: not-allowed;
+}
+
 .search-box {
   width: 100%;
   padding: 6px 10px;
@@ -871,6 +876,40 @@ body {
   font-size: 11px;
   color: #888;
   margin-top: 2px;
+}
+
+.source-picker-list {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 4px;
+}
+
+.source-picker-empty {
+  font-size: 13px;
+  color: #999;
+  padding: 8px 12px;
+}
+
+.source-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f8f8f8;
+}
+
+.source-selected-title {
+  flex: 1;
+  font-size: 13px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Assets Tab ─────────────────────────────────────────── */
