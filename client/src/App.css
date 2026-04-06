@@ -825,7 +825,7 @@ body {
   margin-top: 16px;
 }
 
-.btn-remove {
+.btn-delete {
   padding: 3px 8px;
   font-size: 11px;
   background: none;
@@ -836,7 +836,7 @@ body {
   margin-top: 4px;
 }
 
-.btn-remove:hover {
+.btn-delete:hover {
   background: #fef2f2;
   border-color: #dc2626;
 }

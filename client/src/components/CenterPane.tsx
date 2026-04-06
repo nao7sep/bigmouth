@@ -212,7 +212,7 @@ export function CenterPane({
               Change
             </button>
             <button className="btn-toolbar" onClick={handleClearSource}>
-              ×
+              Unlink
             </button>
           </>
         ) : (

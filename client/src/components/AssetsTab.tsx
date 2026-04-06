@@ -175,7 +175,7 @@ function AssetCard({
           Insert
         </button>
         <button className="asset-btn asset-btn-delete" onClick={onDelete} title="Delete">
-          &times;
+          Delete
         </button>
       </div>
     </div>

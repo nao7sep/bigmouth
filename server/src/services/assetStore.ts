@@ -55,7 +55,7 @@ export function addAsset(postId: string, meta: AssetMeta): void {
   fs.writeFileSync(metaPath, JSON.stringify([...existing, meta], null, 2) + "\n");
 }
 
-export function removeAsset(postId: string, filename: string): void {
+export function deleteAsset(postId: string, filename: string): void {
   const dir = assetDir(postId);
   const filePath = path.join(dir, filename);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);

@@ -17,7 +17,7 @@ import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
 import {
   listAssets,
   addAsset,
-  removeAsset,
+  deleteAsset,
   assetDir,
   assetFilePath,
   sanitizeFilename,
@@ -99,6 +99,6 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
     return;
   }
 
-  removeAsset(postId, filename);
+  deleteAsset(postId, filename);
   res.status(204).send();
 });

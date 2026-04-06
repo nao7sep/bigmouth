@@ -269,7 +269,7 @@ function AiTab({
     });
   };
 
-  const removeConfig = (id: string) => {
+  const deleteConfig = (id: string) => {
     const remaining = settings.aiConfigs.filter((c) => c.id !== id);
     onChange({
       ...settings,
@@ -351,11 +351,11 @@ function AiTab({
             />
           </div>
           <button
-            className="btn-remove"
-            onClick={() => removeConfig(c.id)}
+            className="btn-delete"
+            onClick={() => deleteConfig(c.id)}
             disabled={settings.aiConfigs.length === 1}
           >
-            Remove
+            Delete
           </button>
         </div>
       ))}
@@ -410,7 +410,7 @@ function TargetsTab({
     onChange(updated);
   };
 
-  const removeTarget = (index: number) => {
+  const deleteTarget = (index: number) => {
     onChange(targets.filter((_, i) => i !== index));
   };
 
@@ -461,10 +461,10 @@ function TargetsTab({
             </div>
           </div>
           <button
-            className="btn-remove"
-            onClick={() => removeTarget(i)}
+            className="btn-delete"
+            onClick={() => deleteTarget(i)}
           >
-            Remove
+            Delete
           </button>
         </div>
       ))}
@@ -511,7 +511,7 @@ function PromptsTab({
     onChange(updated);
   };
 
-  const removePrompt = (index: number) => {
+  const deletePrompt = (index: number) => {
     onChange(prompts.filter((_, i) => i !== index));
   };
 
@@ -540,10 +540,10 @@ function PromptsTab({
             />
           </div>
           <button
-            className="btn-remove"
-            onClick={() => removePrompt(i)}
+            className="btn-delete"
+            onClick={() => deletePrompt(i)}
           >
-            Remove
+            Delete
           </button>
         </div>
       ))}
