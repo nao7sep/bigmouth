@@ -10,6 +10,7 @@ interface PreviewTabProps {
 
 export function PreviewTab({ content, postId }: PreviewTabProps) {
   const html = useMemo(() => {
+    if (!content.trim()) return null;
     // Resolve image filenames to the asset serve endpoint
     const resolved = content.replace(
       /!\[([^\]]*)\]\(([^/)][^)]*)\)/g,
@@ -17,6 +18,10 @@ export function PreviewTab({ content, postId }: PreviewTabProps) {
     );
     return marked.parse(resolved) as string;
   }, [content, postId]);
+
+  if (!html) {
+    return <div className="preview-empty">No content yet.</div>;
+  }
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PostFrontMatter, Target } from "../types";
 import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
@@ -24,7 +24,15 @@ export function MetadataTab({
 
   const [fields, setFields] = useState(() => extractFields(frontMatter));
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const [genError, setGenError] = useState<string | null>(null);
+  const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
+
+  const showGenError = (msg: string) => {
+    setGenError(msg);
+    if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
+    genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
+  };
 
   useEffect(() => {
     setFields(extractFields(frontMatter));
@@ -68,8 +76,8 @@ export function MetadataTab({
       } else {
         await saveField(key, value);
       }
-    } catch {
-      // Generation failed — leave field unchanged
+    } catch (err) {
+      showGenError(err instanceof Error ? err.message : "Generation failed");
     } finally {
       setGenerating((prev) => ({ ...prev, [key]: false }));
     }
@@ -80,6 +88,12 @@ export function MetadataTab({
   if (!requiresMetadata) {
     return (
       <div className="metadata-tab">
+        {genError && (
+          <div className="metadata-error">
+            {genError}
+            <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>×</button>
+          </div>
+        )}
         <MetaField
           label="Slug"
           value={fields.slug}
@@ -116,9 +130,13 @@ export function MetadataTab({
     });
     try {
       const results = await generateMetadataBatch(postId, fieldKeys);
+      const failed: string[] = [];
       for (const { key, isTags } of allFields) {
         const result = results[key];
-        if (!result || "error" in result) continue;
+        if (!result || "error" in result) {
+          failed.push(key);
+          continue;
+        }
         const value = result.value;
         updateField(key, value);
         if (isTags) {
@@ -128,8 +146,11 @@ export function MetadataTab({
           await saveField(key, value);
         }
       }
-    } catch {
-      // Batch failed — silently skip
+      if (failed.length > 0) {
+        showGenError(`Failed to generate: ${failed.join(", ")}`);
+      }
+    } catch (err) {
+      showGenError(err instanceof Error ? err.message : "Batch generation failed");
     } finally {
       setGenerating((prev) => {
         const next = { ...prev };
@@ -141,6 +162,12 @@ export function MetadataTab({
 
   return (
     <div className="metadata-tab">
+      {genError && (
+        <div className="metadata-error">
+          {genError}
+          <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>×</button>
+        </div>
+      )}
       <MetaField
         label="Title"
         value={fields.title}

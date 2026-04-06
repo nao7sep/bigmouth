@@ -249,7 +249,10 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
         </button>
       </div>
       {statusError && (
-        <div className="toolbar-error">{statusError}</div>
+        <div className="toolbar-error">
+          {statusError}
+          <button className="toolbar-error-dismiss" onClick={() => setStatusError(null)}>×</button>
+        </div>
       )}
       <div className="center-editor">
         <MarkdownEditor
