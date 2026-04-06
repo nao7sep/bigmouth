@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
@@ -6,10 +6,6 @@ import { SourcePickerModal } from "./SourcePickerModal";
 import { ConfirmModal } from "./ConfirmModal";
 import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
-
-export interface CenterPaneHandle {
-  save: () => void;
-}
 
 interface CenterPaneProps {
   postId: string;
@@ -25,10 +21,9 @@ interface CenterPaneProps {
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
-const AUTO_SAVE_DELAY = 30_000;
+const AUTO_SAVE_DELAY = 2_000;
 
-export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
-  function CenterPane({
+export function CenterPane({
   postId,
   onPostSaved,
   onPostDeleted,
@@ -40,107 +35,85 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   pubBatchSize,
   watermark,
   editorRef,
-}: CenterPaneProps, ref) {
+}: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
-  const [dirty, setDirty] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const contentRef = useRef(content);
-  const postIdRef = useRef(postId);
-  const dirtyRef = useRef(dirty);
-
-  // Keep refs in sync
-  contentRef.current = content;
-  postIdRef.current = postId;
-  dirtyRef.current = dirty;
+  const contentRef = useRef("");
+  const savedContentRef = useRef(""); // content as of last successful save
+  const savingRef = useRef(false); // true while a save request is in-flight
 
   const save = useCallback(async () => {
-    if (!dirtyRef.current) return;
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    const current = contentRef.current;
+    if (current === savedContentRef.current) return;
+    if (savingRef.current) return; // another save already in-flight
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    savingRef.current = true;
     try {
-      const updated = await updatePost(postIdRef.current, {
-        content: contentRef.current,
-      });
+      const updated = await updatePost(postId, { content: current });
+      savedContentRef.current = current;
       setPost(updated);
-      setDirty(false);
       onPostSaved();
     } catch {
       // Save failed silently — will retry on next change
+    } finally {
+      savingRef.current = false;
     }
-  }, [onPostSaved]);
+  }, [postId, onPostSaved]);
 
-  useImperativeHandle(ref, () => ({ save }), [save]);
-
-  // Load post when postId changes (save current first)
+  // Load post once on mount (key={postId} in App guarantees fresh instance per post)
   useEffect(() => {
     let cancelled = false;
-
-    const loadPost = async () => {
-      const loaded = await fetchPost(postId);
+    fetchPost(postId).then((loaded) => {
       if (cancelled) return;
       setPost(loaded);
       setContent(loaded.content);
+      contentRef.current = loaded.content;
+      savedContentRef.current = loaded.content;
       notifyContentChange(loaded.content);
       onPostLoaded(loaded);
-      setDirty(false);
       setStatusError(null);
-    };
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    if (dirtyRef.current) {
-      save().then(loadPost);
-    } else {
-      loadPost();
-    }
-
-    return () => {
-      cancelled = true;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [postId, save]);
-
-  // Debounced auto-save on content change
-  const handleContentChange = (value: string) => {
-    setContent(value);
-    notifyContentChange(value);
-    setDirty(true);
-
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      save();
-    }, AUTO_SAVE_DELAY);
-  };
-
-  // Save on unmount
+  // Flush any pending save on unmount (safety net for fast post switches)
   useEffect(() => {
     return () => {
-      if (dirtyRef.current) {
-        updatePost(postIdRef.current, { content: contentRef.current }).catch(
-          () => {}
-        );
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (contentRef.current !== savedContentRef.current) {
+        updatePost(postId, { content: contentRef.current }).catch(() => {});
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleContentChange = (value: string) => {
+    setContent(value);
+    contentRef.current = value;
+    notifyContentChange(value);
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(save, AUTO_SAVE_DELAY);
+  };
 
   const handleStatusChange = async (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
-
-    // Save any pending content first
-    if (dirtyRef.current) await save();
-
+    // Flush any pending content — wait until any in-flight save settles first
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (contentRef.current !== savedContentRef.current && !savingRef.current) {
+      await save();
+    }
     try {
       setStatusError(null);
       const updated = await changePostStatus(postId, newStatus);
       setPost(updated);
+      onPostLoaded(updated);
       onPostSaved();
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Status change failed");
@@ -214,7 +187,6 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
           <option value="ready">Ready</option>
           <option value="published">Published</option>
         </select>
-        {dirty && <span className="toolbar-dirty">*</span>}
         <span className="toolbar-sep">|</span>
         {fm.sourceId ? (
           <>
@@ -259,7 +231,6 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
           ref={editorRef}
           content={content}
           onContentChange={handleContentChange}
-          onSave={save}
           watermark={watermark}
         />
       </div>
@@ -290,4 +261,4 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
       )}
     </div>
   );
-});
+}

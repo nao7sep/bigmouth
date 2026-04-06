@@ -182,12 +182,13 @@ export async function deleteAsset(
 
 export async function generateMetadata(
   postId: string,
-  field: string
+  field: string,
+  content: string
 ): Promise<string> {
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, field }),
+    body: JSON.stringify({ postId, field, content }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -201,12 +202,13 @@ export async function generateMetadata(
 
 export async function generateMetadataBatch(
   postId: string,
-  fields: string[]
+  fields: string[],
+  content: string
 ): Promise<Record<string, { value: string } | { error: string }>> {
   const res = await fetch("/api/generate/batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, fields }),
+    body: JSON.stringify({ postId, fields, content }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -220,12 +222,13 @@ export async function generateMetadataBatch(
 
 export async function runAnalysis(
   postId: string,
-  promptName: string
+  promptName: string,
+  content: string
 ): Promise<string> {
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, promptName }),
+    body: JSON.stringify({ postId, promptName, content }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

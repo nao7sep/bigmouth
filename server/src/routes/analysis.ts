@@ -20,9 +20,10 @@ import { error as logError } from "../services/logger.js";
 export const analysisRouter = Router();
 
 analysisRouter.post("/", async (req, res) => {
-  const { postId, promptName } = req.body as {
+  const { postId, promptName, content } = req.body as {
     postId?: string;
     promptName?: string;
+    content?: string;
   };
 
   if (!postId || !promptName) {
@@ -50,7 +51,7 @@ analysisRouter.post("/", async (req, res) => {
     markerIndex >= 0
       ? prompt.text.slice(0, markerIndex).trim()
       : prompt.text.trim();
-  const userContent = post.content;
+  const userContent = content ?? post.content;
 
   let provider;
   try {

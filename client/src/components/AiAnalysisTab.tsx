@@ -5,10 +5,11 @@ import type { AnalysisPrompt } from "../types";
 
 interface AiAnalysisTabProps {
   postId: string;
-  analysisTrigger: number; // incremented by Cmd+Enter to auto-run
+  content: string;
+  analysisTrigger: number;
 }
 
-export function AiAnalysisTab({ postId, analysisTrigger }: AiAnalysisTabProps) {
+export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTabProps) {
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export function AiAnalysisTab({ postId, analysisTrigger }: AiAnalysisTabProps) {
     setError(null);
     setResult(null);
     try {
-      const text = await runAnalysis(postId, selectedPrompt);
+      const text = await runAnalysis(postId, selectedPrompt, content);
       setResult(text);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");

@@ -3,7 +3,6 @@ interface ShortcutsModalProps {
 }
 
 const SHORTCUTS = [
-  { key: "Cmd+S", description: "Save post immediately" },
   { key: "Cmd+N", description: "New post" },
   { key: "Cmd+E", description: "Open export modal" },
   { key: "Cmd+Enter", description: "Run AI analysis" },

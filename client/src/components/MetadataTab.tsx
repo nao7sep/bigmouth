@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PostFrontMatter, Target } from "../types";
+import type { Post, PostFrontMatter, Target } from "../types";
 import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
@@ -7,16 +7,20 @@ interface MetadataTabProps {
   postId: string;
   frontMatter: PostFrontMatter;
   target: Target | null;
+  content: string;
   extraFieldWatermark: string;
   onMetadataSaved: () => void;
+  onFrontMatterUpdated: (post: Post) => void;
 }
 
 export function MetadataTab({
   postId,
   frontMatter,
   target,
+  content,
   extraFieldWatermark,
   onMetadataSaved,
+  onFrontMatterUpdated,
 }: MetadataTabProps) {
   const requiresMetadata = target?.requiresMetadata ?? false;
   const lang = frontMatter.language;
@@ -26,6 +30,7 @@ export function MetadataTab({
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
   const [genError, setGenError] = useState<string | null>(null);
   const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
 
   const showGenError = (msg: string) => {
@@ -34,42 +39,55 @@ export function MetadataTab({
     genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
   };
 
+  // Flush all pending saves on unmount
   useEffect(() => {
-    setFields(extractFields(frontMatter));
-  }, [frontMatter, lang]);
+    return () => {
+      for (const t of Object.values(saveTimers.current)) clearTimeout(t);
+    };
+  }, []);
 
   const saveField = async (key: string, value: string | string[]) => {
     try {
-      await updatePost(postId, {
+      const updated = await updatePost(postId, {
         frontMatter: { [key]: value || undefined },
       });
+      onFrontMatterUpdated(updated);
       onMetadataSaved();
     } catch {
       // Save failed
     }
   };
 
-  const handleBlur = (key: string, value: string) => {
-    const current = (frontMatter as Record<string, unknown>)[key] ?? "";
-    if (value !== current) saveField(key, value);
+  const flushSave = (key: string, value: string, isTags: boolean) => {
+    if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
+    if (isTags) {
+      const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
+      saveField(key, tags);
+    } else {
+      saveField(key, value);
+    }
   };
 
-  const handleTagsBlur = (key: string, value: string) => {
-    const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
-    const current = (frontMatter as Record<string, unknown>)[key];
-    const currentStr = Array.isArray(current) ? current.join(", ") : "";
-    if (value !== currentStr) saveField(key, tags);
-  };
-
-  const updateField = (key: string, value: string) => {
+  const updateField = (key: string, value: string, isTags = false) => {
     setFields((prev) => ({ ...prev, [key]: value }));
+    if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
+    saveTimers.current[key] = setTimeout(() => {
+      delete saveTimers.current[key];
+      if (isTags) {
+        const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
+        saveField(key, tags);
+      } else {
+        saveField(key, value);
+      }
+    }, 1_000);
   };
 
   const generate = async (key: string, isTags = false) => {
     setGenerating((prev) => ({ ...prev, [key]: true }));
     try {
-      const value = await generateMetadata(postId, key);
-      updateField(key, value);
+      const value = await generateMetadata(postId, key, content);
+      if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
+      setFields((prev) => ({ ...prev, [key]: value }));
       if (isTags) {
         const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
         await saveField(key, tags);
@@ -98,7 +116,7 @@ export function MetadataTab({
           label="Slug"
           value={fields.slug}
           onChange={(v) => updateField("slug", v)}
-          onBlur={() => handleBlur("slug", fields.slug)}
+          onBlur={() => flushSave("slug", fields.slug, false)}
           onCopy={() => copyToClipboard(fields.slug, 'slug')}
           copied={copiedKey === 'slug'}
           onGenerate={() => generate("slug")}
@@ -122,14 +140,17 @@ export function MetadataTab({
 
   const generateAll = async () => {
     const fieldKeys = allFields.map((f) => f.key);
-    // Mark all as generating
+    // Cancel any pending debounced saves for these fields
+    for (const key of fieldKeys) {
+      if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
+    }
     setGenerating((prev) => {
       const next = { ...prev };
       for (const key of fieldKeys) next[key] = true;
       return next;
     });
     try {
-      const results = await generateMetadataBatch(postId, fieldKeys);
+      const results = await generateMetadataBatch(postId, fieldKeys, content);
       const failed: string[] = [];
       for (const { key, isTags } of allFields) {
         const result = results[key];
@@ -138,7 +159,7 @@ export function MetadataTab({
           continue;
         }
         const value = result.value;
-        updateField(key, value);
+        setFields((prev) => ({ ...prev, [key]: value }));
         if (isTags) {
           const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
           await saveField(key, tags);
@@ -172,9 +193,9 @@ export function MetadataTab({
         label="Title"
         value={fields.title}
         onChange={(v) => updateField("title", v)}
-        onBlur={() => handleBlur("title", fields.title)}
+        onBlur={() => flushSave("title", fields.title, false)}
         onCopy={() => copyToClipboard(fields.title, 'title')}
-          copied={copiedKey === 'title'}
+        copied={copiedKey === 'title'}
         onGenerate={() => generate("title")}
         generating={isGenerating("title")}
       />
@@ -183,7 +204,7 @@ export function MetadataTab({
           label="Title (English)"
           value={fields.titleEn ?? ""}
           onChange={(v) => updateField("titleEn", v)}
-          onBlur={() => handleBlur("titleEn", fields.titleEn ?? "")}
+          onBlur={() => flushSave("titleEn", fields.titleEn ?? "", false)}
           onCopy={() => copyToClipboard(fields.titleEn ?? "", 'titleEn')}
           copied={copiedKey === 'titleEn'}
           onGenerate={() => generate("titleEn")}
@@ -194,9 +215,9 @@ export function MetadataTab({
         label="Slug"
         value={fields.slug}
         onChange={(v) => updateField("slug", v)}
-        onBlur={() => handleBlur("slug", fields.slug)}
+        onBlur={() => flushSave("slug", fields.slug, false)}
         onCopy={() => copyToClipboard(fields.slug, 'slug')}
-          copied={copiedKey === 'slug'}
+        copied={copiedKey === 'slug'}
         onGenerate={() => generate("slug")}
         generating={isGenerating("slug")}
       />
@@ -214,10 +235,10 @@ export function MetadataTab({
       <MetaField
         label="Tags"
         value={fields.tags}
-        onChange={(v) => updateField("tags", v)}
-        onBlur={() => handleTagsBlur("tags", fields.tags)}
+        onChange={(v) => updateField("tags", v, true)}
+        onBlur={() => flushSave("tags", fields.tags, true)}
         onCopy={() => copyToClipboard(fields.tags, 'tags')}
-          copied={copiedKey === 'tags'}
+        copied={copiedKey === 'tags'}
         onGenerate={() => generate("tags", true)}
         generating={isGenerating("tags")}
         placeholder="tag1, tag2, tag3"
@@ -226,8 +247,8 @@ export function MetadataTab({
         <MetaField
           label="Tags (English)"
           value={fields.tagsEn ?? ""}
-          onChange={(v) => updateField("tagsEn", v)}
-          onBlur={() => handleTagsBlur("tagsEn", fields.tagsEn ?? "")}
+          onChange={(v) => updateField("tagsEn", v, true)}
+          onBlur={() => flushSave("tagsEn", fields.tagsEn ?? "", true)}
           onCopy={() => copyToClipboard(fields.tagsEn ?? "", 'tagsEn')}
           copied={copiedKey === 'tagsEn'}
           onGenerate={() => generate("tagsEn", true)}
@@ -239,9 +260,9 @@ export function MetadataTab({
         label="Description"
         value={fields.metaDescription}
         onChange={(v) => updateField("metaDescription", v)}
-        onBlur={() => handleBlur("metaDescription", fields.metaDescription)}
+        onBlur={() => flushSave("metaDescription", fields.metaDescription, false)}
         onCopy={() => copyToClipboard(fields.metaDescription, 'metaDescription')}
-          copied={copiedKey === 'metaDescription'}
+        copied={copiedKey === 'metaDescription'}
         onGenerate={() => generate("metaDescription")}
         generating={isGenerating("metaDescription")}
         multiline
@@ -251,7 +272,7 @@ export function MetadataTab({
           label="Description (English)"
           value={fields.metaDescriptionEn ?? ""}
           onChange={(v) => updateField("metaDescriptionEn", v)}
-          onBlur={() => handleBlur("metaDescriptionEn", fields.metaDescriptionEn ?? "")}
+          onBlur={() => flushSave("metaDescriptionEn", fields.metaDescriptionEn ?? "", false)}
           onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", 'metaDescriptionEn')}
           copied={copiedKey === 'metaDescriptionEn'}
           onGenerate={() => generate("metaDescriptionEn")}
@@ -263,9 +284,9 @@ export function MetadataTab({
         label="Extra"
         value={fields.extra}
         onChange={(v) => updateField("extra", v)}
-        onBlur={() => handleBlur("extra", fields.extra)}
+        onBlur={() => flushSave("extra", fields.extra, false)}
         onCopy={() => copyToClipboard(fields.extra, 'extra')}
-          copied={copiedKey === 'extra'}
+        copied={copiedKey === 'extra'}
         multiline
         placeholder={extraFieldWatermark}
       />

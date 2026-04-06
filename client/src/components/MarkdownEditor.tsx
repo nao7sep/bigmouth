@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState } from "@codemirror/state";
-import { EditorView, placeholder, keymap } from "@codemirror/view";
+import { EditorView, placeholder } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { basicSetup } from "codemirror";
@@ -12,19 +12,17 @@ export interface MarkdownEditorHandle {
 interface MarkdownEditorProps {
   content: string;
   onContentChange: (value: string) => void;
-  onSave: () => void;
   watermark: string;
 }
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
   function MarkdownEditor(
-    { content, onContentChange, onSave, watermark }: MarkdownEditorProps,
+    { content, onContentChange, watermark }: MarkdownEditorProps,
     ref
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onContentChange);
-  const onSaveRef = useRef(onSave);
   const suppressChangeRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
@@ -40,23 +38,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     },
   }));
 
-  // Keep callback refs current
+  // Keep callback ref current
   onChangeRef.current = onContentChange;
-  onSaveRef.current = onSave;
 
   // Create editor once
   useEffect(() => {
     if (!containerRef.current) return;
-
-    const saveKeymap = keymap.of([
-      {
-        key: "Mod-s",
-        run: () => {
-          onSaveRef.current();
-          return true;
-        },
-      },
-    ]);
 
     const updateListener = EditorView.updateListener.of((update) => {
       if (update.docChanged && !suppressChangeRef.current) {
@@ -70,7 +57,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         basicSetup,
         markdown({ codeLanguages: languages }),
         placeholder(watermark),
-        saveKeymap,
         updateListener,
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),

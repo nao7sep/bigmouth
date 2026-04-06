@@ -22,9 +22,10 @@ import { error as logError } from "../services/logger.js";
 export const generationRouter = Router();
 
 generationRouter.post("/", async (req, res) => {
-  const { postId, field } = req.body as {
+  const { postId, field, content } = req.body as {
     postId?: string;
     field?: string;
+    content?: string;
   };
 
   if (!postId || !field) {
@@ -37,6 +38,8 @@ generationRouter.post("/", async (req, res) => {
     res.status(404).json({ error: "Post not found" });
     return;
   }
+
+  const postContent = content ?? post.content;
 
   let provider;
   let systemPrompt: string;
@@ -64,7 +67,7 @@ generationRouter.post("/", async (req, res) => {
   }
 
   try {
-    const raw = await provider.generateText(systemPrompt, post.content);
+    const raw = await provider.generateText(systemPrompt, postContent);
     const value = raw.trim().replace(/^["']|["']$/g, "");
     res.json({ value });
   } catch (err) {
@@ -75,9 +78,10 @@ generationRouter.post("/", async (req, res) => {
 });
 
 generationRouter.post("/batch", async (req, res) => {
-  const { postId, fields } = req.body as {
+  const { postId, fields, content } = req.body as {
     postId?: string;
     fields?: string[];
+    content?: string;
   };
 
   if (!postId || !Array.isArray(fields) || fields.length === 0) {
@@ -90,6 +94,8 @@ generationRouter.post("/batch", async (req, res) => {
     res.status(404).json({ error: "Post not found" });
     return;
   }
+
+  const postContent = content ?? post.content;
 
   let provider;
   let customPrompts: Record<string, string>;
@@ -120,7 +126,7 @@ generationRouter.post("/batch", async (req, res) => {
         return { field, error: `Field is not generatable: ${field}` };
       }
       try {
-        const raw = await provider.generateText(systemPrompt, post.content);
+        const raw = await provider.generateText(systemPrompt, postContent);
         const value = raw.trim().replace(/^["']|["']$/g, "");
         return { field, value };
       } catch (err) {

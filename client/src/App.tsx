@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
-import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
+import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
 import { ExportModal } from "./components/ExportModal";
@@ -39,7 +39,6 @@ export function App() {
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
-  const centerPaneRef = useRef<CenterPaneHandle>(null);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -91,13 +90,8 @@ export function App() {
       // Don't intercept shortcuts when focus is inside an input, textarea, or select
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "TEXTAREA" || tag === "SELECT") return;
-      if (tag === "INPUT" && e.key !== "n" && e.key !== "e") return;
+      if (tag === "INPUT" && e.key !== "n") return;
 
-      if (e.key === "s" && selectedPostId) {
-        e.preventDefault();
-        centerPaneRef.current?.save();
-        return;
-      }
       if (e.key === "n") {
         e.preventDefault();
         setNewPostOpen(true);
@@ -171,7 +165,7 @@ export function App() {
         published={published}
         publishedTotal={publishedTotal}
         selectedPostId={selectedPostId}
-        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); }}
+        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); setEditorContent(""); setCurrentPost(null); }}
         onNewPost={handleNewPost}
         onLoadMorePublished={handleLoadMorePublished}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -181,7 +175,7 @@ export function App() {
       {selectedPostId ? (
         <>
           <CenterPane
-            ref={centerPaneRef}
+            key={selectedPostId}
             postId={selectedPostId}
             onPostSaved={loadPosts}
             onPostDeleted={handlePostDeleted}
@@ -207,6 +201,7 @@ export function App() {
             }
             extraFieldWatermark={extraFieldWatermark}
             onMetadataSaved={loadPosts}
+            onFrontMatterUpdated={setCurrentPost}
             activeTab={rightTab}
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
