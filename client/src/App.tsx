@@ -86,6 +86,12 @@ export function App() {
     document.addEventListener("mouseup", onUp);
   }, []);
 
+  // Clear stale post data whenever the selected post changes, regardless of how it changed
+  useEffect(() => {
+    setCurrentPost(null);
+    setEditorContent("");
+  }, [selectedPostId]);
+
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
       const data = await fetchPosts(pubOffset, pubBatchSize);
@@ -214,7 +220,7 @@ export function App() {
         published={published}
         publishedTotal={publishedTotal}
         selectedPostId={selectedPostId}
-        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); setEditorContent(""); setCurrentPost(null); }}
+        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); }}
         onNewPost={handleNewPost}
         onLoadMorePublished={handleLoadMorePublished}
         onOpenSettings={() => setSettingsOpen(true)}
