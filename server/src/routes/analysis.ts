@@ -51,7 +51,7 @@ analysisRouter.post("/", async (req, res) => {
     markerIndex >= 0
       ? prompt.text.slice(0, markerIndex).trim()
       : prompt.text.trim();
-  const userContent = content ?? post.content;
+  const userContent = (content?.trim()) ? content : post.content;
 
   let provider;
   try {

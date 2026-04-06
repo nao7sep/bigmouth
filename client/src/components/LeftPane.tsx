@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PostSummary } from "../types";
+import { getPostTitle } from "../util/postTitle";
 
 interface LeftPaneProps {
   drafts: PostSummary[];
@@ -228,7 +229,7 @@ function PostItem({
   timestampField: string;
 }) {
   const fm = post.frontMatter;
-  const displayName = fm.title || fm.slug || fm.id;
+  const displayName = getPostTitle(fm);
   const ts = (fm as Record<string, unknown>)[timestampField] as
     | string
     | undefined;

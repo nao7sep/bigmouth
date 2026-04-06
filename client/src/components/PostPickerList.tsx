@@ -1,4 +1,5 @@
 import type { PostPickerState } from "../hooks/usePostPicker";
+import { getPostTitle } from "../util/postTitle";
 
 interface PostPickerListProps extends PostPickerState {
   onSelect: (id: string, title: string) => void;
@@ -30,7 +31,7 @@ export function PostPickerList({
         ) : (
           posts.map((p) => {
             const fm = p.frontMatter;
-            const title = fm.title ?? fm.id;
+            const title = getPostTitle(fm);
             const sub = `${fm.target} · ${fm.language} · ${fm.status}`;
             return (
               <div

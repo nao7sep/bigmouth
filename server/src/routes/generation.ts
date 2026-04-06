@@ -39,7 +39,7 @@ generationRouter.post("/", async (req, res) => {
     return;
   }
 
-  const postContent = content ?? post.content;
+  const postContent = (content?.trim()) ? content : post.content;
 
   let provider;
   let systemPrompt: string;
@@ -95,7 +95,7 @@ generationRouter.post("/batch", async (req, res) => {
     return;
   }
 
-  const postContent = content ?? post.content;
+  const postContent = (content?.trim()) ? content : post.content;
 
   let provider;
   let customPrompts: Record<string, string>;

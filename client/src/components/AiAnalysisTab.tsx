@@ -27,7 +27,7 @@ export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTa
   }, []);
 
   const run = async () => {
-    if (!selectedPrompt || loading) return;
+    if (!selectedPrompt || loading || !content.trim()) return;
     setLoading(true);
     setError(null);
     setResult(null);
@@ -79,7 +79,7 @@ export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTa
         <button
           className="btn-analyze"
           onClick={run}
-          disabled={loading || !selectedPrompt}
+          disabled={loading || !selectedPrompt || !content.trim()}
         >
           {loading ? "Analyzing…" : "Analyze"}
         </button>

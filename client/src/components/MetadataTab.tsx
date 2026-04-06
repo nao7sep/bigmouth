@@ -25,6 +25,7 @@ export function MetadataTab({
   const requiresMetadata = target?.requiresMetadata ?? false;
   const lang = frontMatter.language;
   const isNonEnglish = lang !== "en";
+  const noContent = !content.trim();
 
   const [fields, setFields] = useState(() => extractFields(frontMatter));
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
@@ -49,7 +50,7 @@ export function MetadataTab({
   const saveField = async (key: string, value: string | string[]) => {
     try {
       const updated = await updatePost(postId, {
-        frontMatter: { [key]: value || undefined },
+        frontMatter: { [key]: value },
       });
       onFrontMatterUpdated(updated);
       onMetadataSaved();
@@ -83,6 +84,7 @@ export function MetadataTab({
   };
 
   const generate = async (key: string, isTags = false) => {
+    if (!content.trim()) return;
     setGenerating((prev) => ({ ...prev, [key]: true }));
     try {
       const value = await generateMetadata(postId, key, content);
@@ -101,7 +103,7 @@ export function MetadataTab({
     }
   };
 
-  const isGenerating = (key: string) => !!generating[key];
+  const isGenerating = (key: string) => noContent || !!generating[key];
 
   if (!requiresMetadata) {
     return (
@@ -139,6 +141,7 @@ export function MetadataTab({
   const anyGenerating = Object.values(generating).some(Boolean);
 
   const generateAll = async () => {
+    if (!content.trim()) return;
     const fieldKeys = allFields.map((f) => f.key);
     // Cancel any pending debounced saves for these fields
     for (const key of fieldKeys) {
@@ -226,7 +229,7 @@ export function MetadataTab({
         <button
           className="btn-generate-all"
           onClick={generateAll}
-          disabled={anyGenerating}
+          disabled={anyGenerating || noContent}
         >
           {anyGenerating ? "Generating…" : "Generate All"}
         </button>
