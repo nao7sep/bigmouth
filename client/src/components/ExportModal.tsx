@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Marked } from "marked";
+import removeMd from "remove-markdown";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 const marked = new Marked({ gfm: true, breaks: false });
@@ -18,10 +19,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
   const html = useMemo(() => marked.parse(content) as string, [content]);
 
-  const plainText = useMemo(() => {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return doc.body.textContent ?? "";
-  }, [html]);
+  const plainText = useMemo(() => removeMd(content), [content]);
 
   const output = format === "html" ? html : plainText;
   const filename = slug || "export";

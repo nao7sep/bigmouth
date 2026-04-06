@@ -101,12 +101,21 @@ export function getPost(id: string): Post | null {
 
   return {
     frontMatter: parsed.data as PostFrontMatter,
-    content: parsed.content,
+    content: trimBlankLines(parsed.content),
     filePath,
   };
 }
 
-// --- Create ---
+function trimBlankLines(text: string): string {
+  const lines = text.split("\n");
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === "") start++;
+  let end = lines.length - 1;
+  while (end >= start && lines[end].trim() === "") end--;
+  return start > end ? "" : lines.slice(start, end + 1).join("\n");
+}
+
+
 
 export function createPost(target: string, language: string, sourceId?: string): Post {
   const now = utcNow();
@@ -342,7 +351,7 @@ function writePostFile(
     delete cleanFm.metaDescriptionEn;
   }
 
-  const output = matter.stringify(content, cleanFm);
+  const output = matter.stringify(trimBlankLines(content), cleanFm);
   fs.writeFileSync(filePath, output);
 }
 
