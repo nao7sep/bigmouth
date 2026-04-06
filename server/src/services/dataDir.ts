@@ -10,14 +10,15 @@
  *   ~/.bigmouth/data/assets/
  *   ~/.bigmouth/data/logs/
  *   ~/.bigmouth/data/settings.json
+ *   ~/.bigmouth/data/aiconfigs.json
  *   ~/.bigmouth/data/targets.json
- *   ~/.bigmouth/data/prompts.json
+ *   ~/.bigmouth/data/prompts.json  →  now analysisprompts.json
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { DEFAULT_SETTINGS, DEFAULT_PROMPTS } from "../shared/defaults.js";
+import { DEFAULT_SETTINGS, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_AI_CONFIGS, DEFAULT_GENERATION_PROMPTS_DATA } from "../shared/defaults.js";
 import type { Target } from "../shared/types.js";
 
 const APP_DIR = path.join(os.homedir(), ".bigmouth");
@@ -72,6 +73,16 @@ function initializeDataDirectory(dataDir: string): void {
     JSON.stringify(DEFAULT_SETTINGS, null, 2) + "\n"
   );
 
+  writeIfMissing(
+    path.join(dataDir, "ai-configs.json"),
+    JSON.stringify(DEFAULT_AI_CONFIGS, null, 2) + "\n"
+  );
+
+  writeIfMissing(
+    path.join(dataDir, "generation-prompts.json"),
+    JSON.stringify(DEFAULT_GENERATION_PROMPTS_DATA, null, 2) + "\n"
+  );
+
   const emptyTargets: Target[] = [];
   writeIfMissing(
     path.join(dataDir, "targets.json"),
@@ -79,8 +90,8 @@ function initializeDataDirectory(dataDir: string): void {
   );
 
   writeIfMissing(
-    path.join(dataDir, "prompts.json"),
-    JSON.stringify(DEFAULT_PROMPTS, null, 2) + "\n"
+    path.join(dataDir, "analysis-prompts.json"),
+    JSON.stringify(DEFAULT_ANALYSIS_PROMPTS, null, 2) + "\n"
   );
 }
 

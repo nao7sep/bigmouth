@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import { fetchPrompts, runAnalysis } from "../api";
-import type { Prompt } from "../types";
+import { fetchAnalysisPrompts, runAnalysis } from "../api";
+import type { AnalysisPrompt } from "../types";
 
 interface AiAnalysisTabProps {
   postId: string;
@@ -9,7 +9,7 @@ interface AiAnalysisTabProps {
 }
 
 export function AiAnalysisTab({ postId, analysisTrigger }: AiAnalysisTabProps) {
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,7 +17,7 @@ export function AiAnalysisTab({ postId, analysisTrigger }: AiAnalysisTabProps) {
 
   // Load prompts on mount
   useEffect(() => {
-    fetchPrompts()
+    fetchAnalysisPrompts()
       .then((list) => {
         setPrompts(list);
         if (list.length > 0) setSelectedPrompt(list[0].name);

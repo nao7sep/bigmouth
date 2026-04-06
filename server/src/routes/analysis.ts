@@ -13,13 +13,13 @@
 
 import { Router } from "express";
 import { getPost } from "../services/postStore.js";
-import { getSettings, getPrompts } from "../services/configStore.js";
+import { getAnalysisPrompts, getAiConfigs } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { error as logError } from "../services/logger.js";
 
-export const analyzeRouter = Router();
+export const analysisRouter = Router();
 
-analyzeRouter.post("/", async (req, res) => {
+analysisRouter.post("/", async (req, res) => {
   const { postId, promptName } = req.body as {
     postId?: string;
     promptName?: string;
@@ -36,10 +36,10 @@ analyzeRouter.post("/", async (req, res) => {
     return;
   }
 
-  const prompts = getPrompts();
+  const prompts = getAnalysisPrompts();
   const prompt = prompts.find((p) => p.name === promptName);
   if (!prompt) {
-    res.status(404).json({ error: `Prompt not found: ${promptName}` });
+    res.status(404).json({ error: `Analysis prompt not found: ${promptName}` });
     return;
   }
 
@@ -54,9 +54,9 @@ analyzeRouter.post("/", async (req, res) => {
 
   let provider;
   try {
-    const settings = getSettings();
-    const activeConfig = settings.aiConfigs.find(
-      (c) => c.id === settings.activeAiConfigId
+    const aiConfigs = getAiConfigs();
+    const activeConfig = aiConfigs.configs.find(
+      (c) => c.id === aiConfigs.activeId
     );
     if (!activeConfig) {
       res.status(503).json({ error: "No active AI configuration selected" });

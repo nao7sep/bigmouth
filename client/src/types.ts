@@ -44,7 +44,7 @@ export interface Target {
   requiresMetadata: boolean;
 }
 
-export interface Prompt {
+export interface AnalysisPrompt {
   name: string;
   text: string;
 }
@@ -69,16 +69,22 @@ export interface AiConfig {
   model: string;
 }
 
+export interface GenerationPromptsData {
+  preamble: string;
+  prompts: Record<string, string>;
+}
+
+export interface AiConfigsData {
+  configs: AiConfig[];
+  activeId: string;
+}
+
 export interface Settings {
   port: number;
   timezone: string;
-  supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
+  supportedLanguages: string[];
   publishedPostsPerLoad: number;
   maxUploadMb: number;
   editorWatermark: string;
   extraFieldWatermark: string;
-  aiConfigs: AiConfig[];
-  activeAiConfigId: string;
-  generationPrompts: Record<string, string>;
-  generationPreamble: string;
 }

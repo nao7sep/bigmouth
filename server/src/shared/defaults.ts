@@ -2,13 +2,31 @@
  * Default values used when initializing the app for the first time.
  */
 
-import type { Settings, Prompt } from "./types.js";
+import type { Settings, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "./types.js";
 import { nanoid } from "nanoid";
-import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generatePrompts.js";
+import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generationPrompts.js";
 
 export const DEFAULT_PORT = 3141;
 
 const defaultAiConfigId = nanoid();
+
+export const DEFAULT_AI_CONFIGS: AiConfigsData = {
+  configs: [
+    {
+      id: defaultAiConfigId,
+      name: "Default",
+      provider: "claude",
+      apiKey: "",
+      model: "claude-sonnet-4-6",
+    },
+  ],
+  activeId: defaultAiConfigId,
+};
+
+export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
+  preamble: DEFAULT_GENERATION_PREAMBLE,
+  prompts: { ...DEFAULT_GENERATION_PROMPTS },
+};
 
 export const DEFAULT_SETTINGS: Settings = {
   port: DEFAULT_PORT,
@@ -20,21 +38,9 @@ export const DEFAULT_SETTINGS: Settings = {
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:
     "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://...",
-  aiConfigs: [
-    {
-      id: defaultAiConfigId,
-      name: "Default",
-      provider: "claude",
-      apiKey: "",
-      model: "claude-sonnet-4-6",
-    },
-  ],
-  activeAiConfigId: defaultAiConfigId,
-  generationPrompts: { ...DEFAULT_GENERATION_PROMPTS },
-  generationPreamble: DEFAULT_GENERATION_PREAMBLE,
 };
 
-export const DEFAULT_PROMPTS: Prompt[] = [
+export const DEFAULT_ANALYSIS_PROMPTS: AnalysisPrompt[] = [
   {
     name: "Safety & Quality Review",
     text: `Review the following post for publishing readiness. Check for:

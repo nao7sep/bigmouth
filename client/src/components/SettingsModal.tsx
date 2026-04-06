@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { nanoid } from "nanoid";
-import type { Settings, Target, Prompt, AiConfig } from "../types";
+import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "../types";
 import { AI_PROVIDERS } from "../types";
 import {
   fetchSettings,
   saveSettings,
   fetchTargets,
   saveTargets,
-  fetchPrompts,
-  savePrompts,
+  fetchAnalysisPrompts,
+  saveAnalysisPrompts,
+  fetchAiConfigs,
+  saveAiConfigs,
+  fetchGenerationPrompts,
+  saveGenerationPrompts,
 } from "../api";
 import {
   DEFAULT_GENERATION_PROMPTS,
@@ -26,7 +30,7 @@ type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
 const TAB_LABELS: Record<Tab, string> = {
   general: "General",
   targets: "Targets",
-  providers: "Providers",
+  providers: "AI Configs",
   analysis: "Analysis",
   generation: "Generation",
 };
@@ -37,14 +41,18 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
+  const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchSettings().then(setSettings).catch(() => {});
+    fetchAiConfigs().then(setAiConfigs).catch(() => {});
+    fetchGenerationPrompts().then(setGenerationPrompts).catch(() => {});
     fetchTargets().then(setTargets).catch(() => {});
-    fetchPrompts().then(setPrompts).catch(() => {});
+    fetchAnalysisPrompts().then(setPrompts).catch(() => {});
   }, []);
 
   const isValid = (): boolean => {
@@ -70,7 +78,7 @@ export function SettingsModal({
     }
 
     // AI configs
-    if (settings.aiConfigs.some((c) => !c.name.trim() || !c.model.trim())) return false;
+    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim())) return false;
 
     // Targets
     if (targets.some((t) => !t.name.trim())) return false;
@@ -86,14 +94,18 @@ export function SettingsModal({
   const canSave = !saving && isValid();
 
   const handleSaveAll = async () => {
-    if (!settings) return;
+    if (!settings || !aiConfigs || !generationPrompts) return;
     setSaving(true);
     try {
-      const [, savedTargets, savedPrompts] = await Promise.all([
+      const [, savedAiConfigs, savedGenPrompts, savedTargets, savedPrompts] = await Promise.all([
         saveSettings(settings),
+        saveAiConfigs(aiConfigs),
+        saveGenerationPrompts(generationPrompts),
         saveTargets(targets),
-        savePrompts(prompts),
+        saveAnalysisPrompts(prompts),
       ]);
+      setAiConfigs(savedAiConfigs);
+      setGenerationPrompts(savedGenPrompts);
       setTargets(savedTargets);
       setPrompts(savedPrompts);
       onSettingsChanged();
@@ -135,10 +147,10 @@ export function SettingsModal({
               onChange={setSettings}
             />
           )}
-          {tab === "providers" && settings && (
+          {tab === "providers" && aiConfigs && (
             <AiTab
-              settings={settings}
-              onChange={setSettings}
+              aiConfigs={aiConfigs}
+              onChange={setAiConfigs}
             />
           )}
           {tab === "targets" && (
@@ -149,15 +161,15 @@ export function SettingsModal({
             />
           )}
           {tab === "analysis" && (
-            <PromptsTab
+            <AnalysisPromptsTab
               prompts={prompts}
               onChange={setPrompts}
             />
           )}
-          {tab === "generation" && settings && (
+          {tab === "generation" && generationPrompts && (
             <GenerationTab
-              settings={settings}
-              onChange={setSettings}
+              data={generationPrompts}
+              onChange={setGenerationPrompts}
             />
           )}
         </div>
@@ -275,16 +287,16 @@ function GeneralTab({
 // --- AI ---
 
 function AiTab({
-  settings,
+  aiConfigs,
   onChange,
 }: {
-  settings: Settings;
-  onChange: (s: Settings) => void;
+  aiConfigs: AiConfigsData;
+  onChange: (d: AiConfigsData) => void;
 }) {
   const updateConfig = (id: string, patch: Partial<AiConfig>) =>
     onChange({
-      ...settings,
-      aiConfigs: settings.aiConfigs.map((c) =>
+      ...aiConfigs,
+      configs: aiConfigs.configs.map((c) =>
         c.id === id ? { ...c, ...patch } : c
       ),
     });
@@ -292,38 +304,37 @@ function AiTab({
   const addConfig = () => {
     const id = nanoid();
     onChange({
-      ...settings,
-      aiConfigs: [
-        ...settings.aiConfigs,
+      ...aiConfigs,
+      configs: [
+        ...aiConfigs.configs,
         { id, name: "", provider: "claude", apiKey: "", model: "" },
       ],
     });
   };
 
   const deleteConfig = (id: string) => {
-    const remaining = settings.aiConfigs.filter((c) => c.id !== id);
+    const remaining = aiConfigs.configs.filter((c) => c.id !== id);
     onChange({
-      ...settings,
-      aiConfigs: remaining,
-      activeAiConfigId:
-        settings.activeAiConfigId === id
+      configs: remaining,
+      activeId:
+        aiConfigs.activeId === id
           ? (remaining[0]?.id ?? "")
-          : settings.activeAiConfigId,
+          : aiConfigs.activeId,
     });
   };
 
   return (
     <div className="settings-section">
       <div className="form-field">
-        <label className="form-label">Active configuration</label>
+        <label className="form-label">Active AI config</label>
         <select
           className="form-select"
-          value={settings.activeAiConfigId}
+          value={aiConfigs.activeId}
           onChange={(e) =>
-            onChange({ ...settings, activeAiConfigId: e.target.value })
+            onChange({ ...aiConfigs, activeId: e.target.value })
           }
         >
-          {settings.aiConfigs.map((c) => (
+          {aiConfigs.configs.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name || "(unnamed)"}
             </option>
@@ -331,9 +342,9 @@ function AiTab({
         </select>
       </div>
 
-      <div className="settings-subheading">Configurations</div>
+      <div className="settings-subheading">AI Configs</div>
 
-      {settings.aiConfigs.map((c) => (
+      {aiConfigs.configs.map((c) => (
         <div key={c.id} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -384,7 +395,7 @@ function AiTab({
           <button
             className="btn-toolbar btn-delete"
             onClick={() => deleteConfig(c.id)}
-            disabled={settings.aiConfigs.length === 1}
+            disabled={aiConfigs.configs.length === 1}
           >
             Delete
           </button>
@@ -392,7 +403,7 @@ function AiTab({
       ))}
 
       <button className="btn-toolbar" onClick={addConfig}>
-        + Add Configuration
+        + Add AI Config
       </button>
     </div>
   );
@@ -495,33 +506,26 @@ function TargetsTab({
 // --- Generation ---
 
 function GenerationTab({
-  settings,
+  data,
   onChange,
 }: {
-  settings: Settings;
-  onChange: (s: Settings) => void;
+  data: GenerationPromptsData;
+  onChange: (d: GenerationPromptsData) => void;
 }) {
-  const currentPreamble = settings.generationPreamble ?? DEFAULT_GENERATION_PREAMBLE;
-  const isPreambleDefault = currentPreamble === DEFAULT_GENERATION_PREAMBLE;
+  const isPreambleDefault = data.preamble === DEFAULT_GENERATION_PREAMBLE;
 
   const updatePreamble = (value: string) => {
-    onChange({ ...settings, generationPreamble: value });
+    onChange({ ...data, preamble: value });
   };
 
   const updatePrompt = (key: string, value: string) => {
-    onChange({
-      ...settings,
-      generationPrompts: { ...settings.generationPrompts, [key]: value },
-    });
+    onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
 
   const resetPrompt = (key: string) => {
     onChange({
-      ...settings,
-      generationPrompts: {
-        ...settings.generationPrompts,
-        [key]: DEFAULT_GENERATION_PROMPTS[key],
-      },
+      ...data,
+      prompts: { ...data.prompts, [key]: DEFAULT_GENERATION_PROMPTS[key] },
     });
   };
 
@@ -548,7 +552,7 @@ function GenerationTab({
           <textarea
             className="form-input"
             rows={4}
-            value={currentPreamble}
+            value={data.preamble}
             onChange={(e) => updatePreamble(e.target.value)}
             style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
           />
@@ -556,7 +560,7 @@ function GenerationTab({
       </div>
 
       {Object.keys(DEFAULT_GENERATION_PROMPTS).map((key) => {
-        const current = settings.generationPrompts?.[key] ?? DEFAULT_GENERATION_PROMPTS[key];
+        const current = data.prompts?.[key] ?? DEFAULT_GENERATION_PROMPTS[key];
         const isDefault = current === DEFAULT_GENERATION_PROMPTS[key];
         return (
           <div key={key} className="settings-list-item">
@@ -590,18 +594,18 @@ function GenerationTab({
 
 // --- Prompts ---
 
-function PromptsTab({
+function AnalysisPromptsTab({
   prompts,
   onChange,
 }: {
-  prompts: Prompt[];
-  onChange: (p: Prompt[]) => void;
+  prompts: AnalysisPrompt[];
+  onChange: (p: AnalysisPrompt[]) => void;
 }) {
   const addPrompt = () => {
     onChange([...prompts, { name: "", text: "" }]);
   };
 
-  const updatePrompt = (index: number, patch: Partial<Prompt>) => {
+  const updatePrompt = (index: number, patch: Partial<AnalysisPrompt>) => {
     const updated = prompts.map((p, i) =>
       i === index ? { ...p, ...patch } : p
     );

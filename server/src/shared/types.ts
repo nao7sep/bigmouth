@@ -72,15 +72,21 @@ export interface Settings {
   maxUploadMb: number;             // max asset upload size in MB (default: 500)
   editorWatermark: string;         // placeholder text in the empty editor
   extraFieldWatermark: string;     // placeholder text in the extra textarea
-  aiConfigs: AiConfig[];
-  activeAiConfigId: string;
-  generationPrompts: Record<string, string>; // custom prompts for metadata field generation
-  generationPreamble: string;                // custom preamble prepended to every generation prompt
 }
 
-// --- Prompt ---
+export interface AiConfigsData {
+  configs: AiConfig[];
+  activeId: string;
+}
 
-export interface Prompt {
+export interface GenerationPromptsData {
+  preamble: string;
+  prompts: Record<string, string>;
+}
+
+// --- Analysis Prompt ---
+
+export interface AnalysisPrompt {
   name: string; // display label
   text: string; // full prompt text, {content} is replaced with post content
 }

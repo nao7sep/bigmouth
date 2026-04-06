@@ -1,4 +1,4 @@
-import type { Post, PostListResponse, Prompt, Settings, Target, AssetMeta } from "./types";
+import type { Post, PostListResponse, AnalysisPrompt, Settings, Target, AssetMeta, AiConfigsData, GenerationPromptsData } from "./types";
 
 export async function fetchPosts(
   publishedOffset = 0,
@@ -92,6 +92,38 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
   return res.json();
 }
 
+export async function fetchAiConfigs(): Promise<AiConfigsData> {
+  const res = await fetch("/api/ai-configs");
+  if (!res.ok) throw new Error(`Failed to fetch AI configs: ${res.status}`);
+  return res.json();
+}
+
+export async function saveAiConfigs(data: AiConfigsData): Promise<AiConfigsData> {
+  const res = await fetch("/api/ai-configs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to save AI configs: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
+  const res = await fetch("/api/generation-prompts");
+  if (!res.ok) throw new Error(`Failed to fetch generation prompts: ${res.status}`);
+  return res.json();
+}
+
+export async function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
+  const res = await fetch("/api/generation-prompts", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to save generation prompts: ${res.status}`);
+  return res.json();
+}
+
 export async function saveTargets(targets: Target[]): Promise<Target[]> {
   const res = await fetch("/api/targets", {
     method: "PUT",
@@ -102,13 +134,13 @@ export async function saveTargets(targets: Target[]): Promise<Target[]> {
   return res.json();
 }
 
-export async function fetchPrompts(): Promise<Prompt[]> {
+export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
   const res = await fetch("/api/prompts");
   if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
   return res.json();
 }
 
-export async function savePrompts(prompts: Prompt[]): Promise<Prompt[]> {
+export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
   const res = await fetch("/api/prompts", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

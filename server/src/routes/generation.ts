@@ -14,14 +14,14 @@
 
 import { Router } from "express";
 import { getPost } from "../services/postStore.js";
-import { getSettings } from "../services/configStore.js";
+import { getGenerationPrompts, getAiConfigs } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { systemPromptForField } from "../ai/generatePrompts.js";
+import { systemPromptForField } from "../ai/generationPrompts.js";
 import { error as logError } from "../services/logger.js";
 
-export const generateRouter = Router();
+export const generationRouter = Router();
 
-generateRouter.post("/", async (req, res) => {
+generationRouter.post("/", async (req, res) => {
   const { postId, field } = req.body as {
     postId?: string;
     field?: string;
@@ -41,15 +41,16 @@ generateRouter.post("/", async (req, res) => {
   let provider;
   let systemPrompt: string;
   try {
-    const settings = getSettings();
-    const resolved = systemPromptForField(field, settings.generationPreamble, settings.generationPrompts);
+    const genPrompts = getGenerationPrompts();
+    const resolved = systemPromptForField(field, genPrompts.preamble, genPrompts.prompts);
     if (!resolved) {
       res.status(400).json({ error: `Field is not generatable: ${field}` });
       return;
     }
     systemPrompt = resolved;
-    const activeConfig = settings.aiConfigs.find(
-      (c) => c.id === settings.activeAiConfigId
+    const aiConfigs = getAiConfigs();
+    const activeConfig = aiConfigs.configs.find(
+      (c) => c.id === aiConfigs.activeId
     );
     if (!activeConfig) {
       res.status(503).json({ error: "No active AI configuration selected" });
@@ -73,7 +74,7 @@ generateRouter.post("/", async (req, res) => {
   }
 });
 
-generateRouter.post("/batch", async (req, res) => {
+generationRouter.post("/batch", async (req, res) => {
   const { postId, fields } = req.body as {
     postId?: string;
     fields?: string[];
@@ -94,11 +95,12 @@ generateRouter.post("/batch", async (req, res) => {
   let customPrompts: Record<string, string>;
   let preamble: string;
   try {
-    const settings = getSettings();
-    customPrompts = settings.generationPrompts;
-    preamble = settings.generationPreamble;
-    const activeConfig = settings.aiConfigs.find(
-      (c) => c.id === settings.activeAiConfigId
+    const genPrompts = getGenerationPrompts();
+    customPrompts = genPrompts.prompts;
+    preamble = genPrompts.preamble;
+    const aiConfigs = getAiConfigs();
+    const activeConfig = aiConfigs.configs.find(
+      (c) => c.id === aiConfigs.activeId
     );
     if (!activeConfig) {
       res.status(503).json({ error: "No active AI configuration selected" });

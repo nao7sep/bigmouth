@@ -10,9 +10,11 @@ import type { Settings } from "./shared/types.js";
 import { postsRouter } from "./routes/posts.js";
 import { settingsRouter } from "./routes/settings.js";
 import { targetsRouter } from "./routes/targets.js";
-import { promptsRouter } from "./routes/prompts.js";
-import { analyzeRouter } from "./routes/analyze.js";
-import { generateRouter } from "./routes/generate.js";
+import { aiConfigsRouter } from "./routes/aiConfigs.js";
+import { analysisPromptsRouter } from "./routes/analysisPrompts.js";
+import { generationPromptsRouter } from "./routes/generationPrompts.js";
+import { analysisRouter } from "./routes/analysis.js";
+import { generationRouter } from "./routes/generation.js";
 import { assetsRouter } from "./routes/assets.js";
 import { initConfigStore } from "./services/configStore.js";
 import { initAssetStore } from "./services/assetStore.js";
@@ -43,9 +45,11 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/posts", postsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/targets", targetsRouter);
-app.use("/api/prompts", promptsRouter);
-app.use("/api/analyze", analyzeRouter);
-app.use("/api/generate", generateRouter);
+app.use("/api/ai-configs", aiConfigsRouter);
+app.use("/api/prompts", analysisPromptsRouter);
+app.use("/api/generation-prompts", generationPromptsRouter);
+app.use("/api/analyze", analysisRouter);
+app.use("/api/generate", generationRouter);
 app.use("/api/assets", assetsRouter);
 
 // Serve uploaded asset files at /assets/:postId/:filename

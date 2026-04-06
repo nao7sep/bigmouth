@@ -4,9 +4,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { Settings, Target, Prompt } from "../shared/types.js";
+import type { Settings, Target, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
-import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generatePrompts.js";
 
 let dataDir = "";
 
@@ -18,37 +17,36 @@ export function initConfigStore(dataDirectory: string): void {
 
 export function getSettings(): Settings {
   const raw = fs.readFileSync(settingsPath(), "utf-8");
-  const settings = JSON.parse(raw) as Settings;
+  return JSON.parse(raw) as Settings;
+}
 
-  // Deobfuscate API keys for in-memory use
-  for (const config of settings.aiConfigs ?? []) {
+export function saveSettings(settings: Settings): void {
+  fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n");
+}
+
+// --- AI Configs ---
+
+export function getAiConfigs(): AiConfigsData {
+  const raw = fs.readFileSync(aiConfigsPath(), "utf-8");
+  const data = JSON.parse(raw) as AiConfigsData;
+
+  for (const config of data.configs ?? []) {
     if (config.apiKey) {
       config.apiKey = deobfuscate(config.apiKey);
     }
   }
 
-  // Back-fill any missing generation prompt keys (forward-compat for older installs)
-  settings.generationPrompts = {
-    ...DEFAULT_GENERATION_PROMPTS,
-    ...(settings.generationPrompts ?? {}),
-  };
-  if (!settings.generationPreamble) {
-    settings.generationPreamble = DEFAULT_GENERATION_PREAMBLE;
-  }
-
-  return settings;
+  return data;
 }
 
-export function saveSettings(settings: Settings): void {
-  // Obfuscate API keys before writing to disk
-  const toWrite = structuredClone(settings);
-  for (const config of toWrite.aiConfigs ?? []) {
+export function saveAiConfigs(data: AiConfigsData): void {
+  const toWrite = structuredClone(data);
+  for (const config of toWrite.configs ?? []) {
     if (config.apiKey) {
       config.apiKey = obfuscate(config.apiKey);
     }
   }
-
-  fs.writeFileSync(settingsPath(), JSON.stringify(toWrite, null, 2) + "\n");
+  fs.writeFileSync(aiConfigsPath(), JSON.stringify(toWrite, null, 2) + "\n");
 }
 
 // --- Targets ---
@@ -62,15 +60,26 @@ export function saveTargets(targets: Target[]): void {
   fs.writeFileSync(targetsPath(), JSON.stringify(targets, null, 2) + "\n");
 }
 
-// --- Prompts ---
+// --- Analysis Prompts ---
 
-export function getPrompts(): Prompt[] {
+export function getAnalysisPrompts(): AnalysisPrompt[] {
   const raw = fs.readFileSync(promptsPath(), "utf-8");
-  return JSON.parse(raw) as Prompt[];
+  return JSON.parse(raw) as AnalysisPrompt[];
 }
 
-export function savePrompts(prompts: Prompt[]): void {
+export function saveAnalysisPrompts(prompts: AnalysisPrompt[]): void {
   fs.writeFileSync(promptsPath(), JSON.stringify(prompts, null, 2) + "\n");
+}
+
+// --- Generation Prompts ---
+
+export function getGenerationPrompts(): GenerationPromptsData {
+  const raw = fs.readFileSync(generationPromptsPath(), "utf-8");
+  return JSON.parse(raw) as GenerationPromptsData;
+}
+
+export function saveGenerationPrompts(data: GenerationPromptsData): void {
+  fs.writeFileSync(generationPromptsPath(), JSON.stringify(data, null, 2) + "\n");
 }
 
 // --- Paths ---
@@ -79,10 +88,18 @@ function settingsPath(): string {
   return path.join(dataDir, "settings.json");
 }
 
+function aiConfigsPath(): string {
+  return path.join(dataDir, "ai-configs.json");
+}
+
 function targetsPath(): string {
   return path.join(dataDir, "targets.json");
 }
 
 function promptsPath(): string {
-  return path.join(dataDir, "prompts.json");
+  return path.join(dataDir, "analysis-prompts.json");
+}
+
+function generationPromptsPath(): string {
+  return path.join(dataDir, "generation-prompts.json");
 }
