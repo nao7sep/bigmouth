@@ -180,7 +180,7 @@ export function SettingsModal({
             onClick={handleSaveAll}
             disabled={!canSave}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>

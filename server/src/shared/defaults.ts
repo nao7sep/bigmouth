@@ -50,6 +50,7 @@ export const DEFAULT_ANALYSIS_PROMPTS: AnalysisPrompt[] = [
 - Offensive content: language that could be read as insulting, discriminatory, or needlessly provocative
 - Overclaiming: statements presented as facts without evidence, or claims that are stronger than what the content supports
 - Tone issues: sections that feel inconsistent, overly casual for the topic, or unintentionally aggressive
+- Placeholder or incomplete content: TODO/FIXME markers, example.com URLs, lorem ipsum, incomplete sentences, or anything that looks unfinished
 - Significant grammatical errors in the languages used in the post (minor issues are acceptable — the goal is not perfect writing)
 
 For each finding, explain:

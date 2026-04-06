@@ -53,7 +53,7 @@ export function AiAnalysisTab({ postId, analysisTrigger }: AiAnalysisTabProps) {
     return (
       <div className="ai-empty">
         No prompts configured. Add prompts in{" "}
-        <strong>Settings → Prompts</strong>.
+        <strong>Settings → Analysis</strong>.
       </div>
     );
   }

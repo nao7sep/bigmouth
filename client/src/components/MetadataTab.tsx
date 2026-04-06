@@ -180,7 +180,7 @@ export function MetadataTab({
       />
       {isNonEnglish && (
         <MetaField
-          label="Title (en)"
+          label="Title (English)"
           value={fields.titleEn ?? ""}
           onChange={(v) => updateField("titleEn", v)}
           onBlur={() => handleBlur("titleEn", fields.titleEn ?? "")}
@@ -224,7 +224,7 @@ export function MetadataTab({
       />
       {isNonEnglish && (
         <MetaField
-          label="Tags (en)"
+          label="Tags (English)"
           value={fields.tagsEn ?? ""}
           onChange={(v) => updateField("tagsEn", v)}
           onBlur={() => handleTagsBlur("tagsEn", fields.tagsEn ?? "")}
@@ -248,7 +248,7 @@ export function MetadataTab({
       />
       {isNonEnglish && (
         <MetaField
-          label="Description (en)"
+          label="Description (English)"
           value={fields.metaDescriptionEn ?? ""}
           onChange={(v) => updateField("metaDescriptionEn", v)}
           onBlur={() => handleBlur("metaDescriptionEn", fields.metaDescriptionEn ?? "")}
@@ -303,16 +303,6 @@ function MetaField({
       <div className="meta-field-header">
         <label className="meta-field-label">{label}</label>
         <div className="meta-field-actions">
-          {onGenerate && (
-            <button
-              className="meta-field-generate"
-              onClick={onGenerate}
-              disabled={generating}
-              title="Generate with AI"
-            >
-              {generating ? "…" : "Gen"}
-            </button>
-          )}
           <button
             className="meta-field-copy"
             onClick={onCopy}
@@ -320,6 +310,16 @@ function MetaField({
           >
             {copied ? "✓ Copied" : "Copy"}
           </button>
+          {onGenerate && (
+            <button
+              className="meta-field-generate"
+              onClick={onGenerate}
+              disabled={generating}
+              title="Generate with AI"
+            >
+              {generating ? "…" : "Generate"}
+            </button>
+          )}
         </div>
       </div>
       {multiline ? (

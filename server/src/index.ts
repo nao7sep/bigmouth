@@ -46,7 +46,7 @@ app.use("/api/posts", postsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/targets", targetsRouter);
 app.use("/api/ai-configs", aiConfigsRouter);
-app.use("/api/prompts", analysisPromptsRouter);
+app.use("/api/analysis-prompts", analysisPromptsRouter);
 app.use("/api/generation-prompts", generationPromptsRouter);
 app.use("/api/analyze", analysisRouter);
 app.use("/api/generate", generationRouter);

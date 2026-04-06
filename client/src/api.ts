@@ -135,13 +135,13 @@ export async function saveTargets(targets: Target[]): Promise<Target[]> {
 }
 
 export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
-  const res = await fetch("/api/prompts");
+  const res = await fetch("/api/analysis-prompts");
   if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
   return res.json();
 }
 
 export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
-  const res = await fetch("/api/prompts", {
+  const res = await fetch("/api/analysis-prompts", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prompts),

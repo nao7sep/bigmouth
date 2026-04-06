@@ -10,9 +10,10 @@
  *   ~/.bigmouth/data/assets/
  *   ~/.bigmouth/data/logs/
  *   ~/.bigmouth/data/settings.json
- *   ~/.bigmouth/data/aiconfigs.json
+ *   ~/.bigmouth/data/ai-configs.json
  *   ~/.bigmouth/data/targets.json
- *   ~/.bigmouth/data/prompts.json  →  now analysisprompts.json
+ *   ~/.bigmouth/data/analysis-prompts.json
+ *   ~/.bigmouth/data/generation-prompts.json
  */
 
 import fs from "node:fs";

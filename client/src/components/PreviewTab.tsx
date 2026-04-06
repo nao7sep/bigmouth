@@ -20,7 +20,7 @@ export function PreviewTab({ content, postId }: PreviewTabProps) {
   }, [content, postId]);
 
   if (!html) {
-    return <div className="preview-empty">No content yet.</div>;
+    return <div className="preview-empty">No content yet</div>;
   }
 
   return (
