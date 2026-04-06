@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Settings, Target, Prompt } from "../types";
+import type { Settings, Target, Prompt, AiConfig } from "../types";
+import { AI_PROVIDERS } from "../types";
 import {
   fetchSettings,
   saveSettings,
@@ -15,6 +16,13 @@ interface SettingsModalProps {
 }
 
 type Tab = "general" | "targets" | "ai" | "prompts";
+
+const TAB_LABELS: Record<Tab, string> = {
+  general: "General",
+  targets: "Targets",
+  ai: "AI",
+  prompts: "Prompts",
+};
 
 export function SettingsModal({
   onClose,
@@ -85,7 +93,7 @@ export function SettingsModal({
               className={`settings-tab${tab === t ? " active" : ""}`}
               onClick={() => setTab(t)}
             >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -225,37 +233,119 @@ function AiTab({
   onSave: () => void;
   saving: boolean;
 }) {
-  const updateAi = (patch: Partial<Settings["ai"]>) =>
-    onChange({ ...settings, ai: { ...settings.ai, ...patch } });
+  const updateConfig = (id: string, patch: Partial<AiConfig>) =>
+    onChange({
+      ...settings,
+      aiConfigs: settings.aiConfigs.map((c) =>
+        c.id === id ? { ...c, ...patch } : c
+      ),
+    });
+
+  const addConfig = () => {
+    const id = crypto.randomUUID();
+    onChange({
+      ...settings,
+      aiConfigs: [
+        ...settings.aiConfigs,
+        { id, name: "", provider: "claude", apiKey: "", model: "" },
+      ],
+    });
+  };
+
+  const removeConfig = (id: string) => {
+    const remaining = settings.aiConfigs.filter((c) => c.id !== id);
+    onChange({
+      ...settings,
+      aiConfigs: remaining,
+      activeAiConfigId:
+        settings.activeAiConfigId === id
+          ? (remaining[0]?.id ?? "")
+          : settings.activeAiConfigId,
+    });
+  };
 
   return (
     <div className="settings-section">
       <div className="form-field">
-        <label className="form-label">Provider</label>
-        <input
-          className="form-input"
-          value={settings.ai.provider}
-          onChange={(e) => updateAi({ provider: e.target.value })}
-        />
+        <label className="form-label">Active configuration</label>
+        <select
+          className="form-select"
+          value={settings.activeAiConfigId}
+          onChange={(e) =>
+            onChange({ ...settings, activeAiConfigId: e.target.value })
+          }
+        >
+          {settings.aiConfigs.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name || "(unnamed)"}
+            </option>
+          ))}
+        </select>
       </div>
-      <div className="form-field">
-        <label className="form-label">Model</label>
-        <input
-          className="form-input"
-          value={settings.ai.model}
-          onChange={(e) => updateAi({ model: e.target.value })}
-        />
-      </div>
-      <div className="form-field">
-        <label className="form-label">API Key</label>
-        <input
-          className="form-input"
-          type="password"
-          value={settings.ai.apiKey}
-          onChange={(e) => updateAi({ apiKey: e.target.value })}
-          placeholder="Enter API key"
-        />
-      </div>
+
+      <div className="settings-subheading">Configurations</div>
+
+      {settings.aiConfigs.map((c) => (
+        <div key={c.id} className="settings-list-item">
+          <div className="form-field">
+            <label className="form-label">Name</label>
+            <input
+              className="form-input"
+              value={c.name}
+              onChange={(e) => updateConfig(c.id, { name: e.target.value })}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label className="form-label">Provider</label>
+              <select
+                className="form-select"
+                value={c.provider}
+                onChange={(e) =>
+                  updateConfig(c.id, {
+                    provider: e.target.value as AiConfig["provider"],
+                  })
+                }
+              >
+                {AI_PROVIDERS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field" style={{ flex: 2 }}>
+              <label className="form-label">Model</label>
+              <input
+                className="form-input"
+                value={c.model}
+                onChange={(e) => updateConfig(c.id, { model: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="form-field">
+            <label className="form-label">API Key</label>
+            <input
+              className="form-input"
+              type="password"
+              value={c.apiKey}
+              onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
+              placeholder="Enter API key"
+            />
+          </div>
+          <button
+            className="btn-remove"
+            onClick={() => removeConfig(c.id)}
+            disabled={settings.aiConfigs.length === 1}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      <button className="btn-toolbar" onClick={addConfig}>
+        + Add Configuration
+      </button>
 
       <div className="settings-actions">
         <button

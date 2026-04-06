@@ -55,15 +55,23 @@ export interface AssetMeta {
   uploadedAt: string;
 }
 
+export const AI_PROVIDERS = ["claude"] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+export interface AiConfig {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+}
+
 export interface Settings {
   port: number;
   timezone: string;
   publishedPostsPerLoad: number;
   editorWatermark: string;
   extraFieldWatermark: string;
-  ai: {
-    provider: string;
-    apiKey: string;
-    model: string;
-  };
+  aiConfigs: AiConfig[];
+  activeAiConfigId: string;
 }

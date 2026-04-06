@@ -3,8 +3,11 @@
  */
 
 import type { Settings, Prompt } from "./types.js";
+import { nanoid } from "nanoid";
 
 export const DEFAULT_PORT = 3141;
+
+const defaultAiConfigId = nanoid();
 
 export const DEFAULT_SETTINGS: Settings = {
   port: DEFAULT_PORT,
@@ -14,11 +17,16 @@ export const DEFAULT_SETTINGS: Settings = {
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:
     "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://...",
-  ai: {
-    provider: "claude",
-    apiKey: "",
-    model: "claude-sonnet-4-6",
-  },
+  aiConfigs: [
+    {
+      id: defaultAiConfigId,
+      name: "Default",
+      provider: "claude",
+      apiKey: "",
+      model: "claude-sonnet-4-6",
+    },
+  ],
+  activeAiConfigId: defaultAiConfigId,
 };
 
 export const DEFAULT_PROMPTS: Prompt[] = [

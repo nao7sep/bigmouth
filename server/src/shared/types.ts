@@ -51,19 +51,25 @@ export interface Target {
 
 // --- Settings ---
 
-export interface Settings {
-  timezone: string; // IANA timezone (e.g., "Asia/Tokyo")
-  publishedPostsPerLoad: number; // batch size for the published posts list (default: 50)
-  port: number; // local server port (default: 3141)
-  editorWatermark: string; // placeholder text in the empty editor
-  extraFieldWatermark: string; // placeholder text in the extra textarea
-  ai: AiSettings;
+export const AI_PROVIDERS = ["claude"] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+export interface AiConfig {
+  id: string;        // nanoid, stable identity
+  name: string;      // user-defined label (e.g., "Claude Sonnet")
+  provider: AiProvider;
+  apiKey: string;    // obfuscated in settings.json, plain in memory
+  model: string;     // e.g., "claude-sonnet-4-6"
 }
 
-export interface AiSettings {
-  provider: string; // "claude" for now
-  apiKey: string; // obfuscated in settings.json, plain in memory
-  model: string; // e.g., "claude-sonnet-4-6"
+export interface Settings {
+  port: number;                    // local server port (default: 3141)
+  timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
+  publishedPostsPerLoad: number;   // batch size for the published posts list (default: 50)
+  editorWatermark: string;         // placeholder text in the empty editor
+  extraFieldWatermark: string;     // placeholder text in the extra textarea
+  aiConfigs: AiConfig[];
+  activeAiConfigId: string;
 }
 
 // --- Prompt ---

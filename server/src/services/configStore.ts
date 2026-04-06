@@ -19,19 +19,23 @@ export function getSettings(): Settings {
   const raw = fs.readFileSync(settingsPath(), "utf-8");
   const settings = JSON.parse(raw) as Settings;
 
-  // Deobfuscate API key for in-memory use
-  if (settings.ai?.apiKey) {
-    settings.ai.apiKey = deobfuscate(settings.ai.apiKey);
+  // Deobfuscate API keys for in-memory use
+  for (const config of settings.aiConfigs ?? []) {
+    if (config.apiKey) {
+      config.apiKey = deobfuscate(config.apiKey);
+    }
   }
 
   return settings;
 }
 
 export function saveSettings(settings: Settings): void {
-  // Obfuscate API key before writing to disk
+  // Obfuscate API keys before writing to disk
   const toWrite = structuredClone(settings);
-  if (toWrite.ai?.apiKey) {
-    toWrite.ai.apiKey = obfuscate(toWrite.ai.apiKey);
+  for (const config of toWrite.aiConfigs ?? []) {
+    if (config.apiKey) {
+      config.apiKey = obfuscate(config.apiKey);
+    }
   }
 
   fs.writeFileSync(settingsPath(), JSON.stringify(toWrite, null, 2) + "\n");

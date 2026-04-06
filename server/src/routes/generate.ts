@@ -47,7 +47,14 @@ generateRouter.post("/", async (req, res) => {
   let provider;
   try {
     const settings = getSettings();
-    provider = createProvider(settings.ai);
+    const activeConfig = settings.aiConfigs.find(
+      (c) => c.id === settings.activeAiConfigId
+    );
+    if (!activeConfig) {
+      res.status(503).json({ error: "No active AI configuration selected" });
+      return;
+    }
+    provider = createProvider(activeConfig);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "AI provider error";
     res.status(503).json({ error: msg });
@@ -85,7 +92,14 @@ generateRouter.post("/batch", async (req, res) => {
   let provider;
   try {
     const settings = getSettings();
-    provider = createProvider(settings.ai);
+    const activeConfig = settings.aiConfigs.find(
+      (c) => c.id === settings.activeAiConfigId
+    );
+    if (!activeConfig) {
+      res.status(503).json({ error: "No active AI configuration selected" });
+      return;
+    }
+    provider = createProvider(activeConfig);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "AI provider error";
     res.status(503).json({ error: msg });
@@ -93,7 +107,7 @@ generateRouter.post("/batch", async (req, res) => {
   }
 
   const results = await Promise.all(
-    fields.map(async (field) => {
+    fields.map(async (field): Promise<{ field: string; value: string } | { field: string; error: string }> => {
       const systemPrompt = systemPromptForField(field);
       if (!systemPrompt) {
         return { field, error: `Field is not generatable: ${field}` };
