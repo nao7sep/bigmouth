@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PostFrontMatter, Target } from "../types";
 import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface MetadataTabProps {
   postId: string;
@@ -23,6 +24,7 @@ export function MetadataTab({
 
   const [fields, setFields] = useState(() => extractFields(frontMatter));
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
 
   useEffect(() => {
     setFields(extractFields(frontMatter));
@@ -49,10 +51,6 @@ export function MetadataTab({
     const current = (frontMatter as Record<string, unknown>)[key];
     const currentStr = Array.isArray(current) ? current.join(", ") : "";
     if (value !== currentStr) saveField(key, tags);
-  };
-
-  const copyToClipboard = (value: string) => {
-    navigator.clipboard.writeText(value).catch(() => {});
   };
 
   const updateField = (key: string, value: string) => {
@@ -87,7 +85,8 @@ export function MetadataTab({
           value={fields.slug}
           onChange={(v) => updateField("slug", v)}
           onBlur={() => handleBlur("slug", fields.slug)}
-          onCopy={() => copyToClipboard(fields.slug)}
+          onCopy={() => copyToClipboard(fields.slug, 'slug')}
+          copied={copiedKey === 'slug'}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
         />
@@ -147,7 +146,8 @@ export function MetadataTab({
         value={fields.title}
         onChange={(v) => updateField("title", v)}
         onBlur={() => handleBlur("title", fields.title)}
-        onCopy={() => copyToClipboard(fields.title)}
+        onCopy={() => copyToClipboard(fields.title, 'title')}
+          copied={copiedKey === 'title'}
         onGenerate={() => generate("title")}
         generating={isGenerating("title")}
       />
@@ -157,7 +157,8 @@ export function MetadataTab({
           value={fields.titleEn ?? ""}
           onChange={(v) => updateField("titleEn", v)}
           onBlur={() => handleBlur("titleEn", fields.titleEn ?? "")}
-          onCopy={() => copyToClipboard(fields.titleEn ?? "")}
+          onCopy={() => copyToClipboard(fields.titleEn ?? "", 'titleEn')}
+          copied={copiedKey === 'titleEn'}
           onGenerate={() => generate("titleEn")}
           generating={isGenerating("titleEn")}
         />
@@ -167,7 +168,8 @@ export function MetadataTab({
         value={fields.slug}
         onChange={(v) => updateField("slug", v)}
         onBlur={() => handleBlur("slug", fields.slug)}
-        onCopy={() => copyToClipboard(fields.slug)}
+        onCopy={() => copyToClipboard(fields.slug, 'slug')}
+          copied={copiedKey === 'slug'}
         onGenerate={() => generate("slug")}
         generating={isGenerating("slug")}
       />
@@ -187,7 +189,8 @@ export function MetadataTab({
         value={fields.tags}
         onChange={(v) => updateField("tags", v)}
         onBlur={() => handleTagsBlur("tags", fields.tags)}
-        onCopy={() => copyToClipboard(fields.tags)}
+        onCopy={() => copyToClipboard(fields.tags, 'tags')}
+          copied={copiedKey === 'tags'}
         onGenerate={() => generate("tags", true)}
         generating={isGenerating("tags")}
         placeholder="tag1, tag2, tag3"
@@ -198,7 +201,8 @@ export function MetadataTab({
           value={fields.tagsEn ?? ""}
           onChange={(v) => updateField("tagsEn", v)}
           onBlur={() => handleTagsBlur("tagsEn", fields.tagsEn ?? "")}
-          onCopy={() => copyToClipboard(fields.tagsEn ?? "")}
+          onCopy={() => copyToClipboard(fields.tagsEn ?? "", 'tagsEn')}
+          copied={copiedKey === 'tagsEn'}
           onGenerate={() => generate("tagsEn", true)}
           generating={isGenerating("tagsEn")}
           placeholder="tag1, tag2, tag3"
@@ -209,7 +213,8 @@ export function MetadataTab({
         value={fields.metaDescription}
         onChange={(v) => updateField("metaDescription", v)}
         onBlur={() => handleBlur("metaDescription", fields.metaDescription)}
-        onCopy={() => copyToClipboard(fields.metaDescription)}
+        onCopy={() => copyToClipboard(fields.metaDescription, 'metaDescription')}
+          copied={copiedKey === 'metaDescription'}
         onGenerate={() => generate("metaDescription")}
         generating={isGenerating("metaDescription")}
         multiline
@@ -220,7 +225,8 @@ export function MetadataTab({
           value={fields.metaDescriptionEn ?? ""}
           onChange={(v) => updateField("metaDescriptionEn", v)}
           onBlur={() => handleBlur("metaDescriptionEn", fields.metaDescriptionEn ?? "")}
-          onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "")}
+          onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", 'metaDescriptionEn')}
+          copied={copiedKey === 'metaDescriptionEn'}
           onGenerate={() => generate("metaDescriptionEn")}
           generating={isGenerating("metaDescriptionEn")}
           multiline
@@ -231,7 +237,8 @@ export function MetadataTab({
         value={fields.extra}
         onChange={(v) => updateField("extra", v)}
         onBlur={() => handleBlur("extra", fields.extra)}
-        onCopy={() => copyToClipboard(fields.extra)}
+        onCopy={() => copyToClipboard(fields.extra, 'extra')}
+          copied={copiedKey === 'extra'}
         multiline
         placeholder={extraFieldWatermark}
       />
@@ -247,6 +254,7 @@ function MetaField({
   onChange,
   onBlur,
   onCopy,
+  copied,
   onGenerate,
   generating,
   multiline,
@@ -257,6 +265,7 @@ function MetaField({
   onChange: (v: string) => void;
   onBlur: () => void;
   onCopy: () => void;
+  copied?: boolean;
   onGenerate?: () => void;
   generating?: boolean;
   multiline?: boolean;
@@ -282,7 +291,7 @@ function MetaField({
             onClick={onCopy}
             title="Copy to clipboard"
           >
-            Copy
+            {copied ? "✓ Copied" : "Copy"}
           </button>
         </div>
       </div>

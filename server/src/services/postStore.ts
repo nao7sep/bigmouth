@@ -335,6 +335,13 @@ function writePostFile(
     }
   }
 
+  // English posts don't need *En supplements — strip them if present
+  if (frontMatter.language === "en") {
+    delete cleanFm.titleEn;
+    delete cleanFm.tagsEn;
+    delete cleanFm.metaDescriptionEn;
+  }
+
   const output = matter.stringify(content, cleanFm);
   fs.writeFileSync(filePath, output);
 }

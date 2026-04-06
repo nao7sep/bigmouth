@@ -35,7 +35,9 @@ body {
   background: #fafafa;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 10;
 }
 
 .pane-center {
@@ -344,7 +346,7 @@ body {
 .hamburger-menu {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   background: #fff;
   border: 1px solid #d0d0d0;
   border-radius: 6px;
@@ -699,7 +701,7 @@ body {
 .export-actions {
   display: flex;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 12px 20px 20px;
 }
 
 .btn-export {
@@ -718,7 +720,7 @@ body {
 .export-preview {
   flex: 1;
   overflow: auto;
-  margin: 0 20px 20px;
+  margin: 12px 20px 0;
   padding: 12px;
   background: #f8f8f8;
   border: 1px solid #e0e0e0;

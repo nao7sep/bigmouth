@@ -3,7 +3,9 @@ import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
+import { ConfirmModal } from "./ConfirmModal";
 import { computeCounts, type ContentCounts } from "../util/counts";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 export interface CenterPaneHandle {
   save: () => void;
@@ -43,7 +45,9 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const postIdRef = useRef(postId);
@@ -144,8 +148,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   };
 
   const handleDelete = async () => {
-    if (!confirm("Delete this post? This cannot be undone.")) return;
-
+    setDeleteConfirmOpen(false);
     try {
       await deletePost(postId);
       onPostDeleted();
@@ -174,9 +177,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
     };
   }, [content]);
 
-  const handleCopyContent = () => {
-    navigator.clipboard.writeText(content).catch(() => {});
-  };
+  const handleCopyContent = () => copyContent(content, "content");
 
   const handleSetSource = async (sourceId: string) => {
     const updated = await updatePost(postId, { frontMatter: { sourceId } }).catch(() => null);
@@ -184,7 +185,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   };
 
   const handleClearSource = async () => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId: undefined } }).catch(() => null);
+    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }).catch(() => null);
     if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
   };
 
@@ -238,12 +239,12 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
         )}
         <span style={{ flex: 1 }} />
         <button className="btn-toolbar" onClick={handleCopyContent}>
-          Copy
+          {copiedKey === "content" ? "✓ Copied" : "Copy"}
         </button>
         <button className="btn-toolbar" onClick={onExport}>
           Export
         </button>
-        <button className="btn-toolbar btn-delete" onClick={handleDelete}>
+        <button className="btn-toolbar btn-delete" onClick={() => setDeleteConfirmOpen(true)}>
           Delete
         </button>
       </div>
@@ -273,6 +274,15 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
           pubBatchSize={pubBatchSize}
           onSelect={handleSetSource}
           onClose={() => setSourcePickerOpen(false)}
+        />
+      )}
+      {deleteConfirmOpen && (
+        <ConfirmModal
+          message="Delete this post? This cannot be undone."
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteConfirmOpen(false)}
         />
       )}
     </div>

@@ -35,7 +35,10 @@ export async function createPost(
 
 export async function updatePost(
   id: string,
-  updates: { content?: string; frontMatter?: Partial<Post["frontMatter"]> & Record<string, unknown> }
+  updates: {
+    content?: string;
+    frontMatter?: { [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null };
+  }
 ): Promise<Post> {
   const res = await fetch(`/api/posts/${id}`, {
     method: "PUT",

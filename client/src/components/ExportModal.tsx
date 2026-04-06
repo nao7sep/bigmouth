@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Marked } from "marked";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -13,11 +14,11 @@ type ExportFormat = "html" | "text";
 
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   const [format, setFormat] = useState<ExportFormat>("html");
+  const { copiedKey, copy } = useCopyFeedback();
 
   const html = useMemo(() => marked.parse(content) as string, [content]);
 
   const plainText = useMemo(() => {
-    // Strip markdown syntax for a rough plain-text version
     const doc = new DOMParser().parseFromString(html, "text/html");
     return doc.body.textContent ?? "";
   }, [html]);
@@ -25,10 +26,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   const output = format === "html" ? html : plainText;
   const filename = slug || "export";
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(output).catch(() => {});
-    onClose();
-  };
+  const handleCopy = () => copy(output, "copy");
 
   const handleDownload = () => {
     const ext = format === "html" ? "html" : "txt";
@@ -40,7 +38,6 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
     a.download = `${filename}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
-    onClose();
   };
 
   return (
@@ -68,16 +65,22 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
           </button>
         </div>
 
+        <pre className="export-preview">
+          {output || (
+            <span style={{ color: "#aaa", fontStyle: "italic" }}>
+              No content yet
+            </span>
+          )}
+        </pre>
+
         <div className="export-actions">
           <button className="btn-export" onClick={handleCopy}>
-            Copy
+            {copiedKey === "copy" ? "✓ Copied" : "Copy"}
           </button>
           <button className="btn-export" onClick={handleDownload}>
             Download .{format === "html" ? "html" : "txt"}
           </button>
         </div>
-
-        <pre className="export-preview">{output}</pre>
       </div>
     </div>
   );

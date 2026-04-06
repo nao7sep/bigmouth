@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchAssets, uploadAsset, deleteAsset } from "../api";
 import type { AssetMeta } from "../types";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface AssetsTabProps {
   postId: string;
@@ -27,6 +28,7 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -71,7 +73,7 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
   };
 
   const handleDelete = async (filename: string) => {
-    if (!confirm(`Delete "${filename}"?`)) return;
+    setDeleteTarget(null);
     try {
       await deleteAsset(postId, filename);
       setAssets((prev) => prev.filter((a) => a.filename !== filename));
@@ -120,10 +122,19 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
               postId={postId}
               asset={asset}
               onInsert={() => handleInsert(asset.filename)}
-              onDelete={() => handleDelete(asset.filename)}
+              onDelete={() => setDeleteTarget(asset.filename)}
             />
           ))}
         </div>
+      )}
+      {deleteTarget && (
+        <ConfirmModal
+          message={`Delete "${deleteTarget}"?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => handleDelete(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
