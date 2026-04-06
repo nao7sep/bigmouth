@@ -13,6 +13,7 @@ import path from "node:path";
 import { Router } from "express";
 import multer from "multer";
 import exifr from "exifr";
+import { imageSize } from "image-size";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
 import {
   listAssets,

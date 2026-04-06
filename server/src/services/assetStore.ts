@@ -5,7 +5,7 @@
  *   {dataDir}/assets/{postId}/{filename}
  *
  * A sidecar file {dataDir}/assets/{postId}/meta.json holds cached metadata
- * so list requests don't need to re-read EXIF on every call.
+ * (size, dimensions, metadata warning flag) so list requests are fast.
  */
 
 import fs from "node:fs";
@@ -13,11 +13,11 @@ import path from "node:path";
 
 export interface AssetMeta {
   filename: string;
-  size: number;        // bytes
-  width?: number;      // pixels
-  height?: number;     // pixels
-  takenAt?: string;    // ISO 8601, from EXIF DateTimeOriginal
-  uploadedAt: string;  // ISO 8601
+  size: number;           // bytes
+  width?: number;         // pixels (images only)
+  height?: number;        // pixels (images only)
+  hasMetadata?: boolean;  // true if EXIF/IPTC/XMP metadata was detected at upload
+  uploadedAt: string;     // ISO 8601
 }
 
 const META_FILENAME = "meta.json";

@@ -54,7 +54,7 @@ export interface AssetMeta {
   size: number;
   width?: number;
   height?: number;
-  takenAt?: string;
+  hasMetadata?: boolean;
   uploadedAt: string;
 }
 

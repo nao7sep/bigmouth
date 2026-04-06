@@ -951,6 +951,11 @@ body {
   background: #fff;
 }
 
+.asset-card.has-exif {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
 .asset-thumb {
   width: 52px;
   height: 52px;

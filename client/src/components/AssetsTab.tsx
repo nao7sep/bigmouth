@@ -157,16 +157,16 @@ function AssetCard({
   const img = isImage(asset.filename);
 
   return (
-    <div className="asset-card">
+    <div className={`asset-card${asset.hasMetadata ? " has-exif" : ""}`}>
       <div className="asset-thumb">
         {img ? (
           <img src={src} alt={asset.filename} />
         ) : (
           <div className="asset-file-icon">{ext(asset.filename).toUpperCase()}</div>
         )}
-        {asset.takenAt && (
-          <div className="asset-exif-badge" title={`EXIF location/time data present (taken: ${asset.takenAt})`}>
-            ⚠ EXIF
+        {asset.hasMetadata && (
+          <div className="asset-exif-badge" title="Image contains EXIF/IPTC/XMP metadata — sanitize before publishing">
+            ⚠ Metadata
           </div>
         )}
       </div>
