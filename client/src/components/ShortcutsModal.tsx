@@ -1,3 +1,5 @@
+import { useEscapeKey } from "../hooks/useEscapeKey";
+
 interface ShortcutsModalProps {
   onClose: () => void;
 }
@@ -13,6 +15,7 @@ const SHORTCUTS = [
 ];
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
+  useEscapeKey(onClose);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div

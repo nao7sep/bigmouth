@@ -1,3 +1,5 @@
+import { useEscapeKey } from "../hooks/useEscapeKey";
+
 interface ConfirmModalProps {
   title?: string;
   message: string;
@@ -17,6 +19,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  useEscapeKey(onCancel);
   const heading = title ?? confirmLabel;
 
   return (

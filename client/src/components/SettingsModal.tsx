@@ -19,6 +19,7 @@ import {
   DEFAULT_GENERATION_PREAMBLE,
   GENERATION_PROMPT_LABELS,
 } from "../generationPromptDefaults";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -40,6 +41,7 @@ export function SettingsModal({
   onSettingsChanged,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>("general");
+  useEscapeKey(onClose);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);

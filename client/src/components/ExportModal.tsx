@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Marked } from "marked";
 import removeMd from "remove-markdown";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -14,6 +15,7 @@ interface ExportModalProps {
 type ExportFormat = "html" | "text";
 
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
+  useEscapeKey(onClose);
   const [format, setFormat] = useState<ExportFormat>("html");
   const { copiedKey, copy } = useCopyFeedback();
 

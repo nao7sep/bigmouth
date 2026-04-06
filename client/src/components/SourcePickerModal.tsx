@@ -1,5 +1,6 @@
 import { usePostPicker } from "../hooks/usePostPicker";
 import { PostPickerList } from "./PostPickerList";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface SourcePickerModalProps {
   currentPostId: string;
@@ -14,6 +15,7 @@ export function SourcePickerModal({
   onSelect,
   onClose,
 }: SourcePickerModalProps) {
+  useEscapeKey(onClose);
   const picker = usePostPicker(pubBatchSize, currentPostId);
 
   return (

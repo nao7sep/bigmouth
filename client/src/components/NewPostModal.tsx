@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 import type { Target } from "../types";
 
 interface NewPostModalProps {
@@ -27,6 +28,7 @@ export function NewPostModal({
   onClose,
   onCreate,
 }: NewPostModalProps) {
+  useEscapeKey(onClose);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     resolveLanguage(undefined, supportedLanguages)

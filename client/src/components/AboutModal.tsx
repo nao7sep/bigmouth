@@ -1,3 +1,5 @@
+import { useEscapeKey } from "../hooks/useEscapeKey";
+
 interface AboutModalProps {
   onClose: () => void;
 }
@@ -5,6 +7,7 @@ interface AboutModalProps {
 const GITHUB_URL = "https://github.com/nao7sep/bigmouth";
 
 export function AboutModal({ onClose }: AboutModalProps) {
+  useEscapeKey(onClose);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div

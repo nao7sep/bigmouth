@@ -29,13 +29,17 @@ export function initAssetStore(dataDirectory: string): void {
 }
 
 export function assetDir(postId: string): string {
-  const dir = path.join(assetsRoot, postId);
+  return path.join(assetsRoot, postId);
+}
+
+function ensureAssetDir(postId: string): string {
+  const dir = assetDir(postId);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
 export function assetFilePath(postId: string, filename: string): string {
-  return path.join(assetDir(postId), filename);
+  return path.join(ensureAssetDir(postId), filename);
 }
 
 export function listAssets(postId: string): AssetMeta[] {
@@ -49,7 +53,7 @@ export function listAssets(postId: string): AssetMeta[] {
 }
 
 export function addAsset(postId: string, meta: AssetMeta): void {
-  const dir = assetDir(postId);
+  const dir = ensureAssetDir(postId);
   const metaPath = path.join(dir, META_FILENAME);
   const existing = listAssets(postId).filter((a) => a.filename !== meta.filename);
   fs.writeFileSync(metaPath, JSON.stringify([...existing, meta], null, 2) + "\n");
@@ -65,7 +69,7 @@ export function deleteAsset(postId: string, filename: string): void {
 
   if (remaining.length === 0) {
     if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
-    fs.rmdirSync(dir);
+    if (fs.existsSync(dir)) fs.rmdirSync(dir);
   } else {
     fs.writeFileSync(metaPath, JSON.stringify(remaining, null, 2) + "\n");
   }
