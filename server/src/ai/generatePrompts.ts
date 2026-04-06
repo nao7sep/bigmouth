@@ -59,20 +59,17 @@ export function metaDescriptionPrompt(lang: string): string {
  * Returns the system prompt instruction for a given front matter field key.
  * Returns null if the field is not generatable.
  * The post content is passed separately as the user message — not embedded here.
+ *
+ * Base fields (title, tags, metaDescription) are in the post's native language.
+ * *En variants (titleEn, tagsEn, metaDescriptionEn) are always English.
  */
-export function systemPromptForField(field: string): string | null {
-  if (field === "title") return titlePrompt("en");
+export function systemPromptForField(field: string, lang: string): string | null {
+  if (field === "title") return titlePrompt(lang);
+  if (field === "titleEn") return titlePrompt("en");
   if (field === "slug") return slugPrompt();
-  if (field === "tags") return tagsPrompt("en");
-  if (field === "metaDescription") return metaDescriptionPrompt("en");
-
-  const titleMatch = field.match(/^title([A-Z][a-z]+)$/);
-  const tagsMatch = field.match(/^tags([A-Z][a-z]+)$/);
-  const descMatch = field.match(/^metaDescription([A-Z][a-z]+)$/);
-
-  if (titleMatch) return titlePrompt(titleMatch[1].toLowerCase());
-  if (tagsMatch) return tagsPrompt(tagsMatch[1].toLowerCase());
-  if (descMatch) return metaDescriptionPrompt(descMatch[1].toLowerCase());
-
+  if (field === "tags") return tagsPrompt(lang);
+  if (field === "tagsEn") return tagsPrompt("en");
+  if (field === "metaDescription") return metaDescriptionPrompt(lang);
+  if (field === "metaDescriptionEn") return metaDescriptionPrompt("en");
   return null;
 }

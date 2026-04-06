@@ -21,11 +21,11 @@ export function MetadataTab({
   const lang = frontMatter.language;
   const isNonEnglish = lang !== "en";
 
-  const [fields, setFields] = useState(() => extractFields(frontMatter, lang));
+  const [fields, setFields] = useState(() => extractFields(frontMatter));
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    setFields(extractFields(frontMatter, lang));
+    setFields(extractFields(frontMatter));
   }, [frontMatter, lang]);
 
   const saveField = async (key: string, value: string | string[]) => {
@@ -95,16 +95,14 @@ export function MetadataTab({
     );
   }
 
-  const langSuffix = lang.charAt(0).toUpperCase() + lang.slice(1);
-
   // "Generate All" covers only the fields below the divider: tags and
-  // metaDescription (plus their language variants). Title and slug sit above
+  // metaDescription (plus their English variants). Title and slug sit above
   // the divider and have individual Gen buttons; they are intentionally excluded
   // here to prevent overwriting carefully edited values.
   const allFields: Array<{ key: string; isTags?: boolean }> = [];
-  if (isNonEnglish) allFields.push({ key: `tags${langSuffix}`, isTags: true });
+  if (isNonEnglish) allFields.push({ key: "tagsEn", isTags: true });
   allFields.push({ key: "tags", isTags: true });
-  if (isNonEnglish) allFields.push({ key: `metaDescription${langSuffix}` });
+  if (isNonEnglish) allFields.push({ key: "metaDescriptionEn" });
   allFields.push({ key: "metaDescription" });
 
   const anyGenerating = Object.values(generating).some(Boolean);
@@ -144,19 +142,8 @@ export function MetadataTab({
 
   return (
     <div className="metadata-tab">
-      {isNonEnglish && (
-        <MetaField
-          label={`Title (${lang})`}
-          value={fields[`title${langSuffix}`] ?? ""}
-          onChange={(v) => updateField(`title${langSuffix}`, v)}
-          onBlur={() => handleBlur(`title${langSuffix}`, fields[`title${langSuffix}`] ?? "")}
-          onCopy={() => copyToClipboard(fields[`title${langSuffix}`] ?? "")}
-          onGenerate={() => generate(`title${langSuffix}`)}
-          generating={isGenerating(`title${langSuffix}`)}
-        />
-      )}
       <MetaField
-        label="Title (en)"
+        label="Title"
         value={fields.title}
         onChange={(v) => updateField("title", v)}
         onBlur={() => handleBlur("title", fields.title)}
@@ -164,6 +151,17 @@ export function MetadataTab({
         onGenerate={() => generate("title")}
         generating={isGenerating("title")}
       />
+      {isNonEnglish && (
+        <MetaField
+          label="Title (en)"
+          value={fields.titleEn ?? ""}
+          onChange={(v) => updateField("titleEn", v)}
+          onBlur={() => handleBlur("titleEn", fields.titleEn ?? "")}
+          onCopy={() => copyToClipboard(fields.titleEn ?? "")}
+          onGenerate={() => generate("titleEn")}
+          generating={isGenerating("titleEn")}
+        />
+      )}
       <MetaField
         label="Slug"
         value={fields.slug}
@@ -184,20 +182,8 @@ export function MetadataTab({
         </button>
       </div>
 
-      {isNonEnglish && (
-        <MetaField
-          label={`Tags (${lang})`}
-          value={fields[`tags${langSuffix}`] ?? ""}
-          onChange={(v) => updateField(`tags${langSuffix}`, v)}
-          onBlur={() => handleTagsBlur(`tags${langSuffix}`, fields[`tags${langSuffix}`] ?? "")}
-          onCopy={() => copyToClipboard(fields[`tags${langSuffix}`] ?? "")}
-          onGenerate={() => generate(`tags${langSuffix}`, true)}
-          generating={isGenerating(`tags${langSuffix}`)}
-          placeholder="tag1, tag2, tag3"
-        />
-      )}
       <MetaField
-        label="Tags (en)"
+        label="Tags"
         value={fields.tags}
         onChange={(v) => updateField("tags", v)}
         onBlur={() => handleTagsBlur("tags", fields.tags)}
@@ -208,18 +194,18 @@ export function MetadataTab({
       />
       {isNonEnglish && (
         <MetaField
-          label={`Description (${lang})`}
-          value={fields[`metaDescription${langSuffix}`] ?? ""}
-          onChange={(v) => updateField(`metaDescription${langSuffix}`, v)}
-          onBlur={() => handleBlur(`metaDescription${langSuffix}`, fields[`metaDescription${langSuffix}`] ?? "")}
-          onCopy={() => copyToClipboard(fields[`metaDescription${langSuffix}`] ?? "")}
-          onGenerate={() => generate(`metaDescription${langSuffix}`)}
-          generating={isGenerating(`metaDescription${langSuffix}`)}
-          multiline
+          label="Tags (en)"
+          value={fields.tagsEn ?? ""}
+          onChange={(v) => updateField("tagsEn", v)}
+          onBlur={() => handleTagsBlur("tagsEn", fields.tagsEn ?? "")}
+          onCopy={() => copyToClipboard(fields.tagsEn ?? "")}
+          onGenerate={() => generate("tagsEn", true)}
+          generating={isGenerating("tagsEn")}
+          placeholder="tag1, tag2, tag3"
         />
       )}
       <MetaField
-        label="Description (en)"
+        label="Description"
         value={fields.metaDescription}
         onChange={(v) => updateField("metaDescription", v)}
         onBlur={() => handleBlur("metaDescription", fields.metaDescription)}
@@ -228,6 +214,18 @@ export function MetadataTab({
         generating={isGenerating("metaDescription")}
         multiline
       />
+      {isNonEnglish && (
+        <MetaField
+          label="Description (en)"
+          value={fields.metaDescriptionEn ?? ""}
+          onChange={(v) => updateField("metaDescriptionEn", v)}
+          onBlur={() => handleBlur("metaDescriptionEn", fields.metaDescriptionEn ?? "")}
+          onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "")}
+          onGenerate={() => generate("metaDescriptionEn")}
+          generating={isGenerating("metaDescriptionEn")}
+          multiline
+        />
+      )}
       <MetaField
         label="Extra"
         value={fields.extra}
@@ -313,11 +311,7 @@ function MetaField({
 
 // --- Helpers ---
 
-function extractFields(
-  fm: PostFrontMatter,
-  lang: string
-): Record<string, string> {
-  const langSuffix = lang.charAt(0).toUpperCase() + lang.slice(1);
+function extractFields(fm: PostFrontMatter): Record<string, string> {
   const get = (key: string) => {
     const val = (fm as Record<string, unknown>)[key];
     if (Array.isArray(val)) return val.join(", ");
@@ -332,10 +326,10 @@ function extractFields(
     extra: get("extra"),
   };
 
-  if (lang !== "en") {
-    fields[`title${langSuffix}`] = get(`title${langSuffix}`);
-    fields[`tags${langSuffix}`] = get(`tags${langSuffix}`);
-    fields[`metaDescription${langSuffix}`] = get(`metaDescription${langSuffix}`);
+  if (fm.language !== "en") {
+    fields.titleEn = get("titleEn");
+    fields.tagsEn = get("tagsEn");
+    fields.metaDescriptionEn = get("metaDescriptionEn");
   }
 
   return fields;

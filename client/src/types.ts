@@ -10,10 +10,13 @@ export interface PostFrontMatter {
   updatedAtUtc: string;
   readyAtUtc?: string;
   publishedAtUtc?: string;
-  title?: string;
+  title?: string;         // native language
   slug?: string;
-  tags?: string[];
-  metaDescription?: string;
+  tags?: string[];        // native language
+  metaDescription?: string; // native language
+  titleEn?: string;         // English supplement (omitted when language is "en")
+  tagsEn?: string[];        // English supplement (omitted when language is "en")
+  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
   extra?: string;
   [key: string]: unknown;
 }

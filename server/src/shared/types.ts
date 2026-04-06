@@ -4,8 +4,9 @@ export type PostStatus = "draft" | "ready" | "published";
 
 /**
  * Front matter fields stored in each post's Markdown file.
- * Base metadata fields (title, tags, metaDescription, slug) are always English.
- * Language-specific variants use a suffix: titleJa, tagsJa, etc.
+ * Base fields (title, tags, metaDescription) are always in the post's native language.
+ * When the content language is not English, fixed *En variants (titleEn, tagsEn,
+ * metaDescriptionEn) hold the English supplements.
  * When the content language is English, only base fields are used.
  */
 export interface PostFrontMatter {
@@ -18,13 +19,14 @@ export interface PostFrontMatter {
   updatedAtUtc: string; // ISO 8601
   readyAtUtc?: string; // set when status becomes ready, cleared on revert
   publishedAtUtc?: string; // set when status becomes published, cleared on revert
-  title?: string; // always English (fallback)
+  title?: string; // native language
   slug?: string; // always English, required for ready status
-  tags?: string[]; // always English (fallback)
-  metaDescription?: string; // always English (fallback)
+  tags?: string[]; // native language
+  metaDescription?: string; // native language
+  titleEn?: string; // English supplement (omitted when language is "en")
+  tagsEn?: string[]; // English supplement (omitted when language is "en")
+  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
   extra?: string; // free-text KVP field
-  // Language-specific variants are stored as dynamic keys:
-  // titleJa, tagsJa, metaDescriptionJa, titleEs, etc.
   [key: string]: unknown;
 }
 

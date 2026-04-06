@@ -38,7 +38,7 @@ generateRouter.post("/", async (req, res) => {
     return;
   }
 
-  const systemPrompt = systemPromptForField(field);
+  const systemPrompt = systemPromptForField(field, post.frontMatter.language);
   if (!systemPrompt) {
     res.status(400).json({ error: `Field is not generatable: ${field}` });
     return;
@@ -108,7 +108,7 @@ generateRouter.post("/batch", async (req, res) => {
 
   const results = await Promise.all(
     fields.map(async (field): Promise<{ field: string; value: string } | { field: string; error: string }> => {
-      const systemPrompt = systemPromptForField(field);
+      const systemPrompt = systemPromptForField(field, post.frontMatter.language);
       if (!systemPrompt) {
         return { field, error: `Field is not generatable: ${field}` };
       }
