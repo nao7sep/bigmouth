@@ -12,6 +12,7 @@ const defaultAiConfigId = nanoid();
 export const DEFAULT_SETTINGS: Settings = {
   port: DEFAULT_PORT,
   timezone: "Asia/Tokyo",
+  supportedLanguages: ["en", "ja", "es", "fr", "de", "ko", "zh", "pt", "it", "ru"],
   publishedPostsPerLoad: 50,
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",

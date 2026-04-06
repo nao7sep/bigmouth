@@ -72,6 +72,7 @@ export interface AiConfig {
 export interface Settings {
   port: number;
   timezone: string;
+  supportedLanguages: string[];    // ISO 639-1 codes shown in language selects
   publishedPostsPerLoad: number;
   editorWatermark: string;
   extraFieldWatermark: string;

@@ -118,6 +118,7 @@ export function SettingsModal({
           {tab === "targets" && (
             <TargetsTab
               targets={targets}
+              supportedLanguages={settings?.supportedLanguages ?? []}
               onChange={setTargets}
               onSave={handleSaveTargets}
               saving={saving}
@@ -172,6 +173,22 @@ function GeneralTab({
           className="form-input"
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
+        />
+      </div>
+      <div className="form-field">
+        <label className="form-label">Supported languages</label>
+        <input
+          className="form-input"
+          value={settings.supportedLanguages.join(", ")}
+          onChange={(e) =>
+            update({
+              supportedLanguages: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="en, ja, es, fr, de"
         />
       </div>
       <div className="form-field">
@@ -365,19 +382,24 @@ function AiTab({
 
 function TargetsTab({
   targets,
+  supportedLanguages,
   onChange,
   onSave,
   saving,
 }: {
   targets: Target[];
+  supportedLanguages: string[];
   onChange: (t: Target[]) => void;
   onSave: () => void;
   saving: boolean;
 }) {
   const addTarget = () => {
+    const defaultLang = supportedLanguages.includes("en")
+      ? "en"
+      : (supportedLanguages[0] ?? "en");
     onChange([
       ...targets,
-      { name: "", defaultLanguage: "en", requiresMetadata: false },
+      { name: "", defaultLanguage: defaultLang, requiresMetadata: false },
     ]);
   };
 
@@ -407,13 +429,20 @@ function TargetsTab({
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
               <label className="form-label">Language</label>
-              <input
-                className="form-input"
+              <select
+                className="form-select"
                 value={t.defaultLanguage}
                 onChange={(e) =>
                   updateTarget(i, { defaultLanguage: e.target.value })
                 }
-              />
+              >
+                {supportedLanguages.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+                {!supportedLanguages.includes(t.defaultLanguage) && (
+                  <option value={t.defaultLanguage}>{t.defaultLanguage}</option>
+                )}
+              </select>
             </div>
             <div className="form-field" style={{ flex: 1 }}>
               <label className="form-label">Requires metadata</label>
