@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { nanoid } from "nanoid";
 import type { Settings, Target, Prompt, AiConfig } from "../types";
 import { AI_PROVIDERS } from "../types";
 import {
@@ -46,6 +47,7 @@ export function SettingsModal({
     try {
       await saveSettings(settings);
       onSettingsChanged();
+      onClose();
     } finally {
       setSaving(false);
     }
@@ -57,6 +59,7 @@ export function SettingsModal({
       const saved = await saveTargets(targets);
       setTargets(saved);
       onSettingsChanged();
+      onClose();
     } finally {
       setSaving(false);
     }
@@ -68,6 +71,7 @@ export function SettingsModal({
       const saved = await savePrompts(prompts);
       setPrompts(saved);
       onSettingsChanged();
+      onClose();
     } finally {
       setSaving(false);
     }
@@ -259,7 +263,7 @@ function AiTab({
     });
 
   const addConfig = () => {
-    const id = crypto.randomUUID();
+    const id = nanoid();
     onChange({
       ...settings,
       aiConfigs: [

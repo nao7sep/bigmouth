@@ -15,6 +15,7 @@
     "@codemirror/view": "^6.41.0",
     "codemirror": "^6.0.2",
     "marked": "^17.0.6",
+    "nanoid": "^5.1.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "twitter-text": "^3.1.0"

@@ -27,6 +27,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
   const handleCopy = () => {
     navigator.clipboard.writeText(output).catch(() => {});
+    onClose();
   };
 
   const handleDownload = () => {
@@ -39,6 +40,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
     a.download = `${filename}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
+    onClose();
   };
 
   return (
