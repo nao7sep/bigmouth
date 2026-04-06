@@ -10,6 +10,7 @@ import {
   changeStatus,
   deletePost,
 } from "../services/postStore.js";
+import { getSettings } from "../services/configStore.js";
 import type { PostStatus } from "../shared/types.js";
 import * as logger from "../services/logger.js";
 
@@ -27,7 +28,7 @@ export const postsRouter = Router();
  */
 postsRouter.get("/", (req, res) => {
   const publishedOffset = parseInt(req.query.publishedOffset as string) || 0;
-  const limit = parseInt(req.query.limit as string) || 50;
+  const limit = parseInt(req.query.limit as string) || getSettings().publishedPostsPerLoad;
 
   const drafts = listDrafts();
   const ready = listReady();

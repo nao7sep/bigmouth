@@ -28,9 +28,15 @@ import {
 let postsDir = "";
 let dataDir = "";
 
+// Lucky cache: maps published post id -> absolute file path.
+// Populated as published posts are accessed; evicted on delete or unpublish.
+// If an id isn't here, fall back to directory scan.
+const pubCache = new Map<string, string>();
+
 export function initPostStore(dataDirectory: string): void {
   dataDir = dataDirectory;
   postsDir = path.join(dataDirectory, "posts");
+  pubCache.clear();
 }
 
 // --- List ---
@@ -53,6 +59,7 @@ export function listReady(): PostSummary[] {
  * Lists a batch of published posts (front matter only).
  * Filenames are sorted descending (newest first). Offset and limit
  * control pagination. Front matter is parsed only for the requested batch.
+ * Populates pubCache as a side effect.
  */
 export function listPublished(offset: number, limit: number): PostSummary[] {
   const dir = path.join(postsDir, "published");
@@ -62,17 +69,17 @@ export function listPublished(offset: number, limit: number): PostSummary[] {
     .readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .sort()
-    .reverse(); // newest first by filename (publishedAtUtc)
+    .reverse();
 
-  const batch = files.slice(offset, offset + limit);
   const summaries: PostSummary[] = [];
-
-  for (const file of batch) {
+  for (const file of files.slice(offset, offset + limit)) {
     const filePath = path.join(dir, file);
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
-      summaries.push({ frontMatter: parsed.data as PostFrontMatter });
+      const fm = parsed.data as PostFrontMatter;
+      if (fm.id) pubCache.set(fm.id, filePath);
+      summaries.push({ frontMatter: fm });
     } catch {
       // Skip malformed files
     }
@@ -169,7 +176,18 @@ export function updatePost(
   // Protect immutable fields
   post.frontMatter.id = id;
 
-  writePostFile(post.filePath, post.frontMatter, post.content);
+  // For published posts the slug may have changed, which changes the filename
+  if (post.frontMatter.status === "published") {
+    const newFilePath = path.join(postsDir, "published", buildFilename(post.frontMatter));
+    writePostFile(newFilePath, post.frontMatter, post.content);
+    if (newFilePath !== post.filePath) {
+      fs.unlinkSync(post.filePath);
+      post.filePath = newFilePath;
+    }
+    pubCache.set(id, post.filePath);
+  } else {
+    writePostFile(post.filePath, post.frontMatter, post.content);
+  }
 
   return post;
 }
@@ -228,6 +246,13 @@ export function changeStatus(id: string, newStatus: PostStatus): Post | null {
     fs.unlinkSync(oldFilePath);
   }
 
+  // Keep pubCache in sync
+  if (newStatus === "published") {
+    pubCache.set(id, newFilePath);
+  } else if (oldStatus === "published") {
+    pubCache.delete(id);
+  }
+
   post.filePath = newFilePath;
   return post;
 }
@@ -239,6 +264,7 @@ export function deletePost(id: string): boolean {
   if (!filePath) return false;
 
   fs.unlinkSync(filePath);
+  pubCache.delete(id);
 
   // Also delete asset directory if it exists
   const assetDir = path.join(dataDir, "assets", id);
@@ -295,35 +321,46 @@ function buildFilename(fm: PostFrontMatter): string {
 }
 
 /**
- * Finds the file path of a post by scanning subdirectories.
- * Checks drafts first (nanoid is in the filename), then ready and published.
+ * Finds the file path of a post by id.
+ * Checks pubCache first for published posts, then scans subdirectories.
+ * Draft filenames contain the nanoid for a fast match; ready filenames contain the slug.
+ * Published filenames contain neither, so only the fallback parse loop is useful there.
  */
 function findPostFile(id: string): string | null {
+  // Lucky cache hit for published posts
+  const cached = pubCache.get(id);
+  if (cached) {
+    if (fs.existsSync(cached)) return cached;
+    pubCache.delete(id); // stale — file no longer exists
+  }
+
   for (const sub of ["drafts", "ready", "published"]) {
     const dir = path.join(postsDir, sub);
     if (!fs.existsSync(dir)) continue;
 
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
 
-    // Quick check: drafts have nanoid in filename
-    for (const file of files) {
-      if (file.includes(id)) {
-        const filePath = path.join(dir, file);
-        const raw = fs.readFileSync(filePath, "utf-8");
-        const parsed = matter(raw);
-        if ((parsed.data as PostFrontMatter).id === id) {
-          return filePath;
+    // Quick check: draft/ready filenames may contain the id or slug substring
+    if (sub !== "published") {
+      for (const file of files) {
+        if (file.includes(id)) {
+          const filePath = path.join(dir, file);
+          const raw = fs.readFileSync(filePath, "utf-8");
+          const parsed = matter(raw);
+          if ((parsed.data as PostFrontMatter).id === id) return filePath;
         }
       }
     }
 
-    // Fallback: parse all files in this subdir
+    // Fallback: parse all remaining files in this subdir
     for (const file of files) {
-      if (file.includes(id)) continue; // already checked
+      if (sub !== "published" && file.includes(id)) continue; // already checked above
       const filePath = path.join(dir, file);
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
-      if ((parsed.data as PostFrontMatter).id === id) {
+      const fm = parsed.data as PostFrontMatter;
+      if (fm.id === id) {
+        if (sub === "published") pubCache.set(id, filePath);
         return filePath;
       }
     }
