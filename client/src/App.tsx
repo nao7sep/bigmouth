@@ -9,7 +9,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
 import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
-import type { Post, PostSummary, Target } from "./types";
+import type { Post, PostSummary, Settings, Target } from "./types";
 import "./App.css";
 
 const DEFAULT_WATERMARK =
@@ -22,9 +22,10 @@ export function App() {
   const [publishedTotal, setPublishedTotal] = useState(0);
   const [publishedOffset, setPublishedOffset] = useState(0);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [navHistory, setNavHistory] = useState<string[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [supportedLanguages, setSupportedLanguages] = useState<string[]>(["en"]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [pubBatchSize, setPubBatchSize] = useState(50);
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
   const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
   const [editorContent, setEditorContent] = useState("");
@@ -39,11 +40,9 @@ export function App() {
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const centerPaneRef = useRef<CenterPaneHandle>(null);
 
-  const batchSizeRef = useRef(50);
-
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
-      const data = await fetchPosts(pubOffset, batchSizeRef.current);
+      const data = await fetchPosts(pubOffset, pubBatchSize);
       setDrafts(data.drafts);
       setReady(data.ready);
       setPublished((prev) =>
@@ -52,33 +51,27 @@ export function App() {
       setPublishedTotal(data.publishedTotal);
       setPublishedOffset(pubOffset + data.published.length);
     },
-    []
+    [pubBatchSize]
   );
 
-  useEffect(() => {
-    loadPosts();
-    fetchTargets().then(setTargets).catch(() => {});
-    fetchSettings()
-      .then((s) => {
-        if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
-        if (s.editorWatermark) setWatermark(s.editorWatermark);
-        if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
-        if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
-      })
-      .catch(() => {});
-  }, [loadPosts]);
+  const applySettings = useCallback((s: Settings) => {
+    if (s.publishedPostsPerLoad) setPubBatchSize(s.publishedPostsPerLoad);
+    if (s.editorWatermark) setWatermark(s.editorWatermark);
+    if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
+    if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
+  }, []);
 
-  const reloadConfig = () => {
+  useEffect(() => { loadPosts(); }, [loadPosts]);
+
+  useEffect(() => {
     fetchTargets().then(setTargets).catch(() => {});
-    fetchSettings()
-      .then((s) => {
-        if (s.publishedPostsPerLoad) batchSizeRef.current = s.publishedPostsPerLoad;
-        if (s.editorWatermark) setWatermark(s.editorWatermark);
-        if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
-        if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
-      })
-      .catch(() => {});
-  };
+    fetchSettings().then(applySettings).catch(() => {});
+  }, [applySettings]);
+
+  const reloadConfig = useCallback(() => {
+    fetchTargets().then(setTargets).catch(() => {});
+    fetchSettings().then(applySettings).catch(() => {});
+  }, [applySettings]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -147,7 +140,21 @@ export function App() {
 
   const handlePostDeleted = () => {
     setSelectedPostId(null);
+    setNavHistory([]);
     loadPosts();
+  };
+
+  const handleNavigateToPost = (id: string) => {
+    if (selectedPostId) setNavHistory((h) => [...h, selectedPostId]);
+    setSelectedPostId(id);
+  };
+
+  const handleGoBack = () => {
+    setNavHistory((h) => {
+      const prev = h[h.length - 1];
+      if (prev) setSelectedPostId(prev);
+      return h.slice(0, -1);
+    });
   };
 
   const handleLoadMorePublished = () => {
@@ -162,11 +169,9 @@ export function App() {
         published={published}
         publishedTotal={publishedTotal}
         selectedPostId={selectedPostId}
-        onSelectPost={setSelectedPostId}
+        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); }}
         onNewPost={handleNewPost}
         onLoadMorePublished={handleLoadMorePublished}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
@@ -181,7 +186,9 @@ export function App() {
             onContentChange={setEditorContent}
             onPostLoaded={setCurrentPost}
             onExport={() => setExportOpen(true)}
-            onSelectPost={setSelectedPostId}
+            onSelectPost={handleNavigateToPost}
+            onGoBack={navHistory.length > 0 ? handleGoBack : undefined}
+            pubBatchSize={pubBatchSize}
             watermark={watermark}
             editorRef={editorRef}
           />
@@ -223,6 +230,7 @@ export function App() {
         <NewPostModal
           targets={targets}
           supportedLanguages={supportedLanguages}
+          pubBatchSize={pubBatchSize}
           onClose={() => setNewPostOpen(false)}
           onCreate={handleCreatePost}
         />

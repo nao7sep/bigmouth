@@ -17,6 +17,8 @@ interface CenterPaneProps {
   onPostLoaded: (post: Post) => void;
   onExport: () => void;
   onSelectPost: (id: string) => void;
+  onGoBack?: () => void;
+  pubBatchSize: number;
   watermark: string;
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
@@ -32,6 +34,8 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   onPostLoaded,
   onExport,
   onSelectPost,
+  onGoBack,
+  pubBatchSize,
   watermark,
   editorRef,
 }: CenterPaneProps, ref) {
@@ -180,7 +184,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   };
 
   const handleClearSource = async () => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }).catch(() => null);
+    const updated = await updatePost(postId, { frontMatter: { sourceId: undefined } }).catch(() => null);
     if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
   };
 
@@ -191,6 +195,11 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   return (
     <div className="pane-center">
       <div className="center-toolbar">
+        {onGoBack && (
+          <button className="btn-toolbar" onClick={onGoBack}>
+            ← Back
+          </button>
+        )}
         <span className="toolbar-label">{fm.target}</span>
         <span className="toolbar-sep">|</span>
         <span className="toolbar-label">{fm.language}</span>
@@ -234,7 +243,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
         <button className="btn-toolbar" onClick={onExport}>
           Export
         </button>
-        <button className="btn-delete" onClick={handleDelete}>
+        <button className="btn-toolbar btn-delete" onClick={handleDelete}>
           Delete
         </button>
       </div>
@@ -261,6 +270,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
       {sourcePickerOpen && (
         <SourcePickerModal
           currentPostId={postId}
+          pubBatchSize={pubBatchSize}
           onSelect={handleSetSource}
           onClose={() => setSourcePickerOpen(false)}
         />

@@ -249,13 +249,7 @@ body {
 }
 
 .btn-delete {
-  padding: 4px 10px;
-  background: none;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
   color: #dc2626;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 .btn-delete:hover {
@@ -838,48 +832,32 @@ body {
   margin-top: 16px;
 }
 
-.btn-delete {
-  padding: 3px 8px;
-  font-size: 11px;
-  background: none;
-  border: 1px solid #e0e0e0;
-  border-radius: 3px;
-  color: #dc2626;
-  cursor: pointer;
-  margin-top: 4px;
-}
-
-.btn-delete:hover {
-  background: #fef2f2;
-  border-color: #dc2626;
-}
-
 /* ── Source Picker Modal ─────────────────────────────────── */
 
-.source-picker-item {
+.post-picker-item {
   padding: 10px 12px;
   border-radius: 4px;
   cursor: pointer;
   margin-bottom: 2px;
 }
 
-.source-picker-item:hover {
+.post-picker-item:hover {
   background: #f0f4ff;
 }
 
-.source-picker-title {
+.post-picker-title {
   font-size: 13px;
   font-weight: 500;
   color: #1a1a1a;
 }
 
-.source-picker-sub {
+.post-picker-sub {
   font-size: 11px;
   color: #888;
   margin-top: 2px;
 }
 
-.source-picker-list {
+.post-picker-list {
   border: 1px solid #ddd;
   border-radius: 4px;
   max-height: 180px;
@@ -888,7 +866,7 @@ body {
   padding: 4px;
 }
 
-.source-picker-empty {
+.post-picker-empty {
   font-size: 13px;
   color: #999;
   padding: 8px 12px;

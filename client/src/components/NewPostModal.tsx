@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
-import { fetchPosts } from "../api";
-import type { PostSummary, Target } from "../types";
+import { useState } from "react";
+import { PostPickerList } from "./PostPickerList";
+import { usePostPicker } from "../hooks/usePostPicker";
+import type { Target } from "../types";
 
 interface NewPostModalProps {
   targets: Target[];
   supportedLanguages: string[];
+  pubBatchSize: number;
   onClose: () => void;
   onCreate: (target: string, language: string, sourceId?: string) => void;
 }
@@ -21,6 +23,7 @@ function resolveLanguage(
 export function NewPostModal({
   targets,
   supportedLanguages,
+  pubBatchSize,
   onClose,
   onCreate,
 }: NewPostModalProps) {
@@ -28,19 +31,10 @@ export function NewPostModal({
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     resolveLanguage(undefined, supportedLanguages)
   );
-
-  const [posts, setPosts] = useState<PostSummary[]>([]);
-  const [query, setQuery] = useState("");
   const [sourceId, setSourceId] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
 
-  useEffect(() => {
-    fetchPosts(0, 500)
-      .then((data) => {
-        setPosts([...data.drafts, ...data.ready, ...data.published]);
-      })
-      .catch(() => {});
-  }, []);
+  const picker = usePostPicker(pubBatchSize);
 
   const handleTargetChange = (name: string) => {
     setSelectedTarget(name);
@@ -48,25 +42,8 @@ export function NewPostModal({
     setSelectedLanguage(resolveLanguage(t?.defaultLanguage, supportedLanguages));
   };
 
-  const filtered = query.trim()
-    ? posts.filter((p) => {
-        const fm = p.frontMatter;
-        const haystack = [fm.id, fm.target, fm.language, fm.title ?? ""]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(query.toLowerCase());
-      })
-    : posts;
-
-  const handleSelectSource = (id: string, title: string) => {
-    setSourceId(id);
-    setSourceTitle(title);
-    setQuery("");
-  };
-
   const handleCreate = () => {
-    const tName = selectedTarget || "default";
-    onCreate(tName, selectedLanguage, sourceId || undefined);
+    onCreate(selectedTarget || "default", selectedLanguage, sourceId || undefined);
   };
 
   return (
@@ -137,37 +114,14 @@ export function NewPostModal({
                 </button>
               </div>
             ) : (
-              <>
-                <input
-                  className="form-input"
-                  placeholder="Search posts…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                {query.trim() && (
-                  <div className="source-picker-list">
-                    {filtered.length === 0 ? (
-                      <p className="source-picker-empty">No posts found</p>
-                    ) : (
-                      filtered.map((p) => {
-                        const fm = p.frontMatter;
-                        const label = fm.title ?? fm.id;
-                        const sub = `${fm.target} · ${fm.language} · ${fm.status}`;
-                        return (
-                          <div
-                            key={fm.id}
-                            className="source-picker-item"
-                            onClick={() => handleSelectSource(fm.id, label)}
-                          >
-                            <div className="source-picker-title">{label}</div>
-                            <div className="source-picker-sub">{sub}</div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
-              </>
+              <PostPickerList
+                {...picker}
+                onSelect={(id, title) => {
+                  setSourceId(id);
+                  setSourceTitle(title);
+                  picker.setQuery("");
+                }}
+              />
             )}
           </div>
         </div>

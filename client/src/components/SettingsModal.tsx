@@ -359,7 +359,7 @@ function AiTab({
             />
           </div>
           <button
-            className="btn-delete"
+            className="btn-toolbar btn-delete"
             onClick={() => deleteConfig(c.id)}
             disabled={settings.aiConfigs.length === 1}
           >
@@ -454,7 +454,7 @@ function TargetsTab({
             </div>
           </div>
           <button
-            className="btn-delete"
+            className="btn-toolbar btn-delete"
             onClick={() => deleteTarget(i)}
           >
             Delete
@@ -518,7 +518,7 @@ function PromptsTab({
             />
           </div>
           <button
-            className="btn-delete"
+            className="btn-toolbar btn-delete"
             onClick={() => deletePrompt(i)}
           >
             Delete

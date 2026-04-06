@@ -10,8 +10,6 @@ interface LeftPaneProps {
   onSelectPost: (id: string) => void;
   onNewPost: () => void;
   onLoadMorePublished: () => void;
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenAbout: () => void;
@@ -26,8 +24,6 @@ export function LeftPane({
   onSelectPost,
   onNewPost,
   onLoadMorePublished,
-  searchQuery,
-  onSearchChange,
   onOpenSettings,
   onOpenShortcuts,
   onOpenAbout,
@@ -49,25 +45,6 @@ export function LeftPane({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
-
-  const filter = (posts: PostSummary[]) => {
-    if (!searchQuery) return posts;
-    const q = searchQuery.toLowerCase();
-    return posts.filter((p) => {
-      const fm = p.frontMatter;
-      return (
-        (fm.title && fm.title.toLowerCase().includes(q)) ||
-        (fm.slug && fm.slug.toLowerCase().includes(q)) ||
-        fm.target.toLowerCase().includes(q) ||
-        fm.id.toLowerCase().includes(q) ||
-        (fm.tags && fm.tags.some((t) => t.toLowerCase().includes(q)))
-      );
-    });
-  };
-
-  const filteredDrafts = filter(drafts);
-  const filteredReady = filter(ready);
-  const filteredPublished = filter(published);
 
   return (
     <div className="pane-left">
@@ -111,22 +88,15 @@ export function LeftPane({
             </div>
           </div>
         </h1>
-        <input
-          className="search-box"
-          type="text"
-          placeholder="Search posts..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-        />
       </div>
 
       <div className="left-sections">
         <Section
           label="Drafts"
-          count={filteredDrafts.length}
+          count={drafts.length}
           open={draftsOpen}
           onToggle={() => setDraftsOpen(!draftsOpen)}
-          posts={filteredDrafts}
+          posts={drafts}
           selectedPostId={selectedPostId}
           onSelectPost={onSelectPost}
           emptyText="No drafts"
@@ -135,10 +105,10 @@ export function LeftPane({
 
         <Section
           label="Ready"
-          count={filteredReady.length}
+          count={ready.length}
           open={readyOpen}
           onToggle={() => setReadyOpen(!readyOpen)}
-          posts={filteredReady}
+          posts={ready}
           selectedPostId={selectedPostId}
           onSelectPost={onSelectPost}
           emptyText="No ready posts"
@@ -147,11 +117,11 @@ export function LeftPane({
 
         <Section
           label="Published"
-          count={filteredPublished.length}
+          count={published.length}
           totalCount={publishedTotal}
           open={publishedOpen}
           onToggle={() => setPublishedOpen(!publishedOpen)}
-          posts={filteredPublished}
+          posts={published}
           selectedPostId={selectedPostId}
           onSelectPost={onSelectPost}
           emptyText="No published posts"
