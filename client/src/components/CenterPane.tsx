@@ -171,7 +171,7 @@ export function CenterPane({
       <div className="center-toolbar">
         {onGoBack && (
           <button className="btn-toolbar" onClick={onGoBack}>
-            ‹ Back
+            ◀ Back
           </button>
         )}
         <span className="toolbar-label">{fm.target}</span>

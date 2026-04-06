@@ -15,6 +15,16 @@ import "./App.css";
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
 
+const STORAGE_LEFT  = "bm-pane-left-width";
+const STORAGE_RIGHT = "bm-pane-right-width";
+
+function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
+
+function readStoredWidth(key: string, fallback: number, min: number, max: number) {
+  const v = localStorage.getItem(key);
+  return v ? clamp(+v, min, max) : fallback;
+}
+
 export function App() {
   const [drafts, setDrafts] = useState<PostSummary[]>([]);
   const [ready, setReady] = useState<PostSummary[]>([]);
@@ -39,6 +49,42 @@ export function App() {
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
+
+  // Resizable pane widths
+  const [leftWidth,  setLeftWidth]  = useState(() => readStoredWidth(STORAGE_LEFT,  360, 240, 720));
+  const [rightWidth, setRightWidth] = useState(() => readStoredWidth(STORAGE_RIGHT, 480, 320, 960));
+  const leftWidthRef  = useRef(leftWidth);
+  const rightWidthRef = useRef(rightWidth);
+  leftWidthRef.current  = leftWidth;
+  rightWidthRef.current = rightWidth;
+
+  const startDrag = useCallback((
+    e: React.MouseEvent,
+    widthRef: React.MutableRefObject<number>,
+    setWidth: (w: number) => void,
+    storageKey: string,
+    sign: 1 | -1,
+    min: number,
+    max: number,
+  ) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = widthRef.current;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      setWidth(clamp(startW + sign * (ev.clientX - startX), min, max));
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      localStorage.setItem(storageKey, String(widthRef.current));
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -158,7 +204,10 @@ export function App() {
   };
 
   return (
-    <div className="app-layout">
+    <div
+      className="app-layout"
+      style={{ "--bm-left": `${leftWidth}px`, "--bm-right": `${rightWidth}px` } as React.CSSProperties}
+    >
       <LeftPane
         drafts={drafts}
         ready={ready}
@@ -171,6 +220,10 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
+      />
+      <div
+        className="pane-divider"
+        onMouseDown={(e) => startDrag(e, leftWidthRef, setLeftWidth, STORAGE_LEFT, 1, 240, 720)}
       />
       {selectedPostId ? (
         <>
@@ -187,6 +240,10 @@ export function App() {
             pubBatchSize={pubBatchSize}
             watermark={watermark}
             editorRef={editorRef}
+          />
+          <div
+            className="pane-divider"
+            onMouseDown={(e) => startDrag(e, rightWidthRef, setRightWidth, STORAGE_RIGHT, -1, 320, 960)}
           />
           <RightPane
             content={editorContent}
