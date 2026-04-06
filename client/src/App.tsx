@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LeftPane } from "./components/LeftPane";
-import { CenterPane } from "./components/CenterPane";
+import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
 import { RightPane, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
 import { ExportModal } from "./components/ExportModal";
@@ -36,6 +36,7 @@ export function App() {
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  const centerPaneRef = useRef<CenterPaneHandle>(null);
 
   const batchSizeRef = useRef(50);
 
@@ -94,6 +95,11 @@ export function App() {
       if (tag === "TEXTAREA" || tag === "SELECT") return;
       if (tag === "INPUT" && e.key !== "n" && e.key !== "e") return;
 
+      if (e.key === "s" && selectedPostId) {
+        e.preventDefault();
+        centerPaneRef.current?.save();
+        return;
+      }
       if (e.key === "n") {
         e.preventDefault();
         setNewPostOpen(true);
@@ -165,6 +171,7 @@ export function App() {
       {selectedPostId ? (
         <>
           <CenterPane
+            ref={centerPaneRef}
             postId={selectedPostId}
             onPostSaved={loadPosts}
             onPostDeleted={handlePostDeleted}

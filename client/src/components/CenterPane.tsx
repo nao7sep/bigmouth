@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
 import { computeCounts, type ContentCounts } from "../util/counts";
+
+export interface CenterPaneHandle {
+  save: () => void;
+}
 
 interface CenterPaneProps {
   postId: string;
@@ -19,7 +23,8 @@ interface CenterPaneProps {
 
 const AUTO_SAVE_DELAY = 2000;
 
-export function CenterPane({
+export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
+  function CenterPane({
   postId,
   onPostSaved,
   onPostDeleted,
@@ -29,7 +34,7 @@ export function CenterPane({
   onSelectPost,
   watermark,
   editorRef,
-}: CenterPaneProps) {
+}: CenterPaneProps, ref) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -62,6 +67,8 @@ export function CenterPane({
       // Save failed silently — will retry on next change
     }
   }, [onPostSaved]);
+
+  useImperativeHandle(ref, () => ({ save }), [save]);
 
   // Load post when postId changes (save current first)
   useEffect(() => {
@@ -260,4 +267,4 @@ export function CenterPane({
       )}
     </div>
   );
-}
+});
