@@ -41,35 +41,17 @@ export function SettingsModal({
     fetchPrompts().then(setPrompts).catch(() => {});
   }, []);
 
-  const handleSaveSettings = async () => {
+  const handleSaveAll = async () => {
     if (!settings) return;
     setSaving(true);
     try {
-      await saveSettings(settings);
-      onSettingsChanged();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveTargets = async () => {
-    setSaving(true);
-    try {
-      const saved = await saveTargets(targets);
-      setTargets(saved);
-      onSettingsChanged();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSavePrompts = async () => {
-    setSaving(true);
-    try {
-      const saved = await savePrompts(prompts);
-      setPrompts(saved);
+      const [, savedTargets, savedPrompts] = await Promise.all([
+        saveSettings(settings),
+        saveTargets(targets),
+        savePrompts(prompts),
+      ]);
+      setTargets(savedTargets);
+      setPrompts(savedPrompts);
       onSettingsChanged();
       onClose();
     } finally {
@@ -107,16 +89,12 @@ export function SettingsModal({
             <GeneralTab
               settings={settings}
               onChange={setSettings}
-              onSave={handleSaveSettings}
-              saving={saving}
             />
           )}
           {tab === "ai" && settings && (
             <AiTab
               settings={settings}
               onChange={setSettings}
-              onSave={handleSaveSettings}
-              saving={saving}
             />
           )}
           {tab === "targets" && (
@@ -124,18 +102,24 @@ export function SettingsModal({
               targets={targets}
               supportedLanguages={settings?.supportedLanguages ?? []}
               onChange={setTargets}
-              onSave={handleSaveTargets}
-              saving={saving}
             />
           )}
           {tab === "prompts" && (
             <PromptsTab
               prompts={prompts}
               onChange={setPrompts}
-              onSave={handleSavePrompts}
-              saving={saving}
             />
           )}
+        </div>
+        <div className="modal-footer">
+          <button
+            className="btn-new-post"
+            style={{ width: "auto" }}
+            onClick={handleSaveAll}
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
         </div>
       </div>
     </div>
@@ -147,13 +131,9 @@ export function SettingsModal({
 function GeneralTab({
   settings,
   onChange,
-  onSave,
-  saving,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
-  onSave: () => void;
-  saving: boolean;
 }) {
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
@@ -227,16 +207,6 @@ function GeneralTab({
         />
       </div>
 
-      <div className="settings-actions">
-        <button
-          className="btn-new-post"
-          style={{ width: "auto" }}
-          onClick={onSave}
-          disabled={saving}
-        >
-          {saving ? "Saving..." : "Save"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -246,13 +216,9 @@ function GeneralTab({
 function AiTab({
   settings,
   onChange,
-  onSave,
-  saving,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
-  onSave: () => void;
-  saving: boolean;
 }) {
   const updateConfig = (id: string, patch: Partial<AiConfig>) =>
     onChange({
@@ -367,17 +333,6 @@ function AiTab({
       <button className="btn-toolbar" onClick={addConfig}>
         + Add Configuration
       </button>
-
-      <div className="settings-actions">
-        <button
-          className="btn-new-post"
-          style={{ width: "auto" }}
-          onClick={onSave}
-          disabled={saving}
-        >
-          {saving ? "Saving..." : "Save"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -388,14 +343,10 @@ function TargetsTab({
   targets,
   supportedLanguages,
   onChange,
-  onSave,
-  saving,
 }: {
   targets: Target[];
   supportedLanguages: string[];
   onChange: (t: Target[]) => void;
-  onSave: () => void;
-  saving: boolean;
 }) {
   const addTarget = () => {
     const defaultLang = supportedLanguages.includes("en")
@@ -476,17 +427,6 @@ function TargetsTab({
       <button className="btn-toolbar" onClick={addTarget}>
         + Add Target
       </button>
-
-      <div className="settings-actions">
-        <button
-          className="btn-new-post"
-          style={{ width: "auto" }}
-          onClick={onSave}
-          disabled={saving}
-        >
-          {saving ? "Saving..." : "Save"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -496,13 +436,9 @@ function TargetsTab({
 function PromptsTab({
   prompts,
   onChange,
-  onSave,
-  saving,
 }: {
   prompts: Prompt[];
   onChange: (p: Prompt[]) => void;
-  onSave: () => void;
-  saving: boolean;
 }) {
   const addPrompt = () => {
     onChange([...prompts, { name: "", text: "" }]);
@@ -555,17 +491,6 @@ function PromptsTab({
       <button className="btn-toolbar" onClick={addPrompt}>
         + Add Prompt
       </button>
-
-      <div className="settings-actions">
-        <button
-          className="btn-new-post"
-          style={{ width: "auto" }}
-          onClick={onSave}
-          disabled={saving}
-        >
-          {saving ? "Saving..." : "Save"}
-        </button>
-      </div>
     </div>
   );
 }
