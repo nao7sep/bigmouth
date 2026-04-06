@@ -74,6 +74,7 @@ export interface Settings {
   timezone: string;
   supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
   publishedPostsPerLoad: number;
+  maxUploadMb: number;
   editorWatermark: string;
   extraFieldWatermark: string;
   aiConfigs: AiConfig[];

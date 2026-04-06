@@ -6,6 +6,7 @@ import { ConfirmModal } from "./ConfirmModal";
 interface AssetsTabProps {
   postId: string;
   onInsertAtCursor: (text: string) => void;
+  maxUploadMb: number;
 }
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -24,11 +25,20 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
+// Mirrors server-side sanitizeFilename logic
+function sanitizeFilename(raw: string): string {
+  const base = raw.split("/").pop() ?? raw;
+  return base.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -44,9 +54,9 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
     load();
   }, [load]);
 
-  const uploadFiles = async (files: FileList | File[]) => {
+  const uploadFiles = async (files: File[]) => {
     setUploading(true);
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       try {
         await uploadAsset(postId, file);
       } catch {
@@ -57,19 +67,59 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
     setUploading(false);
   };
 
+  const checkAndUpload = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const limitBytes = maxUploadMb * 1024 * 1024;
+
+    const tooLarge = fileArray.filter((f) => f.size > limitBytes);
+    const uploadable = fileArray.filter((f) => f.size <= limitBytes);
+
+    if (tooLarge.length > 0) {
+      setUploadError(
+        `Too large (max ${maxUploadMb} MB): ${tooLarge.map((f) => f.name).join(", ")}`
+      );
+    }
+
+    if (uploadable.length === 0) return;
+
+    const existingNames = new Set(assets.map((a) => a.filename));
+    const dupes = uploadable
+      .map((f) => sanitizeFilename(f.name))
+      .filter((name) => existingNames.has(name));
+
+    if (dupes.length > 0) {
+      setPendingFiles(uploadable);
+      setDuplicateNames(dupes);
+    } else {
+      await uploadFiles(uploadable);
+    }
+  };
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files.length > 0) {
-      await uploadFiles(e.dataTransfer.files);
+      await checkAndUpload(e.dataTransfer.files);
     }
   };
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      await uploadFiles(e.target.files);
+      await checkAndUpload(e.target.files);
       e.target.value = "";
     }
+  };
+
+  const handleConfirmReplace = async () => {
+    const files = pendingFiles ?? [];
+    setPendingFiles(null);
+    setDuplicateNames([]);
+    await uploadFiles(files);
+  };
+
+  const handleCancelReplace = () => {
+    setPendingFiles(null);
+    setDuplicateNames([]);
   };
 
   const handleDelete = async (filename: string) => {
@@ -111,6 +161,13 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
           : "Drop files here or click to upload"}
       </div>
 
+      {uploadError && (
+        <div className="assets-error">
+          <span>{uploadError}</span>
+          <button className="assets-error-dismiss" onClick={() => setUploadError(null)}>&times;</button>
+        </div>
+      )}
+
       {/* Asset grid */}
       {assets.length === 0 ? (
         <div className="assets-empty">No assets yet</div>
@@ -134,6 +191,15 @@ export function AssetsTab({ postId, onInsertAtCursor }: AssetsTabProps) {
           danger
           onConfirm={() => handleDelete(deleteTarget)}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {duplicateNames.length > 0 && (
+        <ConfirmModal
+          title="Replace existing file?"
+          message={`${duplicateNames.join(", ")} already exist${duplicateNames.length === 1 ? "s" : ""}. Replace?`}
+          confirmLabel="Replace"
+          onConfirm={handleConfirmReplace}
+          onCancel={handleCancelReplace}
         />
       )}
     </div>
@@ -164,11 +230,6 @@ function AssetCard({
         ) : (
           <div className="asset-file-icon">{ext(asset.filename).toUpperCase()}</div>
         )}
-        {asset.hasMetadata && (
-          <div className="asset-exif-badge" title="Image contains EXIF/IPTC/XMP metadata — sanitize before publishing">
-            ⚠ Metadata
-          </div>
-        )}
       </div>
       <div className="asset-info">
         <div className="asset-name" title={asset.filename}>
@@ -180,6 +241,9 @@ function AssetCard({
             <> &middot; {asset.width}&times;{asset.height}</>
           )}
         </div>
+        {asset.hasMetadata && (
+          <div className="asset-meta-note">Has metadata</div>
+        )}
       </div>
       <div className="asset-actions">
         <button className="asset-btn" onClick={onInsert} title="Insert at cursor">

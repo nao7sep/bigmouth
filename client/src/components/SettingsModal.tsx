@@ -225,6 +225,17 @@ function GeneralTab({
         />
       </div>
       <div className="form-field">
+        <label className="form-label">Max upload size (MB)</label>
+        <input
+          className="form-input"
+          type="number"
+          value={settings.maxUploadMb}
+          onChange={(e) =>
+            update({ maxUploadMb: parseInt(e.target.value) || 500 })
+          }
+        />
+      </div>
+      <div className="form-field">
         <label className="form-label">Editor watermark</label>
         <textarea
           className="form-input"

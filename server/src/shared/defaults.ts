@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Tokyo",
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,
+  maxUploadMb: 500,
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:

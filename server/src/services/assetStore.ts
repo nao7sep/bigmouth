@@ -62,7 +62,13 @@ export function deleteAsset(postId: string, filename: string): void {
 
   const metaPath = path.join(dir, META_FILENAME);
   const remaining = listAssets(postId).filter((a) => a.filename !== filename);
-  fs.writeFileSync(metaPath, JSON.stringify(remaining, null, 2) + "\n");
+
+  if (remaining.length === 0) {
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    fs.rmdirSync(dir);
+  } else {
+    fs.writeFileSync(metaPath, JSON.stringify(remaining, null, 2) + "\n");
+  }
 }
 
 /**

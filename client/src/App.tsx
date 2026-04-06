@@ -26,6 +26,7 @@ export function App() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [supportedLanguages, setSupportedLanguages] = useState<string[]>(["en"]);
   const [pubBatchSize, setPubBatchSize] = useState(50);
+  const [maxUploadMb, setMaxUploadMb] = useState(500);
   const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
   const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
   const [editorContent, setEditorContent] = useState("");
@@ -56,6 +57,7 @@ export function App() {
 
   const applySettings = useCallback((s: Settings) => {
     if (s.publishedPostsPerLoad) setPubBatchSize(s.publishedPostsPerLoad);
+    if (s.maxUploadMb) setMaxUploadMb(s.maxUploadMb);
     if (s.editorWatermark) setWatermark(s.editorWatermark);
     if (s.extraFieldWatermark) setExtraFieldWatermark(s.extraFieldWatermark);
     if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
@@ -209,6 +211,7 @@ export function App() {
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
             onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
+            maxUploadMb={maxUploadMb}
           />
         </>
       ) : (

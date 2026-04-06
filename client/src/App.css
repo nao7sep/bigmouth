@@ -932,6 +932,31 @@ body {
   font-size: 13px;
 }
 
+.assets-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.assets-error-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
 .assets-grid {
   flex: 1;
   overflow-y: auto;
@@ -952,8 +977,8 @@ body {
 }
 
 .asset-card.has-exif {
-  border-color: #f59e0b;
-  background: #fffbeb;
+  border-color: #93c5fd;
+  background: #eff6ff;
 }
 
 .asset-thumb {
@@ -969,19 +994,10 @@ body {
   position: relative;
 }
 
-.asset-exif-badge {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(234, 179, 8, 0.9);
-  color: #1a1a1a;
-  font-size: 9px;
-  font-weight: 700;
-  text-align: center;
-  padding: 1px 0;
-  line-height: 1.2;
-  pointer-events: none;
+.asset-meta-note {
+  font-size: 10px;
+  color: #2563eb;
+  margin-top: 2px;
 }
 
 .asset-thumb img {

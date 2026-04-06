@@ -18,6 +18,7 @@ interface RightPaneProps {
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
   onInsertAtCursor: (text: string) => void;
+  maxUploadMb: number;
 }
 
 export function RightPane({
@@ -31,6 +32,7 @@ export function RightPane({
   onTabChange,
   analysisTrigger,
   onInsertAtCursor,
+  maxUploadMb,
 }: RightPaneProps) {
 
   return (
@@ -65,7 +67,7 @@ export function RightPane({
           )}
         </div>
         <div className={activeTab === "Assets" ? "" : "tab-hidden"}>
-          <AssetsTab postId={postId} onInsertAtCursor={onInsertAtCursor} />
+          <AssetsTab postId={postId} onInsertAtCursor={onInsertAtCursor} maxUploadMb={maxUploadMb} />
         </div>
       </div>
     </div>

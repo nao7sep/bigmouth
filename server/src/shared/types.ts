@@ -69,6 +69,7 @@ export interface Settings {
   timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
   supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
   publishedPostsPerLoad: number;   // batch size for the published posts list (default: 50)
+  maxUploadMb: number;             // max asset upload size in MB (default: 500)
   editorWatermark: string;         // placeholder text in the empty editor
   extraFieldWatermark: string;     // placeholder text in the extra textarea
   aiConfigs: AiConfig[];

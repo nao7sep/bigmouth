@@ -15,6 +15,7 @@ import multer from "multer";
 import exifr from "exifr";
 import { imageSize } from "image-size";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
+import { getSettings } from "../services/configStore.js";
 import {
   listAssets,
   addAsset,
@@ -26,12 +27,6 @@ import {
 
 export const assetsRouter = Router();
 
-// Store uploads in memory so we can read EXIF before writing to disk
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
-});
-
 // --- GET /api/assets/:postId ---
 
 assetsRouter.get("/:postId", (req, res) => {
@@ -41,7 +36,13 @@ assetsRouter.get("/:postId", (req, res) => {
 
 // --- POST /api/assets/:postId ---
 
-assetsRouter.post("/:postId", upload.single("file"), async (req, res) => {
+assetsRouter.post("/:postId", (req, res, next) => {
+  const limitMb = getSettings().maxUploadMb ?? 500;
+  multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: limitMb * 1024 * 1024 },
+  }).single("file")(req, res, next);
+}, async (req, res) => {
   const postId = String(req.params.postId);
 
   if (!req.file) {
@@ -55,24 +56,30 @@ assetsRouter.post("/:postId", upload.single("file"), async (req, res) => {
   // Write file to disk
   fs.writeFileSync(destPath, req.file.buffer);
 
-  // Attempt EXIF extraction for images
+  // Get image dimensions from actual image headers (not EXIF)
   let width: number | undefined;
   let height: number | undefined;
-  let takenAt: string | undefined;
+  let hasMetadata: boolean | undefined;
 
-  try {
-    const exif = await exifr.parse(req.file.buffer, {
-      pick: ["DateTimeOriginal", "ImageWidth", "ImageHeight", "ExifImageWidth", "ExifImageHeight"],
-    });
-    if (exif) {
-      width = exif.ExifImageWidth ?? exif.ImageWidth;
-      height = exif.ExifImageHeight ?? exif.ImageHeight;
-      if (exif.DateTimeOriginal instanceof Date) {
-        takenAt = exif.DateTimeOriginal.toISOString();
-      }
+  const fileExt = path.extname(filename).slice(1).toLowerCase();
+  const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
+
+  if (IMAGE_EXTS.has(fileExt)) {
+    try {
+      const dims = imageSize(req.file.buffer);
+      width = dims.width;
+      height = dims.height;
+    } catch {
+      // Dimensions unavailable
     }
-  } catch {
-    // EXIF not available for this file type — skip
+
+    try {
+      // Parse all default segments — any non-null result means metadata is present
+      const exif = await exifr.parse(req.file.buffer);
+      if (exif && Object.keys(exif).length > 0) hasMetadata = true;
+    } catch {
+      // Not an image format exifr recognises — no metadata
+    }
   }
 
   const meta = {
@@ -80,7 +87,7 @@ assetsRouter.post("/:postId", upload.single("file"), async (req, res) => {
     size: req.file.buffer.length,
     ...(width !== undefined && { width }),
     ...(height !== undefined && { height }),
-    ...(takenAt !== undefined && { takenAt }),
+    ...(hasMetadata && { hasMetadata }),
     uploadedAt: formatForFrontMatter(utcNow()),
   };
 
