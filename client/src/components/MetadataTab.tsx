@@ -128,6 +128,9 @@ export function MetadataTab({
           generating={isGenerating("slug")}
           generateDisabled={anyGenerating || noContent}
         />
+        {fields.slug && /[^a-z0-9-]/.test(fields.slug) && (
+          <p className="meta-field-hint">Slug contains characters that may not be URL-safe.</p>
+        )}
       </div>
     );
   }

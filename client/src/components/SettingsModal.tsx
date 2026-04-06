@@ -43,6 +43,7 @@ export function SettingsModal({
   const [tab, setTab] = useState<Tab>("general");
   useEscapeKey(onClose);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [originalPort, setOriginalPort] = useState<number | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -50,7 +51,7 @@ export function SettingsModal({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchSettings().then(setSettings).catch(() => {});
+    fetchSettings().then((s) => { setSettings(s); setOriginalPort(s.port); }).catch(() => {});
     fetchAiConfigs().then(setAiConfigs).catch(() => {});
     fetchGenerationPrompts().then(setGenerationPrompts).catch(() => {});
     fetchTargets().then(setTargets).catch(() => {});
@@ -59,40 +60,22 @@ export function SettingsModal({
 
   const isValid = (): boolean => {
     if (!settings) return false;
-
-    // General
     const port = settings.port;
     if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
-
-    const ppl = settings.publishedPostsPerLoad;
-    if (!Number.isInteger(ppl) || ppl < 1) return false;
-
+    if (!Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1) return false;
+    if (!Number.isInteger(settings.maxUploadMb) || settings.maxUploadMb < 1) return false;
     const langs = settings.supportedLanguages;
-    if (langs.length === 0) return false;
-    if (langs.some((l) => !/^[a-z]{2}$/.test(l))) return false;
-    if (new Set(langs).size !== langs.length) return false;
-
+    if (langs.length === 0 || langs.some((l) => !/^[a-z]{2}$/.test(l)) || new Set(langs).size !== langs.length) return false;
     if (!settings.timezone.trim()) return false;
-    try {
-      Intl.DateTimeFormat(undefined, { timeZone: settings.timezone });
-    } catch {
-      return false;
-    }
-
-    // AI configs
-    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim())) return false;
-
-    // Targets
-    if (targets.some((t) => !t.name.trim())) return false;
-    const targetNames = targets.map((t) => t.name.trim());
-    if (new Set(targetNames).size !== targetNames.length) return false;
-
-    // Prompts
+    try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); } catch { return false; }
+    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim() || !c.apiKey.trim())) return false;
+    const tNames = targets.map((t) => t.name.trim());
+    if (tNames.some((n) => !n) || new Set(tNames).size !== tNames.length) return false;
     if (prompts.some((p) => !p.name.trim() || !p.text.trim())) return false;
-
     return true;
   };
 
+  const portChanged = settings !== null && originalPort !== null && settings.port !== originalPort;
   const canSave = !saving && isValid();
 
   const handleSaveAll = async () => {
@@ -176,6 +159,11 @@ export function SettingsModal({
           )}
         </div>
         <div className="modal-footer">
+          {portChanged && canSave && (
+            <p className="settings-hint" style={{ color: "#b45309" }}>
+              Port change takes effect after restarting the server.
+            </p>
+          )}
           <button
             className="btn-new-post"
             style={{ width: "auto" }}
@@ -190,6 +178,12 @@ export function SettingsModal({
   );
 }
 
+// --- Shared ---
+
+function FieldError({ msg }: { msg: string }) {
+  return <p className="settings-field-error">{msg}</p>;
+}
+
 // --- General ---
 
 function GeneralTab({
@@ -201,6 +195,25 @@ function GeneralTab({
 }) {
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
+
+  const portInvalid = !Number.isInteger(settings.port) || settings.port < 1 || settings.port > 65535;
+
+  let timezoneError = "";
+  if (!settings.timezone.trim()) {
+    timezoneError = "Timezone is required.";
+  } else {
+    try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); }
+    catch { timezoneError = `"${settings.timezone}" is not a valid IANA timezone.`; }
+  }
+
+  const langs = settings.supportedLanguages;
+  let langsError = "";
+  if (langs.length === 0) langsError = "At least one language is required.";
+  else if (langs.some((l) => !/^[a-z]{2}$/.test(l))) langsError = "Each language must be a 2-letter lowercase code (e.g. en, ja).";
+  else if (new Set(langs).size !== langs.length) langsError = "Languages must not contain duplicates.";
+
+  const pplInvalid = !Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1;
+  const mbInvalid = !Number.isInteger(settings.maxUploadMb) || settings.maxUploadMb < 1;
 
   return (
     <div className="settings-section">
@@ -214,6 +227,7 @@ function GeneralTab({
             update({ port: parseInt(e.target.value) || 3141 })
           }
         />
+        {portInvalid && <FieldError msg="Must be an integer between 1 and 65535." />}
       </div>
       <div className="form-field">
         <label className="form-label">Timezone (IANA)</label>
@@ -222,6 +236,7 @@ function GeneralTab({
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
         />
+        {timezoneError && <FieldError msg={timezoneError} />}
       </div>
       <div className="form-field">
         <label className="form-label">Supported languages</label>
@@ -238,6 +253,7 @@ function GeneralTab({
           }
           placeholder="en, ja, es, fr, de"
         />
+        {langsError && <FieldError msg={langsError} />}
       </div>
       <div className="form-field">
         <label className="form-label">Published posts per load</label>
@@ -249,6 +265,7 @@ function GeneralTab({
             update({ publishedPostsPerLoad: parseInt(e.target.value) || 50 })
           }
         />
+        {pplInvalid && <FieldError msg="Must be a positive integer." />}
       </div>
       <div className="form-field">
         <label className="form-label">Max upload size (MB)</label>
@@ -260,6 +277,7 @@ function GeneralTab({
             update({ maxUploadMb: parseInt(e.target.value) || 500 })
           }
         />
+        {mbInvalid && <FieldError msg="Must be a positive integer." />}
       </div>
       <div className="form-field">
         <label className="form-label">Editor watermark</label>
@@ -309,7 +327,7 @@ function AiTab({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "claude", apiKey: "", model: "" },
+        { id, name: "", provider: "claude", apiKey: "YOUR_API_KEY", model: "" },
       ],
     });
   };
@@ -355,6 +373,7 @@ function AiTab({
               value={c.name}
               onChange={(e) => updateConfig(c.id, { name: e.target.value })}
             />
+            {!c.name.trim() && <FieldError msg="Name is required." />}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
@@ -382,6 +401,7 @@ function AiTab({
                 value={c.model}
                 onChange={(e) => updateConfig(c.id, { model: e.target.value })}
               />
+              {!c.model.trim() && <FieldError msg="Model is required." />}
             </div>
           </div>
           <div className="form-field">
@@ -393,6 +413,7 @@ function AiTab({
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
               placeholder="Enter API key"
             />
+            {!c.apiKey.trim() && <FieldError msg="API key is required." />}
           </div>
           <button
             className="btn-toolbar btn-delete"
@@ -443,6 +464,11 @@ function TargetsTab({
     onChange(targets.filter((_, i) => i !== index));
   };
 
+  const trimmedNames = targets.map((t) => t.name.trim());
+  const duplicateNames = new Set(
+    trimmedNames.filter((n, i) => n && trimmedNames.indexOf(n) !== i)
+  );
+
   return (
     <div className="settings-section">
       {targets.map((t, i) => (
@@ -454,6 +480,8 @@ function TargetsTab({
               value={t.name}
               onChange={(e) => updateTarget(i, { name: e.target.value })}
             />
+            {!t.name.trim() && <FieldError msg="Name is required." />}
+            {t.name.trim() && duplicateNames.has(t.name.trim()) && <FieldError msg="This name is already used by another target." />}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
@@ -625,6 +653,7 @@ function AnalysisPromptsTab({
               value={p.name}
               onChange={(e) => updatePrompt(i, { name: e.target.value })}
             />
+            {!p.name.trim() && <FieldError msg="Name is required." />}
           </div>
           <div className="form-field">
             <label className="form-label">
@@ -637,6 +666,7 @@ function AnalysisPromptsTab({
               onChange={(e) => updatePrompt(i, { text: e.target.value })}
               style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
             />
+            {!p.text.trim() && <FieldError msg="Prompt text is required." />}
           </div>
           <button
             className="btn-toolbar btn-delete"
