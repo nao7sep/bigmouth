@@ -177,7 +177,7 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
         <div className="assets-empty">No assets yet</div>
       ) : (
         <div className="assets-grid">
-          {assets.map((asset) => (
+          {[...assets].sort((a, b) => a.filename.localeCompare(b.filename, undefined, { sensitivity: "base" })).map((asset) => (
             <AssetCard
               key={asset.filename}
               postId={postId}

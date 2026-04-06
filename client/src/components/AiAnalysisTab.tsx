@@ -82,7 +82,7 @@ export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTa
           onChange={(e) => setSelectedPrompt(e.target.value)}
           disabled={loading}
         >
-          {prompts.map((p) => (
+          {[...prompts].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })).map((p) => (
             <option key={p.name} value={p.name}>
               {p.name}
             </option>

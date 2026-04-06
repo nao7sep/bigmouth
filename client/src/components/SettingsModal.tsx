@@ -354,7 +354,9 @@ function AiTab({
             onChange({ ...aiConfigs, activeId: e.target.value })
           }
         >
-          {aiConfigs.configs.map((c) => (
+          {[...aiConfigs.configs]
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+            .map((c) => (
             <option key={c.id} value={c.id}>
               {c.name || "(unnamed)"}
             </option>
@@ -364,7 +366,9 @@ function AiTab({
 
       <div className="settings-subheading">AI Configs</div>
 
-      {aiConfigs.configs.map((c) => (
+      {[...aiConfigs.configs]
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+        .map((c) => (
         <div key={c.id} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -468,10 +472,13 @@ function TargetsTab({
   const duplicateNames = new Set(
     trimmedNames.filter((n, i) => n && trimmedNames.indexOf(n) !== i)
   );
+  const sortedTargets = targets
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => a.t.name.localeCompare(b.t.name, undefined, { sensitivity: "base" }));
 
   return (
     <div className="settings-section">
-      {targets.map((t, i) => (
+      {sortedTargets.map(({ t, i }) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -493,7 +500,7 @@ function TargetsTab({
                   updateTarget(i, { defaultLanguage: e.target.value })
                 }
               >
-                {supportedLanguages.map((lang) => (
+                {[...supportedLanguages].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((lang) => (
                   <option key={lang} value={lang}>{lang}</option>
                 ))}
                 {!supportedLanguages.includes(t.defaultLanguage) && (
@@ -642,9 +649,13 @@ function AnalysisPromptsTab({
     onChange(prompts.filter((_, i) => i !== index));
   };
 
+  const sortedPrompts = prompts
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => a.p.name.localeCompare(b.p.name, undefined, { sensitivity: "base" }));
+
   return (
     <div className="settings-section">
-      {prompts.map((p, i) => (
+      {sortedPrompts.map(({ p, i }) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>

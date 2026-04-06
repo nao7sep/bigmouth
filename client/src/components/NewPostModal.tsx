@@ -71,7 +71,7 @@ export function NewPostModal({
                 onChange={(e) => handleTargetChange(e.target.value)}
               >
                 <option value="" disabled>Please select…</option>
-                {targets.map((t) => (
+                {[...targets].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })).map((t) => (
                   <option key={t.name} value={t.name}>
                     {t.name} ({t.defaultLanguage})
                   </option>
@@ -95,7 +95,7 @@ export function NewPostModal({
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
             >
-              {supportedLanguages.map((lang) => (
+              {[...supportedLanguages].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((lang) => (
                 <option key={lang} value={lang}>
                   {lang}
                 </option>
