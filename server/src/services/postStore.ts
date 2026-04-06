@@ -360,5 +360,12 @@ function loadAllSummaries(subdir: string): PostSummary[] {
     }
   }
 
+  // Most recently edited first
+  summaries.sort((a, b) => {
+    const ta = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
+    const tb = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
+    return tb.localeCompare(ta);
+  });
+
   return summaries;
 }

@@ -21,7 +21,7 @@ interface CenterPaneProps {
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
-const AUTO_SAVE_DELAY = 2000;
+const AUTO_SAVE_DELAY = 30_000;
 
 export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(
   function CenterPane({

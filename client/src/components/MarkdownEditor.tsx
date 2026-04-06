@@ -25,6 +25,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onContentChange);
   const onSaveRef = useRef(onSave);
+  const suppressChangeRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     insertAtCursor(text: string) {
@@ -58,7 +59,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     ]);
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
+      if (update.docChanged && !suppressChangeRef.current) {
         onChangeRef.current(update.state.doc.toString());
       }
     });
@@ -99,6 +100,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
     const currentDoc = view.state.doc.toString();
     if (currentDoc !== content) {
+      suppressChangeRef.current = true;
       view.dispatch({
         changes: {
           from: 0,
@@ -106,6 +108,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           insert: content,
         },
       });
+      suppressChangeRef.current = false;
     }
   }, [content]);
 
