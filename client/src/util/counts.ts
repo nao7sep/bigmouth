@@ -22,9 +22,14 @@ export function xWeightedCount(text: string): number {
 /**
  * Extracts prose paragraphs from markdown text, excluding:
  * - Fenced code blocks (``` or ~~~)
- * - Lines that are list items (- * + or 1.)
- * - Lines that are table rows (|...|)
- * - Lines that are headings (#)
+ * - Headings (ATX # and setext ===)
+ * - List items (unordered and ordered)
+ * - Table rows (|...|)
+ * - Horizontal rules (---, ***, ___)
+ * - Blockquotes (>)
+ * - Standalone images (![...](...))
+ * - Link reference definitions ([id]: url)
+ * - Inline HTML blocks (<...)
  * - Blank lines
  *
  * Returns an array of paragraph strings (each is one or more
@@ -57,12 +62,16 @@ export function extractParagraphs(text: string): string[] {
     // Skip non-prose lines
     if (
       trimmed === "" ||
-      /^#{1,6}\s/.test(trimmed) || // headings
-      /^[-*+]\s/.test(trimmed) || // unordered list items
-      /^\d+[.)]\s/.test(trimmed) || // ordered list items
-      /^\|.*\|$/.test(trimmed) || // table rows
-      /^---+$/.test(trimmed) || // horizontal rules / table separators
-      /^>/.test(trimmed) // blockquotes
+      /^#{1,6}\s/.test(trimmed) ||         // ATX headings
+      /^[-*+]\s/.test(trimmed) ||           // unordered list items
+      /^\d+[.)]\s/.test(trimmed) ||         // ordered list items
+      /^\|.*\|$/.test(trimmed) ||           // table rows
+      /^[-*_]{3,}$/.test(trimmed) ||        // horizontal rules (---, ***, ___)
+      /^={3,}$/.test(trimmed) ||            // setext heading underlines
+      /^>/.test(trimmed) ||                 // blockquotes
+      /^!\[.*\]\(.*\)$/.test(trimmed) ||   // standalone images
+      /^\[.*\]:\s/.test(trimmed) ||         // link reference definitions
+      /^</.test(trimmed)                    // inline HTML blocks
     ) {
       flushParagraph();
       continue;
