@@ -30,14 +30,17 @@ export function AboutModal({ onClose }: AboutModalProps) {
             media posts.
           </p>
           <ul style={{ paddingLeft: "1.5em", lineHeight: 1.8, fontSize: 13 }}>
-            <li>Write and edit posts in Markdown</li>
-            <li>Run AI-powered safety and quality checks</li>
-            <li>Generate titles, tags, slugs, and SEO descriptions</li>
-            <li>Export as HTML or plain text</li>
+            <li>Write in Markdown — autosaved as you type</li>
+            <li>Three-stage workflow: Draft → Ready → Published</li>
+            <li>AI-powered content analysis with named prompts</li>
+            <li>AI metadata generation: title, slug, tags, SEO description</li>
+            <li>Upload and embed images and files per post</li>
+            <li>Export as HTML or plain text for copy-pasting</li>
+            <li>Multi-language posts with English supplement fields</li>
           </ul>
           <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
-            All data is stored locally. BigMouth never syncs with any platform —
-            you copy and paste your content manually.
+            All data is stored locally under <code>~/.bigmouth/</code>. BigMouth
+            never syncs with any platform — you copy and paste manually.
           </p>
           <div style={{ marginTop: 16, display: "flex", gap: 16 }}>
             <a
