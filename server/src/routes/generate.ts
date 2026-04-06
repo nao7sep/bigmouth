@@ -38,15 +38,16 @@ generateRouter.post("/", async (req, res) => {
     return;
   }
 
-  const systemPrompt = systemPromptForField(field, post.frontMatter.language);
-  if (!systemPrompt) {
-    res.status(400).json({ error: `Field is not generatable: ${field}` });
-    return;
-  }
-
   let provider;
+  let systemPrompt: string;
   try {
     const settings = getSettings();
+    const resolved = systemPromptForField(field, settings.generationPreamble, settings.generationPrompts);
+    if (!resolved) {
+      res.status(400).json({ error: `Field is not generatable: ${field}` });
+      return;
+    }
+    systemPrompt = resolved;
     const activeConfig = settings.aiConfigs.find(
       (c) => c.id === settings.activeAiConfigId
     );
@@ -90,8 +91,12 @@ generateRouter.post("/batch", async (req, res) => {
   }
 
   let provider;
+  let customPrompts: Record<string, string>;
+  let preamble: string;
   try {
     const settings = getSettings();
+    customPrompts = settings.generationPrompts;
+    preamble = settings.generationPreamble;
     const activeConfig = settings.aiConfigs.find(
       (c) => c.id === settings.activeAiConfigId
     );
@@ -108,7 +113,7 @@ generateRouter.post("/batch", async (req, res) => {
 
   const results = await Promise.all(
     fields.map(async (field): Promise<{ field: string; value: string } | { field: string; error: string }> => {
-      const systemPrompt = systemPromptForField(field, post.frontMatter.language);
+      const systemPrompt = systemPromptForField(field, preamble, customPrompts);
       if (!systemPrompt) {
         return { field, error: `Field is not generatable: ${field}` };
       }

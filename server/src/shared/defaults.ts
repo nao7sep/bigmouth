@@ -4,6 +4,7 @@
 
 import type { Settings, Prompt } from "./types.js";
 import { nanoid } from "nanoid";
+import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generatePrompts.js";
 
 export const DEFAULT_PORT = 3141;
 
@@ -29,6 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
     },
   ],
   activeAiConfigId: defaultAiConfigId,
+  generationPrompts: { ...DEFAULT_GENERATION_PROMPTS },
+  generationPreamble: DEFAULT_GENERATION_PREAMBLE,
 };
 
 export const DEFAULT_PROMPTS: Prompt[] = [

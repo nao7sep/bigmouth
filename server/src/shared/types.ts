@@ -74,6 +74,8 @@ export interface Settings {
   extraFieldWatermark: string;     // placeholder text in the extra textarea
   aiConfigs: AiConfig[];
   activeAiConfigId: string;
+  generationPrompts: Record<string, string>; // custom prompts for metadata field generation
+  generationPreamble: string;                // custom preamble prepended to every generation prompt
 }
 
 // --- Prompt ---

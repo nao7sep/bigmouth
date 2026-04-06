@@ -79,4 +79,6 @@ export interface Settings {
   extraFieldWatermark: string;
   aiConfigs: AiConfig[];
   activeAiConfigId: string;
+  generationPrompts: Record<string, string>;
+  generationPreamble: string;
 }

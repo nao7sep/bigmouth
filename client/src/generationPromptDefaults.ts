@@ -1,12 +1,7 @@
 /**
- * Built-in system prompt instructions for metadata field generation.
- *
- * The preamble and field instructions are stored separately so the UI can
- * display and edit them independently. The server combines them at generation
- * time: preamble + "\n" + fieldInstruction.
- *
- * All prompts are language-agnostic: base fields instruct the model to match
- * the content's language; *En variants explicitly request English output.
+ * Default generation prompt strings — mirrors server/src/ai/generatePrompts.ts.
+ * Used in the Settings modal to power the "Reset to default" button.
+ * Keep in sync with server defaults.
  */
 
 export const DEFAULT_GENERATION_PREAMBLE =
@@ -42,17 +37,12 @@ export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
     `- Return only the description text.`,
 };
 
-/**
- * Returns the combined system prompt for a given field key.
- * Combines the preamble with the field-specific instruction.
- * Returns null if the field is not a generatable metadata key.
- */
-export function systemPromptForField(
-  field: string,
-  preamble: string,
-  customPrompts: Record<string, string>
-): string | null {
-  if (!(field in DEFAULT_GENERATION_PROMPTS)) return null;
-  const instruction = customPrompts[field] ?? DEFAULT_GENERATION_PROMPTS[field];
-  return `${preamble}\n${instruction}`;
-}
+export const GENERATION_PROMPT_LABELS: Record<string, string> = {
+  title: "Title",
+  titleEn: "Title (English)",
+  slug: "Slug",
+  tags: "Tags",
+  tagsEn: "Tags (English)",
+  metaDescription: "Description",
+  metaDescriptionEn: "Description (English)",
+};

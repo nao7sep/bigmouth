@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Settings, Target, Prompt } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
+import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generatePrompts.js";
 
 let dataDir = "";
 
@@ -24,6 +25,15 @@ export function getSettings(): Settings {
     if (config.apiKey) {
       config.apiKey = deobfuscate(config.apiKey);
     }
+  }
+
+  // Back-fill any missing generation prompt keys (forward-compat for older installs)
+  settings.generationPrompts = {
+    ...DEFAULT_GENERATION_PROMPTS,
+    ...(settings.generationPrompts ?? {}),
+  };
+  if (!settings.generationPreamble) {
+    settings.generationPreamble = DEFAULT_GENERATION_PREAMBLE;
   }
 
   return settings;

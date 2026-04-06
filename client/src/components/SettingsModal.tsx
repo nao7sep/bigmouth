@@ -10,19 +10,25 @@ import {
   fetchPrompts,
   savePrompts,
 } from "../api";
+import {
+  DEFAULT_GENERATION_PROMPTS,
+  DEFAULT_GENERATION_PREAMBLE,
+  GENERATION_PROMPT_LABELS,
+} from "../generationPromptDefaults";
 
 interface SettingsModalProps {
   onClose: () => void;
   onSettingsChanged: () => void;
 }
 
-type Tab = "general" | "targets" | "ai" | "prompts";
+type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
 
 const TAB_LABELS: Record<Tab, string> = {
   general: "General",
   targets: "Targets",
-  ai: "AI",
-  prompts: "Prompts",
+  providers: "Providers",
+  analysis: "Analysis",
+  generation: "Generation",
 };
 
 export function SettingsModal({
@@ -111,7 +117,7 @@ export function SettingsModal({
         </div>
 
         <div className="settings-tabs">
-          {(["general", "targets", "ai", "prompts"] as Tab[]).map((t) => (
+          {(["general", "targets", "providers", "analysis", "generation"] as Tab[]).map((t) => (
             <button
               key={t}
               className={`settings-tab${tab === t ? " active" : ""}`}
@@ -129,7 +135,7 @@ export function SettingsModal({
               onChange={setSettings}
             />
           )}
-          {tab === "ai" && settings && (
+          {tab === "providers" && settings && (
             <AiTab
               settings={settings}
               onChange={setSettings}
@@ -142,10 +148,16 @@ export function SettingsModal({
               onChange={setTargets}
             />
           )}
-          {tab === "prompts" && (
+          {tab === "analysis" && (
             <PromptsTab
               prompts={prompts}
               onChange={setPrompts}
+            />
+          )}
+          {tab === "generation" && settings && (
+            <GenerationTab
+              settings={settings}
+              onChange={setSettings}
             />
           )}
         </div>
@@ -476,6 +488,102 @@ function TargetsTab({
       <button className="btn-toolbar" onClick={addTarget}>
         + Add Target
       </button>
+    </div>
+  );
+}
+
+// --- Generation ---
+
+function GenerationTab({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  const currentPreamble = settings.generationPreamble ?? DEFAULT_GENERATION_PREAMBLE;
+  const isPreambleDefault = currentPreamble === DEFAULT_GENERATION_PREAMBLE;
+
+  const updatePreamble = (value: string) => {
+    onChange({ ...settings, generationPreamble: value });
+  };
+
+  const updatePrompt = (key: string, value: string) => {
+    onChange({
+      ...settings,
+      generationPrompts: { ...settings.generationPrompts, [key]: value },
+    });
+  };
+
+  const resetPrompt = (key: string) => {
+    onChange({
+      ...settings,
+      generationPrompts: {
+        ...settings.generationPrompts,
+        [key]: DEFAULT_GENERATION_PROMPTS[key],
+      },
+    });
+  };
+
+  return (
+    <div className="settings-section">
+      <p className="settings-hint">
+        System prompts used when generating metadata fields with AI. The post content is passed as the user message.
+      </p>
+
+      <div className="settings-list-item">
+        <div className="form-field">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <label className="form-label">Preamble</label>
+            {!isPreambleDefault && (
+              <button
+                className="btn-toolbar"
+                style={{ fontSize: 11, padding: "2px 8px" }}
+                onClick={() => updatePreamble(DEFAULT_GENERATION_PREAMBLE)}
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+          <textarea
+            className="form-input"
+            rows={4}
+            value={currentPreamble}
+            onChange={(e) => updatePreamble(e.target.value)}
+            style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+          />
+        </div>
+      </div>
+
+      {Object.keys(DEFAULT_GENERATION_PROMPTS).map((key) => {
+        const current = settings.generationPrompts?.[key] ?? DEFAULT_GENERATION_PROMPTS[key];
+        const isDefault = current === DEFAULT_GENERATION_PROMPTS[key];
+        return (
+          <div key={key} className="settings-list-item">
+            <div className="form-field">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
+                {!isDefault && (
+                  <button
+                    className="btn-toolbar"
+                    style={{ fontSize: 11, padding: "2px 8px" }}
+                    onClick={() => resetPrompt(key)}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="form-input"
+                rows={3}
+                value={current}
+                onChange={(e) => updatePrompt(key, e.target.value)}
+                style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
