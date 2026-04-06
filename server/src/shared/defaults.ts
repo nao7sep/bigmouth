@@ -12,7 +12,7 @@ const defaultAiConfigId = nanoid();
 export const DEFAULT_SETTINGS: Settings = {
   port: DEFAULT_PORT,
   timezone: "Asia/Tokyo",
-  supportedLanguages: ["en", "ja", "es", "fr", "de", "ko", "zh", "pt", "it", "ru"],
+  supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
@@ -40,7 +40,7 @@ export const DEFAULT_PROMPTS: Prompt[] = [
 - Offensive content: language that could be read as insulting, discriminatory, or needlessly provocative
 - Overclaiming: statements presented as facts without evidence, or claims that are stronger than what the content supports
 - Tone issues: sections that feel inconsistent, overly casual for the topic, or unintentionally aggressive
-- Significant grammatical errors in both English and Japanese (minor issues are acceptable — the goal is not perfect writing)
+- Significant grammatical errors in the languages used in the post (minor issues are acceptable — the goal is not perfect writing)
 
 For each finding, explain:
 1. What the concern is

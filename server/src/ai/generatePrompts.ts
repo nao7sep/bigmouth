@@ -6,16 +6,23 @@
  */
 
 const LANG_NAMES: Record<string, string> = {
+  ar: "Arabic",
+  de: "German",
   en: "English",
-  ja: "Japanese",
   es: "Spanish",
   fr: "French",
-  de: "German",
-  ko: "Korean",
-  zh: "Chinese",
-  pt: "Portuguese",
+  hi: "Hindi",
+  id: "Indonesian",
   it: "Italian",
+  ja: "Japanese",
+  ko: "Korean",
+  nl: "Dutch",
+  pl: "Polish",
+  pt: "Portuguese",
   ru: "Russian",
+  tr: "Turkish",
+  vi: "Vietnamese",
+  zh: "Chinese",
 };
 
 export function languageName(code: string): string {

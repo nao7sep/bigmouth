@@ -67,7 +67,7 @@ export interface AiConfig {
 export interface Settings {
   port: number;                    // local server port (default: 3141)
   timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
-  supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "ja"])
+  supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
   publishedPostsPerLoad: number;   // batch size for the published posts list (default: 50)
   editorWatermark: string;         // placeholder text in the empty editor
   extraFieldWatermark: string;     // placeholder text in the extra textarea
