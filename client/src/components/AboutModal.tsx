@@ -2,6 +2,8 @@ interface AboutModalProps {
   onClose: () => void;
 }
 
+const GITHUB_URL = "https://github.com/nao7sep/bigmouth";
+
 export function AboutModal({ onClose }: AboutModalProps) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -17,9 +19,12 @@ export function AboutModal({ onClose }: AboutModalProps) {
           </button>
         </div>
         <div className="modal-body">
-          <p style={{ marginBottom: 12 }}>
-            <strong>BigMouth</strong> is a local-first writing preflight tool
-            for composing blog and social media posts.
+          <p style={{ marginBottom: 4 }}>
+            <strong>BigMouth</strong> — Version 0.1.0
+          </p>
+          <p style={{ marginBottom: 12, fontSize: 13, color: "#555" }}>
+            A local-first writing preflight tool for composing blog and social
+            media posts.
           </p>
           <ul style={{ paddingLeft: "1.5em", lineHeight: 1.8, fontSize: 13 }}>
             <li>Write and edit posts in Markdown</li>
@@ -27,17 +32,30 @@ export function AboutModal({ onClose }: AboutModalProps) {
             <li>Generate titles, tags, slugs, and SEO descriptions</li>
             <li>Export as HTML or plain text</li>
           </ul>
-          <p
-            style={{
-              marginTop: 16,
-              fontSize: 12,
-              color: "#888",
-              borderTop: "1px solid #e0e0e0",
-              paddingTop: 12,
-            }}
-          >
+          <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
             All data is stored locally. BigMouth never syncs with any platform —
             you copy and paste your content manually.
+          </p>
+          <div style={{ marginTop: 16, display: "flex", gap: 16 }}>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: 13, color: "#0066cc", textDecoration: "none" }}
+            >
+              GitHub ↗
+            </a>
+            <a
+              href={`${GITHUB_URL}/issues`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: 13, color: "#0066cc", textDecoration: "none" }}
+            >
+              Report Issue ↗
+            </a>
+          </div>
+          <p style={{ marginTop: 16, fontSize: 12, color: "#aaa" }}>
+            &copy; 2026 Yoshinao Inoguchi &mdash; MIT License
           </p>
         </div>
       </div>
