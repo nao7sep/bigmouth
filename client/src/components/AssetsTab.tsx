@@ -51,6 +51,10 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
   }, [postId]);
 
   useEffect(() => {
+    setAssets([]);
+    setUploadError(null);
+    setPendingFiles(null);
+    setDuplicateNames([]);
     load();
   }, [load]);
 

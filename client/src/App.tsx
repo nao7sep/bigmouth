@@ -86,11 +86,12 @@ export function App() {
     document.addEventListener("mouseup", onUp);
   }, []);
 
-  // Clear stale post data whenever the selected post changes, regardless of how it changed
-  useEffect(() => {
+  // Helper: switch to a post, clearing stale state synchronously in the same render batch
+  const switchPost = useCallback((id: string | null) => {
+    setSelectedPostId(id);
     setCurrentPost(null);
     setEditorContent("");
-  }, [selectedPostId]);
+  }, []);
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
@@ -182,27 +183,26 @@ export function App() {
   ) => {
     const post = await createPost(target, language, sourceId);
     setNewPostOpen(false);
-    setSelectedPostId(post.frontMatter.id);
+    switchPost(post.frontMatter.id);
     await loadPosts();
   };
 
   const handlePostDeleted = () => {
-    setSelectedPostId(null);
+    switchPost(null);
     setNavHistory([]);
     loadPosts();
   };
 
   const handleNavigateToPost = (id: string) => {
     if (selectedPostId) setNavHistory((h) => [...h, selectedPostId]);
-    setSelectedPostId(id);
+    switchPost(id);
   };
 
   const handleGoBack = () => {
-    setNavHistory((h) => {
-      const prev = h[h.length - 1];
-      if (prev) setSelectedPostId(prev);
-      return h.slice(0, -1);
-    });
+    const prev = navHistory[navHistory.length - 1];
+    if (!prev) return;
+    setNavHistory((h) => h.slice(0, -1));
+    switchPost(prev);
   };
 
   const handleLoadMorePublished = () => {
@@ -220,7 +220,7 @@ export function App() {
         published={published}
         publishedTotal={publishedTotal}
         selectedPostId={selectedPostId}
-        onSelectPost={(id) => { setNavHistory([]); setSelectedPostId(id); }}
+        onSelectPost={(id) => { setNavHistory([]); switchPost(id); }}
         onNewPost={handleNewPost}
         onLoadMorePublished={handleLoadMorePublished}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -264,7 +264,10 @@ export function App() {
             }
             extraFieldWatermark={extraFieldWatermark}
             onMetadataSaved={loadPosts}
-            onFrontMatterUpdated={setCurrentPost}
+            onFrontMatterUpdated={(post) => {
+                // Ignore stale completions from generate/save on a previous post
+                if (post.frontMatter.id === selectedPostId) setCurrentPost(post);
+              }}
             activeTab={rightTab}
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
