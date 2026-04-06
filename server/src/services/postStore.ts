@@ -18,6 +18,7 @@ import type {
   PostStatus,
 } from "../shared/types.js";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
+import { warn as logWarn } from "../services/logger.js";
 import {
   draftFilename,
   readyFilename,
@@ -80,8 +81,8 @@ export function listPublished(offset: number, limit: number): PostSummary[] {
       const fm = parsed.data as PostFrontMatter;
       if (fm.id) pubCache.set(fm.id, filePath);
       summaries.push({ frontMatter: fm });
-    } catch {
-      // Skip malformed files
+    } catch (err) {
+      logWarn(`Skipping malformed published file: ${filePath} — ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -408,8 +409,8 @@ function loadAllSummaries(subdir: string): PostSummary[] {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
       summaries.push({ frontMatter: parsed.data as PostFrontMatter });
-    } catch {
-      // Skip malformed files
+    } catch (err) {
+      logWarn(`Skipping malformed ${subdir} file: ${filePath} — ${err instanceof Error ? err.message : err}`);
     }
   }
 

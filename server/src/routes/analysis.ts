@@ -66,6 +66,7 @@ analysisRouter.post("/", async (req, res) => {
     provider = createProvider(activeConfig);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "AI provider error";
+    logError(`AI provider init failed for post ${postId}: ${msg}`);
     res.status(503).json({ error: msg });
     return;
   }

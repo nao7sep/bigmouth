@@ -10,6 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { warn as logWarn } from "./logger.js";
 
 export interface AssetMeta {
   filename: string;
@@ -47,7 +48,8 @@ export function listAssets(postId: string): AssetMeta[] {
   if (!fs.existsSync(metaPath)) return [];
   try {
     return JSON.parse(fs.readFileSync(metaPath, "utf-8")) as AssetMeta[];
-  } catch {
+  } catch (err) {
+    logWarn(`Malformed asset metadata file: ${metaPath} — ${err instanceof Error ? err.message : err}`);
     return [];
   }
 }

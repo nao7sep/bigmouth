@@ -3,7 +3,7 @@ import cors from "cors";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveDataDirectory } from "./services/dataDir.js";
-import { initLogger, info } from "./services/logger.js";
+import { initLogger, info, error as logError } from "./services/logger.js";
 import { initPostStore } from "./services/postStore.js";
 import { DEFAULT_PORT } from "./shared/defaults.js";
 import type { Settings } from "./shared/types.js";
@@ -55,6 +55,12 @@ app.use("/api/assets", assetsRouter);
 // Serve uploaded asset files at /assets/:postId/:filename
 const assetsStaticDir = path.join(dataDirectory, "assets");
 app.use("/assets", express.static(assetsStaticDir));
+
+// Global error handler — catches errors passed to next(err)
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logError(`Unhandled error: ${err.message}`);
+  res.status(500).json({ error: "Internal server error" });
+});
 
 app.listen(port, "127.0.0.1", () => {
   info(`Server started on port ${port}, data directory: ${dataDirectory}`);
