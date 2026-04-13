@@ -46,24 +46,62 @@ export function CenterPane({
   const contentRef = useRef("");
   const savedContentRef = useRef(""); // content as of last successful save
   const savingRef = useRef(false); // true while a save request is in-flight
+  const pendingSaveRef = useRef(false); // true when another save should run afterward
+  const savePromiseRef = useRef<Promise<void> | null>(null);
 
-  const save = useCallback(async () => {
-    const current = contentRef.current;
-    if (current === savedContentRef.current) return;
-    if (savingRef.current) return; // another save already in-flight
+  const save = useCallback((): Promise<void> => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    savingRef.current = true;
-    try {
-      const updated = await updatePost(postId, { content: current });
-      savedContentRef.current = current;
-      setPost(updated);
-      onPostSaved();
-    } catch {
-      // Save failed silently — will retry on next change
-    } finally {
-      savingRef.current = false;
+    if (contentRef.current === savedContentRef.current) {
+      return savePromiseRef.current ?? Promise.resolve();
     }
+
+    pendingSaveRef.current = true;
+    if (savePromiseRef.current) {
+      return savePromiseRef.current;
+    }
+
+    const promise = (async () => {
+      try {
+        while (pendingSaveRef.current) {
+          pendingSaveRef.current = false;
+          const current = contentRef.current;
+          if (current === savedContentRef.current) continue;
+
+          savingRef.current = true;
+          try {
+            const updated = await updatePost(postId, { content: current });
+            savedContentRef.current = current;
+            setPost(updated);
+            onPostSaved();
+          } catch {
+            // Save failed silently — will retry on next change
+            break;
+          } finally {
+            savingRef.current = false;
+          }
+
+          if (contentRef.current !== savedContentRef.current) {
+            pendingSaveRef.current = true;
+          }
+        }
+      } finally {
+        savePromiseRef.current = null;
+      }
+    })();
+
+    savePromiseRef.current = promise;
+    return promise;
   }, [postId, onPostSaved]);
+
+  const flushPendingContent = useCallback(async () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (contentRef.current !== savedContentRef.current) {
+      await save();
+    } else if (savePromiseRef.current) {
+      await savePromiseRef.current;
+    }
+    return contentRef.current === savedContentRef.current;
+  }, [save]);
 
   // Load post once on mount (key={postId} in App guarantees fresh instance per post)
   useEffect(() => {
@@ -104,13 +142,13 @@ export function CenterPane({
 
   const handleStatusChange = async (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
-    // Flush any pending content — wait until any in-flight save settles first
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-    if (contentRef.current !== savedContentRef.current && !savingRef.current) {
-      await save();
-    }
     try {
       setStatusError(null);
+      const flushed = await flushPendingContent();
+      if (!flushed) {
+        setStatusError("Save failed. Try again before changing status.");
+        return;
+      }
       const updated = await changePostStatus(postId, newStatus);
       setPost(updated);
       onPostLoaded(updated);

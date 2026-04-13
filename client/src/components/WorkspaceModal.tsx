@@ -9,9 +9,17 @@ interface WorkspaceModalProps {
   dismissable: boolean;
   onClose: () => void;
   onSelect: (workspace: Workspace) => void;
+  activeWorkspaceId: string | null;
+  onWorkspaceDeleted: (workspaceId: string) => void;
 }
 
-export function WorkspaceModal({ dismissable, onClose, onSelect }: WorkspaceModalProps) {
+export function WorkspaceModal({
+  dismissable,
+  onClose,
+  onSelect,
+  activeWorkspaceId,
+  onWorkspaceDeleted,
+}: WorkspaceModalProps) {
   useEscapeKey(dismissable ? onClose : () => {});
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +61,9 @@ export function WorkspaceModal({ dismissable, onClose, onSelect }: WorkspaceModa
   const handleDelete = async (ws: Workspace) => {
     await deleteWorkspace(ws.id);
     setDeleteTarget(null);
+    if (ws.id === activeWorkspaceId) {
+      onWorkspaceDeleted(ws.id);
+    }
     load();
   };
 

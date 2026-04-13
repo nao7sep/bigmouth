@@ -18,6 +18,7 @@ interface RightPaneProps {
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
+  analysisPromptsVersion: number;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
 }
@@ -33,6 +34,7 @@ export function RightPane({
   activeTab,
   onTabChange,
   analysisTrigger,
+  analysisPromptsVersion,
   onInsertAtCursor,
   maxUploadMb,
 }: RightPaneProps) {
@@ -52,7 +54,12 @@ export function RightPane({
       </div>
       <div className="right-content">
         <div className={activeTab === "AI Analysis" ? "" : "tab-hidden"}>
-          <AiAnalysisTab postId={postId} content={content} analysisTrigger={analysisTrigger} />
+          <AiAnalysisTab
+            postId={postId}
+            content={content}
+            analysisTrigger={analysisTrigger}
+            promptsVersion={analysisPromptsVersion}
+          />
         </div>
         <div className={activeTab === "Preview" ? "" : "tab-hidden"}>
           <PreviewTab content={content} postId={postId} />

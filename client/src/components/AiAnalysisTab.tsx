@@ -7,9 +7,15 @@ interface AiAnalysisTabProps {
   postId: string;
   content: string;
   analysisTrigger: number;
+  promptsVersion: number;
 }
 
-export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTabProps) {
+export function AiAnalysisTab({
+  postId,
+  content,
+  analysisTrigger,
+  promptsVersion,
+}: AiAnalysisTabProps) {
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
@@ -17,15 +23,18 @@ export function AiAnalysisTab({ postId, content, analysisTrigger }: AiAnalysisTa
   const [error, setError] = useState<string | null>(null);
   const runIdRef = useRef(0);
 
-  // Load prompts on mount
+  // Load prompts on mount and after Settings updates them
   useEffect(() => {
     fetchAnalysisPrompts()
       .then((list) => {
         setPrompts(list);
-        if (list.length > 0) setSelectedPrompt(list[0].name);
+        setSelectedPrompt((current) => {
+          if (list.length === 0) return "";
+          return list.some((p) => p.name === current) ? current : list[0].name;
+        });
       })
       .catch(() => {});
-  }, []);
+  }, [promptsVersion]);
 
   // Reset state and cancel any in-flight analysis when post changes
   useEffect(() => {

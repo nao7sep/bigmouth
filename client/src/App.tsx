@@ -56,7 +56,10 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
   const [analysisTrigger, setAnalysisTrigger] = useState(0);
+  const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  const activeWorkspaceIdRef = useRef<string | null>(null);
+  activeWorkspaceIdRef.current = activeWorkspace?.id ?? null;
 
   // Resizable pane widths
   const [leftWidth,  setLeftWidth]  = useState(() => readStoredWidth(STORAGE_LEFT,  360, 240, 720));
@@ -91,6 +94,29 @@ export function App() {
         setWorkspaceModalOpen(true);
       })
       .finally(() => setWsChecked(true));
+  }, []);
+
+  const handleActiveWorkspaceDeleted = useCallback((workspaceId: string) => {
+    if (activeWorkspaceIdRef.current !== workspaceId) return;
+    setActiveWorkspace("");
+    localStorage.removeItem(STORAGE_WS);
+    setActiveWorkspaceState(null);
+    setWorkspaceModalOpen(true);
+    setDrafts([]);
+    setReady([]);
+    setPublished([]);
+    setPublishedTotal(0);
+    setPublishedOffset(0);
+    setSelectedPostId(null);
+    setNavHistory([]);
+    setCurrentPost(null);
+    setEditorContent("");
+    setTargets([]);
+    setSupportedLanguages(["en"]);
+    setPubBatchSize(50);
+    setMaxUploadMb(500);
+    setWatermark(DEFAULT_WATERMARK);
+    setExtraFieldWatermark("");
   }, []);
 
   const handleSelectWorkspace = useCallback((ws: Workspace) => {
@@ -154,7 +180,10 @@ export function App() {
 
   const loadPosts = useCallback(
     async (pubOffset = 0, append = false) => {
+      const requestWorkspaceId = activeWorkspaceIdRef.current;
+      if (!requestWorkspaceId) return;
       const data = await fetchPosts(pubOffset, pubBatchSize);
+      if (activeWorkspaceIdRef.current !== requestWorkspaceId) return;
       setDrafts(data.drafts);
       setReady(data.ready);
       setPublished((prev) =>
@@ -177,14 +206,38 @@ export function App() {
   // Load data when workspace becomes active
   useEffect(() => {
     if (!activeWorkspace) return;
+    const requestWorkspaceId = activeWorkspace.id;
     loadPosts();
-    fetchTargets().then(setTargets).catch(() => {});
-    fetchSettings().then(applySettings).catch(() => {});
+    fetchTargets()
+      .then((nextTargets) => {
+        if (activeWorkspaceIdRef.current !== requestWorkspaceId) return;
+        setTargets(nextTargets);
+      })
+      .catch(() => {});
+    fetchSettings()
+      .then((settings) => {
+        if (activeWorkspaceIdRef.current !== requestWorkspaceId) return;
+        applySettings(settings);
+      })
+      .catch(() => {});
   }, [activeWorkspace, loadPosts, applySettings]);
 
   const reloadConfig = useCallback(() => {
-    fetchTargets().then(setTargets).catch(() => {});
-    fetchSettings().then(applySettings).catch(() => {});
+    const requestWorkspaceId = activeWorkspaceIdRef.current;
+    if (!requestWorkspaceId) return;
+    fetchTargets()
+      .then((nextTargets) => {
+        if (activeWorkspaceIdRef.current !== requestWorkspaceId) return;
+        setTargets(nextTargets);
+      })
+      .catch(() => {});
+    fetchSettings()
+      .then((settings) => {
+        if (activeWorkspaceIdRef.current !== requestWorkspaceId) return;
+        applySettings(settings);
+      })
+      .catch(() => {});
+    setAnalysisPromptsVersion((n) => n + 1);
   }, [applySettings]);
 
   // Global keyboard shortcuts
@@ -278,6 +331,8 @@ export function App() {
         dismissable={activeWorkspace !== null}
         onClose={() => setWorkspaceModalOpen(false)}
         onSelect={handleSelectWorkspace}
+        activeWorkspaceId={activeWorkspace?.id ?? null}
+        onWorkspaceDeleted={handleActiveWorkspaceDeleted}
       />
     );
   }
@@ -345,6 +400,7 @@ export function App() {
             activeTab={rightTab}
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
+            analysisPromptsVersion={analysisPromptsVersion}
             onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
             maxUploadMb={maxUploadMb}
           />
