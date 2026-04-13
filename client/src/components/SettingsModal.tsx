@@ -424,10 +424,13 @@ function TargetsTab({
   supportedLanguages: string[];
   onChange: (t: Target[]) => void;
 }) {
+  const canAddTarget = supportedLanguages.length > 0;
+
   const addTarget = () => {
+    if (!canAddTarget) return;
     const defaultLang = supportedLanguages.includes("en")
       ? "en"
-      : (supportedLanguages[0] ?? "en");
+      : supportedLanguages[0];
     onChange([
       ...targets,
       { name: "", defaultLanguage: defaultLang, requiresMetadata: false },
@@ -455,6 +458,9 @@ function TargetsTab({
 
   return (
     <div className="settings-section">
+      {!canAddTarget && (
+        <FieldError msg="Add at least one supported language in General before creating targets." />
+      )}
       {sortedTargets.map(({ t, i }) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
@@ -510,7 +516,7 @@ function TargetsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addTarget}>
+      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget}>
         + Add Target
       </button>
     </div>

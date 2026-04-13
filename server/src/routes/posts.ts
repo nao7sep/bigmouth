@@ -10,7 +10,7 @@ import {
   changeStatus,
   deletePost,
 } from "../services/postStore.js";
-import { getSettings } from "../services/configStore.js";
+import { getSettings, getTargets } from "../services/configStore.js";
 import type { PostStatus } from "../shared/types.js";
 import * as logger from "../services/logger.js";
 
@@ -51,15 +51,55 @@ postsRouter.get("/:id", (req, res) => {
 
 postsRouter.post("/", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const { target, language, sourceId } = req.body;
+  const { target, language, sourceId } = req.body as {
+    target?: unknown;
+    language?: unknown;
+    sourceId?: unknown;
+  };
 
-  if (!target || !language) {
+  if (
+    typeof target !== "string" ||
+    !target.trim() ||
+    typeof language !== "string" ||
+    !language.trim()
+  ) {
     res.status(400).json({ error: "target and language are required" });
     return;
   }
 
-  const post = createPost(dataDir, target, language, sourceId);
-  logger.info(`Post created: id=${post.frontMatter.id}, target=${target}`);
+  if (sourceId !== undefined && typeof sourceId !== "string") {
+    res.status(400).json({ error: "sourceId must be a string" });
+    return;
+  }
+
+  const normalizedTarget = target.trim();
+  const normalizedLanguage = language.trim();
+  const normalizedSourceId = sourceId?.trim() || undefined;
+  const targets = getTargets(dataDir);
+  const settings = getSettings(dataDir);
+
+  if (targets.length === 0) {
+    res.status(400).json({ error: "No targets configured. Add a target in Settings before creating a post." });
+    return;
+  }
+
+  if (!targets.some((t) => t.name === normalizedTarget)) {
+    res.status(400).json({ error: `Unknown target: ${normalizedTarget}` });
+    return;
+  }
+
+  if (!settings.supportedLanguages.includes(normalizedLanguage)) {
+    res.status(400).json({ error: `Unsupported language: ${normalizedLanguage}` });
+    return;
+  }
+
+  if (normalizedSourceId && !getPost(dataDir, normalizedSourceId)) {
+    res.status(400).json({ error: "Source post not found" });
+    return;
+  }
+
+  const post = createPost(dataDir, normalizedTarget, normalizedLanguage, normalizedSourceId);
+  logger.info(`Post created: id=${post.frontMatter.id}, target=${normalizedTarget}`);
 
   res.status(201).json({
     frontMatter: post.frontMatter,
