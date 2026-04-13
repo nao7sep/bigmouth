@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$scriptExitCode = 0
 
 function Set-Utf8Console {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -35,7 +36,7 @@ function Invoke-Native {
     & $FilePath @ArgumentList
     $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     if ($AllowedExitCodes -notcontains $exitCode) {
-        throw "Command failed with exit code $exitCode: $FilePath $($ArgumentList -join ' ')"
+        throw "Command failed with exit code ${exitCode}: $FilePath $($ArgumentList -join ' ')"
     }
 }
 
@@ -98,11 +99,13 @@ try {
 catch {
     Write-Host ""
     Write-Host "bigmouth run failed: $($_.Exception.Message)" -ForegroundColor Red
-    Read-Host "Press Enter to close" | Out-Null
-    exit 1
+    $scriptExitCode = 1
 }
 finally {
     if ($browserJob) {
         Remove-Job -Job $browserJob -Force -ErrorAction SilentlyContinue
     }
+    Read-Host "Press Enter to close" | Out-Null
 }
+
+exit $scriptExitCode
