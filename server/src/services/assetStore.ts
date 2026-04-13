@@ -6,6 +6,8 @@
  *
  * A sidecar file {dataDir}/assets/{postId}/meta.json holds cached metadata
  * (size, dimensions, metadata warning flag) so list requests are fast.
+ *
+ * All public functions take a dataDir parameter (the workspace data directory).
  */
 
 import fs from "node:fs";
@@ -23,28 +25,22 @@ export interface AssetMeta {
 
 const META_FILENAME = "meta.json";
 
-let assetsRoot = "";
-
-export function initAssetStore(dataDirectory: string): void {
-  assetsRoot = path.join(dataDirectory, "assets");
+export function assetDir(dataDir: string, postId: string): string {
+  return path.join(dataDir, "assets", postId);
 }
 
-export function assetDir(postId: string): string {
-  return path.join(assetsRoot, postId);
-}
-
-function ensureAssetDir(postId: string): string {
-  const dir = assetDir(postId);
+function ensureAssetDir(dataDir: string, postId: string): string {
+  const dir = assetDir(dataDir, postId);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-export function assetFilePath(postId: string, filename: string): string {
-  return path.join(ensureAssetDir(postId), filename);
+export function assetFilePath(dataDir: string, postId: string, filename: string): string {
+  return path.join(ensureAssetDir(dataDir, postId), filename);
 }
 
-export function listAssets(postId: string): AssetMeta[] {
-  const metaPath = path.join(assetDir(postId), META_FILENAME);
+export function listAssets(dataDir: string, postId: string): AssetMeta[] {
+  const metaPath = path.join(assetDir(dataDir, postId), META_FILENAME);
   if (!fs.existsSync(metaPath)) return [];
   try {
     return JSON.parse(fs.readFileSync(metaPath, "utf-8")) as AssetMeta[];
@@ -54,20 +50,20 @@ export function listAssets(postId: string): AssetMeta[] {
   }
 }
 
-export function addAsset(postId: string, meta: AssetMeta): void {
-  const dir = ensureAssetDir(postId);
+export function addAsset(dataDir: string, postId: string, meta: AssetMeta): void {
+  const dir = ensureAssetDir(dataDir, postId);
   const metaPath = path.join(dir, META_FILENAME);
-  const existing = listAssets(postId).filter((a) => a.filename !== meta.filename);
+  const existing = listAssets(dataDir, postId).filter((a) => a.filename !== meta.filename);
   fs.writeFileSync(metaPath, JSON.stringify([...existing, meta], null, 2) + "\n");
 }
 
-export function deleteAsset(postId: string, filename: string): void {
-  const dir = assetDir(postId);
+export function deleteAsset(dataDir: string, postId: string, filename: string): void {
+  const dir = assetDir(dataDir, postId);
   const filePath = path.join(dir, filename);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
   const metaPath = path.join(dir, META_FILENAME);
-  const remaining = listAssets(postId).filter((a) => a.filename !== filename);
+  const remaining = listAssets(dataDir, postId).filter((a) => a.filename !== filename);
 
   if (remaining.length === 0) {
     if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchAssets, uploadAsset, deleteAsset } from "../api";
+import { fetchAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
 import type { AssetMeta } from "../types";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -223,7 +223,7 @@ function AssetCard({
   onInsert: () => void;
   onDelete: () => void;
 }) {
-  const src = `/assets/${postId}/${encodeURIComponent(asset.filename)}`;
+  const src = assetUrl(postId, asset.filename);
   const img = isImage(asset.filename);
 
   return (

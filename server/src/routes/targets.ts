@@ -3,35 +3,21 @@ import { getTargets, saveTargets } from "../services/configStore.js";
 import { renameTarget } from "../services/postStore.js";
 import * as logger from "../services/logger.js";
 
-export const targetsRouter = Router();
+export const targetsRouter = Router({ mergeParams: true });
 
-/**
- * GET /api/targets
- *
- * Returns the targets array.
- */
 targetsRouter.get("/", (_req, res) => {
-  res.json(getTargets());
+  const dataDir = res.locals.dataDir as string;
+  res.json(getTargets(dataDir));
 });
 
-/**
- * PUT /api/targets
- *
- * Replaces the entire targets array.
- */
 targetsRouter.put("/", (req, res) => {
-  const targets = req.body;
-  saveTargets(targets);
-  res.json(getTargets());
+  const dataDir = res.locals.dataDir as string;
+  saveTargets(dataDir, req.body);
+  res.json(getTargets(dataDir));
 });
 
-/**
- * PUT /api/targets/rename
- *
- * Renames a target across targets.json and all post files.
- * Body: { oldName: string, newName: string }
- */
 targetsRouter.put("/rename", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { oldName, newName } = req.body;
 
   if (!oldName || !newName) {
@@ -39,8 +25,7 @@ targetsRouter.put("/rename", (req, res) => {
     return;
   }
 
-  // Update targets.json
-  const targets = getTargets();
+  const targets = getTargets(dataDir);
   const target = targets.find((t) => t.name === oldName);
   if (!target) {
     res.status(404).json({ error: "Target not found" });
@@ -48,14 +33,13 @@ targetsRouter.put("/rename", (req, res) => {
   }
 
   target.name = newName;
-  saveTargets(targets);
+  saveTargets(dataDir, targets);
 
-  // Update all post files
-  const postsUpdated = renameTarget(oldName, newName);
+  const postsUpdated = renameTarget(dataDir, oldName, newName);
 
   logger.info(
     `Target renamed: "${oldName}" → "${newName}", ${postsUpdated} posts updated`
   );
 
-  res.json({ targets: getTargets(), postsUpdated });
+  res.json({ targets: getTargets(dataDir), postsUpdated });
 });

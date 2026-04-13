@@ -2,24 +2,16 @@ import { Router } from "express";
 import { getAnalysisPrompts, saveAnalysisPrompts } from "../services/configStore.js";
 import type { AnalysisPrompt } from "../shared/types.js";
 
-export const analysisPromptsRouter = Router();
+export const analysisPromptsRouter = Router({ mergeParams: true });
 
-/**
- * GET /api/prompts
- *
- * Returns the analysis prompts array.
- */
 analysisPromptsRouter.get("/", (_req, res) => {
-  res.json(getAnalysisPrompts());
+  const dataDir = res.locals.dataDir as string;
+  res.json(getAnalysisPrompts(dataDir));
 });
 
-/**
- * PUT /api/prompts
- *
- * Replaces the entire analysis prompts array.
- */
 analysisPromptsRouter.put("/", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const prompts = req.body as AnalysisPrompt[];
-  saveAnalysisPrompts(prompts);
-  res.json(getAnalysisPrompts());
+  saveAnalysisPrompts(dataDir, prompts);
+  res.json(getAnalysisPrompts(dataDir));
 });

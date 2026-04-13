@@ -30,6 +30,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             media posts.
           </p>
           <ul style={{ paddingLeft: "1.5em", lineHeight: 1.8, fontSize: 13 }}>
+            <li>Multiple workspaces — each with its own posts and settings</li>
             <li>Write in Markdown — autosaved as you type</li>
             <li>Three-stage workflow: Draft → Ready → Published</li>
             <li>AI-powered content analysis with named prompts</li>

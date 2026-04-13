@@ -1,3 +1,13 @@
+// --- Workspace ---
+
+export interface Workspace {
+  id: string;
+  name: string;
+  dataDirectory: string;
+}
+
+// --- Post ---
+
 export type PostStatus = "draft" | "ready" | "published";
 
 export interface PostFrontMatter {
@@ -80,7 +90,6 @@ export interface AiConfigsData {
 }
 
 export interface Settings {
-  port: number;
   timezone: string;
   supportedLanguages: string[];
   publishedPostsPerLoad: number;

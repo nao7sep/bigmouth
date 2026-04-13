@@ -1,12 +1,10 @@
 import express from "express";
 import cors from "cors";
-import fs from "node:fs";
-import path from "node:path";
-import { resolveDataDirectory } from "./services/dataDir.js";
+import { initAppDir, getAppConfig, getLogsDir } from "./services/workspaceStore.js";
 import { initLogger, info, error as logError } from "./services/logger.js";
-import { initPostStore } from "./services/postStore.js";
 import { DEFAULT_PORT } from "./shared/defaults.js";
-import type { Settings } from "./shared/types.js";
+import { resolveWorkspace } from "./middleware/workspaceResolver.js";
+import { workspacesRouter } from "./routes/workspaces.js";
 import { postsRouter } from "./routes/posts.js";
 import { settingsRouter } from "./routes/settings.js";
 import { targetsRouter } from "./routes/targets.js";
@@ -16,22 +14,12 @@ import { generationPromptsRouter } from "./routes/generationPrompts.js";
 import { analysisRouter } from "./routes/analysis.js";
 import { generationRouter } from "./routes/generation.js";
 import { assetsRouter } from "./routes/assets.js";
-import { initConfigStore } from "./services/configStore.js";
-import { initAssetStore } from "./services/assetStore.js";
 
-// Resolve data directory (creates defaults on first run)
-const dataDirectory = resolveDataDirectory();
+// Initialize app directory and load config
+const appConfig = initAppDir();
+initLogger(getLogsDir());
 
-// Initialize services
-initLogger(dataDirectory);
-initPostStore(dataDirectory);
-initConfigStore(dataDirectory);
-initAssetStore(dataDirectory);
-
-// Read settings to get configured port
-const settingsPath = path.join(dataDirectory, "settings.json");
-const settings: Settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-const port = settings.port || DEFAULT_PORT;
+const port = appConfig.port || DEFAULT_PORT;
 
 const app = express();
 
@@ -39,29 +27,30 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", dataDirectory });
+  res.json({ status: "ok" });
 });
 
-app.use("/api/posts", postsRouter);
-app.use("/api/settings", settingsRouter);
-app.use("/api/targets", targetsRouter);
-app.use("/api/ai-configs", aiConfigsRouter);
-app.use("/api/analysis-prompts", analysisPromptsRouter);
-app.use("/api/generation-prompts", generationPromptsRouter);
-app.use("/api/analyze", analysisRouter);
-app.use("/api/generate", generationRouter);
-app.use("/api/assets", assetsRouter);
+// Workspace management (no workspace prefix)
+app.use("/api/workspaces", workspacesRouter);
 
-// Serve uploaded asset files at /assets/:postId/:filename
-const assetsStaticDir = path.join(dataDirectory, "assets");
-app.use("/assets", express.static(assetsStaticDir));
+// All workspace-scoped routes under /api/w/:wsId/
+app.use("/api/w/:wsId", resolveWorkspace);
+app.use("/api/w/:wsId/posts", postsRouter);
+app.use("/api/w/:wsId/settings", settingsRouter);
+app.use("/api/w/:wsId/targets", targetsRouter);
+app.use("/api/w/:wsId/ai-configs", aiConfigsRouter);
+app.use("/api/w/:wsId/analysis-prompts", analysisPromptsRouter);
+app.use("/api/w/:wsId/generation-prompts", generationPromptsRouter);
+app.use("/api/w/:wsId/analyze", analysisRouter);
+app.use("/api/w/:wsId/generate", generationRouter);
+app.use("/api/w/:wsId/assets", assetsRouter);
 
-// Global error handler — catches errors passed to next(err)
+// Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logError(`Unhandled error: ${err.message}`);
   res.status(500).json({ error: "Internal server error" });
 });
 
 app.listen(port, "127.0.0.1", () => {
-  info(`Server started on port ${port}, data directory: ${dataDirectory}`);
+  info(`Server started on port ${port}, ${appConfig.workspaces.length} workspace(s) configured`);
 });

@@ -51,6 +51,19 @@ export interface Target {
   requiresMetadata: boolean;
 }
 
+// --- Workspace ---
+
+export interface Workspace {
+  id: string;            // nanoid, stable identity
+  name: string;          // user-defined label
+  dataDirectory: string; // absolute path to the workspace data directory
+}
+
+export interface AppConfig {
+  port: number;          // local server port (default: 3141)
+  workspaces: Workspace[];
+}
+
 // --- Settings ---
 
 export const AI_PROVIDERS = ["claude"] as const;
@@ -65,7 +78,6 @@ export interface AiConfig {
 }
 
 export interface Settings {
-  port: number;                    // local server port (default: 3141)
   timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
   supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
   publishedPostsPerLoad: number;   // batch size for the published posts list (default: 50)

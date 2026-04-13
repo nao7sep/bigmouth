@@ -1,4 +1,62 @@
-import type { Post, PostListResponse, AnalysisPrompt, Settings, Target, AssetMeta, AiConfigsData, GenerationPromptsData } from "./types";
+import type { Post, PostListResponse, AnalysisPrompt, Settings, Target, AssetMeta, AiConfigsData, GenerationPromptsData, Workspace } from "./types";
+
+// --- Workspace context ---
+
+let wsId = "";
+
+export function setActiveWorkspace(id: string): void {
+  wsId = id;
+}
+
+export function getActiveWorkspace(): string {
+  return wsId;
+}
+
+function base(): string {
+  if (!wsId) throw new Error("No active workspace set");
+  return `/api/w/${wsId}`;
+}
+
+// --- Workspace management (no workspace prefix) ---
+
+export async function fetchWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch("/api/workspaces");
+  if (!res.ok) throw new Error(`Failed to fetch workspaces: ${res.status}`);
+  return res.json();
+}
+
+export async function createWorkspace(
+  name: string,
+  dataDirectory?: string
+): Promise<Workspace> {
+  const res = await fetch("/api/workspaces", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, dataDirectory }),
+  });
+  if (!res.ok) throw new Error(`Failed to create workspace: ${res.status}`);
+  return res.json();
+}
+
+export async function updateWorkspace(
+  id: string,
+  updates: { name?: string; dataDirectory?: string }
+): Promise<Workspace> {
+  const res = await fetch(`/api/workspaces/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`Failed to update workspace: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete workspace: ${res.status}`);
+}
+
+// --- Workspace-scoped API ---
 
 export async function fetchPosts(
   publishedOffset = 0,
@@ -8,13 +66,13 @@ export async function fetchPosts(
     publishedOffset: String(publishedOffset),
     limit: String(limit),
   });
-  const res = await fetch(`/api/posts?${params}`);
+  const res = await fetch(`${base()}/posts?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch posts: ${res.status}`);
   return res.json();
 }
 
 export async function fetchPost(id: string): Promise<Post> {
-  const res = await fetch(`/api/posts/${id}`);
+  const res = await fetch(`${base()}/posts/${id}`);
   if (!res.ok) throw new Error(`Failed to fetch post: ${res.status}`);
   return res.json();
 }
@@ -24,7 +82,7 @@ export async function createPost(
   language: string,
   sourceId?: string
 ): Promise<Post> {
-  const res = await fetch("/api/posts", {
+  const res = await fetch(`${base()}/posts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target, language, sourceId }),
@@ -40,7 +98,7 @@ export async function updatePost(
     frontMatter?: { [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null };
   }
 ): Promise<Post> {
-  const res = await fetch(`/api/posts/${id}`, {
+  const res = await fetch(`${base()}/posts/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -53,7 +111,7 @@ export async function changePostStatus(
   id: string,
   status: "draft" | "ready" | "published"
 ): Promise<Post> {
-  const res = await fetch(`/api/posts/${id}/status`, {
+  const res = await fetch(`${base()}/posts/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -66,24 +124,24 @@ export async function changePostStatus(
 }
 
 export async function deletePost(id: string): Promise<void> {
-  const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+  const res = await fetch(`${base()}/posts/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
 }
 
 export async function fetchTargets(): Promise<Target[]> {
-  const res = await fetch("/api/targets");
+  const res = await fetch(`${base()}/targets`);
   if (!res.ok) throw new Error(`Failed to fetch targets: ${res.status}`);
   return res.json();
 }
 
 export async function fetchSettings(): Promise<Settings> {
-  const res = await fetch("/api/settings");
+  const res = await fetch(`${base()}/settings`);
   if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
   return res.json();
 }
 
 export async function saveSettings(settings: Settings): Promise<Settings> {
-  const res = await fetch("/api/settings", {
+  const res = await fetch(`${base()}/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
@@ -93,13 +151,13 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
 }
 
 export async function fetchAiConfigs(): Promise<AiConfigsData> {
-  const res = await fetch("/api/ai-configs");
+  const res = await fetch(`${base()}/ai-configs`);
   if (!res.ok) throw new Error(`Failed to fetch AI configs: ${res.status}`);
   return res.json();
 }
 
 export async function saveAiConfigs(data: AiConfigsData): Promise<AiConfigsData> {
-  const res = await fetch("/api/ai-configs", {
+  const res = await fetch(`${base()}/ai-configs`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -109,13 +167,13 @@ export async function saveAiConfigs(data: AiConfigsData): Promise<AiConfigsData>
 }
 
 export async function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
-  const res = await fetch("/api/generation-prompts");
+  const res = await fetch(`${base()}/generation-prompts`);
   if (!res.ok) throw new Error(`Failed to fetch generation prompts: ${res.status}`);
   return res.json();
 }
 
 export async function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
-  const res = await fetch("/api/generation-prompts", {
+  const res = await fetch(`${base()}/generation-prompts`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -125,7 +183,7 @@ export async function saveGenerationPrompts(data: GenerationPromptsData): Promis
 }
 
 export async function saveTargets(targets: Target[]): Promise<Target[]> {
-  const res = await fetch("/api/targets", {
+  const res = await fetch(`${base()}/targets`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(targets),
@@ -135,13 +193,13 @@ export async function saveTargets(targets: Target[]): Promise<Target[]> {
 }
 
 export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
-  const res = await fetch("/api/analysis-prompts");
+  const res = await fetch(`${base()}/analysis-prompts`);
   if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
   return res.json();
 }
 
 export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
-  const res = await fetch("/api/analysis-prompts", {
+  const res = await fetch(`${base()}/analysis-prompts`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prompts),
@@ -151,7 +209,7 @@ export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<An
 }
 
 export async function fetchAssets(postId: string): Promise<AssetMeta[]> {
-  const res = await fetch(`/api/assets/${postId}`);
+  const res = await fetch(`${base()}/assets/${postId}`);
   if (!res.ok) throw new Error(`Failed to fetch assets: ${res.status}`);
   return res.json();
 }
@@ -162,7 +220,7 @@ export async function uploadAsset(
 ): Promise<AssetMeta> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`/api/assets/${postId}`, {
+  const res = await fetch(`${base()}/assets/${postId}`, {
     method: "POST",
     body: form,
   });
@@ -174,7 +232,7 @@ export async function deleteAsset(
   postId: string,
   filename: string
 ): Promise<void> {
-  const res = await fetch(`/api/assets/${postId}/${encodeURIComponent(filename)}`, {
+  const res = await fetch(`${base()}/assets/${postId}/${encodeURIComponent(filename)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
@@ -185,7 +243,7 @@ export async function generateMetadata(
   field: string,
   content: string
 ): Promise<string> {
-  const res = await fetch("/api/generate", {
+  const res = await fetch(`${base()}/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ postId, field, content }),
@@ -205,7 +263,7 @@ export async function generateMetadataBatch(
   fields: string[],
   content: string
 ): Promise<Record<string, { value: string } | { error: string }>> {
-  const res = await fetch("/api/generate/batch", {
+  const res = await fetch(`${base()}/generate/batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ postId, fields, content }),
@@ -225,7 +283,7 @@ export async function runAnalysis(
   promptName: string,
   content: string
 ): Promise<string> {
-  const res = await fetch("/api/analyze", {
+  const res = await fetch(`${base()}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ postId, promptName, content }),
@@ -238,4 +296,11 @@ export async function runAnalysis(
   }
   const data = (await res.json()) as { result: string };
   return data.result;
+}
+
+/**
+ * Returns the URL for serving a raw asset file.
+ */
+export function assetUrl(postId: string, filename: string): string {
+  return `${base()}/assets/${postId}/${encodeURIComponent(filename)}/raw`;
 }

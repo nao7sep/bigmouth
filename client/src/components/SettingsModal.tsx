@@ -43,7 +43,6 @@ export function SettingsModal({
   const [tab, setTab] = useState<Tab>("general");
   useEscapeKey(onClose);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [originalPort, setOriginalPort] = useState<number | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -51,7 +50,7 @@ export function SettingsModal({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchSettings().then((s) => { setSettings(s); setOriginalPort(s.port); }).catch(() => {});
+    fetchSettings().then(setSettings).catch(() => {});
     fetchAiConfigs().then(setAiConfigs).catch(() => {});
     fetchGenerationPrompts().then(setGenerationPrompts).catch(() => {});
     fetchTargets().then(setTargets).catch(() => {});
@@ -60,8 +59,6 @@ export function SettingsModal({
 
   const isValid = (): boolean => {
     if (!settings) return false;
-    const port = settings.port;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
     if (!Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1) return false;
     if (!Number.isInteger(settings.maxUploadMb) || settings.maxUploadMb < 1) return false;
     const langs = settings.supportedLanguages;
@@ -75,7 +72,6 @@ export function SettingsModal({
     return true;
   };
 
-  const portChanged = settings !== null && originalPort !== null && settings.port !== originalPort;
   const canSave = !saving && isValid();
 
   const handleSaveAll = async () => {
@@ -159,11 +155,6 @@ export function SettingsModal({
           )}
         </div>
         <div className="modal-footer">
-          {portChanged && canSave && (
-            <p className="settings-hint" style={{ color: "#b45309" }}>
-              Port change takes effect after restarting the server.
-            </p>
-          )}
           <button
             className="btn-new-post"
             style={{ width: "auto" }}
@@ -196,8 +187,6 @@ function GeneralTab({
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
-  const portInvalid = !Number.isInteger(settings.port) || settings.port < 1 || settings.port > 65535;
-
   let timezoneError = "";
   if (!settings.timezone.trim()) {
     timezoneError = "Timezone is required.";
@@ -217,18 +206,6 @@ function GeneralTab({
 
   return (
     <div className="settings-section">
-      <div className="form-field">
-        <label className="form-label">Port</label>
-        <input
-          className="form-input"
-          type="number"
-          value={settings.port}
-          onChange={(e) =>
-            update({ port: parseInt(e.target.value) || 3141 })
-          }
-        />
-        {portInvalid && <FieldError msg="Must be an integer between 1 and 65535." />}
-      </div>
       <div className="form-field">
         <label className="form-label">Timezone (IANA)</label>
         <input

@@ -1,14 +1,6 @@
 /**
- * POST /api/analyze
+ * POST /api/w/:wsId/analyze
  * Runs a named prompt against the post content using the configured AI provider.
- *
- * The prompt text uses {content} as a placeholder. Everything before {content}
- * becomes the system prompt; the post content becomes the user message. If the
- * prompt contains no {content} marker, the entire prompt text is used as the
- * system prompt.
- *
- * Body: { postId: string, promptName: string }
- * Response: { result: string }
  */
 
 import { Router } from "express";
@@ -17,9 +9,10 @@ import { getAnalysisPrompts, getAiConfigs } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { error as logError } from "../services/logger.js";
 
-export const analysisRouter = Router();
+export const analysisRouter = Router({ mergeParams: true });
 
 analysisRouter.post("/", async (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { postId, promptName, content } = req.body as {
     postId?: string;
     promptName?: string;
@@ -31,21 +24,19 @@ analysisRouter.post("/", async (req, res) => {
     return;
   }
 
-  const post = getPost(postId);
+  const post = getPost(dataDir, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
   }
 
-  const prompts = getAnalysisPrompts();
+  const prompts = getAnalysisPrompts(dataDir);
   const prompt = prompts.find((p) => p.name === promptName);
   if (!prompt) {
     res.status(404).json({ error: `Analysis prompt not found: ${promptName}` });
     return;
   }
 
-  // Split on {content}: text before it is the system prompt, post content is
-  // the user message. Fall back to using the full text as system prompt.
   const markerIndex = prompt.text.indexOf("{content}");
   const systemPrompt =
     markerIndex >= 0
@@ -55,7 +46,7 @@ analysisRouter.post("/", async (req, res) => {
 
   let provider;
   try {
-    const aiConfigs = getAiConfigs();
+    const aiConfigs = getAiConfigs(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );

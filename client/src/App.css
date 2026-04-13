@@ -462,6 +462,17 @@ body {
   background: #f0f0f0;
 }
 
+.hamburger-menu-workspace {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  border-bottom: 1px solid #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Keyboard shortcuts table */
 .shortcuts-table {
   width: 100%;
@@ -1264,4 +1275,80 @@ body {
   color: #999;
   font-size: 13px;
   line-height: 1.6;
+}
+
+/* ── Workspace Modal ───────────────────────────────────── */
+
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.workspace-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.workspace-item:hover {
+  border-color: #2563eb;
+  background: #f0f4ff;
+}
+
+.workspace-item-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.workspace-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-item-dir {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.workspace-edit-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+}
+
+.workspace-edit-row .form-input {
+  flex: 1;
+}
+
+.workspace-create {
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.workspace-create-heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #333;
 }

@@ -8,6 +8,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 
 ## Features
 
+- **Workspaces** — manage multiple isolated workspaces, each with its own posts, assets, settings, and AI configuration. Switch between workspaces without reloading. You can point a workspace at any directory, making it easy to version-control workspace data with Git.
 - **Markdown editor** with autosave and resizable panes
 - **Three-stage workflow**: Draft → Ready → Published
 - **AI analysis** — run named prompts against post content to catch issues before publishing
@@ -38,7 +39,7 @@ npm run build
 node server/dist/index.js
 ```
 
-The server starts on `http://localhost:3141` by default. Open that URL in your browser.
+The server starts on `http://localhost:3141` by default. Open that URL in your browser. On first visit you will see the workspace modal — create a workspace to get started.
 
 ## Data directory
 
@@ -46,39 +47,72 @@ All data is stored locally under `~/.bigmouth/`:
 
 ```
 ~/.bigmouth/
-  app.json                    ← points to the active data directory
-  data/
-    posts/
-      drafts/                 ← draft posts (.md files)
-      ready/                  ← ready-to-publish posts (.md files)
-      published/              ← published posts (.md files)
-    assets/
-      {postId}/               ← per-post uploaded files + meta.json
-    logs/                     ← server log files
-    settings.json
-    ai-configs.json
-    targets.json
-    analysis-prompts.json
-    generation-prompts.json
+  app.json                         ← port and workspace registry
+  logs/                            ← server log files (shared across workspaces)
+  workspaces/
+    {workspace-id}/                ← default location for workspace data
+      posts/
+        drafts/                    ← draft posts (.md files)
+        ready/                     ← ready-to-publish posts (.md files)
+        published/                 ← published posts (.md files)
+      assets/
+        {postId}/                  ← per-post uploaded files + meta.json
+      settings.json
+      ai-configs.json
+      targets.json
+      analysis-prompts.json
+      generation-prompts.json
 ```
+
+### app.json
+
+The central configuration file. Contains the server port and the list of workspaces:
+
+```json
+{
+  "port": 3141,
+  "workspaces": [
+    {
+      "id": "V1StGXR8_Z5jD",
+      "name": "My Blog",
+      "dataDirectory": "/Users/you/.bigmouth/workspaces/V1StGXR8_Z5jD"
+    },
+    {
+      "id": "k3F9xPq2_mNwR",
+      "name": "Tech Notes",
+      "dataDirectory": "/another/path/technotes"
+    }
+  ]
+}
+```
+
+Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data.
 
 Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
 
+## Workspaces
+
+Workspaces provide complete isolation: each has its own posts, assets, settings, targets, AI configs, and prompts.
+
+- On startup, the frontend shows a workspace modal if no workspace is selected (or the saved workspace no longer exists).
+- Switch workspaces at any time via the hamburger menu → "Switch Workspace".
+- The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
+- Create a workspace with a custom data directory to version-control it with Git.
+
 ## Configuration
 
-### Settings (`settings.json`)
+### Settings (`settings.json`, per workspace)
 
 | Field | Default | Description |
 |---|---|---|
-| `port` | `3141` | Local server port |
-| `timezone` | system | IANA timezone (e.g. `"Asia/Tokyo"`) |
-| `supportedLanguages` | `["en"]` | ISO 639-1 codes shown in language selects |
+| `timezone` | `"Asia/Tokyo"` | IANA timezone (e.g. `"Asia/Tokyo"`) |
+| `supportedLanguages` | `["en", ...]` | ISO 639-1 codes shown in language selects |
 | `publishedPostsPerLoad` | `50` | How many published posts to load per page |
 | `maxUploadMb` | `500` | Max asset upload size in MB |
 | `editorWatermark` | — | Placeholder shown in an empty editor |
 | `extraFieldWatermark` | — | Placeholder shown in the extra metadata field |
 
-### Targets (`targets.json`)
+### Targets (`targets.json`, per workspace)
 
 A target represents a publishing destination:
 
@@ -92,15 +126,15 @@ A target represents a publishing destination:
 ]
 ```
 
-### AI configuration
+### AI configuration (per workspace)
 
 AI providers are configured through the Settings UI. Currently supported: **Claude (Anthropic)**. API keys are stored obfuscated in `ai-configs.json`.
 
-### Analysis prompts (`analysis-prompts.json`)
+### Analysis prompts (`analysis-prompts.json`, per workspace)
 
 Named prompts for AI content review. Use `{content}` as a placeholder — text before it becomes the system prompt; the post content becomes the user message. If `{content}` is omitted, the full prompt is used as the system prompt.
 
-### Generation prompts (`generation-prompts.json`)
+### Generation prompts (`generation-prompts.json`, per workspace)
 
 Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). A shared preamble is prepended to each field-specific prompt.
 
@@ -111,6 +145,31 @@ Prompts used to auto-generate individual metadata fields (title, slug, tags, etc
 3. **Published** — Mark as published after copying to your platform. The post moves to the published archive.
 
 Posts can be moved backward (Published → Ready → Draft) at any time.
+
+## API routes
+
+All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace management routes are at `/api/workspaces`.
+
+| Route | Description |
+|---|---|
+| `GET /api/workspaces` | List all workspaces |
+| `POST /api/workspaces` | Create a workspace |
+| `PUT /api/workspaces/:id` | Update a workspace |
+| `DELETE /api/workspaces/:id` | Delete a workspace |
+| `GET /api/w/:wsId/posts` | List posts |
+| `GET /api/w/:wsId/posts/:id` | Get a post |
+| `POST /api/w/:wsId/posts` | Create a post |
+| `PUT /api/w/:wsId/posts/:id` | Update a post |
+| `PUT /api/w/:wsId/posts/:id/status` | Change post status |
+| `DELETE /api/w/:wsId/posts/:id` | Delete a post |
+| `GET /api/w/:wsId/settings` | Get settings |
+| `PUT /api/w/:wsId/settings` | Save settings |
+| `GET /api/w/:wsId/targets` | Get targets |
+| `PUT /api/w/:wsId/targets` | Save targets |
+| `GET /api/w/:wsId/assets/:postId` | List assets |
+| `POST /api/w/:wsId/assets/:postId` | Upload an asset |
+| `DELETE /api/w/:wsId/assets/:postId/:filename` | Delete an asset |
+| `GET /api/w/:wsId/assets/:postId/:filename/raw` | Serve raw asset file |
 
 ## Keyboard shortcuts
 

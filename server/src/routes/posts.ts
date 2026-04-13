@@ -14,26 +14,17 @@ import { getSettings } from "../services/configStore.js";
 import type { PostStatus } from "../shared/types.js";
 import * as logger from "../services/logger.js";
 
-export const postsRouter = Router();
+export const postsRouter = Router({ mergeParams: true });
 
-/**
- * GET /api/posts
- *
- * Returns all drafts and ready posts (always fully loaded),
- * plus a batch of published posts.
- *
- * Query params:
- *   publishedOffset — offset into published list (default: 0)
- *   limit           — batch size for published (default: from settings, fallback 50)
- */
 postsRouter.get("/", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const publishedOffset = parseInt(req.query.publishedOffset as string) || 0;
-  const limit = parseInt(req.query.limit as string) || getSettings().publishedPostsPerLoad;
+  const limit = parseInt(req.query.limit as string) || getSettings(dataDir).publishedPostsPerLoad;
 
-  const drafts = listDrafts();
-  const ready = listReady();
-  const published = listPublished(publishedOffset, limit);
-  const publishedTotal = countPublished();
+  const drafts = listDrafts(dataDir);
+  const ready = listReady(dataDir);
+  const published = listPublished(dataDir, publishedOffset, limit);
+  const publishedTotal = countPublished(dataDir);
 
   res.json({
     drafts,
@@ -44,13 +35,9 @@ postsRouter.get("/", (req, res) => {
   });
 });
 
-/**
- * GET /api/posts/:id
- *
- * Returns a single post with full content.
- */
 postsRouter.get("/:id", (req, res) => {
-  const post = getPost(req.params.id);
+  const dataDir = res.locals.dataDir as string;
+  const post = getPost(dataDir, req.params.id);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
@@ -62,13 +49,8 @@ postsRouter.get("/:id", (req, res) => {
   });
 });
 
-/**
- * POST /api/posts
- *
- * Creates a new draft post.
- * Body: { target: string, language: string }
- */
 postsRouter.post("/", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { target, language, sourceId } = req.body;
 
   if (!target || !language) {
@@ -76,7 +58,7 @@ postsRouter.post("/", (req, res) => {
     return;
   }
 
-  const post = createPost(target, language, sourceId);
+  const post = createPost(dataDir, target, language, sourceId);
   logger.info(`Post created: id=${post.frontMatter.id}, target=${target}`);
 
   res.status(201).json({
@@ -85,16 +67,11 @@ postsRouter.post("/", (req, res) => {
   });
 });
 
-/**
- * PUT /api/posts/:id
- *
- * Updates a post's content and/or front matter fields.
- * Body: { content?: string, frontMatter?: Partial<PostFrontMatter> }
- */
 postsRouter.put("/:id", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { content, frontMatter } = req.body;
 
-  const post = updatePost(req.params.id, { content, frontMatter });
+  const post = updatePost(dataDir, req.params.id, { content, frontMatter });
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
@@ -106,13 +83,8 @@ postsRouter.put("/:id", (req, res) => {
   });
 });
 
-/**
- * PUT /api/posts/:id/status
- *
- * Changes a post's status. Handles file renames and subdirectory moves.
- * Body: { status: "draft" | "ready" | "published" }
- */
 postsRouter.put("/:id/status", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { status } = req.body as { status: PostStatus };
 
   if (!["draft", "ready", "published"].includes(status)) {
@@ -121,7 +93,7 @@ postsRouter.put("/:id/status", (req, res) => {
   }
 
   try {
-    const post = changeStatus(req.params.id, status);
+    const post = changeStatus(dataDir, req.params.id, status);
     if (!post) {
       res.status(404).json({ error: "Post not found" });
       return;
@@ -141,13 +113,9 @@ postsRouter.put("/:id/status", (req, res) => {
   }
 });
 
-/**
- * DELETE /api/posts/:id
- *
- * Hard deletes a post and its assets.
- */
 postsRouter.delete("/:id", (req, res) => {
-  const deleted = deletePost(req.params.id);
+  const dataDir = res.locals.dataDir as string;
+  const deleted = deletePost(dataDir, req.params.id);
   if (!deleted) {
     res.status(404).json({ error: "Post not found" });
     return;

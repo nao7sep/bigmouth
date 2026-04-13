@@ -1,11 +1,9 @@
 /**
  * Asset routes:
- *   GET    /api/assets/:postId              — list assets for a post
- *   POST   /api/assets/:postId              — upload a new asset
- *   DELETE /api/assets/:postId/:filename    — delete an asset
- *
- * Static serving of asset files is handled separately in index.ts via
- * express.static mounted at /assets.
+ *   GET    /api/w/:wsId/assets/:postId              — list assets for a post
+ *   POST   /api/w/:wsId/assets/:postId              — upload a new asset
+ *   DELETE /api/w/:wsId/assets/:postId/:filename    — delete an asset
+ *   GET    /api/w/:wsId/assets/:postId/:filename/raw — serve the raw file
  */
 
 import fs from "node:fs";
@@ -25,24 +23,43 @@ import {
   sanitizeFilename,
 } from "../services/assetStore.js";
 
-export const assetsRouter = Router();
+export const assetsRouter = Router({ mergeParams: true });
 
-// --- GET /api/assets/:postId ---
+// --- GET /api/w/:wsId/assets/:postId ---
 
 assetsRouter.get("/:postId", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const postId = String(req.params.postId);
-  res.json(listAssets(postId));
+  res.json(listAssets(dataDir, postId));
 });
 
-// --- POST /api/assets/:postId ---
+// --- GET /api/w/:wsId/assets/:postId/:filename/raw ---
+
+assetsRouter.get("/:postId/:filename/raw", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
+  const postId = String(req.params.postId);
+  const filename = String(req.params.filename);
+  const filePath = path.join(assetDir(dataDir, postId), filename);
+
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+
+  res.sendFile(filePath);
+});
+
+// --- POST /api/w/:wsId/assets/:postId ---
 
 assetsRouter.post("/:postId", (req, res, next) => {
-  const limitMb = getSettings().maxUploadMb ?? 500;
+  const dataDir = res.locals.dataDir as string;
+  const limitMb = getSettings(dataDir).maxUploadMb ?? 500;
   multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: limitMb * 1024 * 1024 },
   }).single("file")(req, res, next);
 }, async (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const postId = String(req.params.postId);
 
   if (!req.file) {
@@ -51,12 +68,10 @@ assetsRouter.post("/:postId", (req, res, next) => {
   }
 
   const filename = sanitizeFilename(req.file.originalname);
-  const destPath = assetFilePath(postId, filename);
+  const destPath = assetFilePath(dataDir, postId, filename);
 
-  // Write file to disk
   fs.writeFileSync(destPath, req.file.buffer);
 
-  // Get image dimensions from actual image headers (not EXIF)
   let width: number | undefined;
   let height: number | undefined;
   let hasMetadata: boolean | undefined;
@@ -74,11 +89,10 @@ assetsRouter.post("/:postId", (req, res, next) => {
     }
 
     try {
-      // Parse all default segments — any non-null result means metadata is present
       const exif = await exifr.parse(req.file.buffer);
       if (exif && Object.keys(exif).length > 0) hasMetadata = true;
     } catch {
-      // Not an image format exifr recognises — no metadata
+      // Not an image format exifr recognises
     }
   }
 
@@ -91,22 +105,23 @@ assetsRouter.post("/:postId", (req, res, next) => {
     uploadedAt: formatForFrontMatter(utcNow()),
   };
 
-  addAsset(postId, meta);
+  addAsset(dataDir, postId, meta);
   res.status(201).json(meta);
 });
 
-// --- DELETE /api/assets/:postId/:filename ---
+// --- DELETE /api/w/:wsId/assets/:postId/:filename ---
 
 assetsRouter.delete("/:postId/:filename", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const postId = String(req.params.postId);
   const filename = String(req.params.filename);
 
-  const filePath = path.join(assetDir(postId), filename);
+  const filePath = path.join(assetDir(dataDir, postId), filename);
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "Asset not found" });
     return;
   }
 
-  deleteAsset(postId, filename);
+  deleteAsset(dataDir, postId, filename);
   res.status(204).send();
 });

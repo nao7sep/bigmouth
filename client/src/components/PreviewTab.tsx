@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Marked } from "marked";
+import { assetUrl } from "../api";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -14,7 +15,7 @@ export function PreviewTab({ content, postId }: PreviewTabProps) {
     // Resolve image filenames to the asset serve endpoint
     const resolved = content.replace(
       /!\[([^\]]*)\]\(([^/)][^)]*)\)/g,
-      (_, alt, filename) => `![${alt}](/assets/${postId}/${filename})`
+      (_, alt, filename) => `![${alt}](${assetUrl(postId, filename)})`
     );
     return marked.parse(resolved) as string;
   }, [content, postId]);

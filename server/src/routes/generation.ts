@@ -1,15 +1,9 @@
 /**
- * POST /api/generate
+ * POST /api/w/:wsId/generate
  * Generates a metadata field value for a post using the configured AI provider.
  *
- * Body: { postId: string, field: string }
- * Response: { value: string }
- *
- * POST /api/generate/batch
+ * POST /api/w/:wsId/generate/batch
  * Generates multiple metadata fields in parallel.
- *
- * Body: { postId: string, fields: string[] }
- * Response: { results: Record<string, { value: string } | { error: string }> }
  */
 
 import { Router } from "express";
@@ -19,9 +13,10 @@ import { createProvider } from "../ai/factory.js";
 import { systemPromptForField } from "../ai/generationPrompts.js";
 import { error as logError } from "../services/logger.js";
 
-export const generationRouter = Router();
+export const generationRouter = Router({ mergeParams: true });
 
 generationRouter.post("/", async (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { postId, field, content } = req.body as {
     postId?: string;
     field?: string;
@@ -33,7 +28,7 @@ generationRouter.post("/", async (req, res) => {
     return;
   }
 
-  const post = getPost(postId);
+  const post = getPost(dataDir, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
@@ -44,14 +39,14 @@ generationRouter.post("/", async (req, res) => {
   let provider;
   let systemPrompt: string;
   try {
-    const genPrompts = getGenerationPrompts();
+    const genPrompts = getGenerationPrompts(dataDir);
     const resolved = systemPromptForField(field, genPrompts.preamble, genPrompts.prompts);
     if (!resolved) {
       res.status(400).json({ error: `Field is not generatable: ${field}` });
       return;
     }
     systemPrompt = resolved;
-    const aiConfigs = getAiConfigs();
+    const aiConfigs = getAiConfigs(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );
@@ -79,6 +74,7 @@ generationRouter.post("/", async (req, res) => {
 });
 
 generationRouter.post("/batch", async (req, res) => {
+  const dataDir = res.locals.dataDir as string;
   const { postId, fields, content } = req.body as {
     postId?: string;
     fields?: string[];
@@ -90,7 +86,7 @@ generationRouter.post("/batch", async (req, res) => {
     return;
   }
 
-  const post = getPost(postId);
+  const post = getPost(dataDir, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
     return;
@@ -102,10 +98,10 @@ generationRouter.post("/batch", async (req, res) => {
   let customPrompts: Record<string, string>;
   let preamble: string;
   try {
-    const genPrompts = getGenerationPrompts();
+    const genPrompts = getGenerationPrompts(dataDir);
     customPrompts = genPrompts.prompts;
     preamble = genPrompts.preamble;
-    const aiConfigs = getAiConfigs();
+    const aiConfigs = getAiConfigs(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );

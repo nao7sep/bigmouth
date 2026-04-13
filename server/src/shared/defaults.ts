@@ -29,7 +29,6 @@ export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  port: DEFAULT_PORT,
   timezone: "Asia/Tokyo",
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,

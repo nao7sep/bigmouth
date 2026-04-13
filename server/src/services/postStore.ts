@@ -5,6 +5,8 @@
  *   posts/drafts/      — all loaded on startup (always small)
  *   posts/ready/       — all loaded on startup (always small)
  *   posts/published/   — loaded in batches by filename sort (grows over time)
+ *
+ * All public functions take a dataDir parameter (the workspace data directory).
  */
 
 import fs from "node:fs";
@@ -26,44 +28,39 @@ import {
   statusSubdir,
 } from "../shared/filenames.js";
 
-let postsDir = "";
-let dataDir = "";
-
-// Lucky cache: maps published post id -> absolute file path.
+// Published post cache: maps workspaceId -> postId -> absolute file path.
 // Populated as published posts are accessed; evicted on delete or unpublish.
-// If an id isn't here, fall back to directory scan.
-const pubCache = new Map<string, string>();
+const pubCaches = new Map<string, Map<string, string>>();
 
-export function initPostStore(dataDirectory: string): void {
-  dataDir = dataDirectory;
-  postsDir = path.join(dataDirectory, "posts");
-  pubCache.clear();
+function pubCache(dataDir: string): Map<string, string> {
+  let cache = pubCaches.get(dataDir);
+  if (!cache) {
+    cache = new Map();
+    pubCaches.set(dataDir, cache);
+  }
+  return cache;
+}
+
+export function clearCache(dataDir: string): void {
+  pubCaches.delete(dataDir);
+}
+
+function postsDir(dataDir: string): string {
+  return path.join(dataDir, "posts");
 }
 
 // --- List ---
 
-/**
- * Lists all drafts (front matter only). Always fully loaded.
- */
-export function listDrafts(): PostSummary[] {
-  return loadAllSummaries("drafts");
+export function listDrafts(dataDir: string): PostSummary[] {
+  return loadAllSummaries(dataDir, "drafts");
 }
 
-/**
- * Lists all ready posts (front matter only). Always fully loaded.
- */
-export function listReady(): PostSummary[] {
-  return loadAllSummaries("ready");
+export function listReady(dataDir: string): PostSummary[] {
+  return loadAllSummaries(dataDir, "ready");
 }
 
-/**
- * Lists a batch of published posts (front matter only).
- * Filenames are sorted descending (newest first). Offset and limit
- * control pagination. Front matter is parsed only for the requested batch.
- * Populates pubCache as a side effect.
- */
-export function listPublished(offset: number, limit: number): PostSummary[] {
-  const dir = path.join(postsDir, "published");
+export function listPublished(dataDir: string, offset: number, limit: number): PostSummary[] {
+  const dir = path.join(postsDir(dataDir), "published");
   if (!fs.existsSync(dir)) return [];
 
   const files = fs
@@ -72,6 +69,7 @@ export function listPublished(offset: number, limit: number): PostSummary[] {
     .sort()
     .reverse();
 
+  const cache = pubCache(dataDir);
   const summaries: PostSummary[] = [];
   for (const file of files.slice(offset, offset + limit)) {
     const filePath = path.join(dir, file);
@@ -79,7 +77,7 @@ export function listPublished(offset: number, limit: number): PostSummary[] {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
       const fm = parsed.data as PostFrontMatter;
-      if (fm.id) pubCache.set(fm.id, filePath);
+      if (fm.id) cache.set(fm.id, filePath);
       summaries.push({ frontMatter: fm });
     } catch (err) {
       logWarn(`Skipping malformed published file: ${filePath} — ${err instanceof Error ? err.message : err}`);
@@ -89,19 +87,16 @@ export function listPublished(offset: number, limit: number): PostSummary[] {
   return summaries;
 }
 
-/**
- * Returns the total number of published posts (for pagination).
- */
-export function countPublished(): number {
-  const dir = path.join(postsDir, "published");
+export function countPublished(dataDir: string): number {
+  const dir = path.join(postsDir(dataDir), "published");
   if (!fs.existsSync(dir)) return 0;
   return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).length;
 }
 
 // --- Read ---
 
-export function getPost(id: string): Post | null {
-  const filePath = findPostFile(id);
+export function getPost(dataDir: string, id: string): Post | null {
+  const filePath = findPostFile(dataDir, id);
   if (!filePath) return null;
 
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -123,9 +118,7 @@ function trimBlankLines(text: string): string {
   return start > end ? "" : lines.slice(start, end + 1).join("\n");
 }
 
-
-
-export function createPost(target: string, language: string, sourceId?: string): Post {
+export function createPost(dataDir: string, target: string, language: string, sourceId?: string): Post {
   const now = utcNow();
   const id = nanoid();
 
@@ -140,7 +133,7 @@ export function createPost(target: string, language: string, sourceId?: string):
   };
 
   const fileName = draftFilename(now, id);
-  const filePath = path.join(postsDir, "drafts", fileName);
+  const filePath = path.join(postsDir(dataDir), "drafts", fileName);
 
   writePostFile(filePath, frontMatter, "");
 
@@ -150,13 +143,14 @@ export function createPost(target: string, language: string, sourceId?: string):
 // --- Update ---
 
 export function updatePost(
+  dataDir: string,
   id: string,
   updates: {
     content?: string;
     frontMatter?: Partial<PostFrontMatter>;
   }
 ): Post | null {
-  const post = getPost(id);
+  const post = getPost(dataDir, id);
   if (!post) return null;
 
   if (updates.frontMatter) {
@@ -179,13 +173,13 @@ export function updatePost(
 
   // For published posts the slug may have changed, which changes the filename
   if (post.frontMatter.status === "published") {
-    const newFilePath = path.join(postsDir, "published", buildFilename(post.frontMatter));
+    const newFilePath = path.join(postsDir(dataDir), "published", buildFilename(post.frontMatter));
     writePostFile(newFilePath, post.frontMatter, post.content);
     if (newFilePath !== post.filePath) {
       fs.unlinkSync(post.filePath);
       post.filePath = newFilePath;
     }
-    pubCache.set(id, post.filePath);
+    pubCache(dataDir).set(id, post.filePath);
   } else {
     writePostFile(post.filePath, post.frontMatter, post.content);
   }
@@ -195,12 +189,8 @@ export function updatePost(
 
 // --- Status change ---
 
-/**
- * Changes a post's status. Handles timestamp updates, file renames,
- * and moves between subdirectories.
- */
-export function changeStatus(id: string, newStatus: PostStatus): Post | null {
-  const post = getPost(id);
+export function changeStatus(dataDir: string, id: string, newStatus: PostStatus): Post | null {
+  const post = getPost(dataDir, id);
   if (!post) return null;
 
   const oldStatus = post.frontMatter.status;
@@ -209,7 +199,6 @@ export function changeStatus(id: string, newStatus: PostStatus): Post | null {
   const now = utcNow();
   const oldFilePath = post.filePath;
 
-  // Apply timestamp logic
   if (newStatus === "ready") {
     if (!post.frontMatter.slug) {
       throw new Error("Slug is required to move a post to ready status");
@@ -234,10 +223,9 @@ export function changeStatus(id: string, newStatus: PostStatus): Post | null {
   post.frontMatter.status = newStatus;
   post.frontMatter.updatedAtUtc = formatForFrontMatter(now);
 
-  // Determine new filename and subdirectory
   const newFileName = buildFilename(post.frontMatter);
   const newFilePath = path.join(
-    postsDir,
+    postsDir(dataDir),
     statusSubdir(newStatus),
     newFileName
   );
@@ -247,11 +235,11 @@ export function changeStatus(id: string, newStatus: PostStatus): Post | null {
     fs.unlinkSync(oldFilePath);
   }
 
-  // Keep pubCache in sync
+  const cache = pubCache(dataDir);
   if (newStatus === "published") {
-    pubCache.set(id, newFilePath);
+    cache.set(id, newFilePath);
   } else if (oldStatus === "published") {
-    pubCache.delete(id);
+    cache.delete(id);
   }
 
   post.filePath = newFilePath;
@@ -260,14 +248,13 @@ export function changeStatus(id: string, newStatus: PostStatus): Post | null {
 
 // --- Delete ---
 
-export function deletePost(id: string): boolean {
-  const filePath = findPostFile(id);
+export function deletePost(dataDir: string, id: string): boolean {
+  const filePath = findPostFile(dataDir, id);
   if (!filePath) return false;
 
   fs.unlinkSync(filePath);
-  pubCache.delete(id);
+  pubCache(dataDir).delete(id);
 
-  // Also delete asset directory if it exists
   const assetDir = path.join(dataDir, "assets", id);
   if (fs.existsSync(assetDir)) {
     fs.rmSync(assetDir, { recursive: true });
@@ -278,14 +265,10 @@ export function deletePost(id: string): boolean {
 
 // --- Target rename ---
 
-/**
- * Renames a target across all post files in all subdirectories.
- * Returns the number of posts updated.
- */
-export function renameTarget(oldName: string, newName: string): number {
+export function renameTarget(dataDir: string, oldName: string, newName: string): number {
   let count = 0;
   for (const sub of ["drafts", "ready", "published"]) {
-    const dir = path.join(postsDir, sub);
+    const dir = path.join(postsDir(dataDir), sub);
     if (!fs.existsSync(dir)) continue;
 
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
@@ -307,9 +290,6 @@ export function renameTarget(oldName: string, newName: string): number {
 
 // --- Internal helpers ---
 
-/**
- * Builds the correct filename for a post based on its front matter.
- */
 function buildFilename(fm: PostFrontMatter): string {
   if (fm.status === "draft") {
     return draftFilename(new Date(fm.createdAtUtc), fm.id);
@@ -317,31 +297,24 @@ function buildFilename(fm: PostFrontMatter): string {
   if (fm.status === "ready") {
     return readyFilename(new Date(fm.readyAtUtc!), fm.slug!);
   }
-  // published
   return publishedFilename(new Date(fm.publishedAtUtc!), fm.slug!);
 }
 
-/**
- * Finds the file path of a post by id.
- * Checks pubCache first for published posts, then scans subdirectories.
- * Draft filenames contain the nanoid for a fast match; ready filenames contain the slug.
- * Published filenames contain neither, so only the fallback parse loop is useful there.
- */
-function findPostFile(id: string): string | null {
-  // Lucky cache hit for published posts
-  const cached = pubCache.get(id);
+function findPostFile(dataDir: string, id: string): string | null {
+  const cache = pubCache(dataDir);
+  const cached = cache.get(id);
   if (cached) {
     if (fs.existsSync(cached)) return cached;
-    pubCache.delete(id); // stale — file no longer exists
+    cache.delete(id);
   }
 
+  const pDir = postsDir(dataDir);
   for (const sub of ["drafts", "ready", "published"]) {
-    const dir = path.join(postsDir, sub);
+    const dir = path.join(pDir, sub);
     if (!fs.existsSync(dir)) continue;
 
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
 
-    // Quick check: draft/ready filenames may contain the id or slug substring
     if (sub !== "published") {
       for (const file of files) {
         if (file.includes(id)) {
@@ -353,15 +326,14 @@ function findPostFile(id: string): string | null {
       }
     }
 
-    // Fallback: parse all remaining files in this subdir
     for (const file of files) {
-      if (sub !== "published" && file.includes(id)) continue; // already checked above
+      if (sub !== "published" && file.includes(id)) continue;
       const filePath = path.join(dir, file);
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
       const fm = parsed.data as PostFrontMatter;
       if (fm.id === id) {
-        if (sub === "published") pubCache.set(id, filePath);
+        if (sub === "published") cache.set(id, filePath);
         return filePath;
       }
     }
@@ -382,7 +354,6 @@ function writePostFile(
     }
   }
 
-  // English posts don't need *En supplements — strip them if present
   if (frontMatter.language === "en") {
     delete cleanFm.titleEn;
     delete cleanFm.tagsEn;
@@ -393,11 +364,8 @@ function writePostFile(
   fs.writeFileSync(filePath, output);
 }
 
-/**
- * Loads all post summaries from a subdirectory.
- */
-function loadAllSummaries(subdir: string): PostSummary[] {
-  const dir = path.join(postsDir, subdir);
+function loadAllSummaries(dataDir: string, subdir: string): PostSummary[] {
+  const dir = path.join(postsDir(dataDir), subdir);
   if (!fs.existsSync(dir)) return [];
 
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
@@ -414,7 +382,6 @@ function loadAllSummaries(subdir: string): PostSummary[] {
     }
   }
 
-  // Most recently edited first
   summaries.sort((a, b) => {
     const ta = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
     const tb = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";

@@ -8,8 +8,9 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
-import type { Post, PostSummary, Settings, Target } from "./types";
+import { WorkspaceModal } from "./components/WorkspaceModal";
+import { fetchPosts, createPost, fetchTargets, fetchSettings, fetchWorkspaces, setActiveWorkspace } from "./api";
+import type { Post, PostSummary, Settings, Target, Workspace } from "./types";
 import "./App.css";
 
 const DEFAULT_WATERMARK =
@@ -17,6 +18,7 @@ const DEFAULT_WATERMARK =
 
 const STORAGE_LEFT  = "bm-pane-left-width";
 const STORAGE_RIGHT = "bm-pane-right-width";
+const STORAGE_WS    = "bm-workspace-id";
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
 
@@ -26,6 +28,12 @@ function readStoredWidth(key: string, fallback: number, min: number, max: number
 }
 
 export function App() {
+  // --- Workspace state ---
+  const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
+  const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+  const [wsChecked, setWsChecked] = useState(false);
+
+  // --- Post state ---
   const [drafts, setDrafts] = useState<PostSummary[]>([]);
   const [ready, setReady] = useState<PostSummary[]>([]);
   const [published, setPublished] = useState<PostSummary[]>([]);
@@ -58,6 +66,58 @@ export function App() {
   leftWidthRef.current  = leftWidth;
   rightWidthRef.current = rightWidth;
 
+  // --- Workspace validation on startup ---
+  useEffect(() => {
+    const storedId = localStorage.getItem(STORAGE_WS);
+    if (!storedId) {
+      setWorkspaceModalOpen(true);
+      setWsChecked(true);
+      return;
+    }
+
+    fetchWorkspaces()
+      .then((workspaces) => {
+        const ws = workspaces.find((w) => w.id === storedId);
+        if (ws) {
+          setActiveWorkspace(ws.id);
+          setActiveWorkspaceState(ws);
+        } else {
+          localStorage.removeItem(STORAGE_WS);
+          setWorkspaceModalOpen(true);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem(STORAGE_WS);
+        setWorkspaceModalOpen(true);
+      })
+      .finally(() => setWsChecked(true));
+  }, []);
+
+  const handleSelectWorkspace = useCallback((ws: Workspace) => {
+    // Reset all workspace-scoped state
+    setActiveWorkspace(ws.id);
+    setActiveWorkspaceState(ws);
+    localStorage.setItem(STORAGE_WS, ws.id);
+    setWorkspaceModalOpen(false);
+
+    // Clear post state
+    setDrafts([]);
+    setReady([]);
+    setPublished([]);
+    setPublishedTotal(0);
+    setPublishedOffset(0);
+    setSelectedPostId(null);
+    setNavHistory([]);
+    setCurrentPost(null);
+    setEditorContent("");
+    setTargets([]);
+    setSupportedLanguages(["en"]);
+    setPubBatchSize(50);
+    setMaxUploadMb(500);
+    setWatermark(DEFAULT_WATERMARK);
+    setExtraFieldWatermark("");
+  }, []);
+
   const startDrag = useCallback((
     e: React.MouseEvent,
     widthRef: React.MutableRefObject<number>,
@@ -86,7 +146,6 @@ export function App() {
     document.addEventListener("mouseup", onUp);
   }, []);
 
-  // Helper: switch to a post, clearing stale state synchronously in the same render batch
   const switchPost = useCallback((id: string | null) => {
     setSelectedPostId(id);
     setCurrentPost(null);
@@ -115,12 +174,13 @@ export function App() {
     if (s.supportedLanguages?.length) setSupportedLanguages(s.supportedLanguages);
   }, []);
 
-  useEffect(() => { loadPosts(); }, [loadPosts]);
-
+  // Load data when workspace becomes active
   useEffect(() => {
+    if (!activeWorkspace) return;
+    loadPosts();
     fetchTargets().then(setTargets).catch(() => {});
     fetchSettings().then(applySettings).catch(() => {});
-  }, [applySettings]);
+  }, [activeWorkspace, loadPosts, applySettings]);
 
   const reloadConfig = useCallback(() => {
     fetchTargets().then(setTargets).catch(() => {});
@@ -140,7 +200,6 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
 
-      // Don't intercept shortcuts when focus is inside an input, textarea, or select
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "TEXTAREA" || tag === "SELECT") return;
       if (tag === "INPUT" && e.key !== "n") return;
@@ -209,6 +268,20 @@ export function App() {
     loadPosts(publishedOffset, true);
   };
 
+  // Show nothing until workspace check completes
+  if (!wsChecked) return null;
+
+  // Show workspace modal if no workspace is active
+  if (workspaceModalOpen || !activeWorkspace) {
+    return (
+      <WorkspaceModal
+        dismissable={activeWorkspace !== null}
+        onClose={() => setWorkspaceModalOpen(false)}
+        onSelect={handleSelectWorkspace}
+      />
+    );
+  }
+
   return (
     <div
       className="app-layout"
@@ -226,6 +299,8 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenAbout={() => setAboutOpen(true)}
+        onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
+        workspaceName={activeWorkspace.name}
       />
       <div
         className="pane-divider"
@@ -265,7 +340,6 @@ export function App() {
             extraFieldWatermark={extraFieldWatermark}
             onMetadataSaved={loadPosts}
             onFrontMatterUpdated={(post) => {
-                // Ignore stale completions from generate/save on a previous post
                 if (post.frontMatter.id === selectedPostId) setCurrentPost(post);
               }}
             activeTab={rightTab}

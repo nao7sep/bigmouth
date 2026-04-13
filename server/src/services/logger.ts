@@ -1,20 +1,9 @@
 /**
  * Logging module.
  *
- * Writes to both stdout and a log file at {dataDirectory}/logs/.
+ * Writes to both stdout and a log file at ~/.bigmouth/logs/.
  * One log file per server start, named yyyymmdd-hhmmss-utc.log.
- *
- * What to log:
- *   - Startup: port, data directory, post count
- *   - Errors: file I/O failures, malformed front matter, asset issues
- *   - AI API calls: provider, model, operation, success/failure, duration
- *   - Warnings: EXIF detected, missing target, slug collision
- *
- * What NOT to log:
- *   - Request/response bodies
- *   - Post content or metadata values
- *   - API keys (even partially)
- *   - Routine successful reads/lists
+ * Logs are shared across all workspaces (single server process).
  */
 
 import fs from "node:fs";
@@ -26,11 +15,10 @@ type LogLevel = "INFO" | "WARN" | "ERROR";
 let logStream: fs.WriteStream | null = null;
 
 /**
- * Initializes the logger by creating a log file in {dataDirectory}/logs/.
- * Must be called once at startup after the data directory is resolved.
+ * Initializes the logger by creating a log file in the given logs directory.
+ * Must be called once at startup.
  */
-export function initLogger(dataDirectory: string): void {
-  const logsDir = path.join(dataDirectory, "logs");
+export function initLogger(logsDir: string): void {
   fs.mkdirSync(logsDir, { recursive: true });
 
   const logFileName = `${formatForFilename(utcNow())}.log`;
