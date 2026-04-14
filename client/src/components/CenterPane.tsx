@@ -8,6 +8,7 @@ import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface CenterPaneProps {
+  workspaceId: string;
   postId: string;
   onPostSaved: () => void;
   onPostDeleted: () => void;
@@ -24,6 +25,7 @@ interface CenterPaneProps {
 const AUTO_SAVE_DELAY = 2_000;
 
 export function CenterPane({
+  workspaceId,
   postId,
   onPostSaved,
   onPostDeleted,
@@ -69,7 +71,7 @@ export function CenterPane({
 
           savingRef.current = true;
           try {
-            const updated = await updatePost(postId, { content: current });
+            const updated = await updatePost(postId, { content: current }, workspaceId);
             savedContentRef.current = current;
             setPost(updated);
             onPostSaved();
@@ -106,7 +108,7 @@ export function CenterPane({
   // Load post once on mount (key={postId} in App guarantees fresh instance per post)
   useEffect(() => {
     let cancelled = false;
-    fetchPost(postId).then((loaded) => {
+    fetchPost(postId, workspaceId).then((loaded) => {
       if (cancelled) return;
       setPost(loaded);
       setContent(loaded.content);
@@ -125,7 +127,7 @@ export function CenterPane({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (contentRef.current !== savedContentRef.current) {
-        updatePost(postId, { content: contentRef.current }).catch(() => {});
+        updatePost(postId, { content: contentRef.current }, workspaceId).catch(() => {});
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,7 +151,7 @@ export function CenterPane({
         setStatusError("Save failed. Try again before changing status.");
         return;
       }
-      const updated = await changePostStatus(postId, newStatus);
+      const updated = await changePostStatus(postId, newStatus, workspaceId);
       setPost(updated);
       onPostLoaded(updated);
       onPostSaved();
@@ -161,7 +163,7 @@ export function CenterPane({
   const handleDelete = async () => {
     setDeleteConfirmOpen(false);
     try {
-      await deletePost(postId);
+      await deletePost(postId, workspaceId);
       onPostDeleted();
     } catch {
       // Deletion failed — keep the post open
@@ -191,12 +193,12 @@ export function CenterPane({
   const handleCopyContent = () => copyContent(content, "content");
 
   const handleSetSource = async (sourceId: string) => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId } }).catch(() => null);
+    const updated = await updatePost(postId, { frontMatter: { sourceId } }, workspaceId).catch(() => null);
     if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
   };
 
   const handleClearSource = async () => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }).catch(() => null);
+    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }, workspaceId).catch(() => null);
     if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
   };
 

@@ -11,6 +11,7 @@ interface WorkspaceModalProps {
   onSelect: (workspace: Workspace) => void;
   activeWorkspaceId: string | null;
   onWorkspaceDeleted: (workspaceId: string) => void;
+  onWorkspaceUpdated: (workspace: Workspace) => void;
 }
 
 export function WorkspaceModal({
@@ -19,6 +20,7 @@ export function WorkspaceModal({
   onSelect,
   activeWorkspaceId,
   onWorkspaceDeleted,
+  onWorkspaceUpdated,
 }: WorkspaceModalProps) {
   useEscapeKey(dismissable ? onClose : () => {});
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -53,7 +55,10 @@ export function WorkspaceModal({
 
   const handleRename = async (id: string) => {
     if (!editName.trim()) return;
-    await updateWorkspace(id, { name: editName.trim() });
+    const updated = await updateWorkspace(id, { name: editName.trim() });
+    if (updated && updated.id === activeWorkspaceId) {
+      onWorkspaceUpdated(updated);
+    }
     setEditingId(null);
     load();
   };

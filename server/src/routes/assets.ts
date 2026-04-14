@@ -14,6 +14,7 @@ import exifr from "exifr";
 import { imageSize } from "image-size";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
 import { getSettings } from "../services/configStore.js";
+import { error as logError } from "../services/logger.js";
 import {
   listAssets,
   addAsset,
@@ -46,7 +47,19 @@ assetsRouter.get("/:postId/:filename/raw", (req, res) => {
     return;
   }
 
-  res.sendFile(filePath);
+  res.type(filename);
+  const stream = fs.createReadStream(filePath);
+  stream.on("error", (err) => {
+    logError(
+      `Failed to read asset "${filename}" for post "${postId}" at "${filePath}": ${err instanceof Error ? err.message : String(err)}`
+    );
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to read asset" });
+    } else {
+      res.destroy();
+    }
+  });
+  stream.pipe(res);
 });
 
 // --- POST /api/w/:wsId/assets/:postId ---

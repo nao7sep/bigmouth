@@ -4,6 +4,7 @@ import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface MetadataTabProps {
+  workspaceId: string;
   postId: string;
   frontMatter: PostFrontMatter;
   target: Target | null;
@@ -14,6 +15,7 @@ interface MetadataTabProps {
 }
 
 export function MetadataTab({
+  workspaceId,
   postId,
   frontMatter,
   target,
@@ -34,6 +36,15 @@ export function MetadataTab({
   const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
+  const fieldsRef = useRef(fields);
+
+  useEffect(() => {
+    setFields(extractFields(frontMatter));
+  }, [frontMatter]);
+
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
 
   const showGenError = (msg: string) => {
     setGenError(msg);
@@ -41,18 +52,31 @@ export function MetadataTab({
     genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
   };
 
-  // Flush all pending saves on unmount
+  // Flush pending field saves on unmount so post/workspace switches do not drop them.
   useEffect(() => {
     return () => {
-      for (const t of Object.values(saveTimers.current)) clearTimeout(t);
+      if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
+      for (const [key, timer] of Object.entries(saveTimers.current)) {
+        clearTimeout(timer);
+        delete saveTimers.current[key];
+        const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
+        updatePost(postId, {
+          frontMatter: { [key]: value },
+        }, workspaceId).catch(() => {});
+      }
     };
-  }, []);
+  }, [postId, workspaceId]);
 
-  const saveField = async (key: string, value: string | string[]) => {
+  const saveField = async (
+    key: string,
+    value: string | string[],
+    notify = true
+  ) => {
     try {
       const updated = await updatePost(postId, {
         frontMatter: { [key]: value },
-      });
+      }, workspaceId);
+      if (!notify) return;
       onFrontMatterUpdated(updated);
       onMetadataSaved();
     } catch {
@@ -62,12 +86,7 @@ export function MetadataTab({
 
   const flushSave = (key: string, value: string, isTags: boolean) => {
     if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
-    if (isTags) {
-      const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
-      saveField(key, tags);
-    } else {
-      saveField(key, value);
-    }
+    void saveField(key, normalizeFieldValue(value, isTags));
   };
 
   const updateField = (key: string, value: string, isTags = false) => {
@@ -75,12 +94,7 @@ export function MetadataTab({
     if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
     saveTimers.current[key] = setTimeout(() => {
       delete saveTimers.current[key];
-      if (isTags) {
-        const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
-        saveField(key, tags);
-      } else {
-        saveField(key, value);
-      }
+      void saveField(key, normalizeFieldValue(value, isTags));
     }, 1_000);
   };
 
@@ -91,12 +105,7 @@ export function MetadataTab({
       const value = await generateMetadata(postId, key, content);
       if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
       setFields((prev) => ({ ...prev, [key]: value }));
-      if (isTags) {
-        const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
-        await saveField(key, tags);
-      } else {
-        await saveField(key, value);
-      }
+      await saveField(key, normalizeFieldValue(value, isTags));
     } catch (err) {
       showGenError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -164,12 +173,7 @@ export function MetadataTab({
         }
         const value = result.value;
         setFields((prev) => ({ ...prev, [key]: value }));
-        if (isTags) {
-          const tags = value.split(",").map((t) => t.trim()).filter(Boolean);
-          await saveField(key, tags);
-        } else {
-          await saveField(key, value);
-        }
+        await saveField(key, normalizeFieldValue(value, !!isTags));
       }
       if (failed.length > 0) {
         showGenError(`Failed to generate: ${failed.join(", ")}`);
@@ -398,4 +402,13 @@ function extractFields(fm: PostFrontMatter): Record<string, string> {
   }
 
   return fields;
+}
+
+function normalizeFieldValue(value: string, isTags: boolean): string | string[] {
+  if (!isTags) return value;
+  return value.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
+function parseFieldValue(key: string, value: string): string | string[] {
+  return normalizeFieldValue(value, key === "tags" || key === "tagsEn");
 }

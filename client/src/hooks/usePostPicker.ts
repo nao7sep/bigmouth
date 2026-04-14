@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchPosts } from "../api";
 import type { PostSummary } from "../types";
 
 export interface PostPickerState {
   posts: PostSummary[];
   hasMore: boolean;
+  loadingMore: boolean;
   loadMore: () => void;
   query: string;
   setQuery: (q: string) => void;
@@ -18,8 +19,12 @@ export function usePostPicker(
   const [pubOffset, setPubOffset] = useState(0);
   const [pubTotal, setPubTotal] = useState(0);
   const [query, setQuery] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     fetchPosts(0, batchSize)
       .then((data) => {
         const all = [...data.drafts, ...data.ready, ...data.published];
@@ -31,15 +36,28 @@ export function usePostPicker(
   }, [batchSize, excludeId]);
 
   const loadMore = () => {
-    fetchPosts(pubOffset, batchSize)
+    if (loadingMoreRef.current || query.trim() || pubOffset >= pubTotal) return;
+
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const requestOffset = pubOffset;
+
+    fetchPosts(requestOffset, batchSize)
       .then((data) => {
         const next = excludeId
           ? data.published.filter((p) => p.frontMatter.id !== excludeId)
           : data.published;
-        setAllPosts((prev) => [...prev, ...next]);
-        setPubOffset((o) => o + data.published.length);
+        setAllPosts((prev) => {
+          const seen = new Set(prev.map((p) => p.frontMatter.id));
+          return [...prev, ...next.filter((p) => !seen.has(p.frontMatter.id))];
+        });
+        setPubOffset((o) => Math.max(o, requestOffset + data.published.length));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
   };
 
   const lowerQuery = query.trim().toLowerCase();
@@ -55,5 +73,5 @@ export function usePostPicker(
 
   const hasMore = !lowerQuery && pubOffset < pubTotal;
 
-  return { posts, hasMore, loadMore, query, setQuery };
+  return { posts, hasMore, loadingMore, loadMore, query, setQuery };
 }

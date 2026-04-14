@@ -4,6 +4,7 @@ import type { AssetMeta } from "../types";
 import { ConfirmModal } from "./ConfirmModal";
 
 interface AssetsTabProps {
+  workspaceId: string;
   postId: string;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
@@ -31,7 +32,7 @@ function sanitizeFilename(raw: string): string {
   return base.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabProps) {
+export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -43,12 +44,12 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
 
   const load = useCallback(async () => {
     try {
-      const list = await fetchAssets(postId);
+      const list = await fetchAssets(postId, workspaceId);
       setAssets(list);
     } catch {
       // Failed to load — leave list empty
     }
-  }, [postId]);
+  }, [postId, workspaceId]);
 
   useEffect(() => {
     setAssets([]);
@@ -62,7 +63,7 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
     setUploading(true);
     for (const file of files) {
       try {
-        await uploadAsset(postId, file);
+        await uploadAsset(postId, file, workspaceId);
       } catch {
         // Skip failed uploads
       }
@@ -129,7 +130,7 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
   const handleDelete = async (filename: string) => {
     setDeleteTarget(null);
     try {
-      await deleteAsset(postId, filename);
+      await deleteAsset(postId, filename, workspaceId);
       setAssets((prev) => prev.filter((a) => a.filename !== filename));
     } catch {
       // Delete failed
@@ -180,6 +181,7 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
           {[...assets].sort((a, b) => a.filename.localeCompare(b.filename, undefined, { sensitivity: "base" })).map((asset) => (
             <AssetCard
               key={asset.filename}
+              workspaceId={workspaceId}
               postId={postId}
               asset={asset}
               onInsert={() => handleInsert(asset.filename)}
@@ -213,17 +215,19 @@ export function AssetsTab({ postId, onInsertAtCursor, maxUploadMb }: AssetsTabPr
 // --- AssetCard sub-component ---
 
 function AssetCard({
+  workspaceId,
   postId,
   asset,
   onInsert,
   onDelete,
 }: {
+  workspaceId: string;
   postId: string;
   asset: AssetMeta;
   onInsert: () => void;
   onDelete: () => void;
 }) {
-  const src = assetUrl(postId, asset.filename);
+  const src = assetUrl(postId, asset.filename, workspaceId);
   const img = isImage(asset.filename);
 
   return (

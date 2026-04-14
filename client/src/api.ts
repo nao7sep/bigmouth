@@ -12,9 +12,9 @@ export function getActiveWorkspace(): string {
   return wsId;
 }
 
-function base(): string {
-  if (!wsId) throw new Error("No active workspace set");
-  return `/api/w/${wsId}`;
+function base(workspaceId = wsId): string {
+  if (!workspaceId) throw new Error("No active workspace set");
+  return `/api/w/${workspaceId}`;
 }
 
 // --- Workspace management (no workspace prefix) ---
@@ -71,8 +71,8 @@ export async function fetchPosts(
   return res.json();
 }
 
-export async function fetchPost(id: string): Promise<Post> {
-  const res = await fetch(`${base()}/posts/${id}`);
+export async function fetchPost(id: string, workspaceId?: string): Promise<Post> {
+  const res = await fetch(`${base(workspaceId)}/posts/${id}`);
   if (!res.ok) throw new Error(`Failed to fetch post: ${res.status}`);
   return res.json();
 }
@@ -96,9 +96,10 @@ export async function updatePost(
   updates: {
     content?: string;
     frontMatter?: { [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null };
-  }
+  },
+  workspaceId?: string
 ): Promise<Post> {
-  const res = await fetch(`${base()}/posts/${id}`, {
+  const res = await fetch(`${base(workspaceId)}/posts/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -109,9 +110,10 @@ export async function updatePost(
 
 export async function changePostStatus(
   id: string,
-  status: "draft" | "ready" | "published"
+  status: "draft" | "ready" | "published",
+  workspaceId?: string
 ): Promise<Post> {
-  const res = await fetch(`${base()}/posts/${id}/status`, {
+  const res = await fetch(`${base(workspaceId)}/posts/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -123,8 +125,8 @@ export async function changePostStatus(
   return res.json();
 }
 
-export async function deletePost(id: string): Promise<void> {
-  const res = await fetch(`${base()}/posts/${id}`, { method: "DELETE" });
+export async function deletePost(id: string, workspaceId?: string): Promise<void> {
+  const res = await fetch(`${base(workspaceId)}/posts/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
 }
 
@@ -208,19 +210,20 @@ export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<An
   return res.json();
 }
 
-export async function fetchAssets(postId: string): Promise<AssetMeta[]> {
-  const res = await fetch(`${base()}/assets/${postId}`);
+export async function fetchAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
+  const res = await fetch(`${base(workspaceId)}/assets/${postId}`);
   if (!res.ok) throw new Error(`Failed to fetch assets: ${res.status}`);
   return res.json();
 }
 
 export async function uploadAsset(
   postId: string,
-  file: File
+  file: File,
+  workspaceId?: string
 ): Promise<AssetMeta> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${base()}/assets/${postId}`, {
+  const res = await fetch(`${base(workspaceId)}/assets/${postId}`, {
     method: "POST",
     body: form,
   });
@@ -230,9 +233,10 @@ export async function uploadAsset(
 
 export async function deleteAsset(
   postId: string,
-  filename: string
+  filename: string,
+  workspaceId?: string
 ): Promise<void> {
-  const res = await fetch(`${base()}/assets/${postId}/${encodeURIComponent(filename)}`, {
+  const res = await fetch(`${base(workspaceId)}/assets/${postId}/${encodeURIComponent(filename)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
@@ -301,6 +305,6 @@ export async function runAnalysis(
 /**
  * Returns the URL for serving a raw asset file.
  */
-export function assetUrl(postId: string, filename: string): string {
-  return `${base()}/assets/${postId}/${encodeURIComponent(filename)}/raw`;
+export function assetUrl(postId: string, filename: string, workspaceId?: string): string {
+  return `${base(workspaceId)}/assets/${postId}/${encodeURIComponent(filename)}/raw`;
 }

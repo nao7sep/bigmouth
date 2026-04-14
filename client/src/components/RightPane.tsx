@@ -8,6 +8,7 @@ export const RIGHT_TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as co
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 interface RightPaneProps {
+  workspaceId: string;
   content: string;
   postId: string;
   frontMatter: PostFrontMatter | null;
@@ -24,6 +25,7 @@ interface RightPaneProps {
 }
 
 export function RightPane({
+  workspaceId,
   content,
   postId,
   frontMatter,
@@ -62,11 +64,13 @@ export function RightPane({
           />
         </div>
         <div className={activeTab === "Preview" ? "" : "tab-hidden"}>
-          <PreviewTab content={content} postId={postId} />
+          <PreviewTab workspaceId={workspaceId} content={content} postId={postId} />
         </div>
         <div className={activeTab === "Metadata" ? "" : "tab-hidden"}>
           {frontMatter && (
             <MetadataTab
+              key={postId}
+              workspaceId={workspaceId}
               postId={postId}
               frontMatter={frontMatter}
               target={target}
@@ -78,7 +82,13 @@ export function RightPane({
           )}
         </div>
         <div className={activeTab === "Assets" ? "" : "tab-hidden"}>
-          <AssetsTab postId={postId} onInsertAtCursor={onInsertAtCursor} maxUploadMb={maxUploadMb} />
+          <AssetsTab
+            key={postId}
+            workspaceId={workspaceId}
+            postId={postId}
+            onInsertAtCursor={onInsertAtCursor}
+            maxUploadMb={maxUploadMb}
+          />
         </div>
       </div>
     </div>

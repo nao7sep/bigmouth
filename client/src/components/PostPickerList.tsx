@@ -9,6 +9,7 @@ interface PostPickerListProps extends PostPickerState {
 export function PostPickerList({
   posts,
   hasMore,
+  loadingMore,
   loadMore,
   query,
   setQuery,
@@ -50,8 +51,9 @@ export function PostPickerList({
             className="btn-toolbar"
             style={{ width: "100%", marginTop: 4 }}
             onClick={loadMore}
+            disabled={loadingMore}
           >
-            Load More
+            {loadingMore ? "Loading…" : "Load More"}
           </button>
         )}
       </div>
