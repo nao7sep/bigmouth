@@ -32,6 +32,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <ul style={{ paddingLeft: "1.5em", lineHeight: 1.8, fontSize: 13 }}>
             <li>Multiple workspaces — each with its own posts and settings</li>
             <li>Write in Markdown — autosaved as you type</li>
+            <li>Content and metadata edits update the current post entry immediately</li>
             <li>Three-stage workflow: Draft → Ready → Published</li>
             <li>AI-powered content analysis with named prompts</li>
             <li>AI metadata generation: title, slug, tags, SEO description</li>
@@ -39,6 +40,9 @@ export function AboutModal({ onClose }: AboutModalProps) {
             <li>Export as HTML or plain text for copy-pasting</li>
             <li>Multi-language posts with English supplement fields</li>
           </ul>
+          <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
+            Draft and ready lists stay fully loaded, while the published archive loads in batches as needed.
+          </p>
           <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
             All data is stored locally under <code>~/.bigmouth/</code>. BigMouth
             never syncs with any platform — you copy and paste manually.

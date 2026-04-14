@@ -14,8 +14,7 @@ interface RightPaneProps {
   frontMatter: PostFrontMatter | null;
   target: Target | null;
   extraFieldWatermark: string;
-  onMetadataSaved: () => void;
-  onFrontMatterUpdated: (post: Post) => void;
+  onPostUpdated: (post: Post) => void;
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
@@ -31,8 +30,7 @@ export function RightPane({
   frontMatter,
   target,
   extraFieldWatermark,
-  onMetadataSaved,
-  onFrontMatterUpdated,
+  onPostUpdated,
   activeTab,
   onTabChange,
   analysisTrigger,
@@ -76,8 +74,7 @@ export function RightPane({
               target={target}
               content={content}
               extraFieldWatermark={extraFieldWatermark}
-              onMetadataSaved={onMetadataSaved}
-              onFrontMatterUpdated={onFrontMatterUpdated}
+              onPostUpdated={onPostUpdated}
             />
           )}
         </div>

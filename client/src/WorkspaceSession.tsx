@@ -10,7 +10,7 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { Post, PostSummary, Settings, Target, Workspace } from "./types";
+import type { Post, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -59,6 +59,12 @@ export function WorkspaceSession({
   const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const sessionAliveRef = useRef(true);
+  const selectedPostIdRef = useRef<string | null>(null);
+  const currentPostRef = useRef<Post | null>(null);
+  const draftsRef = useRef<PostSummary[]>([]);
+  const readyRef = useRef<PostSummary[]>([]);
+  const publishedRef = useRef<PostSummary[]>([]);
+  const publishedTotalRef = useRef(0);
 
   useEffect(() => {
     sessionAliveRef.current = true;
@@ -66,6 +72,30 @@ export function WorkspaceSession({
       sessionAliveRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    selectedPostIdRef.current = selectedPostId;
+  }, [selectedPostId]);
+
+  useEffect(() => {
+    currentPostRef.current = currentPost;
+  }, [currentPost]);
+
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  useEffect(() => {
+    readyRef.current = ready;
+  }, [ready]);
+
+  useEffect(() => {
+    publishedRef.current = published;
+  }, [published]);
+
+  useEffect(() => {
+    publishedTotalRef.current = publishedTotal;
+  }, [publishedTotal]);
 
   const switchPost = useCallback((id: string | null) => {
     setSelectedPostId(id);
@@ -78,11 +108,14 @@ export function WorkspaceSession({
       if (!sessionAliveRef.current) return;
       const data = await fetchPosts(pubOffset, pubBatchSize);
       if (!sessionAliveRef.current) return;
+      draftsRef.current = data.drafts;
+      readyRef.current = data.ready;
       setDrafts(data.drafts);
       setReady(data.ready);
-      setPublished((prev) =>
-        append ? [...prev, ...data.published] : data.published
-      );
+      const nextPublished = append ? [...publishedRef.current, ...data.published] : data.published;
+      publishedRef.current = nextPublished;
+      setPublished(nextPublished);
+      publishedTotalRef.current = data.publishedTotal;
       setPublishedTotal(data.publishedTotal);
       setPublishedOffset(pubOffset + data.published.length);
     },
@@ -197,6 +230,69 @@ export function WorkspaceSession({
     void loadPosts();
   }, [loadPosts, switchPost]);
 
+  const handlePostUpdated = useCallback((post: Post) => {
+    if (!sessionAliveRef.current) return;
+
+    const summary = { frontMatter: post.frontMatter };
+    const id = post.frontMatter.id;
+    const draftLoaded = draftsRef.current.some((entry) => entry.frontMatter.id === id);
+    const readyLoaded = readyRef.current.some((entry) => entry.frontMatter.id === id);
+    const publishedLoaded = publishedRef.current.some((entry) => entry.frontMatter.id === id);
+    const previousStatus = draftLoaded
+      ? "draft"
+      : readyLoaded
+        ? "ready"
+        : publishedLoaded
+          ? "published"
+          : currentPostRef.current?.frontMatter.id === id
+            ? currentPostRef.current.frontMatter.status
+            : null;
+
+    const nextDrafts = nextSummariesForStatus(
+      draftsRef.current,
+      summary,
+      "draft",
+      post.frontMatter.status === "draft"
+    );
+    const nextReady = nextSummariesForStatus(
+      readyRef.current,
+      summary,
+      "ready",
+      post.frontMatter.status === "ready"
+    );
+    const nextPublished = nextSummariesForStatus(
+      publishedRef.current,
+      summary,
+      "published",
+      post.frontMatter.status === "published" && (publishedLoaded || previousStatus !== "published")
+    );
+
+    let nextPublishedTotal = publishedTotalRef.current;
+    if (previousStatus === "published" && post.frontMatter.status !== "published") {
+      nextPublishedTotal = Math.max(0, nextPublishedTotal - 1);
+    } else if (
+      previousStatus !== null &&
+      previousStatus !== "published" &&
+      post.frontMatter.status === "published"
+    ) {
+      nextPublishedTotal += 1;
+    }
+
+    draftsRef.current = nextDrafts;
+    readyRef.current = nextReady;
+    publishedRef.current = nextPublished;
+    publishedTotalRef.current = nextPublishedTotal;
+    setDrafts(nextDrafts);
+    setReady(nextReady);
+    setPublished(nextPublished);
+    setPublishedTotal(nextPublishedTotal);
+    setPublishedOffset(nextPublished.length);
+
+    if (post.frontMatter.id === selectedPostIdRef.current) {
+      setCurrentPost(post);
+    }
+  }, []);
+
   const handleNavigateToPost = useCallback((id: string) => {
     if (selectedPostId) setNavHistory((history) => [...history, selectedPostId]);
     switchPost(id);
@@ -240,7 +336,7 @@ export function WorkspaceSession({
             key={selectedPostId}
             workspaceId={workspace.id}
             postId={selectedPostId}
-            onPostSaved={loadPosts}
+            onPostUpdated={handlePostUpdated}
             onPostDeleted={handlePostDeleted}
             onContentChange={setEditorContent}
             onPostLoaded={setCurrentPost}
@@ -263,10 +359,7 @@ export function WorkspaceSession({
                 : null
             }
             extraFieldWatermark={extraFieldWatermark}
-            onMetadataSaved={loadPosts}
-            onFrontMatterUpdated={(post) => {
-              if (post.frontMatter.id === selectedPostId) setCurrentPost(post);
-            }}
+            onPostUpdated={handlePostUpdated}
             activeTab={rightTab}
             onTabChange={setRightTab}
             analysisTrigger={analysisTrigger}
@@ -308,4 +401,28 @@ export function WorkspaceSession({
       )}
     </div>
   );
+}
+
+function nextSummariesForStatus(
+  current: PostSummary[],
+  summary: PostSummary,
+  status: PostStatus,
+  include: boolean
+): PostSummary[] {
+  const filtered = current.filter((entry) => entry.frontMatter.id !== summary.frontMatter.id);
+  if (!include) return filtered;
+
+  return [...filtered, summary].sort((a, b) => compareSummaries(status, a, b));
+}
+
+function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): number {
+  if (status === "published") {
+    const aTime = a.frontMatter.publishedAtUtc ?? "";
+    const bTime = b.frontMatter.publishedAtUtc ?? "";
+    return bTime.localeCompare(aTime) || (b.frontMatter.slug ?? "").localeCompare(a.frontMatter.slug ?? "");
+  }
+
+  const aTime = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
+  const bTime = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
+  return bTime.localeCompare(aTime);
 }

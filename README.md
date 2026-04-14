@@ -9,7 +9,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 ## Features
 
 - **Workspaces** — manage multiple isolated workspaces, each with its own posts, assets, settings, and AI configuration. Switch between workspaces without reloading. You can point a workspace at any directory, making it easy to version-control workspace data with Git.
-- **Markdown editor** with autosave and resizable panes
+- **Markdown editor** with autosave, live post-list updates, and resizable panes
 - **Three-stage workflow**: Draft → Ready → Published
 - **AI analysis** — run named prompts against post content to catch issues before publishing
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
@@ -19,6 +19,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Targets** — configure multiple publishing destinations with per-target metadata requirements
 - **Source linking** — link a post to a source post (e.g. a translation derived from an original)
 - **Navigation history** — back-navigate through linked posts
+- **Fast local post index** — list refreshes stay cheap while Markdown files remain the source of truth
 
 ## Requirements
 
@@ -145,6 +146,8 @@ Prompts used to auto-generate individual metadata fields (title, slug, tags, etc
 3. **Published** — Mark as published after copying to your platform. The post moves to the published archive.
 
 Posts can be moved backward (Published → Ready → Draft) at any time.
+
+While you edit, the left-hand post list updates the affected entry in place instead of reloading every section from scratch. The published archive still loads in pages via “Load more…”.
 
 ## API routes
 

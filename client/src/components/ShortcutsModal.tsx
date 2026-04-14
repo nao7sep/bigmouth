@@ -45,6 +45,9 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
           <p className="shortcuts-note">
             On Windows/Linux, use Ctrl instead of Cmd.
           </p>
+          <p className="shortcuts-note">
+            Edits autosave after 2 seconds, and the current post entry updates in place while you work.
+          </p>
         </div>
       </div>
     </div>

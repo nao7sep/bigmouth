@@ -10,7 +10,7 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 interface CenterPaneProps {
   workspaceId: string;
   postId: string;
-  onPostSaved: () => void;
+  onPostUpdated: (post: Post) => void;
   onPostDeleted: () => void;
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
@@ -27,7 +27,7 @@ const AUTO_SAVE_DELAY = 2_000;
 export function CenterPane({
   workspaceId,
   postId,
-  onPostSaved,
+  onPostUpdated,
   onPostDeleted,
   onContentChange: notifyContentChange,
   onPostLoaded,
@@ -50,6 +50,11 @@ export function CenterPane({
   const savingRef = useRef(false); // true while a save request is in-flight
   const pendingSaveRef = useRef(false); // true when another save should run afterward
   const savePromiseRef = useRef<Promise<void> | null>(null);
+  const onPostUpdatedRef = useRef(onPostUpdated);
+
+  useEffect(() => {
+    onPostUpdatedRef.current = onPostUpdated;
+  }, [onPostUpdated]);
 
   const save = useCallback((): Promise<void> => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
@@ -74,7 +79,7 @@ export function CenterPane({
             const updated = await updatePost(postId, { content: current }, workspaceId);
             savedContentRef.current = current;
             setPost(updated);
-            onPostSaved();
+            onPostUpdated(updated);
           } catch {
             // Save failed silently — will retry on next change
             break;
@@ -93,7 +98,7 @@ export function CenterPane({
 
     savePromiseRef.current = promise;
     return promise;
-  }, [postId, onPostSaved]);
+  }, [postId, onPostUpdated, workspaceId]);
 
   const flushPendingContent = useCallback(async () => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
@@ -127,7 +132,9 @@ export function CenterPane({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (contentRef.current !== savedContentRef.current) {
-        updatePost(postId, { content: contentRef.current }, workspaceId).catch(() => {});
+        updatePost(postId, { content: contentRef.current }, workspaceId)
+          .then((updated) => onPostUpdatedRef.current(updated))
+          .catch(() => {});
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,8 +160,7 @@ export function CenterPane({
       }
       const updated = await changePostStatus(postId, newStatus, workspaceId);
       setPost(updated);
-      onPostLoaded(updated);
-      onPostSaved();
+      onPostUpdated(updated);
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Status change failed");
     }
@@ -194,12 +200,12 @@ export function CenterPane({
 
   const handleSetSource = async (sourceId: string) => {
     const updated = await updatePost(postId, { frontMatter: { sourceId } }, workspaceId).catch(() => null);
-    if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
+    if (updated) { setPost(updated); onPostUpdated(updated); }
   };
 
   const handleClearSource = async () => {
     const updated = await updatePost(postId, { frontMatter: { sourceId: null } }, workspaceId).catch(() => null);
-    if (updated) { setPost(updated); onPostLoaded(updated); onPostSaved(); }
+    if (updated) { setPost(updated); onPostUpdated(updated); }
   };
 
   if (!post) return null;

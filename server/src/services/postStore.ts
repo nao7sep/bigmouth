@@ -2,9 +2,9 @@
  * Post file I/O layer.
  *
  * Posts are stored in subdirectories by status:
- *   posts/drafts/      — all loaded on startup (always small)
- *   posts/ready/       — all loaded on startup (always small)
- *   posts/published/   — loaded in batches by filename sort (grows over time)
+ *   posts/drafts/      — summaries cached in memory per workspace
+ *   posts/ready/       — summaries cached in memory per workspace
+ *   posts/published/   — summaries cached in memory per workspace
  *
  * All public functions take a dataDir parameter (the workspace data directory).
  */
@@ -28,21 +28,22 @@ import {
   statusSubdir,
 } from "../shared/filenames.js";
 
-// Published post cache: maps workspaceId -> postId -> absolute file path.
-// Populated as published posts are accessed; evicted on delete or unpublish.
-const pubCaches = new Map<string, Map<string, string>>();
-
-function pubCache(dataDir: string): Map<string, string> {
-  let cache = pubCaches.get(dataDir);
-  if (!cache) {
-    cache = new Map();
-    pubCaches.set(dataDir, cache);
-  }
-  return cache;
+interface IndexedPost {
+  frontMatter: PostFrontMatter;
+  filePath: string;
 }
 
+interface SummaryIndex {
+  byId: Map<string, IndexedPost>;
+  drafts: string[];
+  ready: string[];
+  published: string[];
+}
+
+const summaryIndexes = new Map<string, SummaryIndex>();
+
 export function clearCache(dataDir: string): void {
-  pubCaches.delete(dataDir);
+  summaryIndexes.delete(dataDir);
 }
 
 function postsDir(dataDir: string): string {
@@ -52,45 +53,19 @@ function postsDir(dataDir: string): string {
 // --- List ---
 
 export function listDrafts(dataDir: string): PostSummary[] {
-  return loadAllSummaries(dataDir, "drafts");
+  return listSummaries(dataDir, "draft");
 }
 
 export function listReady(dataDir: string): PostSummary[] {
-  return loadAllSummaries(dataDir, "ready");
+  return listSummaries(dataDir, "ready");
 }
 
 export function listPublished(dataDir: string, offset: number, limit: number): PostSummary[] {
-  const dir = path.join(postsDir(dataDir), "published");
-  if (!fs.existsSync(dir)) return [];
-
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .sort()
-    .reverse();
-
-  const cache = pubCache(dataDir);
-  const summaries: PostSummary[] = [];
-  for (const file of files.slice(offset, offset + limit)) {
-    const filePath = path.join(dir, file);
-    try {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = matter(raw);
-      const fm = parsed.data as PostFrontMatter;
-      if (fm.id) cache.set(fm.id, filePath);
-      summaries.push({ frontMatter: fm });
-    } catch (err) {
-      logWarn(`Skipping malformed published file: ${filePath} — ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  return summaries;
+  return listSummaries(dataDir, "published").slice(offset, offset + limit);
 }
 
 export function countPublished(dataDir: string): number {
-  const dir = path.join(postsDir(dataDir), "published");
-  if (!fs.existsSync(dir)) return 0;
-  return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).length;
+  return summaryIndex(dataDir).published.length;
 }
 
 // --- Read ---
@@ -136,6 +111,7 @@ export function createPost(dataDir: string, target: string, language: string, so
   const filePath = path.join(postsDir(dataDir), "drafts", fileName);
 
   writePostFile(filePath, frontMatter, "");
+  upsertSummary(dataDir, { frontMatter, content: "", filePath });
 
   return { frontMatter, content: "", filePath };
 }
@@ -179,11 +155,11 @@ export function updatePost(
       fs.unlinkSync(post.filePath);
       post.filePath = newFilePath;
     }
-    pubCache(dataDir).set(id, post.filePath);
   } else {
     writePostFile(post.filePath, post.frontMatter, post.content);
   }
 
+  upsertSummary(dataDir, post);
   return post;
 }
 
@@ -235,14 +211,8 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
     fs.unlinkSync(oldFilePath);
   }
 
-  const cache = pubCache(dataDir);
-  if (newStatus === "published") {
-    cache.set(id, newFilePath);
-  } else if (oldStatus === "published") {
-    cache.delete(id);
-  }
-
   post.filePath = newFilePath;
+  upsertSummary(dataDir, post);
   return post;
 }
 
@@ -253,7 +223,7 @@ export function deletePost(dataDir: string, id: string): boolean {
   if (!filePath) return false;
 
   fs.unlinkSync(filePath);
-  pubCache(dataDir).delete(id);
+  removeSummary(dataDir, id);
 
   const assetDir = path.join(dataDir, "assets", id);
   if (fs.existsSync(assetDir)) {
@@ -285,6 +255,7 @@ export function renameTarget(dataDir: string, oldName: string, newName: string):
       }
     }
   }
+  if (count > 0) clearCache(dataDir);
   return count;
 }
 
@@ -301,44 +272,12 @@ function buildFilename(fm: PostFrontMatter): string {
 }
 
 function findPostFile(dataDir: string, id: string): string | null {
-  const cache = pubCache(dataDir);
-  const cached = cache.get(id);
-  if (cached) {
-    if (fs.existsSync(cached)) return cached;
-    cache.delete(id);
+  const indexed = summaryIndex(dataDir).byId.get(id);
+  if (indexed && fs.existsSync(indexed.filePath)) return indexed.filePath;
+  if (indexed) {
+    clearCache(dataDir);
+    return summaryIndex(dataDir).byId.get(id)?.filePath ?? null;
   }
-
-  const pDir = postsDir(dataDir);
-  for (const sub of ["drafts", "ready", "published"]) {
-    const dir = path.join(pDir, sub);
-    if (!fs.existsSync(dir)) continue;
-
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
-
-    if (sub !== "published") {
-      for (const file of files) {
-        if (file.includes(id)) {
-          const filePath = path.join(dir, file);
-          const raw = fs.readFileSync(filePath, "utf-8");
-          const parsed = matter(raw);
-          if ((parsed.data as PostFrontMatter).id === id) return filePath;
-        }
-      }
-    }
-
-    for (const file of files) {
-      if (sub !== "published" && file.includes(id)) continue;
-      const filePath = path.join(dir, file);
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = matter(raw);
-      const fm = parsed.data as PostFrontMatter;
-      if (fm.id === id) {
-        if (sub === "published") cache.set(id, filePath);
-        return filePath;
-      }
-    }
-  }
-
   return null;
 }
 
@@ -364,29 +303,126 @@ function writePostFile(
   fs.writeFileSync(filePath, output);
 }
 
-function loadAllSummaries(dataDir: string, subdir: string): PostSummary[] {
+function summaryIndex(dataDir: string): SummaryIndex {
+  let index = summaryIndexes.get(dataDir);
+  if (!index) {
+    index = buildSummaryIndex(dataDir);
+    summaryIndexes.set(dataDir, index);
+  }
+  return index;
+}
+
+function buildSummaryIndex(dataDir: string): SummaryIndex {
+  const index: SummaryIndex = {
+    byId: new Map(),
+    drafts: [],
+    ready: [],
+    published: [],
+  };
+
+  loadStatusEntries(dataDir, "drafts", index);
+  loadStatusEntries(dataDir, "ready", index);
+  loadStatusEntries(dataDir, "published", index);
+
+  sortStatusIds(index, "draft");
+  sortStatusIds(index, "ready");
+  sortStatusIds(index, "published");
+
+  return index;
+}
+
+function loadStatusEntries(
+  dataDir: string,
+  subdir: "drafts" | "ready" | "published",
+  index: SummaryIndex
+): void {
   const dir = path.join(postsDir(dataDir), subdir);
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(dir)) return;
 
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
-  const summaries: PostSummary[] = [];
+  const ids = idsForSubdir(index, subdir);
 
   for (const file of files) {
     const filePath = path.join(dir, file);
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
-      summaries.push({ frontMatter: parsed.data as PostFrontMatter });
+      const frontMatter = parsed.data as PostFrontMatter;
+      if (!frontMatter.id) {
+        logWarn(`Skipping ${subdir} file without id: ${filePath}`);
+        continue;
+      }
+      index.byId.set(frontMatter.id, { frontMatter, filePath });
+      ids.push(frontMatter.id);
     } catch (err) {
       logWarn(`Skipping malformed ${subdir} file: ${filePath} — ${err instanceof Error ? err.message : err}`);
     }
   }
+}
 
-  summaries.sort((a, b) => {
-    const ta = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
-    const tb = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
-    return tb.localeCompare(ta);
+function listSummaries(dataDir: string, status: PostStatus): PostSummary[] {
+  const index = summaryIndex(dataDir);
+  return idsForStatus(index, status)
+    .map((id) => index.byId.get(id))
+    .filter((entry): entry is IndexedPost => Boolean(entry))
+    .map((entry) => ({ frontMatter: entry.frontMatter }));
+}
+
+function upsertSummary(dataDir: string, post: Post): void {
+  const index = summaryIndex(dataDir);
+  const id = post.frontMatter.id;
+  removeIdFromLists(index, id);
+  index.byId.set(id, {
+    frontMatter: { ...post.frontMatter },
+    filePath: post.filePath,
   });
+  idsForStatus(index, post.frontMatter.status).push(id);
+  sortStatusIds(index, post.frontMatter.status);
+}
 
-  return summaries;
+function removeSummary(dataDir: string, id: string): void {
+  const index = summaryIndex(dataDir);
+  removeIdFromLists(index, id);
+  index.byId.delete(id);
+}
+
+function removeIdFromLists(index: SummaryIndex, id: string): void {
+  index.drafts = index.drafts.filter((entryId) => entryId !== id);
+  index.ready = index.ready.filter((entryId) => entryId !== id);
+  index.published = index.published.filter((entryId) => entryId !== id);
+}
+
+function sortStatusIds(index: SummaryIndex, status: PostStatus): void {
+  idsForStatus(index, status).sort((a, b) => compareIndexedPosts(index, status, a, b));
+}
+
+function compareIndexedPosts(
+  index: SummaryIndex,
+  status: PostStatus,
+  aId: string,
+  bId: string
+): number {
+  const a = index.byId.get(aId);
+  const b = index.byId.get(bId);
+  if (!a || !b) return 0;
+
+  if (status === "published") {
+    return path.basename(b.filePath).localeCompare(path.basename(a.filePath));
+  }
+
+  const aTime = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
+  const bTime = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
+  return bTime.localeCompare(aTime);
+}
+
+function idsForStatus(index: SummaryIndex, status: PostStatus): string[] {
+  if (status === "draft") return index.drafts;
+  if (status === "ready") return index.ready;
+  return index.published;
+}
+
+function idsForSubdir(index: SummaryIndex, subdir: "drafts" | "ready" | "published"): string[] {
+  if (subdir === "drafts") return index.drafts;
+  if (subdir === "ready") return index.ready;
+  return index.published;
 }

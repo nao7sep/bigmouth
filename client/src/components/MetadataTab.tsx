@@ -10,8 +10,7 @@ interface MetadataTabProps {
   target: Target | null;
   content: string;
   extraFieldWatermark: string;
-  onMetadataSaved: () => void;
-  onFrontMatterUpdated: (post: Post) => void;
+  onPostUpdated: (post: Post) => void;
 }
 
 export function MetadataTab({
@@ -21,8 +20,7 @@ export function MetadataTab({
   target,
   content,
   extraFieldWatermark,
-  onMetadataSaved,
-  onFrontMatterUpdated,
+  onPostUpdated,
 }: MetadataTabProps) {
   const requiresMetadata = target?.requiresMetadata ?? false;
   const lang = frontMatter.language;
@@ -37,6 +35,7 @@ export function MetadataTab({
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
   const fieldsRef = useRef(fields);
+  const onPostUpdatedRef = useRef(onPostUpdated);
 
   useEffect(() => {
     setFields(extractFields(frontMatter));
@@ -45,6 +44,10 @@ export function MetadataTab({
   useEffect(() => {
     fieldsRef.current = fields;
   }, [fields]);
+
+  useEffect(() => {
+    onPostUpdatedRef.current = onPostUpdated;
+  }, [onPostUpdated]);
 
   const showGenError = (msg: string) => {
     setGenError(msg);
@@ -62,7 +65,9 @@ export function MetadataTab({
         const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
         updatePost(postId, {
           frontMatter: { [key]: value },
-        }, workspaceId).catch(() => {});
+        }, workspaceId)
+          .then((updated) => onPostUpdatedRef.current(updated))
+          .catch(() => {});
       }
     };
   }, [postId, workspaceId]);
@@ -77,8 +82,7 @@ export function MetadataTab({
         frontMatter: { [key]: value },
       }, workspaceId);
       if (!notify) return;
-      onFrontMatterUpdated(updated);
-      onMetadataSaved();
+      onPostUpdated(updated);
     } catch {
       // Save failed
     }
