@@ -25,27 +25,9 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <p style={{ marginBottom: 4 }}>
             <strong>BigMouth</strong> — Version 0.1.0
           </p>
-          <p style={{ marginBottom: 12, fontSize: 13, color: "#555" }}>
-            A local-first writing preflight tool for composing blog and social
-            media posts.
-          </p>
-          <ul style={{ paddingLeft: "1.5em", lineHeight: 1.8, fontSize: 13 }}>
-            <li>Multiple workspaces — each with its own posts and settings</li>
-            <li>Write in Markdown — autosaved as you type</li>
-            <li>Content and metadata edits update the current post entry immediately</li>
-            <li>Three-stage workflow: Draft → Ready → Published</li>
-            <li>AI-powered content analysis with named prompts</li>
-            <li>AI metadata generation: title, slug, tags, SEO description</li>
-            <li>Upload and embed images and files per post</li>
-            <li>Export as HTML or plain text for copy-pasting</li>
-            <li>Multi-language posts with English supplement fields</li>
-          </ul>
-          <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
-            Draft and ready lists stay fully loaded, while the published archive loads in batches as needed.
-          </p>
-          <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
-            All data is stored locally under <code>~/.bigmouth/</code>. BigMouth
-            never syncs with any platform — you copy and paste manually.
+          <p style={{ marginTop: 8, fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+            A local-first writing preflight tool for composing blog and social media posts.
+            Your data stays on your machine.
           </p>
           <div style={{ marginTop: 16, display: "flex", gap: 16 }}>
             <a
