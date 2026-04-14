@@ -212,6 +212,7 @@ function GeneralTab({
           className="form-input"
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
+          autoFocus
         />
         {timezoneError && <FieldError msg={timezoneError} />}
       </div>
@@ -330,6 +331,7 @@ function AiTab({
           onChange={(e) =>
             onChange({ ...aiConfigs, activeId: e.target.value })
           }
+          autoFocus
         >
           {[...aiConfigs.configs]
             .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
@@ -465,11 +467,12 @@ function TargetsTab({
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
-            <input
-              className="form-input"
-              value={t.name}
-              onChange={(e) => updateTarget(i, { name: e.target.value })}
-            />
+              <input
+                className="form-input"
+                value={t.name}
+                onChange={(e) => updateTarget(i, { name: e.target.value })}
+                autoFocus={i === sortedTargets[0]?.i}
+              />
             {!t.name.trim() && <FieldError msg="Name is required." />}
             {t.name.trim() && duplicateNames.has(t.name.trim()) && <FieldError msg="This name is already used by another target." />}
           </div>
@@ -516,7 +519,7 @@ function TargetsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget}>
+      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget} autoFocus={sortedTargets.length === 0}>
         + Add Target
       </button>
     </div>
@@ -574,6 +577,7 @@ function GenerationTab({
           value={data.preamble}
           onChange={(e) => updatePreamble(e.target.value)}
           style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+          autoFocus
         />
       </div>
 
@@ -642,11 +646,12 @@ function AnalysisPromptsTab({
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
-            <input
-              className="form-input"
-              value={p.name}
-              onChange={(e) => updatePrompt(i, { name: e.target.value })}
-            />
+              <input
+                className="form-input"
+                value={p.name}
+                onChange={(e) => updatePrompt(i, { name: e.target.value })}
+                autoFocus={i === sortedPrompts[0]?.i}
+              />
             {!p.name.trim() && <FieldError msg="Name is required." />}
           </div>
           <div className="form-field">
@@ -671,7 +676,7 @@ function AnalysisPromptsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addPrompt}>
+      <button className="btn-toolbar" onClick={addPrompt} autoFocus={sortedPrompts.length === 0}>
         + Add Prompt
       </button>
     </div>

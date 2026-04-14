@@ -39,13 +39,12 @@ export function ConfirmModal({
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{message}</p>
         </div>
         <div className="modal-footer">
-          <button className="btn-toolbar" onClick={onCancel}>
+          <button className="btn-toolbar" onClick={onCancel} autoFocus>
             {cancelLabel}
           </button>
           <button
             className={danger ? "btn-toolbar btn-delete" : "btn-toolbar"}
             onClick={onConfirm}
-            autoFocus
           >
             {confirmLabel}
           </button>

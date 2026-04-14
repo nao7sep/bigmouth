@@ -17,7 +17,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
       >
         <div className="modal-header">
           <h2>About BigMouth</h2>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={onClose} autoFocus>
             &times;
           </button>
         </div>

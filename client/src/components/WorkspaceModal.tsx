@@ -75,6 +75,8 @@ export function WorkspaceModal({
   const sorted = [...workspaces].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
   );
+  const preferredWorkspaceId =
+    sorted.find((ws) => ws.id === activeWorkspaceId)?.id ?? sorted[0]?.id ?? null;
 
   return (
     <div className="modal-backdrop" onClick={dismissable ? onClose : undefined}>
@@ -131,13 +133,15 @@ export function WorkspaceModal({
                     </div>
                   ) : (
                     <>
-                      <div
+                      <button
+                        type="button"
                         className="workspace-item-main"
+                        autoFocus={ws.id === preferredWorkspaceId}
                         onClick={() => onSelect(ws)}
                       >
                         <div className="workspace-item-name">{ws.name}</div>
                         <div className="workspace-item-dir">{ws.dataDirectory}</div>
-                      </div>
+                      </button>
                       <div className="workspace-item-actions">
                         <button
                           className="btn-toolbar"
@@ -176,6 +180,7 @@ export function WorkspaceModal({
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="My Workspace"
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                autoFocus={sorted.length === 0}
               />
             </div>
             <div className="form-field">

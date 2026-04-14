@@ -25,7 +25,7 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
       >
         <div className="modal-header">
           <h2>Keyboard Shortcuts</h2>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={onClose} autoFocus>
             &times;
           </button>
         </div>

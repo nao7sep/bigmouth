@@ -74,7 +74,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         </pre>
 
         <div className="export-actions">
-          <button className="btn-export" onClick={handleCopy}>
+          <button className="btn-export" onClick={handleCopy} autoFocus>
             {copiedKey === "copy" ? "✓ Copied" : "Copy"}
           </button>
           <button className="btn-export" onClick={handleDownload}>

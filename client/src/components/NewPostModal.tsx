@@ -105,6 +105,7 @@ export function NewPostModal({
                 className="form-select"
                 value={selectedTarget}
                 onChange={(e) => handleTargetChange(e.target.value)}
+                autoFocus
               >
                 <option value="" disabled>Please select…</option>
                 {sortedTargets.map((t) => (
