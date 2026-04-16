@@ -99,6 +99,7 @@ Workspaces provide complete isolation: each has its own posts, assets, settings,
 - Switch workspaces at any time via the hamburger menu → "Switch Workspace".
 - The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
 - Create a workspace with a custom data directory to version-control it with Git.
+- **Deleting a workspace only removes it from the registry** (`app.json`). The data directory and all files inside it are left untouched on disk.
 
 ## Configuration
 
@@ -158,7 +159,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `GET /api/workspaces` | List all workspaces |
 | `POST /api/workspaces` | Create a workspace |
 | `PUT /api/workspaces/:id` | Update a workspace |
-| `DELETE /api/workspaces/:id` | Delete a workspace |
+| `DELETE /api/workspaces/:id` | Remove a workspace from the registry (data files are not deleted) |
 | `GET /api/w/:wsId/posts` | List posts |
 | `GET /api/w/:wsId/posts/:id` | Get a post |
 | `POST /api/w/:wsId/posts` | Create a post |

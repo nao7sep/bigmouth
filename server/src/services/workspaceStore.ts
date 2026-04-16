@@ -118,13 +118,6 @@ export function deleteWorkspace(id: string): boolean {
   const index = config.workspaces.findIndex((w) => w.id === id);
   if (index === -1) return false;
 
-  const ws = config.workspaces[index];
-
-  // Remove the data directory if it exists
-  if (fs.existsSync(ws.dataDirectory)) {
-    fs.rmSync(ws.dataDirectory, { recursive: true });
-  }
-
   config.workspaces.splice(index, 1);
   writeAppConfig();
   return true;

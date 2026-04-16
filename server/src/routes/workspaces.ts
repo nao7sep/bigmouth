@@ -79,7 +79,7 @@ workspacesRouter.put("/:id", (req, res) => {
 
 /**
  * DELETE /api/workspaces/:id
- * Deletes a workspace and its data directory.
+ * Removes a workspace from the registry. Data files on disk are not deleted.
  */
 workspacesRouter.delete("/:id", (req, res) => {
   const deleted = deleteWorkspace(req.params.id);
@@ -88,6 +88,6 @@ workspacesRouter.delete("/:id", (req, res) => {
     return;
   }
 
-  logger.info(`Workspace deleted: id=${req.params.id}`);
+  logger.info(`Workspace removed from registry: id=${req.params.id}`);
   res.json({ deleted: true });
 });

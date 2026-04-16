@@ -208,7 +208,7 @@ export function WorkspaceModal({
         {deleteTarget && (
           <ConfirmModal
             title="Delete workspace"
-            message={`Delete "${deleteTarget.name}" and all its data? This cannot be undone.`}
+            message={`Remove "${deleteTarget.name}" from the workspace list? The data files on disk will not be deleted.`}
             confirmLabel="Delete"
             danger
             onConfirm={() => handleDelete(deleteTarget)}
