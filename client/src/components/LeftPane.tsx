@@ -192,7 +192,7 @@ function Section({
       {open && (
         <div className="section-items">
           {posts.length === 0 ? (
-            <div style={{ padding: "12px 16px", color: "#999", fontSize: 13 }}>
+            <div style={{ padding: "12px 16px", color: "var(--bm-text-faint)", fontSize: 13 }}>
               {emptyText}
             </div>
           ) : (
@@ -214,7 +214,7 @@ function Section({
                 padding: "8px",
                 background: "none",
                 border: "none",
-                color: "#2563eb",
+                color: "var(--bm-accent)",
                 cursor: "pointer",
                 fontSize: 13,
               }}

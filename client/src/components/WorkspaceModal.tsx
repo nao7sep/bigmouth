@@ -110,9 +110,9 @@ export function WorkspaceModal({
 
         <div className="modal-body">
           {loading ? (
-            <p style={{ color: "#888" }}>Loading...</p>
+            <p style={{ color: "var(--bm-text-muted)" }}>Loading...</p>
           ) : sorted.length === 0 ? (
-            <p style={{ color: "#888", marginBottom: 12 }}>
+            <p style={{ color: "var(--bm-text-muted)", marginBottom: 12 }}>
               No workspaces yet. Create one to get started.
             </p>
           ) : (
@@ -200,7 +200,7 @@ export function WorkspaceModal({
             </div>
             <div className="form-field">
               <label className="form-label">
-                Data directory <span style={{ color: "#888", fontWeight: 400 }}>(optional, uses default if blank)</span>
+                Data directory <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>(optional, uses default if blank)</span>
               </label>
               <input
                 className="form-input"

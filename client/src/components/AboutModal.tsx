@@ -25,7 +25,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <p style={{ marginBottom: 4 }}>
             <strong>BigMouth</strong> — Version 0.1.0
           </p>
-          <p style={{ marginTop: 8, fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+          <p style={{ marginTop: 8, fontSize: 13, color: "var(--bm-text-soft)", lineHeight: 1.6 }}>
             A local-first writing preflight tool for composing blog and social media posts.
             Your data stays on your machine.
           </p>
@@ -34,7 +34,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
               href={GITHUB_URL}
               target="_blank"
               rel="noreferrer"
-              style={{ fontSize: 13, color: "#0066cc", textDecoration: "none" }}
+              style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
             >
               GitHub ↗
             </a>
@@ -42,12 +42,12 @@ export function AboutModal({ onClose }: AboutModalProps) {
               href={`${GITHUB_URL}/issues`}
               target="_blank"
               rel="noreferrer"
-              style={{ fontSize: 13, color: "#0066cc", textDecoration: "none" }}
+              style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
             >
               Report Issue ↗
             </a>
           </div>
-          <p style={{ marginTop: 16, fontSize: 12, color: "#aaa" }}>
+          <p style={{ marginTop: 16, fontSize: 12, color: "var(--bm-text-faint)" }}>
             &copy; 2026 Yoshinao Inoguchi &mdash; MIT License
           </p>
         </div>

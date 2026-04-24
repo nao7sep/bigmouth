@@ -67,7 +67,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
         <pre className="export-preview">
           {output || (
-            <span style={{ color: "#aaa", fontStyle: "italic" }}>
+            <span style={{ color: "var(--bm-text-faint)", fontStyle: "italic" }}>
               No content yet
             </span>
           )}
