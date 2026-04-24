@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ConfirmModal } from "./ConfirmModal";
 import type { Target } from "../types";
 
 interface NewPostModalProps {
@@ -28,7 +29,6 @@ export function NewPostModal({
   onClose,
   onCreate,
 }: NewPostModalProps) {
-  useEscapeKey(onClose);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     resolveLanguage(undefined, supportedLanguages)
@@ -37,6 +37,24 @@ export function NewPostModal({
   const [sourceTitle, setSourceTitle] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const initialLanguage = resolveLanguage(undefined, supportedLanguages);
+  const isDirty =
+    selectedTarget !== "" ||
+    selectedLanguage !== initialLanguage ||
+    sourceId !== "";
+
+  const handleRequestClose = () => {
+    if (showDiscardConfirm) return;
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  useEscapeKey(handleRequestClose);
 
   const picker = usePostPicker(pubBatchSize);
   const sortedTargets = [...targets].sort((a, b) =>
@@ -85,7 +103,7 @@ export function NewPostModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleRequestClose}>
       <div
         className="modal"
         style={{ width: 440 }}
@@ -93,7 +111,7 @@ export function NewPostModal({
       >
         <div className="modal-header">
           <h2>New Post</h2>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={handleRequestClose}>
             &times;
           </button>
         </div>
@@ -170,7 +188,7 @@ export function NewPostModal({
           {createError && <p className="settings-field-error">{createError}</p>}
         </div>
         <div className="modal-footer">
-          <button className="btn-toolbar" onClick={onClose}>
+          <button className="btn-toolbar" onClick={handleRequestClose}>
             Cancel
           </button>
           <button
@@ -182,6 +200,17 @@ export function NewPostModal({
             {creating ? "Creating…" : "Create"}
           </button>
         </div>
+        {showDiscardConfirm && (
+          <ConfirmModal
+            title="Discard new post?"
+            message="You have unsaved selections. Discard them and close?"
+            confirmLabel="Discard"
+            cancelLabel="Keep Editing"
+            danger
+            onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
+            onCancel={() => setShowDiscardConfirm(false)}
+          />
+        )}
       </div>
     </div>
   );

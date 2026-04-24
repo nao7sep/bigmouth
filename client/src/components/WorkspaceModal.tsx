@@ -22,7 +22,6 @@ export function WorkspaceModal({
   onWorkspaceDeleted,
   onWorkspaceUpdated,
 }: WorkspaceModalProps) {
-  useEscapeKey(dismissable ? onClose : () => {});
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -31,6 +30,21 @@ export function WorkspaceModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const isDirty = newName.trim() !== "" || newDir.trim() !== "" || editingId !== null;
+
+  const handleRequestClose = () => {
+    if (!dismissable) return;
+    if (showDiscardConfirm) return;
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  useEscapeKey(dismissable ? handleRequestClose : () => {});
 
   const load = () => {
     fetchWorkspaces()
@@ -79,7 +93,7 @@ export function WorkspaceModal({
     sorted.find((ws) => ws.id === activeWorkspaceId)?.id ?? sorted[0]?.id ?? null;
 
   return (
-    <div className="modal-backdrop" onClick={dismissable ? onClose : undefined}>
+    <div className="modal-backdrop" onClick={dismissable ? handleRequestClose : undefined}>
       <div
         className="modal"
         style={{ width: 480, maxHeight: "85vh" }}
@@ -88,7 +102,7 @@ export function WorkspaceModal({
         <div className="modal-header">
           <h2>Workspaces</h2>
           {dismissable && (
-            <button className="modal-close" onClick={onClose}>
+            <button className="modal-close" onClick={handleRequestClose}>
               &times;
             </button>
           )}
@@ -213,6 +227,24 @@ export function WorkspaceModal({
             danger
             onConfirm={() => handleDelete(deleteTarget)}
             onCancel={() => setDeleteTarget(null)}
+          />
+        )}
+
+        {showDiscardConfirm && (
+          <ConfirmModal
+            title="Discard changes?"
+            message="You have unsaved workspace edits. Discard them and close?"
+            confirmLabel="Discard"
+            cancelLabel="Keep Editing"
+            danger
+            onConfirm={() => {
+              setShowDiscardConfirm(false);
+              setEditingId(null);
+              setNewName("");
+              setNewDir("");
+              onClose();
+            }}
+            onCancel={() => setShowDiscardConfirm(false)}
           />
         )}
       </div>
