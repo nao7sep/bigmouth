@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "../types";
 import { AI_PROVIDERS } from "../types";
@@ -19,6 +19,7 @@ import {
   DEFAULT_GENERATION_PREAMBLE,
   GENERATION_PROMPT_LABELS,
 } from "../generationPromptDefaults";
+import { ConfirmModal } from "./ConfirmModal";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 
 interface SettingsModalProps {
@@ -41,21 +42,45 @@ export function SettingsModal({
   onSettingsChanged,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>("general");
-  useEscapeKey(onClose);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Snapshot of server-loaded values, used for dirty detection.
+  const initialSettings = useRef<Settings | null>(null);
+  const initialAiConfigs = useRef<AiConfigsData | null>(null);
+  const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
+  const initialTargets = useRef<Target[]>([]);
+  const initialPrompts = useRef<AnalysisPrompt[]>([]);
 
   useEffect(() => {
-    fetchSettings().then(setSettings).catch(() => {});
-    fetchAiConfigs().then(setAiConfigs).catch(() => {});
-    fetchGenerationPrompts().then(setGenerationPrompts).catch(() => {});
-    fetchTargets().then(setTargets).catch(() => {});
-    fetchAnalysisPrompts().then(setPrompts).catch(() => {});
+    fetchSettings().then((d) => { setSettings(d); initialSettings.current = d; }).catch(() => {});
+    fetchAiConfigs().then((d) => { setAiConfigs(d); initialAiConfigs.current = d; }).catch(() => {});
+    fetchGenerationPrompts().then((d) => { setGenerationPrompts(d); initialGenerationPrompts.current = d; }).catch(() => {});
+    fetchTargets().then((d) => { setTargets(d); initialTargets.current = d; }).catch(() => {});
+    fetchAnalysisPrompts().then((d) => { setPrompts(d); initialPrompts.current = d; }).catch(() => {});
   }, []);
+
+  const isDirty =
+    JSON.stringify(settings) !== JSON.stringify(initialSettings.current) ||
+    JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current) ||
+    JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current) ||
+    JSON.stringify(targets) !== JSON.stringify(initialTargets.current) ||
+    JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
+
+  const handleRequestClose = () => {
+    // If the discard-confirm is already open, do nothing — its own Escape
+    // handler will close it.
+    if (showDiscardConfirm) return;
+    if (!isDirty) { onClose(); return; }
+    setShowDiscardConfirm(true);
+  };
+
+  useEscapeKey(handleRequestClose);
 
   const isValid = (): boolean => {
     if (!settings) return false;
@@ -104,7 +129,7 @@ export function SettingsModal({
       >
         <div className="modal-header">
           <h2>Settings</h2>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={handleRequestClose}>
             &times;
           </button>
         </div>
@@ -165,6 +190,16 @@ export function SettingsModal({
           </button>
         </div>
       </div>
+      {showDiscardConfirm && (
+        <ConfirmModal
+          title="Discard Changes"
+          message="You have unsaved changes. Discard them and close?"
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          onConfirm={onClose}
+          onCancel={() => setShowDiscardConfirm(false)}
+        />
+      )}
     </div>
   );
 }
