@@ -181,7 +181,7 @@ export function SettingsModal({
         </div>
         <div className="modal-footer">
           <button
-            className="btn-new-post"
+            className="btn-primary"
             style={{ width: "auto" }}
             onClick={handleSaveAll}
             disabled={!canSave}

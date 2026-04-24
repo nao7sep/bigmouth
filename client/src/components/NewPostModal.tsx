@@ -192,7 +192,7 @@ export function NewPostModal({
             Cancel
           </button>
           <button
-            className="btn-new-post"
+            className="btn-primary"
             style={{ width: "auto" }}
             onClick={handleCreate}
             disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}

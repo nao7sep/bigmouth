@@ -43,7 +43,8 @@ export function ConfirmModal({
             {cancelLabel}
           </button>
           <button
-            className={danger ? "btn-toolbar btn-delete" : "btn-toolbar"}
+            className={danger ? "btn-toolbar btn-delete" : "btn-primary"}
+            style={{ width: "auto" }}
             onClick={onConfirm}
           >
             {confirmLabel}

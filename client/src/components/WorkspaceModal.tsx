@@ -133,16 +133,17 @@ export function WorkspaceModal({
                       />
                       <button
                         className="btn-toolbar"
+                        onClick={() => setEditingId(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-primary"
+                        style={{ width: "auto", padding: "4px 10px", fontSize: 12 }}
                         onClick={() => handleRename(ws.id)}
                         disabled={!editName.trim()}
                       >
                         Save
-                      </button>
-                      <button
-                        className="btn-toolbar"
-                        onClick={() => setEditingId(null)}
-                      >
-                        Cancel
                       </button>
                     </div>
                   ) : (
@@ -209,14 +210,16 @@ export function WorkspaceModal({
                 placeholder="/path/to/custom/directory"
               />
             </div>
-            <button
-              className="btn-new-post"
-              style={{ width: "auto" }}
-              onClick={handleCreate}
-              disabled={!newName.trim() || creating}
-            >
-              {creating ? "Creating..." : "Create"}
-            </button>
+            <div className="dialog-actions">
+              <button
+                className="btn-primary"
+                style={{ width: "auto" }}
+                onClick={handleCreate}
+                disabled={!newName.trim() || creating}
+              >
+                {creating ? "Creating..." : "Create"}
+              </button>
+            </div>
           </div>
 
         {deleteTarget && (

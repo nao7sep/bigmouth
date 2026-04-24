@@ -197,7 +197,8 @@ body {
   transform: translateX(-50%);
 }
 
-.btn-new-post {
+.btn-new-post,
+.btn-primary {
   width: 100%;
   padding: 8px 12px;
   background: var(--bm-accent);
@@ -209,11 +210,13 @@ body {
   cursor: pointer;
 }
 
-.btn-new-post:hover {
+.btn-new-post:hover,
+.btn-primary:hover {
   background: var(--bm-accent-hover);
 }
 
-.btn-new-post:disabled {
+.btn-new-post:disabled,
+.btn-primary:disabled {
   background: var(--bm-accent-disabled);
   cursor: not-allowed;
 }
@@ -866,6 +869,12 @@ body {
   gap: 8px;
 }
 
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Export modal */
 .export-format-tabs {
   display: flex;
@@ -898,6 +907,7 @@ body {
 
 .export-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px 20px;
 }

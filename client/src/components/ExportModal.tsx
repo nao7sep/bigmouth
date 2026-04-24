@@ -74,10 +74,15 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         </pre>
 
         <div className="export-actions">
-          <button className="btn-export" onClick={handleCopy} autoFocus>
+          <button className="btn-export" onClick={handleCopy}>
             {copiedKey === "copy" ? "✓ Copied" : "Copy"}
           </button>
-          <button className="btn-export" onClick={handleDownload}>
+          <button
+            className="btn-primary"
+            style={{ width: "auto" }}
+            onClick={handleDownload}
+            autoFocus
+          >
             Download .{format === "html" ? "html" : "txt"}
           </button>
         </div>
