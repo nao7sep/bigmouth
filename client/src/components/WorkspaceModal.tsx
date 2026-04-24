@@ -169,8 +169,9 @@ export function WorkspaceModal({
               ))}
             </div>
           )}
+        </div>
 
-          <div className="workspace-create">
+        <div className="workspace-create">
             <div className="workspace-create-heading">New workspace</div>
             <div className="form-field">
               <label className="form-label">Name</label>
@@ -203,7 +204,6 @@ export function WorkspaceModal({
               {creating ? "Creating..." : "Create"}
             </button>
           </div>
-        </div>
 
         {deleteTarget && (
           <ConfirmModal

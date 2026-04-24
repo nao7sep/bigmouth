@@ -1283,7 +1283,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 20px;
 }
 
 .workspace-item {
@@ -1356,7 +1355,7 @@ body {
 }
 
 .workspace-create {
-  padding-top: 16px;
+  padding: 16px 20px 20px;
   border-top: 1px solid #e0e0e0;
 }
 
