@@ -265,10 +265,18 @@ function buildFilename(fm: PostFrontMatter): string {
   if (fm.status === "draft") {
     return draftFilename(new Date(fm.createdAtUtc), fm.id);
   }
-  if (fm.status === "ready") {
-    return readyFilename(new Date(fm.readyAtUtc!), fm.slug!);
+  // Defense-in-depth: route-level validation should already have caught any
+  // path-traversing slug, but corrupted on-disk front matter could still
+  // reach this point during a status change. Refuse rather than write
+  // outside the posts directory.
+  const slug = fm.slug ?? "";
+  if (!slug || /[\/\\\0]/.test(slug) || slug.includes("..")) {
+    throw new Error("Invalid slug — contains path separators or traversal");
   }
-  return publishedFilename(new Date(fm.publishedAtUtc!), fm.slug!);
+  if (fm.status === "ready") {
+    return readyFilename(new Date(fm.readyAtUtc!), slug);
+  }
+  return publishedFilename(new Date(fm.publishedAtUtc!), slug);
 }
 
 function findPostFile(dataDir: string, id: string): string | null {

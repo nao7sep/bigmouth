@@ -22,15 +22,42 @@ import {
   assetDir,
   assetFilePath,
   sanitizeFilename,
+  safeResolveUnder,
 } from "../services/assetStore.js";
 
 export const assetsRouter = Router({ mergeParams: true });
+
+// --- Identifier validation (defense against path traversal) ---
+//
+// postId is a nanoid → must match the nanoid alphabet exactly.
+// filename is a single path component → must not contain separators or `..`.
+
+const POST_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+function readPostId(raw: unknown): string | null {
+  const id = String(raw);
+  return POST_ID_RE.test(id) ? id : null;
+}
+
+function readFilename(raw: unknown): string | null {
+  const name = String(raw);
+  if (!name) return null;
+  if (name === "." || name === "..") return null;
+  if (name.includes("/") || name.includes("\\") || name.includes("\0")) return null;
+  // Defensive: filename should not differ from its basename.
+  if (path.basename(name) !== name) return null;
+  return name;
+}
 
 // --- GET /api/w/:wsId/assets/:postId ---
 
 assetsRouter.get("/:postId", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const postId = String(req.params.postId);
+  const postId = readPostId(req.params.postId);
+  if (!postId) {
+    res.status(400).json({ error: "Invalid postId" });
+    return;
+  }
   res.json(listAssets(dataDir, postId));
 });
 
@@ -38,9 +65,20 @@ assetsRouter.get("/:postId", (req, res) => {
 
 assetsRouter.get("/:postId/:filename/raw", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const postId = String(req.params.postId);
-  const filename = String(req.params.filename);
-  const filePath = path.join(assetDir(dataDir, postId), filename);
+  const postId = readPostId(req.params.postId);
+  const filename = readFilename(req.params.filename);
+  if (!postId || !filename) {
+    res.status(400).json({ error: "Invalid postId or filename" });
+    return;
+  }
+
+  let filePath: string;
+  try {
+    filePath = safeResolveUnder(assetDir(dataDir, postId), filename);
+  } catch {
+    res.status(400).json({ error: "Invalid path" });
+    return;
+  }
 
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "Asset not found" });
@@ -73,7 +111,11 @@ assetsRouter.post("/:postId", (req, res, next) => {
   }).single("file")(req, res, next);
 }, async (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const postId = String(req.params.postId);
+  const postId = readPostId(req.params.postId);
+  if (!postId) {
+    res.status(400).json({ error: "Invalid postId" });
+    return;
+  }
 
   if (!req.file) {
     res.status(400).json({ error: "No file provided" });
@@ -126,10 +168,21 @@ assetsRouter.post("/:postId", (req, res, next) => {
 
 assetsRouter.delete("/:postId/:filename", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const postId = String(req.params.postId);
-  const filename = String(req.params.filename);
+  const postId = readPostId(req.params.postId);
+  const filename = readFilename(req.params.filename);
+  if (!postId || !filename) {
+    res.status(400).json({ error: "Invalid postId or filename" });
+    return;
+  }
 
-  const filePath = path.join(assetDir(dataDir, postId), filename);
+  let filePath: string;
+  try {
+    filePath = safeResolveUnder(assetDir(dataDir, postId), filename);
+  } catch {
+    res.status(400).json({ error: "Invalid path" });
+    return;
+  }
+
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "Asset not found" });
     return;

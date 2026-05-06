@@ -5,7 +5,7 @@
 
 import { Router } from "express";
 import { getPost } from "../services/postStore.js";
-import { getAnalysisPrompts, getAiConfigs } from "../services/configStore.js";
+import { getAnalysisPrompts, getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { error as logError } from "../services/logger.js";
 
@@ -46,7 +46,7 @@ analysisRouter.post("/", async (req, res) => {
 
   let provider;
   try {
-    const aiConfigs = getAiConfigs(dataDir);
+    const aiConfigs = getAiConfigsForServer(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );

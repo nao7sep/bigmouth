@@ -42,6 +42,8 @@ node server/dist/index.js
 
 The server starts on `http://localhost:3141` by default. Open that URL in your browser. On first visit you will see the workspace modal — create a workspace to get started.
 
+In production, the built client is served from the same origin as the API. In development, Vite (port 5173) proxies `/api/*` to the backend so requests are also same-origin from the browser's perspective. There is no CORS — see [Security model](#security-model).
+
 ## Data directory
 
 All data is stored locally under `~/.bigmouth/`:
@@ -87,7 +89,7 @@ The central configuration file. Contains the server port and the list of workspa
 }
 ```
 
-Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data.
+Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. The directory must already exist and be either empty or an existing workspace before a workspace can be pointed at it; bigmouth will not create arbitrary directories on your behalf.
 
 Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
 
@@ -131,6 +133,8 @@ A target represents a publishing destination:
 ### AI configuration (per workspace)
 
 AI providers are configured through the Settings UI. Currently supported: **Claude (Anthropic)**. API keys are stored obfuscated in `ai-configs.json`.
+
+When the Settings UI loads an existing AI configuration, the API key field shows a masked placeholder (`••••` followed by the last four characters). The plaintext key is never sent over HTTP. To change the key, type the new value over the placeholder; to keep the existing key, leave the placeholder untouched. Saving with the placeholder still in place preserves the stored key.
 
 ### Analysis prompts (`analysis-prompts.json`, per workspace)
 
@@ -186,6 +190,18 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Cmd/Ctrl + 2 | Switch to Assets tab |
 | Cmd/Ctrl + 3 | Switch to Preview tab |
 | Cmd/Ctrl + 4 | Switch to Metadata tab |
+
+## Security model
+
+BigMouth has no authentication — it is designed for a single user on their own machine. The protections that keep that safe in practice:
+
+- **Loopback only.** The server binds to `127.0.0.1`, so processes on other machines cannot reach it.
+- **Same-origin only.** Requests from any `Origin` other than the loopback host (production) or the Vite dev server are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the local API.
+- **API keys never leave the server in plaintext.** The `GET /api/w/:wsId/ai-configs` response masks every API key. The plaintext form is only deobfuscated in-process when calling the AI provider.
+- **Path validation.** Asset filenames and post slugs are validated against a strict character set, and asset paths are resolved under the per-post asset directory and rejected if they escape.
+- **Workspace data directories.** Pointing a workspace at a custom path requires the directory to already exist and be either empty or an existing workspace. Bigmouth will not seed arbitrary paths.
+
+If you change the listening port via `app.json`, the same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
 
 ## License
 

@@ -81,3 +81,16 @@ export function sanitizeFilename(raw: string): string {
   const base = path.basename(raw);
   return base.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
+
+/**
+ * Resolves a path under `root` and refuses anything that escapes it.
+ * Use this whenever any segment of the final path comes from user input.
+ */
+export function safeResolveUnder(root: string, ...segments: string[]): string {
+  const rootResolved = path.resolve(root);
+  const resolved = path.resolve(rootResolved, ...segments);
+  if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
+    throw new Error("Path escape detected");
+  }
+  return resolved;
+}

@@ -49,10 +49,14 @@ workspacesRouter.post("/", (req, res) => {
     return;
   }
 
-  const ws = createWorkspace(name.trim(), dataDirectory?.trim() || undefined);
-  logger.info(`Workspace created: id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`);
-
-  res.status(201).json(ws);
+  try {
+    const ws = createWorkspace(name.trim(), dataDirectory?.trim() || undefined);
+    logger.info(`Workspace created: id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`);
+    res.status(201).json(ws);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create workspace";
+    res.status(400).json({ error: message });
+  }
 });
 
 /**
@@ -63,18 +67,23 @@ workspacesRouter.post("/", (req, res) => {
 workspacesRouter.put("/:id", (req, res) => {
   const { name, dataDirectory } = req.body;
 
-  const ws = updateWorkspace(req.params.id, {
-    name: name?.trim(),
-    dataDirectory: dataDirectory?.trim(),
-  });
+  try {
+    const ws = updateWorkspace(req.params.id, {
+      name: name?.trim(),
+      dataDirectory: dataDirectory?.trim(),
+    });
 
-  if (!ws) {
-    res.status(404).json({ error: "Workspace not found" });
-    return;
+    if (!ws) {
+      res.status(404).json({ error: "Workspace not found" });
+      return;
+    }
+
+    logger.info(`Workspace updated: id=${ws.id}, name="${ws.name}"`);
+    res.json(ws);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update workspace";
+    res.status(400).json({ error: message });
   }
-
-  logger.info(`Workspace updated: id=${ws.id}, name="${ws.name}"`);
-  res.json(ws);
 });
 
 /**

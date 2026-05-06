@@ -1,5 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
-import cors from "cors";
 import { initAppDir, getAppConfig, getLogsDir } from "./services/workspaceStore.js";
 import { initLogger, info, error as logError } from "./services/logger.js";
 import { DEFAULT_PORT } from "./shared/defaults.js";
@@ -23,7 +25,44 @@ const port = appConfig.port || DEFAULT_PORT;
 
 const app = express();
 
-app.use(cors());
+// --- Origin guard (CSRF protection) ---
+//
+// The server binds to 127.0.0.1, but any browser running on the host can
+// reach it — including pages from arbitrary origins the user happens to
+// visit. There is no auth on this app, so without an Origin check, any
+// such page could read or modify workspace data via fetch().
+//
+// Policy:
+//   * No Origin header (same-origin GETs, curl, server-to-server) → allow.
+//   * Origin matches the loopback host the server is listening on at the
+//     same port (production, when the client is served from the same
+//     origin) → allow.
+//   * Origin matches a configured dev origin → allow.
+//   * Anything else → 403.
+const DEV_ORIGINS = new Set<string>([
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+]);
+
+function isAllowedOrigin(origin: string): boolean {
+  if (
+    origin === `http://127.0.0.1:${port}` ||
+    origin === `http://localhost:${port}`
+  ) {
+    return true;
+  }
+  return DEV_ORIGINS.has(origin);
+}
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !isAllowedOrigin(origin)) {
+    res.status(403).json({ error: "Forbidden origin" });
+    return;
+  }
+  next();
+});
+
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -44,6 +83,26 @@ app.use("/api/w/:wsId/generation-prompts", generationPromptsRouter);
 app.use("/api/w/:wsId/analyze", analysisRouter);
 app.use("/api/w/:wsId/generate", generationRouter);
 app.use("/api/w/:wsId/assets", assetsRouter);
+
+// --- Static client (production build) ---
+//
+// In production (`npm run build && node server/dist/index.js`), the built
+// client is shipped from the same origin so no cross-origin requests are
+// needed at all. In dev, use `npm run dev` which proxies /api through Vite.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.resolve(__dirname, "../../client/dist");
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // SPA fallback: any non-/api GET that didn't match a static file serves
+  // index.html so client-side navigation works on hard reload.
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api/")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

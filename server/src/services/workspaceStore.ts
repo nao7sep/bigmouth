@@ -85,10 +85,41 @@ export function getWorkspace(id: string): Workspace | undefined {
   return ensureLoaded().workspaces.find((w) => w.id === id);
 }
 
+/**
+ * Looks like a directory the user already prepared as a workspace
+ * (or an empty directory). Used to prevent the API from seeding random
+ * paths with workspace files.
+ */
+function isAcceptableExistingDir(dir: string): boolean {
+  if (!fs.existsSync(dir)) return false;
+  const stat = fs.statSync(dir);
+  if (!stat.isDirectory()) return false;
+
+  const entries = fs.readdirSync(dir);
+  if (entries.length === 0) return true;
+
+  const looksLikeWorkspace =
+    entries.includes("settings.json") ||
+    entries.includes("ai-configs.json") ||
+    entries.includes("posts");
+  return looksLikeWorkspace;
+}
+
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
   const config = ensureLoaded();
   const id = nanoid();
-  const dir = dataDirectory ? expandPath(dataDirectory) : path.join(DEFAULT_WORKSPACES_DIR, id);
+
+  let dir: string;
+  if (dataDirectory) {
+    dir = expandPath(dataDirectory);
+    if (!isAcceptableExistingDir(dir)) {
+      throw new Error(
+        "dataDirectory must exist and be either empty or an existing workspace directory. Create the directory yourself before pointing a workspace at it."
+      );
+    }
+  } else {
+    dir = path.join(DEFAULT_WORKSPACES_DIR, id);
+  }
 
   const workspace: Workspace = { id, name, dataDirectory: dir };
 
@@ -107,7 +138,15 @@ export function updateWorkspace(id: string, updates: { name?: string; dataDirect
   if (!ws) return null;
 
   if (updates.name !== undefined) ws.name = updates.name;
-  if (updates.dataDirectory !== undefined) ws.dataDirectory = expandPath(updates.dataDirectory);
+  if (updates.dataDirectory !== undefined) {
+    const newDir = expandPath(updates.dataDirectory);
+    if (!isAcceptableExistingDir(newDir)) {
+      throw new Error(
+        "dataDirectory must exist and be either empty or an existing workspace directory."
+      );
+    }
+    ws.dataDirectory = newDir;
+  }
 
   writeAppConfig();
   return ws;

@@ -8,7 +8,7 @@
 
 import { Router } from "express";
 import { getPost } from "../services/postStore.js";
-import { getGenerationPrompts, getAiConfigs } from "../services/configStore.js";
+import { getGenerationPrompts, getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { systemPromptForField } from "../ai/generationPrompts.js";
 import { error as logError } from "../services/logger.js";
@@ -46,7 +46,7 @@ generationRouter.post("/", async (req, res) => {
       return;
     }
     systemPrompt = resolved;
-    const aiConfigs = getAiConfigs(dataDir);
+    const aiConfigs = getAiConfigsForServer(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );
@@ -101,7 +101,7 @@ generationRouter.post("/batch", async (req, res) => {
     const genPrompts = getGenerationPrompts(dataDir);
     customPrompts = genPrompts.prompts;
     preamble = genPrompts.preamble;
-    const aiConfigs = getAiConfigs(dataDir);
+    const aiConfigs = getAiConfigsForServer(dataDir);
     const activeConfig = aiConfigs.configs.find(
       (c) => c.id === aiConfigs.activeId
     );

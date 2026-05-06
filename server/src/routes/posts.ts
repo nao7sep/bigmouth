@@ -16,6 +16,16 @@ import * as logger from "../services/logger.js";
 
 export const postsRouter = Router({ mergeParams: true });
 
+// Slug becomes part of the on-disk filename for ready/published posts, so it
+// must not contain path separators or any character that could escape the
+// posts directory. Allow only ASCII alphanumerics, hyphens, and underscores.
+const SLUG_RE = /^[a-zA-Z0-9_-]+$/;
+
+function validateSlug(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return SLUG_RE.test(value) ? value : null;
+}
+
 postsRouter.get("/", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const publishedOffset = parseInt(req.query.publishedOffset as string) || 0;
@@ -109,7 +119,18 @@ postsRouter.post("/", (req, res) => {
 
 postsRouter.put("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const { content, frontMatter } = req.body;
+  const { content, frontMatter } = req.body ?? {};
+
+  // Slug becomes part of the filename — reject anything that could traverse.
+  if (frontMatter && Object.prototype.hasOwnProperty.call(frontMatter, "slug")) {
+    const slug = frontMatter.slug;
+    if (slug !== null && slug !== undefined && slug !== "") {
+      if (!validateSlug(slug)) {
+        res.status(400).json({ error: "Invalid slug: only letters, digits, hyphens, and underscores are allowed" });
+        return;
+      }
+    }
+  }
 
   const post = updatePost(dataDir, req.params.id, { content, frontMatter });
   if (!post) {
