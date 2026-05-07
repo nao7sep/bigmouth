@@ -22,29 +22,6 @@ export function saveSettings(dataDir: string, settings: Settings): void {
 
 // --- AI Configs ---
 
-/**
- * Masking sentinel for API keys sent to the client.
- *
- * The plaintext key is never returned over HTTP. Instead, a string of bullet
- * characters followed by the last four characters of the key is returned so
- * the UI can display "key is set". On save, any incoming key starting with
- * MASK_PREFIX is treated as "leave the existing key unchanged".
- *
- * The bullet character (U+2022) is not a valid leading character in any
- * provider's API key format, so this sentinel is unambiguous.
- */
-const MASK_PREFIX = "••••";
-
-function maskKey(plain: string): string {
-  if (!plain) return "";
-  const tail = plain.length >= 4 ? plain.slice(-4) : plain;
-  return MASK_PREFIX + tail;
-}
-
-function isMasked(value: string): boolean {
-  return typeof value === "string" && value.startsWith(MASK_PREFIX);
-}
-
 function readAiConfigsRaw(dataDir: string): AiConfigsData {
   const raw = fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8");
   return JSON.parse(raw) as AiConfigsData;
@@ -65,21 +42,28 @@ export function getAiConfigsForServer(dataDir: string): AiConfigsData {
 }
 
 /**
- * Returns AI configs with API keys masked. Safe to send to the client.
+ * Returns AI configs with empty API key fields plus a boolean indicating
+ * whether a key is already stored server-side. The plaintext key is never sent
+ * over HTTP.
  */
 export function getAiConfigsForClient(dataDir: string): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
-  for (const config of data.configs ?? []) {
-    if (config.apiKey) {
-      config.apiKey = maskKey(deobfuscate(config.apiKey));
-    }
-  }
-  return data;
+  return {
+    activeId: data.activeId,
+    configs: (data.configs ?? []).map((config) => ({
+      id: config.id,
+      name: config.name,
+      provider: config.provider,
+      apiKey: "",
+      hasApiKey: Boolean(config.apiKey),
+      model: config.model,
+    })),
+  };
 }
 
 /**
- * Persists AI configs. Any incoming config whose apiKey is masked (i.e. the
- * client did not edit it) keeps its existing stored key.
+ * Persists AI configs. When the client sends an empty API key with
+ * hasApiKey=true, the previously stored key is preserved.
  */
 export function saveAiConfigs(dataDir: string, data: AiConfigsData): void {
   const existing = (() => {
@@ -91,16 +75,24 @@ export function saveAiConfigs(dataDir: string, data: AiConfigsData): void {
   })();
   const existingById = new Map(existing.configs?.map((c) => [c.id, c]) ?? []);
 
-  const toWrite = structuredClone(data);
-  for (const config of toWrite.configs ?? []) {
-    if (isMasked(config.apiKey)) {
-      // Preserve the previously stored (already-obfuscated) key as-is.
+  const toWrite: AiConfigsData = {
+    activeId: data.activeId,
+    configs: (data.configs ?? []).map((config) => {
       const prev = existingById.get(config.id);
-      config.apiKey = prev?.apiKey ?? "";
-    } else if (config.apiKey) {
-      config.apiKey = obfuscate(config.apiKey);
-    }
-  }
+      const apiKey = config.apiKey
+        ? obfuscate(config.apiKey)
+        : config.hasApiKey
+          ? (prev?.apiKey ?? "")
+          : "";
+      return {
+        id: config.id,
+        name: config.name,
+        provider: config.provider,
+        apiKey,
+        model: config.model,
+      };
+    }),
+  };
   fs.writeFileSync(path.join(dataDir, "ai-configs.json"), JSON.stringify(toWrite, null, 2) + "\n");
 }
 

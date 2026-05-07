@@ -88,7 +88,7 @@ export function SettingsModal({
     if (langs.length === 0 || langs.some((l) => !/^[a-z]{2}$/.test(l)) || new Set(langs).size !== langs.length) return false;
     if (!settings.timezone.trim()) return false;
     try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); } catch { return false; }
-    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim() || !c.apiKey.trim())) return false;
+    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim())) return false;
     const tNames = targets.map((t) => t.name.trim());
     if (tNames.some((n) => !n) || new Set(tNames).size !== tNames.length) return false;
     if (prompts.some((p) => !p.name.trim() || !p.text.trim())) return false;
@@ -126,7 +126,6 @@ export function SettingsModal({
         onClose={handleRequestClose}
         width={560}
         maxHeight="85vh"
-        closeOnBackdrop={false}
       >
 
         <div className="settings-tabs">
@@ -335,7 +334,7 @@ function AiTab({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "claude", apiKey: "", model: "claude-sonnet-4-6" },
+        { id, name: "", provider: "claude", apiKey: "", hasApiKey: false, model: "claude-sonnet-4-6" },
       ],
     });
   };
@@ -424,9 +423,15 @@ function AiTab({
               type="password"
               value={c.apiKey}
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
-              placeholder="Enter API key"
+              placeholder={c.hasApiKey ? "Type a new key to replace the saved one" : "Optional until you use AI features"}
             />
-            {!c.apiKey.trim() && <FieldError msg="API key is required." />}
+            <p className="settings-hint">
+              {c.apiKey.trim()
+                ? "This key will be saved when you click Save."
+                : c.hasApiKey
+                  ? "An API key is already saved. Leave this blank to keep it."
+                  : "Leave this blank until you want to use AI features."}
+            </p>
           </div>
           <button
             className="btn-toolbar btn-delete"

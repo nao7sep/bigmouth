@@ -76,6 +76,7 @@ export interface AiConfig {
   name: string;
   provider: AiProvider;
   apiKey: string;
+  hasApiKey?: boolean;
   model: string;
 }
 

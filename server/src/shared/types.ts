@@ -79,7 +79,8 @@ export interface AiConfig {
   id: string;        // nanoid, stable identity
   name: string;      // user-defined label (e.g., "Claude Sonnet")
   provider: AiProvider;
-  apiKey: string;    // obfuscated in settings.json, plain in memory
+  apiKey: string;    // obfuscated in settings.json, plain in memory, empty in client responses
+  hasApiKey?: boolean; // client-only flag: true when a key is already stored server-side
   model: string;     // e.g., "claude-sonnet-4-6"
 }
 

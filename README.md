@@ -147,7 +147,7 @@ AI providers are configured through the Settings UI. Currently supported: **Clau
 
 New workspaces start with a default Claude config entry and an empty API key.
 
-When the Settings UI loads an existing AI configuration, the API key field shows a masked placeholder (`••••` followed by the last four characters). The plaintext key is never sent over HTTP. To change the key, type the new value over the placeholder; to keep the existing key, leave the placeholder untouched. Saving with the placeholder still in place preserves the stored key.
+When the Settings UI loads an existing AI configuration, the API key field stays empty. The plaintext key is never sent over HTTP. Instead, the UI indicates whether a key is already saved. Leave the field blank to keep the existing key, or type a new one to replace it.
 
 ### Analysis prompts (`analysis-prompts.json`, per workspace)
 
