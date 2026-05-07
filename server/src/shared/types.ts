@@ -60,7 +60,13 @@ export interface Workspace {
 }
 
 export interface AppConfig {
-  port: number;          // local server port (default: 3141)
+  port: number;                 // local server port (default: 3141)
+  host?: string;                // bind address (default: "127.0.0.1"). Set to
+                                // "0.0.0.0" to listen on all interfaces, or to
+                                // a specific LAN IP to restrict to one NIC.
+  allowedOrigins?: string[];    // extra Origin values the CSRF guard accepts
+                                // (e.g., ["http://192.168.1.50:3141"]).
+                                // Loopback origins are always allowed.
   workspaces: Workspace[];
 }
 

@@ -22,27 +22,30 @@ const appConfig = initAppDir();
 initLogger(getLogsDir());
 
 const port = appConfig.port || DEFAULT_PORT;
+const host = appConfig.host || "127.0.0.1";
 
 const app = express();
 
 // --- Origin guard (CSRF protection) ---
 //
-// The server binds to 127.0.0.1, but any browser running on the host can
-// reach it — including pages from arbitrary origins the user happens to
-// visit. There is no auth on this app, so without an Origin check, any
-// such page could read or modify workspace data via fetch().
+// The default deployment is loopback-only, but a single user may also choose
+// to expose bigmouth to a trusted LAN (see README "LAN access"). In either
+// case, any browser that can reach the server could be tricked into making
+// requests from a third-party page; the Origin guard is what prevents that.
 //
 // Policy:
 //   * No Origin header (same-origin GETs, curl, server-to-server) → allow.
-//   * Origin matches the loopback host the server is listening on at the
-//     same port (production, when the client is served from the same
-//     origin) → allow.
-//   * Origin matches a configured dev origin → allow.
+//   * Origin matches the loopback host on the listening port → allow.
+//     (production, when the client is served from the same origin)
+//   * Origin matches the Vite dev server on loopback → allow.
+//   * Origin appears in app.json `allowedOrigins` → allow.
 //   * Anything else → 403.
 const DEV_ORIGINS = new Set<string>([
   "http://127.0.0.1:5173",
   "http://localhost:5173",
 ]);
+
+const configuredOrigins = new Set<string>(appConfig.allowedOrigins ?? []);
 
 function isAllowedOrigin(origin: string): boolean {
   if (
@@ -51,7 +54,8 @@ function isAllowedOrigin(origin: string): boolean {
   ) {
     return true;
   }
-  return DEV_ORIGINS.has(origin);
+  if (DEV_ORIGINS.has(origin)) return true;
+  return configuredOrigins.has(origin);
 }
 
 app.use((req, res, next) => {
@@ -110,6 +114,20 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(port, "127.0.0.1", () => {
-  info(`Server started on port ${port}, ${appConfig.workspaces.length} workspace(s) configured`);
+app.listen(port, host, () => {
+  info(`Server started on ${host}:${port}, ${appConfig.workspaces.length} workspace(s) configured`);
+
+  const isLoopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+  if (!isLoopback) {
+    info(
+      `Listening on a non-loopback address (${host}). The server is reachable from other devices on the same network. ` +
+      `There is no authentication; rely on your network's firewall and on app.json "allowedOrigins" to control access.`
+    );
+    if (configuredOrigins.size === 0) {
+      info(
+        `Note: no "allowedOrigins" are configured. Browsers reaching the server from a non-loopback hostname ` +
+        `(e.g. http://${host}:${port}) will be rejected by the Origin guard until you add that URL to "allowedOrigins" in app.json.`
+      );
+    }
+  }
 });

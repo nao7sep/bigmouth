@@ -69,11 +69,13 @@ All data is stored locally under `~/.bigmouth/`:
 
 ### app.json
 
-The central configuration file. Contains the server port and the list of workspaces:
+The central configuration file. Contains the server port, optional bind host and origin allowlist, and the list of workspaces:
 
 ```json
 {
   "port": 3141,
+  "host": "127.0.0.1",
+  "allowedOrigins": [],
   "workspaces": [
     {
       "id": "V1StGXR8_Z5jD",
@@ -88,6 +90,13 @@ The central configuration file. Contains the server port and the list of workspa
   ]
 }
 ```
+
+| Field | Default | Description |
+|---|---|---|
+| `port` | `3141` | TCP port to listen on. |
+| `host` | `"127.0.0.1"` | Bind address. Loopback by default. Set to `"0.0.0.0"` to listen on all interfaces, or to a specific LAN IP to pin to one NIC. |
+| `allowedOrigins` | `[]` | Extra `Origin` values the CSRF guard accepts. Loopback origins are always allowed; any non-loopback hostname you want to access bigmouth from must appear here. |
+| `workspaces` | `[]` | Workspace registry, managed through the API. |
 
 Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. The directory must already exist and be either empty or an existing workspace before a workspace can be pointed at it; bigmouth will not create arbitrary directories on your behalf.
 
@@ -191,17 +200,41 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Cmd/Ctrl + 3 | Switch to Preview tab |
 | Cmd/Ctrl + 4 | Switch to Metadata tab |
 
+## LAN access
+
+By default bigmouth is loopback-only. To use one machine as the server and edit posts from another device on the same network (a laptop, an iPad, etc.), edit `~/.bigmouth/app.json` on the server machine:
+
+```json
+{
+  "port": 3141,
+  "host": "0.0.0.0",
+  "allowedOrigins": [
+    "http://192.168.1.50:3141",
+    "http://my-mac.local:3141"
+  ],
+  "workspaces": [...]
+}
+```
+
+- `host` controls which interfaces the server listens on. `"0.0.0.0"` listens on every interface. If you want to pin to one NIC, use that interface's IP address (e.g. `"192.168.1.50"`).
+- `allowedOrigins` must list every URL that the client device will use to reach the server. Browsers send the `Origin` header with the exact host and port the user typed; if it's not in the list, the request is rejected with `403`. Include both the IP form and the `.local`/hostname form if you use either.
+- The port number in each entry must match `port`.
+
+There is **no authentication**. This setup is only safe behind a firewall on a trusted network. Anyone who can reach the host on the configured port and whose browser sends an allowed `Origin` can read and modify all workspace data, including stored API keys (used server-side for AI calls). On startup, bigmouth logs a warning when it binds to a non-loopback address.
+
+Restart the server after editing `app.json`.
+
 ## Security model
 
 BigMouth has no authentication — it is designed for a single user on their own machine. The protections that keep that safe in practice:
 
-- **Loopback only.** The server binds to `127.0.0.1`, so processes on other machines cannot reach it.
-- **Same-origin only.** Requests from any `Origin` other than the loopback host (production) or the Vite dev server are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the local API.
+- **Loopback only by default.** The server binds to `127.0.0.1`. Set `host` in `app.json` to expose it to a trusted LAN — see [LAN access](#lan-access).
+- **Same-origin only.** Requests from any `Origin` other than the loopback host (production), the Vite dev server, or an entry in `allowedOrigins` are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the API.
 - **API keys never leave the server in plaintext.** The `GET /api/w/:wsId/ai-configs` response masks every API key. The plaintext form is only deobfuscated in-process when calling the AI provider.
 - **Path validation.** Asset filenames and post slugs are validated against a strict character set, and asset paths are resolved under the per-post asset directory and rejected if they escape.
 - **Workspace data directories.** Pointing a workspace at a custom path requires the directory to already exist and be either empty or an existing workspace. Bigmouth will not seed arbitrary paths.
 
-If you change the listening port via `app.json`, the same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
+If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
 
 ## License
 
