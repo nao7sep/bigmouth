@@ -18,7 +18,7 @@ export const DEFAULT_AI_CONFIGS: AiConfigsData = {
       id: defaultAiConfigId,
       name: "Default",
       provider: "claude",
-      apiKey: "YOUR_API_KEY",
+      apiKey: "",
       model: "claude-sonnet-4-6",
     },
   ],

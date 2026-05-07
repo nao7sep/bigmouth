@@ -335,7 +335,7 @@ function AiTab({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "claude", apiKey: "YOUR_API_KEY", model: "" },
+        { id, name: "", provider: "claude", apiKey: "", model: "claude-sonnet-4-6" },
       ],
     });
   };
