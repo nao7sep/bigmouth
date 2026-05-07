@@ -194,7 +194,7 @@ export function WorkspaceModal({
       </div>
 
       <div className="workspace-create">
-        <div className="workspace-create-heading">Open or create workspace</div>
+        <div className="workspace-create-heading">Open or Create Workspace</div>
         <div className="form-field">
           <label className="form-label">
             Name <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>(optional)</span>
@@ -230,7 +230,7 @@ export function WorkspaceModal({
             }}
           />
           <p className="settings-hint">
-            You can type a path manually, including ~/ on macOS and Linux. If the folder already contains a bigmouth workspace, it will open. Otherwise bigmouth creates one there.
+            Type a path manually. `~/` works on macOS and Linux.
           </p>
         </div>
         {error && <p className="settings-field-error">{error}</p>}
@@ -241,7 +241,7 @@ export function WorkspaceModal({
             onClick={() => void handleSubmit()}
             disabled={submitting}
           >
-            {submitting ? "Opening..." : "Open or create"}
+            {submitting ? "Opening..." : "Open or Create"}
           </button>
         </div>
       </div>

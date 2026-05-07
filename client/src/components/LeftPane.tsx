@@ -77,7 +77,7 @@ export function LeftPane({
                     className="hamburger-menu-item"
                     onClick={() => { setMenuOpen(false); onSwitchWorkspace(); }}
                   >
-                    Switch Workspace
+                    Workspaces
                   </button>
                   <button
                     className="hamburger-menu-item"

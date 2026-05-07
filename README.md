@@ -109,7 +109,7 @@ Each post is a Markdown file with YAML front matter. The filename encodes the sl
 Workspaces provide complete isolation: each has its own posts, assets, settings, targets, AI configs, and prompts.
 
 - On startup, the frontend shows a workspace modal if no workspace is selected (or the saved workspace no longer exists).
-- Switch workspaces at any time via the hamburger menu → "Switch Workspace".
+- Switch workspaces at any time via the hamburger menu → "Workspaces".
 - The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
 - Open an existing workspace folder, or create a new workspace in the chosen folder.
 - **Deleting a workspace only removes it from the registry** (`app.json`). The data directory and all files inside it are left untouched on disk.

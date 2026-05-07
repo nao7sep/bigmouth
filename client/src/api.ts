@@ -8,10 +8,6 @@ export function setActiveWorkspace(id: string): void {
   wsId = id;
 }
 
-export function getActiveWorkspace(): string {
-  return wsId;
-}
-
 function base(workspaceId = wsId): string {
   if (!workspaceId) throw new Error("No active workspace set");
   return `/api/w/${workspaceId}`;
