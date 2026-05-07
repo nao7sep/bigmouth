@@ -1,6 +1,6 @@
 import { usePostPicker } from "../hooks/usePostPicker";
 import { PostPickerList } from "./PostPickerList";
-import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ModalShell } from "./ModalShell";
 
 interface SourcePickerModalProps {
   currentPostId: string;
@@ -15,30 +15,23 @@ export function SourcePickerModal({
   onSelect,
   onClose,
 }: SourcePickerModalProps) {
-  useEscapeKey(onClose);
   const picker = usePostPicker(pubBatchSize, currentPostId);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        style={{ width: 520, maxHeight: "75vh", display: "flex", flexDirection: "column" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>Link Source Post</h2>
-          <button className="modal-close" onClick={onClose}>
-            &times;
-          </button>
-        </div>
-        <div className="modal-body" style={{ overflowY: "auto", flex: 1 }}>
-          <PostPickerList
-            {...picker}
-            autoFocus
-            onSelect={(id) => { onSelect(id); onClose(); }}
-          />
-        </div>
+    <ModalShell
+      title="Link Source Post"
+      onClose={onClose}
+      width={520}
+      maxHeight="75vh"
+      modalStyle={{ display: "flex", flexDirection: "column" }}
+    >
+      <div className="modal-body" style={{ overflowY: "auto", flex: 1 }}>
+        <PostPickerList
+          {...picker}
+          autoFocus
+          onSelect={(id) => { onSelect(id); onClose(); }}
+        />
       </div>
-    </div>
+    </ModalShell>
   );
 }

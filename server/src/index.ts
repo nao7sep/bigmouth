@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { initAppDir, getAppConfig, getLogsDir } from "./services/workspaceStore.js";
 import { initLogger, info, error as logError } from "./services/logger.js";
-import { DEFAULT_PORT } from "./shared/defaults.js";
+import { DEFAULT_HOST, DEFAULT_PORT } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
 import { workspacesRouter } from "./routes/workspaces.js";
 import { postsRouter } from "./routes/posts.js";
@@ -22,7 +22,7 @@ const appConfig = initAppDir();
 initLogger(getLogsDir());
 
 const port = appConfig.port || DEFAULT_PORT;
-const host = appConfig.host || "127.0.0.1";
+const host = appConfig.host || DEFAULT_HOST;
 
 const app = express();
 
@@ -45,7 +45,7 @@ const DEV_ORIGINS = new Set<string>([
   "http://localhost:5173",
 ]);
 
-const configuredOrigins = new Set<string>(appConfig.allowedOrigins ?? []);
+const configuredOrigins = new Set<string>(appConfig.allowedOrigins);
 
 function isAllowedOrigin(origin: string): boolean {
   if (

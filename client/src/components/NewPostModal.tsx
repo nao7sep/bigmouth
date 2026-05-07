@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
-import { useEscapeKey } from "../hooks/useEscapeKey";
 import { ConfirmModal } from "./ConfirmModal";
+import { ModalShell } from "./ModalShell";
 import type { Target } from "../types";
 
 interface NewPostModalProps {
@@ -54,8 +54,6 @@ export function NewPostModal({
     }
   };
 
-  useEscapeKey(handleRequestClose);
-
   const picker = usePostPicker(pubBatchSize);
   const sortedTargets = [...targets].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
@@ -103,115 +101,103 @@ export function NewPostModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={handleRequestClose}>
-      <div
-        className="modal"
-        style={{ width: 440 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>New Post</h2>
-          <button className="modal-close" onClick={handleRequestClose}>
-            &times;
-          </button>
+    <ModalShell title="New Post" onClose={handleRequestClose} width={440}>
+      <div className="modal-body">
+        <div className="form-field">
+          <label className="form-label">Target</label>
+          {hasTargets ? (
+            <select
+              className="form-select"
+              value={selectedTarget}
+              onChange={(e) => handleTargetChange(e.target.value)}
+              autoFocus
+            >
+              <option value="" disabled>Please select…</option>
+              {sortedTargets.map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.name} ({t.defaultLanguage})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="settings-field-error">No targets configured.</p>
+          )}
         </div>
-        <div className="modal-body">
-          <div className="form-field">
-            <label className="form-label">Target</label>
-            {hasTargets ? (
-              <select
-                className="form-select"
-                value={selectedTarget}
-                onChange={(e) => handleTargetChange(e.target.value)}
-                autoFocus
-              >
-                <option value="" disabled>Please select…</option>
-                {sortedTargets.map((t) => (
-                  <option key={t.name} value={t.name}>
-                    {t.name} ({t.defaultLanguage})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="settings-field-error">No targets configured.</p>
-            )}
-          </div>
 
-          <div className="form-field">
-            <label className="form-label">Language</label>
-            {hasLanguages ? (
-              <select
-                className="form-select"
-                value={selectedLanguage}
-                onChange={(e) => {
-                  setCreateError(null);
-                  setSelectedLanguage(e.target.value);
-                }}
-              >
-                {sortedLanguages.map((lang) => (
-                  <option key={lang} value={lang}>
-                    {lang}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="settings-field-error">
-                No supported languages configured. Add one in Settings → General before creating a post.
-              </p>
-            )}
-          </div>
+        <div className="form-field">
+          <label className="form-label">Language</label>
+          {hasLanguages ? (
+            <select
+              className="form-select"
+              value={selectedLanguage}
+              onChange={(e) => {
+                setCreateError(null);
+                setSelectedLanguage(e.target.value);
+              }}
+            >
+              {sortedLanguages.map((lang) => (
+                <option key={lang} value={lang}>
+                  {lang}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="settings-field-error">
+              No supported languages configured. Add one in Settings → General before creating a post.
+            </p>
+          )}
+        </div>
 
-          <div className="form-field">
-            <label className="form-label">Source post (optional)</label>
-            {sourceId ? (
-              <div className="source-selected">
-                <span className="source-selected-title">{sourceTitle}</span>
-                <button
-                  className="btn-toolbar"
-                  onClick={() => { setSourceId(""); setSourceTitle(""); }}
-                >
-                  Unlink
-                </button>
-              </div>
-            ) : (
-              <PostPickerList
-                {...picker}
-                onSelect={(id, title) => {
-                  setCreateError(null);
-                  setSourceId(id);
-                  setSourceTitle(title);
-                  picker.setQuery("");
-                }}
-              />
-            )}
-          </div>
-          {createError && <p className="settings-field-error">{createError}</p>}
+        <div className="form-field">
+          <label className="form-label">Source post (optional)</label>
+          {sourceId ? (
+            <div className="source-selected">
+              <span className="source-selected-title">{sourceTitle}</span>
+              <button
+                className="btn-toolbar"
+                onClick={() => { setSourceId(""); setSourceTitle(""); }}
+              >
+                Unlink
+              </button>
+            </div>
+          ) : (
+            <PostPickerList
+              {...picker}
+              onSelect={(id, title) => {
+                setCreateError(null);
+                setSourceId(id);
+                setSourceTitle(title);
+                picker.setQuery("");
+              }}
+            />
+          )}
         </div>
-        <div className="modal-footer">
-          <button className="btn-toolbar" onClick={handleRequestClose}>
-            Cancel
-          </button>
-          <button
-            className="btn-primary"
-            style={{ width: "auto" }}
-            onClick={handleCreate}
-            disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
-          >
-            {creating ? "Creating…" : "Create"}
-          </button>
-        </div>
-        {showDiscardConfirm && (
-          <ConfirmModal
-            title="Discard new post?"
-            message="You have unsaved selections. Discard them and close?"
-            confirmLabel="Discard"
-            cancelLabel="Keep Editing"
-            danger
-            onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
-            onCancel={() => setShowDiscardConfirm(false)}
-          />
-        )}
+        {createError && <p className="settings-field-error">{createError}</p>}
       </div>
-    </div>
+      <div className="modal-footer">
+        <button className="btn-toolbar" onClick={handleRequestClose}>
+          Cancel
+        </button>
+        <button
+          className="btn-primary"
+          style={{ width: "auto" }}
+          onClick={handleCreate}
+          disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
+        >
+          {creating ? "Creating…" : "Create"}
+        </button>
+      </div>
+      {showDiscardConfirm && (
+        <ConfirmModal
+          title="Discard new post?"
+          message="You have unsaved selections. Discard them and close?"
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          danger
+          onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
+          onCancel={() => setShowDiscardConfirm(false)}
+        />
+      )}
+    </ModalShell>
   );
 }

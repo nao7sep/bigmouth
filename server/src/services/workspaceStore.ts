@@ -10,7 +10,7 @@ import path from "node:path";
 import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
-import { DEFAULT_PORT } from "../shared/defaults.js";
+import { DEFAULT_ALLOWED_ORIGINS, DEFAULT_HOST, DEFAULT_PORT } from "../shared/defaults.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 
 const APP_DIR = path.join(os.homedir(), ".bigmouth");
@@ -21,7 +21,51 @@ const DEFAULT_WORKSPACES_DIR = path.join(APP_DIR, "workspaces");
 let appConfig: AppConfig | null = null;
 
 function defaultAppConfig(): AppConfig {
-  return { port: DEFAULT_PORT, workspaces: [] };
+  return {
+    port: DEFAULT_PORT,
+    host: DEFAULT_HOST,
+    allowedOrigins: [...DEFAULT_ALLOWED_ORIGINS],
+    workspaces: [],
+  };
+}
+
+function normalizeAppConfig(raw: unknown): AppConfig {
+  const defaults = defaultAppConfig();
+  const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+
+  const workspaces = Array.isArray(source.workspaces)
+    ? source.workspaces.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const record = item as Record<string, unknown>;
+        if (
+          typeof record.id !== "string" ||
+          typeof record.name !== "string" ||
+          typeof record.dataDirectory !== "string"
+        ) {
+          return [];
+        }
+        return [{
+          id: record.id,
+          name: record.name,
+          dataDirectory: record.dataDirectory,
+        }];
+      })
+    : defaults.workspaces;
+
+  return {
+    port:
+      typeof source.port === "number" && Number.isFinite(source.port)
+        ? source.port
+        : defaults.port,
+    host:
+      typeof source.host === "string" && source.host.trim()
+        ? source.host.trim()
+        : defaults.host,
+    allowedOrigins: Array.isArray(source.allowedOrigins)
+      ? source.allowedOrigins.filter((value): value is string => typeof value === "string")
+      : [...defaults.allowedOrigins],
+    workspaces,
+  };
 }
 
 /**
@@ -51,7 +95,11 @@ export function initAppDir(): AppConfig {
 
   if (fs.existsSync(APP_JSON_PATH)) {
     const raw = fs.readFileSync(APP_JSON_PATH, "utf-8");
-    appConfig = JSON.parse(raw) as AppConfig;
+    const parsed = JSON.parse(raw) as unknown;
+    appConfig = normalizeAppConfig(parsed);
+    if (JSON.stringify(parsed) !== JSON.stringify(appConfig)) {
+      writeAppConfig();
+    }
   } else {
     appConfig = defaultAppConfig();
     writeAppConfig();
@@ -86,23 +134,51 @@ export function getWorkspace(id: string): Workspace | undefined {
 }
 
 /**
- * Looks like a directory the user already prepared as a workspace
- * (or an empty directory). Used to prevent the API from seeding random
- * paths with workspace files.
+ * Returns true when the directory already looks like a bigmouth workspace.
  */
-function isAcceptableExistingDir(dir: string): boolean {
+function isWorkspaceDirectory(dir: string): boolean {
   if (!fs.existsSync(dir)) return false;
   const stat = fs.statSync(dir);
   if (!stat.isDirectory()) return false;
 
   const entries = fs.readdirSync(dir);
-  if (entries.length === 0) return true;
-
-  const looksLikeWorkspace =
+  return (
     entries.includes("settings.json") ||
     entries.includes("ai-configs.json") ||
-    entries.includes("posts");
-  return looksLikeWorkspace;
+    entries.includes("posts")
+  );
+}
+
+function isEmptyDirectory(dir: string): boolean {
+  if (!fs.existsSync(dir)) return false;
+  const stat = fs.statSync(dir);
+  if (!stat.isDirectory()) return false;
+  return fs.readdirSync(dir).length === 0;
+}
+
+function findWorkspaceByDirectory(dir: string): Workspace | undefined {
+  const normalized = expandPath(dir);
+  return ensureLoaded().workspaces.find((workspace) => workspace.dataDirectory === normalized);
+}
+
+function nextWorkspaceName(): string {
+  const names = new Set(
+    ensureLoaded().workspaces.map((workspace) => workspace.name.trim().toLowerCase())
+  );
+  if (!names.has("workspace")) return "Workspace";
+
+  let index = 2;
+  while (names.has(`workspace ${index}`)) {
+    index += 1;
+  }
+  return `Workspace ${index}`;
+}
+
+function resolveWorkspaceName(name: string | undefined, dataDirectory: string | undefined): string {
+  const trimmed = name?.trim();
+  if (trimmed) return trimmed;
+  if (dataDirectory) return path.basename(dataDirectory);
+  return nextWorkspaceName();
 }
 
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
@@ -112,10 +188,21 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
   let dir: string;
   if (dataDirectory) {
     dir = expandPath(dataDirectory);
-    if (!isAcceptableExistingDir(dir)) {
-      throw new Error(
-        "dataDirectory must exist and be either empty or an existing workspace directory. Create the directory yourself before pointing a workspace at it."
-      );
+    const existing = findWorkspaceByDirectory(dir);
+    if (existing) {
+      throw new Error(`That folder is already registered as workspace "${existing.name}".`);
+    }
+    if (fs.existsSync(dir)) {
+      const stat = fs.statSync(dir);
+      if (!stat.isDirectory()) {
+        throw new Error("Location must be a directory.");
+      }
+      if (isWorkspaceDirectory(dir)) {
+        throw new Error("That folder already contains a workspace. Use Open instead.");
+      }
+      if (!isEmptyDirectory(dir)) {
+        throw new Error("New workspaces can only be created in an empty folder.");
+      }
     }
   } else {
     dir = path.join(DEFAULT_WORKSPACES_DIR, id);
@@ -132,6 +219,57 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
   return workspace;
 }
 
+export function openWorkspace(dataDirectory: string, name?: string): Workspace {
+  const config = ensureLoaded();
+  const dir = expandPath(dataDirectory);
+  const existing = findWorkspaceByDirectory(dir);
+  if (existing) {
+    return existing;
+  }
+  if (!isWorkspaceDirectory(dir)) {
+    throw new Error("Choose an existing bigmouth workspace folder.");
+  }
+
+  initializeWorkspaceData(dir);
+
+  const workspace: Workspace = {
+    id: nanoid(),
+    name: name?.trim() || path.basename(dir),
+    dataDirectory: dir,
+  };
+
+  config.workspaces.push(workspace);
+  writeAppConfig();
+  return workspace;
+}
+
+export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Workspace {
+  const trimmedDir = dataDirectory?.trim();
+  if (!trimmedDir) {
+    return createWorkspace(resolveWorkspaceName(name, undefined));
+  }
+
+  const dir = expandPath(trimmedDir);
+  const existing = findWorkspaceByDirectory(dir);
+  if (existing) {
+    return existing;
+  }
+  if (fs.existsSync(dir)) {
+    const stat = fs.statSync(dir);
+    if (!stat.isDirectory()) {
+      throw new Error("Location must be a directory.");
+    }
+    if (isWorkspaceDirectory(dir)) {
+      return openWorkspace(dir, name);
+    }
+    if (!isEmptyDirectory(dir)) {
+      throw new Error("Location must be empty or already contain a bigmouth workspace.");
+    }
+  }
+
+  return createWorkspace(resolveWorkspaceName(name, dir), dir);
+}
+
 export function updateWorkspace(id: string, updates: { name?: string; dataDirectory?: string }): Workspace | null {
   const config = ensureLoaded();
   const ws = config.workspaces.find((w) => w.id === id);
@@ -140,10 +278,12 @@ export function updateWorkspace(id: string, updates: { name?: string; dataDirect
   if (updates.name !== undefined) ws.name = updates.name;
   if (updates.dataDirectory !== undefined) {
     const newDir = expandPath(updates.dataDirectory);
-    if (!isAcceptableExistingDir(newDir)) {
-      throw new Error(
-        "dataDirectory must exist and be either empty or an existing workspace directory."
-      );
+    const existing = findWorkspaceByDirectory(newDir);
+    if (existing && existing.id !== id) {
+      throw new Error(`That folder is already registered as workspace "${existing.name}".`);
+    }
+    if (!isEmptyDirectory(newDir) && !isWorkspaceDirectory(newDir)) {
+      throw new Error("Workspace location must be an empty folder or an existing workspace.");
     }
     ws.dataDirectory = newDir;
   }

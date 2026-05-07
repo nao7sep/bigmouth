@@ -25,16 +25,21 @@ export async function fetchWorkspaces(): Promise<Workspace[]> {
   return res.json();
 }
 
-export async function createWorkspace(
-  name: string,
+export async function openOrCreateWorkspace(
+  name?: string,
   dataDirectory?: string
 ): Promise<Workspace> {
-  const res = await fetch("/api/workspaces", {
+  const res = await fetch("/api/workspaces/open-or-create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, dataDirectory }),
   });
-  if (!res.ok) throw new Error(`Failed to create workspace: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to open or create workspace: ${res.status}`
+    );
+  }
   return res.json();
 }
 

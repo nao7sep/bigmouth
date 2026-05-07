@@ -7,7 +7,7 @@ import { Router } from "express";
 import {
   listWorkspaces,
   getWorkspace,
-  createWorkspace,
+  openOrCreateWorkspace,
   updateWorkspace,
   deleteWorkspace,
 } from "../services/workspaceStore.js";
@@ -37,24 +37,19 @@ workspacesRouter.get("/:id", (req, res) => {
 });
 
 /**
- * POST /api/workspaces
- * Creates a new workspace.
- * Body: { name: string, dataDirectory?: string }
+ * POST /api/workspaces/open-or-create
+ * Opens an existing workspace folder or creates a new one there.
+ * Body: { name?: string, dataDirectory?: string }
  */
-workspacesRouter.post("/", (req, res) => {
+workspacesRouter.post("/open-or-create", (req, res) => {
   const { name, dataDirectory } = req.body;
 
-  if (!name || !name.trim()) {
-    res.status(400).json({ error: "name is required" });
-    return;
-  }
-
   try {
-    const ws = createWorkspace(name.trim(), dataDirectory?.trim() || undefined);
-    logger.info(`Workspace created: id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`);
+    const ws = openOrCreateWorkspace(name?.trim(), dataDirectory?.trim());
+    logger.info(`Workspace selected: id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`);
     res.status(201).json(ws);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create workspace";
+    const message = err instanceof Error ? err.message : "Failed to open or create workspace";
     res.status(400).json({ error: message });
   }
 });

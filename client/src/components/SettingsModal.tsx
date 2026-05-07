@@ -20,7 +20,7 @@ import {
   GENERATION_PROMPT_LABELS,
 } from "../generationPromptDefaults";
 import { ConfirmModal } from "./ConfirmModal";
-import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ModalShell } from "./ModalShell";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -80,8 +80,6 @@ export function SettingsModal({
     setShowDiscardConfirm(true);
   };
 
-  useEscapeKey(handleRequestClose);
-
   const isValid = (): boolean => {
     if (!settings) return false;
     if (!Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1) return false;
@@ -122,17 +120,14 @@ export function SettingsModal({
   };
 
   return (
-    <div className="modal-backdrop">
-      <div
-        className="modal"
-        style={{ width: 560, maxHeight: "85vh" }}
+    <>
+      <ModalShell
+        title="Settings"
+        onClose={handleRequestClose}
+        width={560}
+        maxHeight="85vh"
+        closeOnBackdrop={false}
       >
-        <div className="modal-header">
-          <h2>Settings</h2>
-          <button className="modal-close" onClick={handleRequestClose}>
-            &times;
-          </button>
-        </div>
 
         <div className="settings-tabs">
           {(["general", "targets", "providers", "analysis", "generation"] as Tab[]).map((t) => (
@@ -189,7 +184,7 @@ export function SettingsModal({
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
+      </ModalShell>
       {showDiscardConfirm && (
         <ConfirmModal
           title="Discard Changes"
@@ -200,7 +195,7 @@ export function SettingsModal({
           onCancel={() => setShowDiscardConfirm(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 

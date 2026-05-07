@@ -7,6 +7,8 @@ import { nanoid } from "nanoid";
 import { DEFAULT_GENERATION_PROMPTS, DEFAULT_GENERATION_PREAMBLE } from "../ai/generationPrompts.js";
 
 export const DEFAULT_PORT = 3141;
+export const DEFAULT_HOST = "127.0.0.1";
+export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
 
 const defaultAiConfigId = nanoid();
 

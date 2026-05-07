@@ -1,4 +1,4 @@
-import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ModalShell } from "./ModalShell";
 
 interface ConfirmModalProps {
   title?: string;
@@ -19,38 +19,25 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  useEscapeKey(onCancel);
   const heading = title ?? confirmLabel;
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div
-        className="modal"
-        style={{ width: 360 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>{heading}</h2>
-          <button className="modal-close" onClick={onCancel}>
-            &times;
-          </button>
-        </div>
-        <div className="modal-body">
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{message}</p>
-        </div>
-        <div className="modal-footer">
-          <button className="btn-toolbar" onClick={onCancel} autoFocus>
-            {cancelLabel}
-          </button>
-          <button
-            className={danger ? "btn-toolbar btn-delete" : "btn-primary"}
-            style={{ width: "auto" }}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
+    <ModalShell title={heading} onClose={onCancel} width={360}>
+      <div className="modal-body">
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{message}</p>
       </div>
-    </div>
+      <div className="modal-footer">
+        <button className="btn-toolbar" onClick={onCancel} autoFocus>
+          {cancelLabel}
+        </button>
+        <button
+          className={danger ? "btn-toolbar btn-delete" : "btn-primary"}
+          style={{ width: "auto" }}
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </ModalShell>
   );
 }

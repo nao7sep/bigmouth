@@ -69,7 +69,7 @@ All data is stored locally under `~/.bigmouth/`:
 
 ### app.json
 
-The central configuration file. Contains the server port, optional bind host and origin allowlist, and the list of workspaces:
+The central configuration file. Contains the server port, bind host, origin allowlist, and the list of workspaces:
 
 ```json
 {
@@ -91,6 +91,8 @@ The central configuration file. Contains the server port, optional bind host and
 }
 ```
 
+If `app.json` comes from an older bigmouth version and is missing `host` or `allowedOrigins`, bigmouth now inserts those keys automatically the next time it starts.
+
 | Field | Default | Description |
 |---|---|---|
 | `port` | `3141` | TCP port to listen on. |
@@ -98,7 +100,7 @@ The central configuration file. Contains the server port, optional bind host and
 | `allowedOrigins` | `[]` | Extra `Origin` values the CSRF guard accepts. Loopback origins are always allowed; any non-loopback hostname you want to access bigmouth from must appear here. |
 | `workspaces` | `[]` | Workspace registry, managed through the API. |
 
-Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. The directory must already exist and be either empty or an existing workspace before a workspace can be pointed at it; bigmouth will not create arbitrary directories on your behalf.
+Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. Leaving the location blank uses the default `~/.bigmouth/workspaces/{workspace-id}` location. If the chosen folder already contains a bigmouth workspace, the app opens it; otherwise bigmouth creates a new workspace there. It will still refuse to initialize inside a non-empty folder that contains unrelated files.
 
 Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
 
@@ -109,7 +111,7 @@ Workspaces provide complete isolation: each has its own posts, assets, settings,
 - On startup, the frontend shows a workspace modal if no workspace is selected (or the saved workspace no longer exists).
 - Switch workspaces at any time via the hamburger menu → "Switch Workspace".
 - The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
-- Create a workspace with a custom data directory to version-control it with Git.
+- Open an existing workspace folder, or create a new workspace in the chosen folder.
 - **Deleting a workspace only removes it from the registry** (`app.json`). The data directory and all files inside it are left untouched on disk.
 
 ## Configuration
@@ -170,7 +172,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Route | Description |
 |---|---|
 | `GET /api/workspaces` | List all workspaces |
-| `POST /api/workspaces` | Create a workspace |
+| `POST /api/workspaces/open-or-create` | Open an existing workspace folder or create one there |
 | `PUT /api/workspaces/:id` | Update a workspace |
 | `DELETE /api/workspaces/:id` | Remove a workspace from the registry (data files are not deleted) |
 | `GET /api/w/:wsId/posts` | List posts |

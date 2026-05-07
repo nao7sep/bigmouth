@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Marked } from "marked";
 import removeMd from "remove-markdown";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
-import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ModalShell } from "./ModalShell";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -15,7 +15,6 @@ interface ExportModalProps {
 type ExportFormat = "html" | "text";
 
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
-  useEscapeKey(onClose);
   const [format, setFormat] = useState<ExportFormat>("html");
   const { copiedKey, copy } = useCopyFeedback();
 
@@ -41,52 +40,43 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Export</h2>
-          <button className="modal-close" onClick={onClose}>
-            &times;
-          </button>
-        </div>
-
-        <div className="export-format-tabs">
-          <button
-            className={`export-format-tab${format === "html" ? " active" : ""}`}
-            onClick={() => setFormat("html")}
-          >
-            HTML
-          </button>
-          <button
-            className={`export-format-tab${format === "text" ? " active" : ""}`}
-            onClick={() => setFormat("text")}
-          >
-            Plain Text
-          </button>
-        </div>
-
-        <pre className="export-preview">
-          {output || (
-            <span style={{ color: "var(--bm-text-faint)", fontStyle: "italic" }}>
-              No content yet
-            </span>
-          )}
-        </pre>
-
-        <div className="export-actions">
-          <button className="btn-export" onClick={handleCopy}>
-            {copiedKey === "copy" ? "✓ Copied" : "Copy"}
-          </button>
-          <button
-            className="btn-primary"
-            style={{ width: "auto" }}
-            onClick={handleDownload}
-            autoFocus
-          >
-            Download .{format === "html" ? "html" : "txt"}
-          </button>
-        </div>
+    <ModalShell title="Export" onClose={onClose}>
+      <div className="export-format-tabs">
+        <button
+          className={`export-format-tab${format === "html" ? " active" : ""}`}
+          onClick={() => setFormat("html")}
+        >
+          HTML
+        </button>
+        <button
+          className={`export-format-tab${format === "text" ? " active" : ""}`}
+          onClick={() => setFormat("text")}
+        >
+          Plain Text
+        </button>
       </div>
-    </div>
+
+      <pre className="export-preview">
+        {output || (
+          <span style={{ color: "var(--bm-text-faint)", fontStyle: "italic" }}>
+            No content yet
+          </span>
+        )}
+      </pre>
+
+      <div className="export-actions">
+        <button className="btn-export" onClick={handleCopy}>
+          {copiedKey === "copy" ? "✓ Copied" : "Copy"}
+        </button>
+        <button
+          className="btn-primary"
+          style={{ width: "auto" }}
+          onClick={handleDownload}
+          autoFocus
+        >
+          Download .{format === "html" ? "html" : "txt"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }

@@ -1,4 +1,4 @@
-import { useEscapeKey } from "../hooks/useEscapeKey";
+import { ModalShell } from "./ModalShell";
 
 interface ShortcutsModalProps {
   onClose: () => void;
@@ -15,41 +15,28 @@ const SHORTCUTS = [
 ];
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
-  useEscapeKey(onClose);
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        style={{ width: 420 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>Keyboard Shortcuts</h2>
-          <button className="modal-close" onClick={onClose} autoFocus>
-            &times;
-          </button>
-        </div>
-        <div className="modal-body">
-          <table className="shortcuts-table">
-            <tbody>
-              {SHORTCUTS.map(({ key, description }) => (
-                <tr key={key}>
-                  <td className="shortcut-key">
-                    <kbd>{key}</kbd>
-                  </td>
-                  <td className="shortcut-desc">{description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="shortcuts-note">
-            On Windows/Linux, use Ctrl instead of Cmd.
-          </p>
-          <p className="shortcuts-note">
-            Edits autosave after 2 seconds, and the current post entry updates in place while you work.
-          </p>
-        </div>
+    <ModalShell title="Keyboard Shortcuts" onClose={onClose} width={420} autoFocusClose>
+      <div className="modal-body">
+        <table className="shortcuts-table">
+          <tbody>
+            {SHORTCUTS.map(({ key, description }) => (
+              <tr key={key}>
+                <td className="shortcut-key">
+                  <kbd>{key}</kbd>
+                </td>
+                <td className="shortcut-desc">{description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="shortcuts-note">
+          On Windows/Linux, use Ctrl instead of Cmd.
+        </p>
+        <p className="shortcuts-note">
+          Edits autosave after 2 seconds, and the current post entry updates in place while you work.
+        </p>
       </div>
-    </div>
+    </ModalShell>
   );
 }
