@@ -590,7 +590,7 @@ function GenerationTab({
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        System prompts used when generating metadata fields with AI. The post content is passed as the user message.
+        System prompts used when generating metadata fields with AI. The post content is passed as the user message, and the built-in defaults try to preserve the author's own perspective.
       </p>
 
       <div className="form-field">

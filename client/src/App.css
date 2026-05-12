@@ -387,6 +387,16 @@ body {
   background: var(--bm-surface);
 }
 
+.center-loading,
+.right-pane-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--bm-text-muted);
+  font-size: 13px;
+}
+
 .cm-container {
   height: 100%;
 }
@@ -768,6 +778,7 @@ body {
   color: var(--bm-text);
   font-size: 13px;
   font-family: inherit;
+  line-height: 1.4;
   outline: none;
 }
 
@@ -777,8 +788,9 @@ body {
 }
 
 .meta-field-textarea {
-  resize: vertical;
-  min-height: 60px;
+  resize: none;
+  min-height: calc(1.4em + 14px);
+  overflow-y: hidden;
 }
 
 .metadata-generate-all-row {

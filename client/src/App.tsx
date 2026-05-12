@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
-import { WorkspaceSession } from "./WorkspaceSession";
+import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
 import { fetchWorkspaces, setActiveWorkspace } from "./api";
 import type { Workspace } from "./types";
 import "./App.css";
@@ -25,9 +25,12 @@ export function App() {
   const [wsChecked, setWsChecked] = useState(false);
 
   const [leftWidth, setLeftWidth] = useState(() => readStoredWidth(STORAGE_LEFT, 360, 240, 720));
-  const [rightWidth, setRightWidth] = useState(() => readStoredWidth(STORAGE_RIGHT, 480, 320, 960));
+  const [rightWidth, setRightWidth] = useState(() =>
+    readStoredWidth(STORAGE_RIGHT, 480, 320, 960)
+  );
   const leftWidthRef = useRef(leftWidth);
   const rightWidthRef = useRef(rightWidth);
+  const sessionRef = useRef<WorkspaceSessionHandle>(null);
   leftWidthRef.current = leftWidth;
   rightWidthRef.current = rightWidth;
 
@@ -57,20 +60,31 @@ export function App() {
       .finally(() => setWsChecked(true));
   }, []);
 
-  const handleSelectWorkspace = useCallback((ws: Workspace) => {
+  const handleSelectWorkspace = useCallback(async (ws: Workspace) => {
+    const flushed = (await sessionRef.current?.flushPendingChanges()) ?? true;
+    if (!flushed) return;
+
     setActiveWorkspace(ws.id);
     setActiveWorkspaceState(ws);
     localStorage.setItem(STORAGE_WS, ws.id);
     setWorkspaceModalOpen(false);
   }, []);
 
-  const handleActiveWorkspaceDeleted = useCallback((workspaceId: string) => {
-    if (activeWorkspace?.id !== workspaceId) return;
-    setActiveWorkspace("");
-    localStorage.removeItem(STORAGE_WS);
-    setActiveWorkspaceState(null);
-    setWorkspaceModalOpen(true);
-  }, [activeWorkspace]);
+  const handleActiveWorkspaceDeleted = useCallback(
+    async (workspaceId: string) => {
+      if (activeWorkspace?.id !== workspaceId) return true;
+
+      const flushed = (await sessionRef.current?.flushPendingChanges()) ?? true;
+      if (!flushed) return false;
+
+      setActiveWorkspace("");
+      localStorage.removeItem(STORAGE_WS);
+      setActiveWorkspaceState(null);
+      setWorkspaceModalOpen(true);
+      return true;
+    },
+    [activeWorkspace]
+  );
 
   const handleActiveWorkspaceUpdated = useCallback((workspace: Workspace) => {
     setActiveWorkspaceState((current) => {
@@ -79,33 +93,36 @@ export function App() {
     });
   }, []);
 
-  const startDrag = useCallback((
-    e: ReactMouseEvent,
-    widthRef: MutableRefObject<number>,
-    setWidth: (width: number) => void,
-    storageKey: string,
-    sign: 1 | -1,
-    min: number,
-    max: number,
-  ) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = widthRef.current;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) => {
-      setWidth(clamp(startW + sign * (ev.clientX - startX), min, max));
-    };
-    const onUp = () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      localStorage.setItem(storageKey, String(widthRef.current));
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  }, []);
+  const startDrag = useCallback(
+    (
+      e: ReactMouseEvent,
+      widthRef: MutableRefObject<number>,
+      setWidth: (width: number) => void,
+      storageKey: string,
+      sign: 1 | -1,
+      min: number,
+      max: number
+    ) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = widthRef.current;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: MouseEvent) => {
+        setWidth(clamp(startW + sign * (ev.clientX - startX), min, max));
+      };
+      const onUp = () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        localStorage.setItem(storageKey, String(widthRef.current));
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    []
+  );
 
   if (!wsChecked) return null;
 
@@ -127,12 +144,15 @@ export function App() {
   return (
     <>
       <WorkspaceSession
+        ref={sessionRef}
         key={activeWorkspace.id}
         workspace={activeWorkspace}
         leftWidth={leftWidth}
         rightWidth={rightWidth}
         onStartLeftDrag={(e) => startDrag(e, leftWidthRef, setLeftWidth, STORAGE_LEFT, 1, 240, 720)}
-        onStartRightDrag={(e) => startDrag(e, rightWidthRef, setRightWidth, STORAGE_RIGHT, -1, 320, 960)}
+        onStartRightDrag={(e) =>
+          startDrag(e, rightWidthRef, setRightWidth, STORAGE_RIGHT, -1, 320, 960)
+        }
         onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
         suspended={workspaceModalOpen}
       />

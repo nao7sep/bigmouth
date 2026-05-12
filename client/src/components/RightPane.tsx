@@ -1,7 +1,8 @@
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import { AiAnalysisTab } from "./AiAnalysisTab";
 import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
-import { MetadataTab } from "./MetadataTab";
+import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import type { Post, PostFrontMatter, Target } from "../types";
 
 export const RIGHT_TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as const;
@@ -21,23 +22,41 @@ interface RightPaneProps {
   analysisPromptsVersion: number;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
+  loading?: boolean;
 }
 
-export function RightPane({
-  workspaceId,
-  content,
-  postId,
-  frontMatter,
-  target,
-  extraFieldWatermark,
-  onPostUpdated,
-  activeTab,
-  onTabChange,
-  analysisTrigger,
-  analysisPromptsVersion,
-  onInsertAtCursor,
-  maxUploadMb,
-}: RightPaneProps) {
+export interface RightPaneHandle {
+  flushPendingChanges: () => Promise<boolean>;
+}
+
+export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function RightPane(
+  {
+    workspaceId,
+    content,
+    postId,
+    frontMatter,
+    target,
+    extraFieldWatermark,
+    onPostUpdated,
+    activeTab,
+    onTabChange,
+    analysisTrigger,
+    analysisPromptsVersion,
+    onInsertAtCursor,
+    maxUploadMb,
+    loading = false,
+  },
+  ref
+) {
+  const metadataRef = useRef<MetadataTabHandle>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flushPendingChanges: async () => (await metadataRef.current?.flushPendingChanges()) ?? true,
+    }),
+    []
+  );
 
   return (
     <div className="pane-right">
@@ -54,19 +73,30 @@ export function RightPane({
       </div>
       <div className="right-content">
         <div className={activeTab === "AI Analysis" ? "" : "tab-hidden"}>
-          <AiAnalysisTab
-            postId={postId}
-            content={content}
-            analysisTrigger={analysisTrigger}
-            promptsVersion={analysisPromptsVersion}
-          />
+          {loading ? (
+            <RightPanePlaceholder message="Loading post…" />
+          ) : (
+            <AiAnalysisTab
+              postId={postId}
+              content={content}
+              analysisTrigger={analysisTrigger}
+              promptsVersion={analysisPromptsVersion}
+            />
+          )}
         </div>
         <div className={activeTab === "Preview" ? "" : "tab-hidden"}>
-          <PreviewTab workspaceId={workspaceId} content={content} postId={postId} />
+          {loading ? (
+            <RightPanePlaceholder message="Loading post…" />
+          ) : (
+            <PreviewTab workspaceId={workspaceId} content={content} postId={postId} />
+          )}
         </div>
         <div className={activeTab === "Metadata" ? "" : "tab-hidden"}>
-          {frontMatter && (
+          {loading || !frontMatter ? (
+            <RightPanePlaceholder message="Loading metadata…" />
+          ) : (
             <MetadataTab
+              ref={metadataRef}
               key={postId}
               workspaceId={workspaceId}
               postId={postId}
@@ -79,15 +109,23 @@ export function RightPane({
           )}
         </div>
         <div className={activeTab === "Assets" ? "" : "tab-hidden"}>
-          <AssetsTab
-            key={postId}
-            workspaceId={workspaceId}
-            postId={postId}
-            onInsertAtCursor={onInsertAtCursor}
-            maxUploadMb={maxUploadMb}
-          />
+          {loading ? (
+            <RightPanePlaceholder message="Loading assets…" />
+          ) : (
+            <AssetsTab
+              key={postId}
+              workspaceId={workspaceId}
+              postId={postId}
+              onInsertAtCursor={onInsertAtCursor}
+              maxUploadMb={maxUploadMb}
+            />
+          )}
         </div>
       </div>
     </div>
   );
+});
+
+function RightPanePlaceholder({ message }: { message: string }) {
+  return <div className="right-pane-placeholder">{message}</div>;
 }

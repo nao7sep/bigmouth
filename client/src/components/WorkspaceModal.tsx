@@ -12,9 +12,9 @@ import { ModalShell } from "./ModalShell";
 interface WorkspaceModalProps {
   dismissable: boolean;
   onClose: () => void;
-  onSelect: (workspace: Workspace) => void;
+  onSelect: (workspace: Workspace) => void | Promise<void>;
   activeWorkspaceId: string | null;
-  onWorkspaceDeleted: (workspaceId: string) => void;
+  onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
 }
 
@@ -76,7 +76,7 @@ export function WorkspaceModal({
       const workspace = await openOrCreateWorkspace(name.trim() || undefined, location.trim() || undefined);
       clearForm();
       load();
-      onSelect(workspace);
+      await onSelect(workspace);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open or create workspace.");
     } finally {
@@ -95,12 +95,20 @@ export function WorkspaceModal({
   };
 
   const handleDelete = async (ws: Workspace) => {
-    await deleteWorkspace(ws.id);
-    setDeleteTarget(null);
     if (ws.id === activeWorkspaceId) {
-      onWorkspaceDeleted(ws.id);
+      const canDelete = await onWorkspaceDeleted(ws.id);
+      if (!canDelete) return;
     }
-    load();
+    try {
+      await deleteWorkspace(ws.id);
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      if (ws.id === activeWorkspaceId) {
+        await onSelect(ws);
+      }
+      setError(err instanceof Error ? err.message : "Failed to delete workspace.");
+    }
   };
 
   const sorted = [...workspaces].sort((a, b) =>

@@ -155,7 +155,7 @@ Named prompts for AI content review. Use `{content}` as a placeholder — text b
 
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
-Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). A shared preamble is prepended to each field-specific prompt.
+Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). A shared preamble is prepended to each field-specific prompt. The built-in defaults treat the draft as the author's own writing and try to preserve first-person framing when it fits the post.
 
 ## Post workflow
 

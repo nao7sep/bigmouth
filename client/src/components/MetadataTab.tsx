@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Post, PostFrontMatter, Target } from "../types";
 import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
@@ -13,302 +21,411 @@ interface MetadataTabProps {
   onPostUpdated: (post: Post) => void;
 }
 
-export function MetadataTab({
-  workspaceId,
-  postId,
-  frontMatter,
-  target,
-  content,
-  extraFieldWatermark,
-  onPostUpdated,
-}: MetadataTabProps) {
-  const requiresMetadata = target?.requiresMetadata ?? false;
-  const lang = frontMatter.language;
-  const isNonEnglish = lang !== "en";
-  const noContent = !content.trim();
+export interface MetadataTabHandle {
+  flushPendingChanges: () => Promise<boolean>;
+}
 
-  const [fields, setFields] = useState(() => extractFields(frontMatter));
-  const [generating, setGenerating] = useState<Record<string, boolean>>({});
-  const [generatingAll, setGeneratingAll] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
-  const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
-  const fieldsRef = useRef(fields);
-  const onPostUpdatedRef = useRef(onPostUpdated);
+export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
+  function MetadataTab(
+    {
+      workspaceId,
+      postId,
+      frontMatter,
+      target,
+      content,
+      extraFieldWatermark,
+      onPostUpdated,
+    },
+    ref
+  ) {
+    const requiresMetadata = target?.requiresMetadata ?? false;
+    const lang = frontMatter.language;
+    const isNonEnglish = lang !== "en";
+    const noContent = !content.trim();
 
-  useEffect(() => {
-    setFields(extractFields(frontMatter));
-  }, [frontMatter]);
+    const [fields, setFields] = useState(() => extractFields(frontMatter));
+    const [generating, setGenerating] = useState<Record<string, boolean>>({});
+    const [generatingAll, setGeneratingAll] = useState(false);
+    const [genError, setGenError] = useState<string | null>(null);
+    const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const dirtyKeysRef = useRef<Set<string>>(new Set());
+    const generationPromisesRef = useRef<Set<Promise<void>>>(new Set());
+    const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
+    const fieldsRef = useRef(fields);
+    const onPostUpdatedRef = useRef(onPostUpdated);
 
-  useEffect(() => {
-    fieldsRef.current = fields;
-  }, [fields]);
+    useEffect(() => {
+      const nextFields = extractFields(frontMatter);
+      setFields((prev) => {
+        const merged = { ...nextFields };
+        for (const key of dirtyKeysRef.current) {
+          if (Object.prototype.hasOwnProperty.call(prev, key)) {
+            merged[key] = prev[key];
+          }
+        }
+        return merged;
+      });
+    }, [frontMatter]);
 
-  useEffect(() => {
-    onPostUpdatedRef.current = onPostUpdated;
-  }, [onPostUpdated]);
+    useEffect(() => {
+      fieldsRef.current = fields;
+    }, [fields]);
 
-  const showGenError = (msg: string) => {
-    setGenError(msg);
-    if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
-    genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
-  };
+    useEffect(() => {
+      onPostUpdatedRef.current = onPostUpdated;
+    }, [onPostUpdated]);
 
-  // Flush pending field saves on unmount so post/workspace switches do not drop them.
-  useEffect(() => {
-    return () => {
+    const showGenError = useCallback((msg: string) => {
+      setGenError(msg);
       if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
-      for (const [key, timer] of Object.entries(saveTimers.current)) {
-        clearTimeout(timer);
+      genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
+    }, []);
+
+    const clearDirtyKey = (key: string) => {
+      dirtyKeysRef.current.delete(key);
+    };
+
+    const markDirtyKey = (key: string) => {
+      dirtyKeysRef.current.add(key);
+    };
+
+    const saveField = useCallback(
+      async (key: string, value: string | string[], notify = true): Promise<boolean> => {
+        try {
+          const updated = await updatePost(
+            postId,
+            {
+              frontMatter: { [key]: value },
+            },
+            workspaceId
+          );
+          clearDirtyKey(key);
+          if (notify) {
+            onPostUpdatedRef.current(updated);
+          }
+          return true;
+        } catch (err) {
+          showGenError(err instanceof Error ? err.message : `Failed to save ${key}`);
+          return false;
+        }
+      },
+      [postId, showGenError, workspaceId]
+    );
+
+    const flushPendingChanges = useCallback(async (): Promise<boolean> => {
+      while (generationPromisesRef.current.size > 0) {
+        await Promise.all(Array.from(generationPromisesRef.current));
+      }
+
+      const pendingKeys = new Set<string>([
+        ...Object.keys(saveTimers.current),
+        ...dirtyKeysRef.current,
+      ]);
+      for (const key of Object.keys(saveTimers.current)) {
+        clearTimeout(saveTimers.current[key]);
         delete saveTimers.current[key];
+      }
+
+      let ok = true;
+      for (const key of pendingKeys) {
         const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
-        updatePost(postId, {
-          frontMatter: { [key]: value },
-        }, workspaceId)
-          .then((updated) => onPostUpdatedRef.current(updated))
-          .catch(() => {});
+        const saved = await saveField(key, value);
+        if (!saved) ok = false;
+      }
+      return ok;
+    }, [saveField]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        flushPendingChanges,
+      }),
+      [flushPendingChanges]
+    );
+
+    useEffect(() => {
+      return () => {
+        if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
+
+        const pendingKeys = new Set<string>([
+          ...Object.keys(saveTimers.current),
+          ...dirtyKeysRef.current,
+        ]);
+        for (const timer of Object.values(saveTimers.current)) {
+          clearTimeout(timer);
+        }
+        saveTimers.current = {};
+
+        for (const key of pendingKeys) {
+          const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
+          void updatePost(
+            postId,
+            {
+              frontMatter: { [key]: value },
+            },
+            workspaceId
+          )
+            .then((updated) => {
+              clearDirtyKey(key);
+              onPostUpdatedRef.current(updated);
+            })
+            .catch(() => {});
+        }
+      };
+    }, [postId, workspaceId]);
+
+    const flushSave = (key: string, value: string, isTags: boolean) => {
+      if (saveTimers.current[key]) {
+        clearTimeout(saveTimers.current[key]);
+        delete saveTimers.current[key];
+      }
+      markDirtyKey(key);
+      void saveField(key, normalizeFieldValue(value, isTags));
+    };
+
+    const updateField = (key: string, value: string, isTags = false) => {
+      markDirtyKey(key);
+      setFields((prev) => ({ ...prev, [key]: value }));
+      if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
+      saveTimers.current[key] = setTimeout(() => {
+        delete saveTimers.current[key];
+        void saveField(key, normalizeFieldValue(value, isTags));
+      }, 1_000);
+    };
+
+    const generate = async (key: string, isTags = false) => {
+      if (!content.trim()) return;
+      const task = (async () => {
+        setGenerating((prev) => ({ ...prev, [key]: true }));
+        try {
+          const value = await generateMetadata(postId, key, content);
+          if (saveTimers.current[key]) {
+            clearTimeout(saveTimers.current[key]);
+            delete saveTimers.current[key];
+          }
+          markDirtyKey(key);
+          setFields((prev) => ({ ...prev, [key]: value }));
+          await saveField(key, normalizeFieldValue(value, isTags));
+        } catch (err) {
+          showGenError(err instanceof Error ? err.message : "Generation failed");
+        } finally {
+          setGenerating((prev) => ({ ...prev, [key]: false }));
+        }
+      })();
+
+      generationPromisesRef.current.add(task);
+      try {
+        await task;
+      } finally {
+        generationPromisesRef.current.delete(task);
       }
     };
-  }, [postId, workspaceId]);
 
-  const saveField = async (
-    key: string,
-    value: string | string[],
-    notify = true
-  ) => {
-    try {
-      const updated = await updatePost(postId, {
-        frontMatter: { [key]: value },
-      }, workspaceId);
-      if (!notify) return;
-      onPostUpdated(updated);
-    } catch {
-      // Save failed
+    const isGenerating = (key: string) => !!generating[key];
+    const anyGenerating = generatingAll || Object.values(generating).some(Boolean);
+
+    if (!requiresMetadata) {
+      return (
+        <div className="metadata-tab">
+          {genError && (
+            <div className="metadata-error">
+              {genError}
+              <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>
+                ×
+              </button>
+            </div>
+          )}
+          <MetaField
+            label="Slug"
+            value={fields.slug}
+            onChange={(v) => updateField("slug", v)}
+            onBlur={() => flushSave("slug", fields.slug, false)}
+            onCopy={() => copyToClipboard(fields.slug, "slug")}
+            copied={copiedKey === "slug"}
+            onGenerate={() => generate("slug")}
+            generating={isGenerating("slug")}
+            generateDisabled={anyGenerating || noContent}
+          />
+          {fields.slug && /[^a-z0-9-]/.test(fields.slug) && (
+            <p className="meta-field-hint">Slug contains characters that may not be URL-safe.</p>
+          )}
+        </div>
+      );
     }
-  };
 
-  const flushSave = (key: string, value: string, isTags: boolean) => {
-    if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
-    void saveField(key, normalizeFieldValue(value, isTags));
-  };
+    const allFields: Array<{ key: string; isTags?: boolean }> = [{ key: "title" }];
+    if (isNonEnglish) allFields.push({ key: "titleEn" });
+    allFields.push({ key: "slug" });
+    if (isNonEnglish) allFields.push({ key: "tagsEn", isTags: true });
+    allFields.push({ key: "tags", isTags: true });
+    if (isNonEnglish) allFields.push({ key: "metaDescriptionEn" });
+    allFields.push({ key: "metaDescription" });
 
-  const updateField = (key: string, value: string, isTags = false) => {
-    setFields((prev) => ({ ...prev, [key]: value }));
-    if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
-    saveTimers.current[key] = setTimeout(() => {
-      delete saveTimers.current[key];
-      void saveField(key, normalizeFieldValue(value, isTags));
-    }, 1_000);
-  };
+    const generateAll = async () => {
+      if (!content.trim()) return;
+      const task = (async () => {
+        const fieldKeys = allFields.map((f) => f.key);
+        for (const key of fieldKeys) {
+          if (saveTimers.current[key]) {
+            clearTimeout(saveTimers.current[key]);
+            delete saveTimers.current[key];
+          }
+        }
 
-  const generate = async (key: string, isTags = false) => {
-    if (!content.trim()) return;
-    setGenerating((prev) => ({ ...prev, [key]: true }));
-    try {
-      const value = await generateMetadata(postId, key, content);
-      if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
-      setFields((prev) => ({ ...prev, [key]: value }));
-      await saveField(key, normalizeFieldValue(value, isTags));
-    } catch (err) {
-      showGenError(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setGenerating((prev) => ({ ...prev, [key]: false }));
-    }
-  };
+        setGeneratingAll(true);
+        try {
+          const results = await generateMetadataBatch(postId, fieldKeys, content);
+          const failed: string[] = [];
 
-  const isGenerating = (key: string) => !!generating[key];
+          for (const { key, isTags } of allFields) {
+            const result = results[key];
+            if (!result || "error" in result) {
+              failed.push(key);
+              continue;
+            }
 
-  const anyGenerating = generatingAll || Object.values(generating).some(Boolean);
+            const value = result.value;
+            markDirtyKey(key);
+            setFields((prev) => ({ ...prev, [key]: value }));
+            await saveField(key, normalizeFieldValue(value, !!isTags));
+          }
 
-  if (!requiresMetadata) {
+          if (failed.length > 0) {
+            showGenError(`Failed to generate: ${failed.join(", ")}`);
+          }
+        } catch (err) {
+          showGenError(err instanceof Error ? err.message : "Batch generation failed");
+        } finally {
+          setGeneratingAll(false);
+        }
+      })();
+
+      generationPromisesRef.current.add(task);
+      try {
+        await task;
+      } finally {
+        generationPromisesRef.current.delete(task);
+      }
+    };
+
     return (
       <div className="metadata-tab">
         {genError && (
           <div className="metadata-error">
             {genError}
-            <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>×</button>
+            <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>
+              ×
+            </button>
           </div>
+        )}
+        <div className="metadata-generate-all-row">
+          <button
+            className="btn-generate-all"
+            onClick={generateAll}
+            disabled={anyGenerating || noContent}
+          >
+            {generatingAll ? "Generating All…" : "Generate All"}
+          </button>
+        </div>
+        <MetaField
+          label="Title"
+          value={fields.title}
+          onChange={(v) => updateField("title", v)}
+          onBlur={() => flushSave("title", fields.title, false)}
+          onCopy={() => copyToClipboard(fields.title, "title")}
+          copied={copiedKey === "title"}
+          onGenerate={() => generate("title")}
+          generating={isGenerating("title")}
+          generateDisabled={anyGenerating || noContent}
+        />
+        {isNonEnglish && (
+          <MetaField
+            label="Title (English)"
+            value={fields.titleEn ?? ""}
+            onChange={(v) => updateField("titleEn", v)}
+            onBlur={() => flushSave("titleEn", fields.titleEn ?? "", false)}
+            onCopy={() => copyToClipboard(fields.titleEn ?? "", "titleEn")}
+            copied={copiedKey === "titleEn"}
+            onGenerate={() => generate("titleEn")}
+            generating={isGenerating("titleEn")}
+            generateDisabled={anyGenerating || noContent}
+          />
         )}
         <MetaField
           label="Slug"
           value={fields.slug}
           onChange={(v) => updateField("slug", v)}
           onBlur={() => flushSave("slug", fields.slug, false)}
-          onCopy={() => copyToClipboard(fields.slug, 'slug')}
-          copied={copiedKey === 'slug'}
+          onCopy={() => copyToClipboard(fields.slug, "slug")}
+          copied={copiedKey === "slug"}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
           generateDisabled={anyGenerating || noContent}
         />
-        {fields.slug && /[^a-z0-9-]/.test(fields.slug) && (
-          <p className="meta-field-hint">Slug contains characters that may not be URL-safe.</p>
-        )}
-      </div>
-    );
-  }
-
-  // Generate All covers every generatable field for this post.
-  const allFields: Array<{ key: string; isTags?: boolean }> = [
-    { key: "title" },
-  ];
-  if (isNonEnglish) allFields.push({ key: "titleEn" });
-  allFields.push({ key: "slug" });
-  if (isNonEnglish) allFields.push({ key: "tagsEn", isTags: true });
-  allFields.push({ key: "tags", isTags: true });
-  if (isNonEnglish) allFields.push({ key: "metaDescriptionEn" });
-  allFields.push({ key: "metaDescription" });
-
-  const generateAll = async () => {
-    if (!content.trim()) return;
-    const fieldKeys = allFields.map((f) => f.key);
-    for (const key of fieldKeys) {
-      if (saveTimers.current[key]) { clearTimeout(saveTimers.current[key]); delete saveTimers.current[key]; }
-    }
-    setGeneratingAll(true);
-    try {
-      const results = await generateMetadataBatch(postId, fieldKeys, content);
-      const failed: string[] = [];
-      for (const { key, isTags } of allFields) {
-        const result = results[key];
-        if (!result || "error" in result) {
-          failed.push(key);
-          continue;
-        }
-        const value = result.value;
-        setFields((prev) => ({ ...prev, [key]: value }));
-        await saveField(key, normalizeFieldValue(value, !!isTags));
-      }
-      if (failed.length > 0) {
-        showGenError(`Failed to generate: ${failed.join(", ")}`);
-      }
-    } catch (err) {
-      showGenError(err instanceof Error ? err.message : "Batch generation failed");
-    } finally {
-      setGeneratingAll(false);
-    }
-  };
-
-  return (
-    <div className="metadata-tab">
-      {genError && (
-        <div className="metadata-error">
-          {genError}
-          <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>×</button>
-        </div>
-      )}
-      <div className="metadata-generate-all-row">
-        <button
-          className="btn-generate-all"
-          onClick={generateAll}
-          disabled={anyGenerating || noContent}
-        >
-          {generatingAll ? "Generating All…" : "Generate All"}
-        </button>
-      </div>
-      <MetaField
-        label="Title"
-        value={fields.title}
-        onChange={(v) => updateField("title", v)}
-        onBlur={() => flushSave("title", fields.title, false)}
-        onCopy={() => copyToClipboard(fields.title, 'title')}
-        copied={copiedKey === 'title'}
-        onGenerate={() => generate("title")}
-        generating={isGenerating("title")}
-        generateDisabled={anyGenerating || noContent}
-      />
-      {isNonEnglish && (
         <MetaField
-          label="Title (English)"
-          value={fields.titleEn ?? ""}
-          onChange={(v) => updateField("titleEn", v)}
-          onBlur={() => flushSave("titleEn", fields.titleEn ?? "", false)}
-          onCopy={() => copyToClipboard(fields.titleEn ?? "", 'titleEn')}
-          copied={copiedKey === 'titleEn'}
-          onGenerate={() => generate("titleEn")}
-          generating={isGenerating("titleEn")}
-          generateDisabled={anyGenerating || noContent}
-        />
-      )}
-      <MetaField
-        label="Slug"
-        value={fields.slug}
-        onChange={(v) => updateField("slug", v)}
-        onBlur={() => flushSave("slug", fields.slug, false)}
-        onCopy={() => copyToClipboard(fields.slug, 'slug')}
-        copied={copiedKey === 'slug'}
-        onGenerate={() => generate("slug")}
-        generating={isGenerating("slug")}
-        generateDisabled={anyGenerating || noContent}
-      />
-
-      <MetaField
-        label="Tags"
-        value={fields.tags}
-        onChange={(v) => updateField("tags", v, true)}
-        onBlur={() => flushSave("tags", fields.tags, true)}
-        onCopy={() => copyToClipboard(fields.tags, 'tags')}
-        copied={copiedKey === 'tags'}
-        onGenerate={() => generate("tags", true)}
-        generating={isGenerating("tags")}
-        generateDisabled={anyGenerating || noContent}
-        placeholder="tag1, tag2, tag3"
-      />
-      {isNonEnglish && (
-        <MetaField
-          label="Tags (English)"
-          value={fields.tagsEn ?? ""}
-          onChange={(v) => updateField("tagsEn", v, true)}
-          onBlur={() => flushSave("tagsEn", fields.tagsEn ?? "", true)}
-          onCopy={() => copyToClipboard(fields.tagsEn ?? "", 'tagsEn')}
-          copied={copiedKey === 'tagsEn'}
-          onGenerate={() => generate("tagsEn", true)}
-          generating={isGenerating("tagsEn")}
+          label="Tags"
+          value={fields.tags}
+          onChange={(v) => updateField("tags", v, true)}
+          onBlur={() => flushSave("tags", fields.tags, true)}
+          onCopy={() => copyToClipboard(fields.tags, "tags")}
+          copied={copiedKey === "tags"}
+          onGenerate={() => generate("tags", true)}
+          generating={isGenerating("tags")}
           generateDisabled={anyGenerating || noContent}
           placeholder="tag1, tag2, tag3"
         />
-      )}
-      <MetaField
-        label="Description"
-        value={fields.metaDescription}
-        onChange={(v) => updateField("metaDescription", v)}
-        onBlur={() => flushSave("metaDescription", fields.metaDescription, false)}
-        onCopy={() => copyToClipboard(fields.metaDescription, 'metaDescription')}
-        copied={copiedKey === 'metaDescription'}
-        onGenerate={() => generate("metaDescription")}
-        generating={isGenerating("metaDescription")}
-        generateDisabled={anyGenerating || noContent}
-        multiline
-      />
-      {isNonEnglish && (
+        {isNonEnglish && (
+          <MetaField
+            label="Tags (English)"
+            value={fields.tagsEn ?? ""}
+            onChange={(v) => updateField("tagsEn", v, true)}
+            onBlur={() => flushSave("tagsEn", fields.tagsEn ?? "", true)}
+            onCopy={() => copyToClipboard(fields.tagsEn ?? "", "tagsEn")}
+            copied={copiedKey === "tagsEn"}
+            onGenerate={() => generate("tagsEn", true)}
+            generating={isGenerating("tagsEn")}
+            generateDisabled={anyGenerating || noContent}
+            placeholder="tag1, tag2, tag3"
+          />
+        )}
         <MetaField
-          label="Description (English)"
-          value={fields.metaDescriptionEn ?? ""}
-          onChange={(v) => updateField("metaDescriptionEn", v)}
-          onBlur={() => flushSave("metaDescriptionEn", fields.metaDescriptionEn ?? "", false)}
-          onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", 'metaDescriptionEn')}
-          copied={copiedKey === 'metaDescriptionEn'}
-          onGenerate={() => generate("metaDescriptionEn")}
-          generating={isGenerating("metaDescriptionEn")}
+          label="Description"
+          value={fields.metaDescription}
+          onChange={(v) => updateField("metaDescription", v)}
+          onBlur={() => flushSave("metaDescription", fields.metaDescription, false)}
+          onCopy={() => copyToClipboard(fields.metaDescription, "metaDescription")}
+          copied={copiedKey === "metaDescription"}
+          onGenerate={() => generate("metaDescription")}
+          generating={isGenerating("metaDescription")}
           generateDisabled={anyGenerating || noContent}
-          multiline
         />
-      )}
-      <MetaField
-        label="Extra"
-        value={fields.extra}
-        onChange={(v) => updateField("extra", v)}
-        onBlur={() => flushSave("extra", fields.extra, false)}
-        onCopy={() => copyToClipboard(fields.extra, 'extra')}
-        copied={copiedKey === 'extra'}
-        multiline
-        placeholder={extraFieldWatermark}
-      />
-    </div>
-  );
-}
-
-// --- MetaField sub-component ---
+        {isNonEnglish && (
+          <MetaField
+            label="Description (English)"
+            value={fields.metaDescriptionEn ?? ""}
+            onChange={(v) => updateField("metaDescriptionEn", v)}
+            onBlur={() => flushSave("metaDescriptionEn", fields.metaDescriptionEn ?? "", false)}
+            onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", "metaDescriptionEn")}
+            copied={copiedKey === "metaDescriptionEn"}
+            onGenerate={() => generate("metaDescriptionEn")}
+            generating={isGenerating("metaDescriptionEn")}
+            generateDisabled={anyGenerating || noContent}
+          />
+        )}
+        <MetaField
+          label="Extra"
+          value={fields.extra}
+          onChange={(v) => updateField("extra", v)}
+          onBlur={() => flushSave("extra", fields.extra, false)}
+          onCopy={() => copyToClipboard(fields.extra, "extra")}
+          copied={copiedKey === "extra"}
+          placeholder={extraFieldWatermark}
+        />
+      </div>
+    );
+  }
+);
 
 function MetaField({
   label,
@@ -320,7 +437,6 @@ function MetaField({
   onGenerate,
   generating,
   generateDisabled,
-  multiline,
   placeholder,
 }: {
   label: string;
@@ -332,7 +448,6 @@ function MetaField({
   onGenerate?: () => void;
   generating?: boolean;
   generateDisabled?: boolean;
-  multiline?: boolean;
   placeholder?: string;
 }) {
   return (
@@ -340,11 +455,7 @@ function MetaField({
       <div className="meta-field-header">
         <label className="meta-field-label">{label}</label>
         <div className="meta-field-actions">
-          <button
-            className="meta-field-copy"
-            onClick={onCopy}
-            title="Copy to clipboard"
-          >
+          <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
             {copied ? "✓ Copied" : "Copy"}
           </button>
           {onGenerate && (
@@ -359,30 +470,55 @@ function MetaField({
           )}
         </div>
       </div>
-      {multiline ? (
-        <textarea
-          className="meta-field-input meta-field-textarea"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          placeholder={placeholder}
-          rows={3}
-        />
-      ) : (
-        <input
-          className="meta-field-input"
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          placeholder={placeholder}
-        />
-      )}
+      <AutoGrowTextarea
+        value={value}
+        onChange={onChange}
+        onBlur={onBlur}
+        placeholder={placeholder}
+      />
     </div>
   );
 }
 
-// --- Helpers ---
+function AutoGrowTextarea({
+  value,
+  onChange,
+  onBlur,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const resize = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [resize, value]);
+
+  return (
+    <textarea
+      ref={ref}
+      className="meta-field-input meta-field-textarea"
+      value={value}
+      onChange={(e) => {
+        onChange(e.target.value);
+        resize();
+      }}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      rows={1}
+    />
+  );
+}
 
 function extractFields(fm: PostFrontMatter): Record<string, string> {
   const get = (key: string) => {
@@ -410,7 +546,10 @@ function extractFields(fm: PostFrontMatter): Record<string, string> {
 
 function normalizeFieldValue(value: string, isTags: boolean): string | string[] {
   if (!isTags) return value;
-  return value.split(",").map((t) => t.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
 }
 
 function parseFieldValue(key: string, value: string): string | string[] {

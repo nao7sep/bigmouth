@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Settings, Target, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
+import { normalizeGenerationPromptsData } from "../ai/generationPrompts.js";
 
 // --- Settings ---
 
@@ -122,9 +123,18 @@ export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]):
 
 export function getGenerationPrompts(dataDir: string): GenerationPromptsData {
   const raw = fs.readFileSync(path.join(dataDir, "generation-prompts.json"), "utf-8");
-  return JSON.parse(raw) as GenerationPromptsData;
+  const parsed = JSON.parse(raw) as GenerationPromptsData;
+  const normalized = normalizeGenerationPromptsData(parsed);
+  if (normalized.changed) {
+    saveGenerationPrompts(dataDir, normalized.data);
+  }
+  return normalized.data;
 }
 
 export function saveGenerationPrompts(dataDir: string, data: GenerationPromptsData): void {
-  fs.writeFileSync(path.join(dataDir, "generation-prompts.json"), JSON.stringify(data, null, 2) + "\n");
+  const normalized = normalizeGenerationPromptsData(data);
+  fs.writeFileSync(
+    path.join(dataDir, "generation-prompts.json"),
+    JSON.stringify(normalized.data, null, 2) + "\n"
+  );
 }

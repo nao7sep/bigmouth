@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { Post, PostStatus } from "../types";
 import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
@@ -17,38 +24,48 @@ interface CenterPaneProps {
   onExport: () => void;
   onSelectPost: (id: string) => void;
   onGoBack?: () => void;
+  onBeforeStatusChange?: () => Promise<boolean>;
   pubBatchSize: number;
   watermark: string;
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
+export interface CenterPaneHandle {
+  flushPendingChanges: () => Promise<boolean>;
+}
+
 const AUTO_SAVE_DELAY = 2_000;
 
-export function CenterPane({
-  workspaceId,
-  postId,
-  onPostUpdated,
-  onPostDeleted,
-  onContentChange: notifyContentChange,
-  onPostLoaded,
-  onExport,
-  onSelectPost,
-  onGoBack,
-  pubBatchSize,
-  watermark,
-  editorRef,
-}: CenterPaneProps) {
+export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function CenterPane(
+  {
+    workspaceId,
+    postId,
+    onPostUpdated,
+    onPostDeleted,
+    onContentChange: notifyContentChange,
+    onPostLoaded,
+    onExport,
+    onSelectPost,
+    onGoBack,
+    onBeforeStatusChange,
+    pubBatchSize,
+    watermark,
+    editorRef,
+  },
+  ref
+) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef("");
-  const savedContentRef = useRef(""); // content as of last successful save
-  const savingRef = useRef(false); // true while a save request is in-flight
-  const pendingSaveRef = useRef(false); // true when another save should run afterward
+  const savedContentRef = useRef("");
+  const pendingSaveRef = useRef(false);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const onPostUpdatedRef = useRef(onPostUpdated);
 
@@ -57,7 +74,10 @@ export function CenterPane({
   }, [onPostUpdated]);
 
   const save = useCallback((): Promise<void> => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     if (contentRef.current === savedContentRef.current) {
       return savePromiseRef.current ?? Promise.resolve();
     }
@@ -74,17 +94,19 @@ export function CenterPane({
           const current = contentRef.current;
           if (current === savedContentRef.current) continue;
 
-          savingRef.current = true;
           try {
             const updated = await updatePost(postId, { content: current }, workspaceId);
             savedContentRef.current = current;
+            setSaveError(null);
             setPost(updated);
-            onPostUpdated(updated);
-          } catch {
-            // Save failed silently — will retry on next change
+            onPostUpdatedRef.current(updated);
+          } catch (err) {
+            setSaveError(
+              err instanceof Error
+                ? err.message
+                : "Autosave failed. Changes are still local until a save succeeds."
+            );
             break;
-          } finally {
-            savingRef.current = false;
           }
 
           if (contentRef.current !== savedContentRef.current) {
@@ -98,66 +120,100 @@ export function CenterPane({
 
     savePromiseRef.current = promise;
     return promise;
-  }, [postId, onPostUpdated, workspaceId]);
+  }, [postId, workspaceId]);
 
   const flushPendingContent = useCallback(async () => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     if (contentRef.current !== savedContentRef.current) {
       await save();
     } else if (savePromiseRef.current) {
       await savePromiseRef.current;
     }
-    return contentRef.current === savedContentRef.current;
+
+    const flushed = contentRef.current === savedContentRef.current;
+    if (!flushed) {
+      setSaveError("Autosave failed. Resolve it before leaving this post.");
+    }
+    return flushed;
   }, [save]);
 
-  // Load post once on mount (key={postId} in App guarantees fresh instance per post)
+  useImperativeHandle(
+    ref,
+    () => ({
+      flushPendingChanges: flushPendingContent,
+    }),
+    [flushPendingContent]
+  );
+
   useEffect(() => {
     let cancelled = false;
-    fetchPost(postId, workspaceId).then((loaded) => {
-      if (cancelled) return;
-      setPost(loaded);
-      setContent(loaded.content);
-      contentRef.current = loaded.content;
-      savedContentRef.current = loaded.content;
-      notifyContentChange(loaded.content);
-      onPostLoaded(loaded);
-      setStatusError(null);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setLoadError(null);
+
+    fetchPost(postId, workspaceId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setPost(loaded);
+        setContent(loaded.content);
+        contentRef.current = loaded.content;
+        savedContentRef.current = loaded.content;
+        notifyContentChange(loaded.content);
+        onPostLoaded(loaded);
+        setStatusError(null);
+        setSaveError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load post");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Flush any pending save on unmount (safety net for fast post switches)
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (contentRef.current !== savedContentRef.current) {
-        updatePost(postId, { content: contentRef.current }, workspaceId)
+        void updatePost(postId, { content: contentRef.current }, workspaceId)
           .then((updated) => onPostUpdatedRef.current(updated))
           .catch(() => {});
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleContentChange = (value: string) => {
     setContent(value);
     contentRef.current = value;
     notifyContentChange(value);
+    setStatusError(null);
 
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(save, AUTO_SAVE_DELAY);
+    timerRef.current = setTimeout(() => void save(), AUTO_SAVE_DELAY);
   };
 
   const handleStatusChange = async (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
+
     try {
       setStatusError(null);
-      const flushed = await flushPendingContent();
-      if (!flushed) {
-        setStatusError("Save failed. Try again before changing status.");
+      const flushedContent = await flushPendingContent();
+      if (!flushedContent) {
+        setStatusError("Current content could not be saved. Resolve it before changing status.");
         return;
       }
+
+      const flushedMetadata = (await onBeforeStatusChange?.()) ?? true;
+      if (!flushedMetadata) {
+        setStatusError("Metadata changes could not be saved. Resolve them before changing status.");
+        return;
+      }
+
       const updated = await changePostStatus(postId, newStatus, workspaceId);
       setPost(updated);
       onPostUpdated(updated);
@@ -171,12 +227,11 @@ export function CenterPane({
     try {
       await deletePost(postId, workspaceId);
       onPostDeleted();
-    } catch {
-      // Deletion failed — keep the post open
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : "Delete failed");
     }
   };
 
-  // Debounced character counts (~100ms)
   const [counts, setCounts] = useState<ContentCounts>({
     graphemes: 0,
     xWeighted: 0,
@@ -199,24 +254,46 @@ export function CenterPane({
   const handleCopyContent = () => copyContent(content, "content");
 
   const handleSetSource = async (sourceId: string) => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId } }, workspaceId).catch(() => null);
-    if (updated) { setPost(updated); onPostUpdated(updated); }
+    try {
+      const updated = await updatePost(postId, { frontMatter: { sourceId } }, workspaceId);
+      setPost(updated);
+      onPostUpdated(updated);
+      setStatusError(null);
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : "Failed to link source post");
+    }
   };
 
   const handleClearSource = async () => {
-    const updated = await updatePost(postId, { frontMatter: { sourceId: null } }, workspaceId).catch(() => null);
-    if (updated) { setPost(updated); onPostUpdated(updated); }
+    try {
+      const updated = await updatePost(postId, { frontMatter: { sourceId: null } }, workspaceId);
+      setPost(updated);
+      onPostUpdated(updated);
+      setStatusError(null);
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : "Failed to unlink source post");
+    }
   };
 
-  if (!post) return null;
+  if (!post) {
+    return (
+      <div className="pane-center">
+        <div className="center-toolbar">
+          <span className="toolbar-label">{loadError ? "Load failed" : "Loading…"}</span>
+        </div>
+        <div className="center-loading">{loadError ?? "Loading post…"}</div>
+      </div>
+    );
+  }
 
   const fm = post.frontMatter;
+  const toolbarError = statusError ?? saveError;
 
   return (
     <div className="pane-center">
       <div className="center-toolbar">
         {onGoBack && (
-          <button className="btn-toolbar" onClick={onGoBack}>
+          <button className="btn-toolbar" onClick={() => void onGoBack()}>
             ◀ Back
           </button>
         )}
@@ -227,7 +304,7 @@ export function CenterPane({
         <select
           className="toolbar-status"
           value={fm.status}
-          onChange={(e) => handleStatusChange(e.target.value as PostStatus)}
+          onChange={(e) => void handleStatusChange(e.target.value as PostStatus)}
         >
           <option value="draft">Draft</option>
           <option value="ready">Ready</option>
@@ -238,7 +315,7 @@ export function CenterPane({
           <>
             <span
               className="toolbar-source"
-              onClick={() => onSelectPost(fm.sourceId!)}
+              onClick={() => void onSelectPost(fm.sourceId!)}
               title={`Source: ${fm.sourceId}`}
             >
               Source
@@ -246,7 +323,7 @@ export function CenterPane({
             <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
               Change
             </button>
-            <button className="btn-toolbar" onClick={handleClearSource}>
+            <button className="btn-toolbar" onClick={() => void handleClearSource()}>
               Unlink
             </button>
           </>
@@ -266,10 +343,18 @@ export function CenterPane({
           Delete
         </button>
       </div>
-      {statusError && (
+      {toolbarError && (
         <div className="toolbar-error">
-          {statusError}
-          <button className="toolbar-error-dismiss" onClick={() => setStatusError(null)}>×</button>
+          {toolbarError}
+          <button
+            className="toolbar-error-dismiss"
+            onClick={() => {
+              setStatusError(null);
+              setSaveError(null);
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
       <div className="center-editor">
@@ -301,10 +386,10 @@ export function CenterPane({
           message="Delete this post? This cannot be undone."
           confirmLabel="Delete"
           danger
-          onConfirm={handleDelete}
+          onConfirm={() => void handleDelete()}
           onCancel={() => setDeleteConfirmOpen(false)}
         />
       )}
     </div>
   );
-}
+});
