@@ -29,41 +29,51 @@ function defaultAppConfig(): AppConfig {
   };
 }
 
-function normalizeAppConfig(raw: unknown): AppConfig {
-  const defaults = defaultAppConfig();
-  const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+function parseAppConfig(raw: unknown): AppConfig {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid app.json: expected an object");
+  }
 
-  const workspaces = Array.isArray(source.workspaces)
-    ? source.workspaces.flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const record = item as Record<string, unknown>;
-        if (
-          typeof record.id !== "string" ||
-          typeof record.name !== "string" ||
-          typeof record.dataDirectory !== "string"
-        ) {
-          return [];
-        }
-        return [{
-          id: record.id,
-          name: record.name,
-          dataDirectory: record.dataDirectory,
-        }];
-      })
-    : defaults.workspaces;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.port !== "number" || !Number.isFinite(source.port)) {
+    throw new Error("Invalid app.json: port must be a number");
+  }
+  if (typeof source.host !== "string" || !source.host.trim()) {
+    throw new Error("Invalid app.json: host must be a non-empty string");
+  }
+  if (
+    !Array.isArray(source.allowedOrigins) ||
+    source.allowedOrigins.some((value) => typeof value !== "string")
+  ) {
+    throw new Error("Invalid app.json: allowedOrigins must be an array of strings");
+  }
+  if (!Array.isArray(source.workspaces)) {
+    throw new Error("Invalid app.json: workspaces must be an array");
+  }
+
+  const workspaces = source.workspaces.map((item) => {
+    if (!item || typeof item !== "object") {
+      throw new Error("Invalid app.json: each workspace must be an object");
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.name !== "string" ||
+      typeof record.dataDirectory !== "string"
+    ) {
+      throw new Error("Invalid app.json: each workspace needs id, name, and dataDirectory");
+    }
+    return {
+      id: record.id,
+      name: record.name,
+      dataDirectory: record.dataDirectory,
+    };
+  });
 
   return {
-    port:
-      typeof source.port === "number" && Number.isFinite(source.port)
-        ? source.port
-        : defaults.port,
-    host:
-      typeof source.host === "string" && source.host.trim()
-        ? source.host.trim()
-        : defaults.host,
-    allowedOrigins: Array.isArray(source.allowedOrigins)
-      ? source.allowedOrigins.filter((value): value is string => typeof value === "string")
-      : [...defaults.allowedOrigins],
+    port: source.port,
+    host: source.host.trim(),
+    allowedOrigins: [...source.allowedOrigins],
     workspaces,
   };
 }
@@ -96,10 +106,7 @@ export function initAppDir(): AppConfig {
   if (fs.existsSync(APP_JSON_PATH)) {
     const raw = fs.readFileSync(APP_JSON_PATH, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
-    appConfig = normalizeAppConfig(parsed);
-    if (JSON.stringify(parsed) !== JSON.stringify(appConfig)) {
-      writeAppConfig();
-    }
+    appConfig = parseAppConfig(parsed);
   } else {
     appConfig = defaultAppConfig();
     writeAppConfig();
@@ -229,8 +236,6 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
   if (!isWorkspaceDirectory(dir)) {
     throw new Error("Choose an existing bigmouth workspace folder.");
   }
-
-  initializeWorkspaceData(dir);
 
   const workspace: Workspace = {
     id: nanoid(),

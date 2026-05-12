@@ -91,7 +91,7 @@ The central configuration file. Contains the server port, bind host, origin allo
 }
 ```
 
-If `app.json` comes from an older bigmouth version and is missing `host` or `allowedOrigins`, bigmouth now inserts those keys automatically the next time it starts.
+`app.json` is expected to include both `host` and `allowedOrigins`.
 
 | Field | Default | Description |
 |---|---|---|

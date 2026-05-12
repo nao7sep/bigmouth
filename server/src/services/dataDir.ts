@@ -1,9 +1,8 @@
 /**
  * Workspace data directory initialization.
  *
- * Ensures a workspace data directory has all required subdirectories
- * and default config files. Called when creating a new workspace.
- * Idempotent — only creates what is missing, never overwrites.
+ * Creates the initial workspace data directory structure and default config
+ * files for a new workspace.
  */
 
 import fs from "node:fs";
@@ -12,8 +11,7 @@ import { DEFAULT_SETTINGS, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_AI_CONFIGS, DEFAULT
 import type { Target } from "../shared/types.js";
 
 /**
- * Ensures the workspace data directory and all required subdirectories
- * and default files exist. Only creates what is missing.
+ * Creates the workspace data directory and default files for a new workspace.
  */
 export function initializeWorkspaceData(dataDir: string): void {
   for (const sub of [
