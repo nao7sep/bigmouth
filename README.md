@@ -13,7 +13,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Three-stage workflow**: Draft → Ready → Published
 - **AI analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
-- **Image prompt generation** — generate temporary English image-prompt variants from the current post with adjustable relation, tone, literalness, people, and style
+- **Image prompt generation** — generate temporary English image-prompt variants from the current post with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
 - **Assets** — upload and manage images and files per post; embed links directly in the editor
 - **Export** — copy post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts

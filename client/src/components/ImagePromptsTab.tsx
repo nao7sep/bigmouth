@@ -117,7 +117,9 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
   return (
     <div className="image-prompts-tab">
       <div className="image-prompts-toolbar">
-        <div className="image-prompts-note">English only. Results are temporary and not saved.</div>
+        <div className="image-prompts-note">
+          English prompts only. The visual setting should still follow the draft&apos;s own cues. Results are temporary and not saved.
+        </div>
         <button
           className="btn-analyze"
           onClick={run}

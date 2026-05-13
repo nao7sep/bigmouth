@@ -123,7 +123,9 @@ imagePromptsRouter.post("/", async (req, res) => {
     const provider = createProvider(activeConfig);
     const raw = await provider.generateText(
       buildImagePromptSystemPrompt(options.count),
-      buildImagePromptUserContent(postContent, options)
+      buildImagePromptUserContent(postContent, options, {
+        targetName: post.frontMatter.target,
+      })
     );
     res.json({ items: parseImagePromptResponse(raw) });
   } catch (err) {
