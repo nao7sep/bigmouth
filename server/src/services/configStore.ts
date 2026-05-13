@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Settings, Target, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
+import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 
 // --- Settings ---
 
@@ -17,7 +18,17 @@ export function getSettings(dataDir: string): Settings {
 }
 
 export function saveSettings(dataDir: string, settings: Settings): void {
-  fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  const normalizedLanguages = [...new Set(settings.supportedLanguages)]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  const normalized: Settings = {
+    timezone: settings.timezone,
+    supportedLanguages: normalizedLanguages,
+    publishedPostsPerLoad: settings.publishedPostsPerLoad,
+    maxUploadMb: settings.maxUploadMb,
+    editorWatermark: settings.editorWatermark,
+    extraFieldWatermark: settings.extraFieldWatermark,
+  };
+  fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify(normalized, null, 2) + "\n");
 }
 
 // --- AI Configs ---
@@ -88,8 +99,8 @@ export function saveAiConfigs(dataDir: string, data: AiConfigsData): void {
         id: config.id,
         name: config.name,
         provider: config.provider,
-        apiKey,
         model: config.model,
+        apiKey,
       };
     }),
   };
@@ -104,7 +115,12 @@ export function getTargets(dataDir: string): Target[] {
 }
 
 export function saveTargets(dataDir: string, targets: Target[]): void {
-  fs.writeFileSync(path.join(dataDir, "targets.json"), JSON.stringify(targets, null, 2) + "\n");
+  const normalized = targets.map((target) => ({
+    name: target.name,
+    defaultLanguage: target.defaultLanguage,
+    requiresMetadata: target.requiresMetadata,
+  }));
+  fs.writeFileSync(path.join(dataDir, "targets.json"), JSON.stringify(normalized, null, 2) + "\n");
 }
 
 // --- Analysis Prompts ---
@@ -115,7 +131,11 @@ export function getAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
 }
 
 export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): void {
-  fs.writeFileSync(path.join(dataDir, "analysis-prompts.json"), JSON.stringify(prompts, null, 2) + "\n");
+  const normalized = prompts.map((prompt) => ({
+    name: prompt.name,
+    text: prompt.text,
+  }));
+  fs.writeFileSync(path.join(dataDir, "analysis-prompts.json"), JSON.stringify(normalized, null, 2) + "\n");
 }
 
 // --- Generation Prompts ---
@@ -126,5 +146,14 @@ export function getGenerationPrompts(dataDir: string): GenerationPromptsData {
 }
 
 export function saveGenerationPrompts(dataDir: string, data: GenerationPromptsData): void {
-  fs.writeFileSync(path.join(dataDir, "generation-prompts.json"), JSON.stringify(data, null, 2) + "\n");
+  const prompts: Record<string, string> = {};
+  for (const key of GENERATION_PROMPT_KEYS) {
+    if (typeof data.prompts[key] === "string") {
+      prompts[key] = data.prompts[key];
+    }
+  }
+  fs.writeFileSync(
+    path.join(dataDir, "generation-prompts.json"),
+    JSON.stringify({ prompts }, null, 2) + "\n"
+  );
 }

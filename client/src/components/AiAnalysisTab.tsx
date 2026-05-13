@@ -91,7 +91,7 @@ export function AiAnalysisTab({
           onChange={(e) => setSelectedPrompt(e.target.value)}
           disabled={loading}
         >
-          {[...prompts].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })).map((p) => (
+          {prompts.map((p) => (
             <option key={p.name} value={p.name}>
               {p.name}
             </option>

@@ -19,6 +19,8 @@ interface MetadataTabProps {
   content: string;
   extraFieldWatermark: string;
   onPostUpdated: (post: Post) => void;
+  isActive?: boolean;
+  readOnly?: boolean;
 }
 
 export interface MetadataTabHandle {
@@ -35,6 +37,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       content,
       extraFieldWatermark,
       onPostUpdated,
+      isActive = false,
+      readOnly = false,
     },
     ref
   ) {
@@ -176,6 +180,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     }, [postId, workspaceId]);
 
     const flushSave = (key: string, value: string, isTags: boolean) => {
+      if (readOnly) return;
       if (saveTimers.current[key]) {
         clearTimeout(saveTimers.current[key]);
         delete saveTimers.current[key];
@@ -185,6 +190,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     };
 
     const updateField = (key: string, value: string, isTags = false) => {
+      if (readOnly) return;
       markDirtyKey(key);
       setFields((prev) => ({ ...prev, [key]: value }));
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
@@ -195,7 +201,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     };
 
     const generate = async (key: string, isTags = false) => {
-      if (!content.trim()) return;
+      if (readOnly || !content.trim()) return;
       const task = (async () => {
         setGenerating((prev) => ({ ...prev, [key]: true }));
         try {
@@ -245,7 +251,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "slug"}
             onGenerate={() => generate("slug")}
             generating={isGenerating("slug")}
-            generateDisabled={anyGenerating || noContent}
+            generateDisabled={readOnly || anyGenerating || noContent}
+            readOnly={readOnly}
+            isActive={isActive}
           />
           {fields.slug && /[^a-z0-9-]/.test(fields.slug) && (
             <p className="meta-field-hint">Slug contains characters that may not be URL-safe.</p>
@@ -263,7 +271,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     allFields.push({ key: "metaDescription" });
 
     const generateAll = async () => {
-      if (!content.trim()) return;
+      if (readOnly || !content.trim()) return;
       const task = (async () => {
         const fieldKeys = allFields.map((f) => f.key);
         for (const key of fieldKeys) {
@@ -319,11 +327,16 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             </button>
           </div>
         )}
+        {readOnly && (
+          <p className="meta-field-hint">
+            Published posts are read-only. Move back to Ready to edit.
+          </p>
+        )}
         <div className="metadata-generate-all-row">
           <button
             className="btn-generate-all"
             onClick={generateAll}
-            disabled={anyGenerating || noContent}
+            disabled={readOnly || anyGenerating || noContent}
           >
             {generatingAll ? "Generating All…" : "Generate All"}
           </button>
@@ -337,7 +350,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "title"}
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
-          generateDisabled={anyGenerating || noContent}
+          generateDisabled={readOnly || anyGenerating || noContent}
+          readOnly={readOnly}
+          isActive={isActive}
         />
         {isNonEnglish && (
           <MetaField
@@ -349,7 +364,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "titleEn"}
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
-            generateDisabled={anyGenerating || noContent}
+            generateDisabled={readOnly || anyGenerating || noContent}
+            readOnly={readOnly}
+            isActive={isActive}
           />
         )}
         <MetaField
@@ -361,7 +378,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "slug"}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
-          generateDisabled={anyGenerating || noContent}
+          generateDisabled={readOnly || anyGenerating || noContent}
+          readOnly={readOnly}
+          isActive={isActive}
         />
         <MetaField
           label="Tags"
@@ -372,8 +391,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "tags"}
           onGenerate={() => generate("tags", true)}
           generating={isGenerating("tags")}
-          generateDisabled={anyGenerating || noContent}
+          generateDisabled={readOnly || anyGenerating || noContent}
           placeholder="tag1, tag2, tag3"
+          readOnly={readOnly}
+          isActive={isActive}
         />
         {isNonEnglish && (
           <MetaField
@@ -385,8 +406,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "tagsEn"}
             onGenerate={() => generate("tagsEn", true)}
             generating={isGenerating("tagsEn")}
-            generateDisabled={anyGenerating || noContent}
+            generateDisabled={readOnly || anyGenerating || noContent}
             placeholder="tag1, tag2, tag3"
+            readOnly={readOnly}
+            isActive={isActive}
           />
         )}
         <MetaField
@@ -398,7 +421,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "metaDescription"}
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
-          generateDisabled={anyGenerating || noContent}
+          generateDisabled={readOnly || anyGenerating || noContent}
+          readOnly={readOnly}
+          isActive={isActive}
         />
         {isNonEnglish && (
           <MetaField
@@ -410,7 +435,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "metaDescriptionEn"}
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
-            generateDisabled={anyGenerating || noContent}
+            generateDisabled={readOnly || anyGenerating || noContent}
+            readOnly={readOnly}
+            isActive={isActive}
           />
         )}
         <MetaField
@@ -421,6 +448,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onCopy={() => copyToClipboard(fields.extra, "extra")}
           copied={copiedKey === "extra"}
           placeholder={extraFieldWatermark}
+          readOnly={readOnly}
+          isActive={isActive}
         />
       </div>
     );
@@ -438,6 +467,8 @@ function MetaField({
   generating,
   generateDisabled,
   placeholder,
+  readOnly,
+  isActive,
 }: {
   label: string;
   value: string;
@@ -449,15 +480,14 @@ function MetaField({
   generating?: boolean;
   generateDisabled?: boolean;
   placeholder?: string;
+  readOnly?: boolean;
+  isActive?: boolean;
 }) {
   return (
     <div className="meta-field">
       <div className="meta-field-header">
         <label className="meta-field-label">{label}</label>
         <div className="meta-field-actions">
-          <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
-            {copied ? "✓ Copied" : "Copy"}
-          </button>
           {onGenerate && (
             <button
               className="meta-field-generate"
@@ -468,6 +498,9 @@ function MetaField({
               {generating ? "Generating…" : "Generate"}
             </button>
           )}
+          <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
+            {copied ? "✓ Copied" : "Copy"}
+          </button>
         </div>
       </div>
       <AutoGrowTextarea
@@ -475,6 +508,8 @@ function MetaField({
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
+        readOnly={readOnly}
+        isActive={isActive}
       />
     </div>
   );
@@ -485,11 +520,15 @@ function AutoGrowTextarea({
   onChange,
   onBlur,
   placeholder,
+  readOnly,
+  isActive,
 }: {
   value: string;
   onChange: (value: string) => void;
   onBlur: () => void;
   placeholder?: string;
+  readOnly?: boolean;
+  isActive?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -501,8 +540,9 @@ function AutoGrowTextarea({
   }, []);
 
   useLayoutEffect(() => {
+    if (!isActive) return;
     resize();
-  }, [resize, value]);
+  }, [isActive, resize, value]);
 
   return (
     <textarea
@@ -516,6 +556,7 @@ function AutoGrowTextarea({
       onBlur={onBlur}
       placeholder={placeholder}
       rows={1}
+      readOnly={readOnly}
     />
   );
 }

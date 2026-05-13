@@ -55,14 +55,8 @@ export function NewPostModal({
   };
 
   const picker = usePostPicker(pubBatchSize);
-  const sortedTargets = [...targets].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-  );
-  const sortedLanguages = [...supportedLanguages].sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" })
-  );
-  const hasTargets = sortedTargets.length > 0;
-  const hasLanguages = sortedLanguages.length > 0;
+  const hasTargets = targets.length > 0;
+  const hasLanguages = supportedLanguages.length > 0;
 
   const handleTargetChange = (name: string) => {
     setCreateError(null);
@@ -113,7 +107,7 @@ export function NewPostModal({
               autoFocus
             >
               <option value="" disabled>Please select…</option>
-              {sortedTargets.map((t) => (
+              {targets.map((t) => (
                 <option key={t.name} value={t.name}>
                   {t.name} ({t.defaultLanguage})
                 </option>
@@ -135,7 +129,7 @@ export function NewPostModal({
                 setSelectedLanguage(e.target.value);
               }}
             >
-              {sortedLanguages.map((lang) => (
+              {supportedLanguages.map((lang) => (
                 <option key={lang} value={lang}>
                   {lang}
                 </option>

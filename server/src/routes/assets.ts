@@ -15,6 +15,7 @@ import { imageSize } from "image-size";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
 import { getSettings } from "../services/configStore.js";
 import { error as logError } from "../services/logger.js";
+import { getPost } from "../services/postStore.js";
 import {
   listAssets,
   addAsset,
@@ -122,6 +123,16 @@ assetsRouter.post("/:postId", (req, res, next) => {
     return;
   }
 
+  const post = getPost(dataDir, postId);
+  if (!post) {
+    res.status(404).json({ error: "Post not found" });
+    return;
+  }
+  if (post.frontMatter.status === "published") {
+    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before changing assets." });
+    return;
+  }
+
   const filename = sanitizeFilename(req.file.originalname);
   const destPath = assetFilePath(dataDir, postId, filename);
 
@@ -185,6 +196,16 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
 
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "Asset not found" });
+    return;
+  }
+
+  const post = getPost(dataDir, postId);
+  if (!post) {
+    res.status(404).json({ error: "Post not found" });
+    return;
+  }
+  if (post.frontMatter.status === "published") {
+    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before changing assets." });
     return;
   }
 

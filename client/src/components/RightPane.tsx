@@ -49,6 +49,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   ref
 ) {
   const metadataRef = useRef<MetadataTabHandle>(null);
+  const isPublished = frontMatter?.status === "published";
 
   useImperativeHandle(
     ref,
@@ -105,6 +106,8 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
               content={content}
               extraFieldWatermark={extraFieldWatermark}
               onPostUpdated={onPostUpdated}
+              isActive={activeTab === "Metadata"}
+              readOnly={isPublished}
             />
           )}
         </div>
@@ -118,6 +121,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
               postId={postId}
               onInsertAtCursor={onInsertAtCursor}
               maxUploadMb={maxUploadMb}
+              readOnly={isPublished}
             />
           )}
         </div>

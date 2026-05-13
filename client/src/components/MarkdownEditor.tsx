@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, placeholder } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -13,22 +13,26 @@ interface MarkdownEditorProps {
   content: string;
   onContentChange: (value: string) => void;
   watermark: string;
+  readOnly?: boolean;
 }
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
   function MarkdownEditor(
-    { content, onContentChange, watermark }: MarkdownEditorProps,
+    { content, onContentChange, watermark, readOnly = false }: MarkdownEditorProps,
     ref
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onContentChange);
   const suppressChangeRef = useRef(false);
+  const readOnlyCompartmentRef = useRef(new Compartment());
+  const editableCompartmentRef = useRef(new Compartment());
 
   useImperativeHandle(ref, () => ({
     insertAtCursor(text: string) {
       const view = viewRef.current;
       if (!view) return;
+      if (readOnly) return;
       const { from, to } = view.state.selection.main;
       view.dispatch({
         changes: { from, to, insert: text },
@@ -58,6 +62,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         markdown({ codeLanguages: languages }),
         placeholder(watermark),
         updateListener,
+        readOnlyCompartmentRef.current.of(EditorState.readOnly.of(readOnly)),
+        editableCompartmentRef.current.of(EditorView.editable.of(!readOnly)),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         editorTheme,
@@ -97,6 +103,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       suppressChangeRef.current = false;
     }
   }, [content]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        readOnlyCompartmentRef.current.reconfigure(EditorState.readOnly.of(readOnly)),
+        editableCompartmentRef.current.reconfigure(EditorView.editable.of(!readOnly)),
+      ],
+    });
+  }, [readOnly]);
 
   return <div ref={containerRef} className="cm-container" />;
 });

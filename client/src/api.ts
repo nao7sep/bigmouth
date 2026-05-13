@@ -105,7 +105,10 @@ export async function updatePost(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
-  if (!res.ok) throw new Error(`Failed to update post: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Failed to update post: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -175,6 +178,12 @@ export async function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
   return res.json();
 }
 
+export async function fetchGenerationPromptDefaults(): Promise<GenerationPromptsData> {
+  const res = await fetch(`${base()}/generation-prompts/defaults`);
+  if (!res.ok) throw new Error(`Failed to fetch generation prompt defaults: ${res.status}`);
+  return res.json();
+}
+
 export async function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
   const res = await fetch(`${base()}/generation-prompts`, {
     method: "PUT",
@@ -198,6 +207,12 @@ export async function saveTargets(targets: Target[]): Promise<Target[]> {
 export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
   const res = await fetch(`${base()}/analysis-prompts`);
   if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
+  const res = await fetch(`${base()}/analysis-prompts/defaults`);
+  if (!res.ok) throw new Error(`Failed to fetch prompt defaults: ${res.status}`);
   return res.json();
 }
 
@@ -228,7 +243,10 @@ export async function uploadAsset(
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -240,7 +258,10 @@ export async function deleteAsset(
   const res = await fetch(`${base(workspaceId)}/assets/${postId}/${encodeURIComponent(filename)}`, {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Delete failed: ${res.status}`);
+  }
 }
 
 export async function generateMetadata(

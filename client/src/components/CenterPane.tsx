@@ -287,6 +287,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   }
 
   const fm = post.frontMatter;
+  const isPublished = fm.status === "published";
   const toolbarError = statusError ?? saveError;
 
   return (
@@ -320,15 +321,15 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
             >
               Source
             </span>
-            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={isPublished}>
               Change
             </button>
-            <button className="btn-toolbar" onClick={() => void handleClearSource()}>
+            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={isPublished}>
               Unlink
             </button>
           </>
         ) : (
-          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={isPublished}>
             Link Source
           </button>
         )}
@@ -357,12 +358,18 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
           </button>
         </div>
       )}
+      {isPublished && (
+        <div className="toolbar-error">
+          Published posts are read-only. Move back to Ready to edit.
+        </div>
+      )}
       <div className="center-editor">
         <MarkdownEditor
           ref={editorRef}
           content={content}
           onContentChange={handleContentChange}
           watermark={watermark}
+          readOnly={isPublished}
         />
       </div>
       <div className="center-counts">

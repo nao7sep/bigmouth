@@ -16,18 +16,18 @@ export interface PostFrontMatter {
   status: PostStatus;
   language: string;
   sourceId?: string;
+  title?: string;         // native language
+  titleEn?: string;         // English supplement (omitted when language is "en")
+  slug?: string;
+  tags?: string[];        // native language
+  metaDescription?: string; // native language
+  tagsEn?: string[];        // English supplement (omitted when language is "en")
+  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
+  extra?: string;
   createdAtUtc: string;
   updatedAtUtc: string;
   readyAtUtc?: string;
   publishedAtUtc?: string;
-  title?: string;         // native language
-  slug?: string;
-  tags?: string[];        // native language
-  metaDescription?: string; // native language
-  titleEn?: string;         // English supplement (omitted when language is "en")
-  tagsEn?: string[];        // English supplement (omitted when language is "en")
-  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
-  extra?: string;
   [key: string]: unknown;
 }
 
@@ -81,13 +81,12 @@ export interface AiConfig {
 }
 
 export interface GenerationPromptsData {
-  preamble: string;
   prompts: Record<string, string>;
 }
 
 export interface AiConfigsData {
-  configs: AiConfig[];
   activeId: string;
+  configs: AiConfig[];
 }
 
 export interface Settings {

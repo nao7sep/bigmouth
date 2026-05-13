@@ -569,9 +569,10 @@ body {
 }
 
 .shortcut-key {
-  padding: 8px 12px 8px 0;
+  padding: 8px 0 8px 12px;
   width: 120px;
   white-space: nowrap;
+  text-align: right;
 }
 
 .shortcut-key kbd {
@@ -586,7 +587,7 @@ body {
 }
 
 .shortcut-desc {
-  padding: 8px 0;
+  padding: 8px 0 8px 0;
   font-size: 13px;
   color: var(--bm-text-soft);
 }

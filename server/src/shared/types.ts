@@ -15,18 +15,18 @@ export interface PostFrontMatter {
   status: PostStatus;
   language: string; // two-letter code: "en", "ja", "es", etc.
   sourceId?: string; // nanoid of another post this derives from
+  title?: string; // native language
+  titleEn?: string; // English supplement (omitted when language is "en")
+  slug?: string; // always English, required for ready status
+  tags?: string[]; // native language
+  metaDescription?: string; // native language
+  tagsEn?: string[]; // English supplement (omitted when language is "en")
+  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
+  extra?: string; // free-text KVP field
   createdAtUtc: string; // ISO 8601
   updatedAtUtc: string; // ISO 8601
   readyAtUtc?: string; // set when status becomes ready, cleared on revert
   publishedAtUtc?: string; // set when status becomes published, cleared on revert
-  title?: string; // native language
-  slug?: string; // always English, required for ready status
-  tags?: string[]; // native language
-  metaDescription?: string; // native language
-  titleEn?: string; // English supplement (omitted when language is "en")
-  tagsEn?: string[]; // English supplement (omitted when language is "en")
-  metaDescriptionEn?: string; // English supplement (omitted when language is "en")
-  extra?: string; // free-text KVP field
   [key: string]: unknown;
 }
 
@@ -94,12 +94,11 @@ export interface Settings {
 }
 
 export interface AiConfigsData {
-  configs: AiConfig[];
   activeId: string;
+  configs: AiConfig[];
 }
 
 export interface GenerationPromptsData {
-  preamble: string;
   prompts: Record<string, string>;
 }
 

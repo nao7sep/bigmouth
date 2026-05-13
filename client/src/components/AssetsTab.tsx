@@ -8,6 +8,7 @@ interface AssetsTabProps {
   postId: string;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
+  readOnly?: boolean;
 }
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -32,7 +33,13 @@ function sanitizeFilename(raw: string): string {
   return base.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }: AssetsTabProps) {
+export function AssetsTab({
+  workspaceId,
+  postId,
+  onInsertAtCursor,
+  maxUploadMb,
+  readOnly = false,
+}: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -60,6 +67,7 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
   }, [load]);
 
   const uploadFiles = async (files: File[]) => {
+    if (readOnly) return;
     setUploading(true);
     for (const file of files) {
       try {
@@ -73,6 +81,7 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
   };
 
   const checkAndUpload = async (files: FileList | File[]) => {
+    if (readOnly) return;
     const fileArray = Array.from(files);
     const limitBytes = maxUploadMb * 1024 * 1024;
 
@@ -128,6 +137,7 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
   };
 
   const handleDelete = async (filename: string) => {
+    if (readOnly) return;
     setDeleteTarget(null);
     try {
       await deleteAsset(postId, filename, workspaceId);
@@ -138,6 +148,7 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
   };
 
   const handleInsert = (filename: string) => {
+    if (readOnly) return;
     const md = isImage(filename)
       ? `![${filename}](${filename})`
       : `[${filename}](${filename})`;
@@ -149,10 +160,17 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
       {/* Drop zone */}
       <div
         className={`assets-dropzone${dragOver ? " drag-over" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(e) => {
+          if (readOnly) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (readOnly) return;
+          fileInputRef.current?.click();
+        }}
       >
         <input
           ref={fileInputRef}
@@ -161,9 +179,11 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
           style={{ display: "none" }}
           onChange={handleFileInput}
         />
-        {uploading
-          ? "Uploading…"
-          : "Drop files here or click to upload"}
+        {readOnly
+          ? "Published posts are read-only. Move back to Ready to edit."
+          : uploading
+            ? "Uploading…"
+            : "Drop files here or click to upload"}
       </div>
 
       {uploadError && (
@@ -177,17 +197,18 @@ export function AssetsTab({ workspaceId, postId, onInsertAtCursor, maxUploadMb }
       {assets.length === 0 ? (
         <div className="assets-empty">No assets yet</div>
       ) : (
-        <div className="assets-grid">
-          {[...assets].sort((a, b) => a.filename.localeCompare(b.filename, undefined, { sensitivity: "base" })).map((asset) => (
-            <AssetCard
-              key={asset.filename}
-              workspaceId={workspaceId}
-              postId={postId}
-              asset={asset}
-              onInsert={() => handleInsert(asset.filename)}
-              onDelete={() => setDeleteTarget(asset.filename)}
-            />
-          ))}
+          <div className="assets-grid">
+            {assets.map((asset) => (
+              <AssetCard
+                key={asset.filename}
+                workspaceId={workspaceId}
+                postId={postId}
+                asset={asset}
+                onInsert={() => handleInsert(asset.filename)}
+                onDelete={() => setDeleteTarget(asset.filename)}
+                readOnly={readOnly}
+              />
+            ))}
         </div>
       )}
       {deleteTarget && (
@@ -220,12 +241,14 @@ function AssetCard({
   asset,
   onInsert,
   onDelete,
+  readOnly,
 }: {
   workspaceId: string;
   postId: string;
   asset: AssetMeta;
   onInsert: () => void;
   onDelete: () => void;
+  readOnly: boolean;
 }) {
   const src = assetUrl(postId, asset.filename, workspaceId);
   const img = isImage(asset.filename);
@@ -254,10 +277,10 @@ function AssetCard({
         )}
       </div>
       <div className="asset-actions">
-        <button className="asset-btn" onClick={onInsert} title="Insert at cursor">
+        <button className="asset-btn" onClick={onInsert} title="Insert at cursor" disabled={readOnly}>
           Insert
         </button>
-        <button className="asset-btn asset-btn-delete" onClick={onDelete} title="Delete">
+        <button className="asset-btn asset-btn-delete" onClick={onDelete} title="Delete" disabled={readOnly}>
           Delete
         </button>
       </div>

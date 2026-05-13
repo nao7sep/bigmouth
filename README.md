@@ -153,15 +153,19 @@ When the Settings UI loads an existing AI configuration, the API key field stays
 
 Named prompts for AI content review. Use `{content}` as a placeholder — text before it becomes the system prompt; the post content becomes the user message. If `{content}` is omitted, the full prompt is used as the system prompt.
 
+The built-in prompt set now covers publishing risk, distinctiveness and credibility, calibration and bias, reader value and structure, and elaboration coaching. They are designed to reply in the same language as the post, focus on the most important points, and stay constructive rather than nitpicky. The Settings UI can restore the current built-in set into your workspace file at any time.
+
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
-Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). A shared preamble is prepended to each field-specific prompt. The built-in defaults treat the draft as the author's own writing and try to preserve first-person framing when it fits the post.
+Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). Each field prompt is self-contained; there is no shared preamble. The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, and tell the English title/description prompts not to add extra drama or stronger emotion.
+
+Built-in prompt text is owned by the server, and the Settings UI can restore the current built-in set into your workspace file at any time.
 
 ## Post workflow
 
 1. **Draft** — Create a post, pick a target and language. Write in Markdown. Content autosaves every 2 seconds.
 2. **Ready** — Mark ready when reviewed. A slug is required to advance from draft.
-3. **Published** — Mark as published after copying to your platform. The post moves to the published archive.
+3. **Published** — Mark as published after copying to your platform. The post moves to the published archive and becomes read-only until you move it back to Ready.
 
 Posts can be moved backward (Published → Ready → Draft) at any time.
 
@@ -173,6 +177,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 
 | Route | Description |
 |---|---|
+| `GET /api/health` | Health check |
 | `GET /api/workspaces` | List all workspaces |
 | `POST /api/workspaces/open-or-create` | Open an existing workspace folder or create one there |
 | `PUT /api/workspaces/:id` | Update a workspace |
@@ -187,6 +192,17 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `PUT /api/w/:wsId/settings` | Save settings |
 | `GET /api/w/:wsId/targets` | Get targets |
 | `PUT /api/w/:wsId/targets` | Save targets |
+| `GET /api/w/:wsId/ai-configs` | Get AI configs |
+| `PUT /api/w/:wsId/ai-configs` | Save AI configs |
+| `GET /api/w/:wsId/analysis-prompts` | Get analysis prompts |
+| `GET /api/w/:wsId/analysis-prompts/defaults` | Get built-in analysis prompts |
+| `PUT /api/w/:wsId/analysis-prompts` | Save analysis prompts |
+| `GET /api/w/:wsId/generation-prompts` | Get generation prompts |
+| `GET /api/w/:wsId/generation-prompts/defaults` | Get built-in generation prompts |
+| `PUT /api/w/:wsId/generation-prompts` | Save generation prompts |
+| `POST /api/w/:wsId/analyze` | Run AI analysis |
+| `POST /api/w/:wsId/generate` | Generate one metadata field |
+| `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields |
 | `GET /api/w/:wsId/assets/:postId` | List assets |
 | `POST /api/w/:wsId/assets/:postId` | Upload an asset |
 | `DELETE /api/w/:wsId/assets/:postId/:filename` | Delete an asset |

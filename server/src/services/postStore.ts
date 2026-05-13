@@ -294,8 +294,36 @@ function writePostFile(
   frontMatter: PostFrontMatter,
   content: string
 ): void {
+  const cleanFm = canonicalizeFrontMatter(frontMatter);
+
+  const output = matter.stringify(trimBlankLines(content), cleanFm);
+  fs.writeFileSync(filePath, output);
+}
+
+function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, unknown> {
+  const orderedKeys = [
+    "id",
+    "target",
+    "status",
+    "language",
+    "sourceId",
+    "title",
+    "titleEn",
+    "slug",
+    "tags",
+    "tagsEn",
+    "metaDescription",
+    "metaDescriptionEn",
+    "extra",
+    "createdAtUtc",
+    "updatedAtUtc",
+    "readyAtUtc",
+    "publishedAtUtc",
+  ] as const;
+
   const cleanFm: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(frontMatter)) {
+  for (const key of orderedKeys) {
+    const value = frontMatter[key];
     if (value !== undefined) {
       cleanFm[key] = value;
     }
@@ -307,8 +335,13 @@ function writePostFile(
     delete cleanFm.metaDescriptionEn;
   }
 
-  const output = matter.stringify(trimBlankLines(content), cleanFm);
-  fs.writeFileSync(filePath, output);
+  for (const [key, value] of Object.entries(frontMatter)) {
+    if (!(key in cleanFm) && value !== undefined) {
+      cleanFm[key] = value;
+    }
+  }
+
+  return cleanFm;
 }
 
 function summaryIndex(dataDir: string): SummaryIndex {

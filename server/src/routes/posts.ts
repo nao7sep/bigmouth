@@ -120,6 +120,17 @@ postsRouter.post("/", (req, res) => {
 postsRouter.put("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const { content, frontMatter } = req.body ?? {};
+  const existing = getPost(dataDir, req.params.id);
+
+  if (!existing) {
+    res.status(404).json({ error: "Post not found" });
+    return;
+  }
+
+  if (existing.frontMatter.status === "published") {
+    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before editing it." });
+    return;
+  }
 
   // Slug becomes part of the filename — reject anything that could traverse.
   if (frontMatter && Object.prototype.hasOwnProperty.call(frontMatter, "slug")) {

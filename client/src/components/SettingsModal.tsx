@@ -8,15 +8,16 @@ import {
   fetchTargets,
   saveTargets,
   fetchAnalysisPrompts,
+  fetchAnalysisPromptDefaults,
   saveAnalysisPrompts,
   fetchAiConfigs,
   saveAiConfigs,
   fetchGenerationPrompts,
+  fetchGenerationPromptDefaults,
   saveGenerationPrompts,
 } from "../api";
 import {
-  DEFAULT_GENERATION_PROMPTS,
-  DEFAULT_GENERATION_PREAMBLE,
+  GENERATION_PROMPT_KEYS,
   GENERATION_PROMPT_LABELS,
 } from "../generationPromptDefaults";
 import { ConfirmModal } from "./ConfirmModal";
@@ -45,8 +46,10 @@ export function SettingsModal({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
+  const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
+  const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -60,8 +63,10 @@ export function SettingsModal({
   useEffect(() => {
     fetchSettings().then((d) => { setSettings(d); initialSettings.current = d; }).catch(() => {});
     fetchAiConfigs().then((d) => { setAiConfigs(d); initialAiConfigs.current = d; }).catch(() => {});
+    fetchGenerationPromptDefaults().then((d) => setGenerationPromptDefaults(d)).catch(() => {});
     fetchGenerationPrompts().then((d) => { setGenerationPrompts(d); initialGenerationPrompts.current = d; }).catch(() => {});
     fetchTargets().then((d) => { setTargets(d); initialTargets.current = d; }).catch(() => {});
+    fetchAnalysisPromptDefaults().then((d) => setAnalysisPromptDefaults(d)).catch(() => {});
     fetchAnalysisPrompts().then((d) => { setPrompts(d); initialPrompts.current = d; }).catch(() => {});
   }, []);
 
@@ -163,12 +168,14 @@ export function SettingsModal({
           {tab === "analysis" && (
             <AnalysisPromptsTab
               prompts={prompts}
+              defaults={analysisPromptDefaults}
               onChange={setPrompts}
             />
           )}
-          {tab === "generation" && generationPrompts && (
+          {tab === "generation" && generationPrompts && generationPromptDefaults && (
             <GenerationTab
               data={generationPrompts}
+              defaults={generationPromptDefaults}
               onChange={setGenerationPrompts}
             />
           )}
@@ -362,9 +369,7 @@ function AiTab({
           }
           autoFocus
         >
-          {[...aiConfigs.configs]
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-            .map((c) => (
+          {aiConfigs.configs.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name || "(unnamed)"}
             </option>
@@ -374,9 +379,7 @@ function AiTab({
 
       <div className="settings-subheading">AI Configs</div>
 
-      {[...aiConfigs.configs]
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-        .map((c) => (
+      {aiConfigs.configs.map((c) => (
         <div key={c.id} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -423,14 +426,14 @@ function AiTab({
               type="password"
               value={c.apiKey}
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
-              placeholder={c.hasApiKey ? "Type a new key to replace the saved one" : "Optional until you use AI features"}
+              placeholder={c.hasApiKey ? "Leave blank to keep the current key" : "Optional"}
             />
             <p className="settings-hint">
               {c.apiKey.trim()
-                ? "This key will be saved when you click Save."
+                ? "Will be saved when you click Save."
                 : c.hasApiKey
-                  ? "An API key is already saved. Leave this blank to keep it."
-                  : "Leave this blank until you want to use AI features."}
+                  ? "Leave blank to keep the current key."
+                  : "Optional."}
             </p>
           </div>
           <button
@@ -489,16 +492,12 @@ function TargetsTab({
   const duplicateNames = new Set(
     trimmedNames.filter((n, i) => n && trimmedNames.indexOf(n) !== i)
   );
-  const sortedTargets = targets
-    .map((t, i) => ({ t, i }))
-    .sort((a, b) => a.t.name.localeCompare(b.t.name, undefined, { sensitivity: "base" }));
-
   return (
     <div className="settings-section">
       {!canAddTarget && (
         <FieldError msg="Add at least one supported language in General before creating targets." />
       )}
-      {sortedTargets.map(({ t, i }) => (
+      {targets.map((t, i) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -506,7 +505,7 @@ function TargetsTab({
                 className="form-input"
                 value={t.name}
                 onChange={(e) => updateTarget(i, { name: e.target.value })}
-                autoFocus={i === sortedTargets[0]?.i}
+                autoFocus={i === 0}
               />
             {!t.name.trim() && <FieldError msg="Name is required." />}
             {t.name.trim() && duplicateNames.has(t.name.trim()) && <FieldError msg="This name is already used by another target." />}
@@ -521,7 +520,7 @@ function TargetsTab({
                   updateTarget(i, { defaultLanguage: e.target.value })
                 }
               >
-                {[...supportedLanguages].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((lang) => (
+                {supportedLanguages.map((lang) => (
                   <option key={lang} value={lang}>{lang}</option>
                 ))}
                 {!supportedLanguages.includes(t.defaultLanguage) && (
@@ -554,7 +553,7 @@ function TargetsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget} autoFocus={sortedTargets.length === 0}>
+      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget} autoFocus={targets.length === 0}>
         + Add Target
       </button>
     </div>
@@ -565,80 +564,47 @@ function TargetsTab({
 
 function GenerationTab({
   data,
+  defaults,
   onChange,
 }: {
   data: GenerationPromptsData;
+  defaults: GenerationPromptsData;
   onChange: (d: GenerationPromptsData) => void;
 }) {
-  const isPreambleDefault = data.preamble === DEFAULT_GENERATION_PREAMBLE;
-
-  const updatePreamble = (value: string) => {
-    onChange({ ...data, preamble: value });
-  };
-
   const updatePrompt = (key: string, value: string) => {
     onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
 
-  const resetPrompt = (key: string) => {
+  const restoreAll = () => {
     onChange({
-      ...data,
-      prompts: { ...data.prompts, [key]: DEFAULT_GENERATION_PROMPTS[key] },
+      prompts: { ...defaults.prompts },
     });
   };
 
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        System prompts used when generating metadata fields with AI. The post content is passed as the user message, and the built-in defaults try to preserve the author's own perspective.
+        Prompts used to generate metadata fields.
       </p>
 
-      <div className="form-field">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label className="form-label">Preamble</label>
-          {!isPreambleDefault && (
-            <button
-              className="btn-toolbar"
-              style={{ fontSize: 11, padding: "2px 8px" }}
-              onClick={() => updatePreamble(DEFAULT_GENERATION_PREAMBLE)}
-            >
-              Reset to default
-            </button>
-          )}
-        </div>
-        <textarea
-          className="form-input"
-          rows={4}
-          value={data.preamble}
-          onChange={(e) => updatePreamble(e.target.value)}
-          style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
-          autoFocus
-        />
+      <div className="metadata-generate-all-row">
+        <button className="btn-toolbar" onClick={restoreAll}>
+          Restore built-in prompts
+        </button>
       </div>
 
-      {Object.keys(DEFAULT_GENERATION_PROMPTS).map((key) => {
-        const current = data.prompts?.[key] ?? DEFAULT_GENERATION_PROMPTS[key];
-        const isDefault = current === DEFAULT_GENERATION_PROMPTS[key];
+      {GENERATION_PROMPT_KEYS.map((key, index) => {
+        const current = data.prompts?.[key] ?? "";
         return (
           <div key={key} className="form-field">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
-              {!isDefault && (
-                <button
-                  className="btn-toolbar"
-                  style={{ fontSize: 11, padding: "2px 8px" }}
-                  onClick={() => resetPrompt(key)}
-                >
-                  Reset to default
-                </button>
-              )}
-            </div>
+            <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
             <textarea
               className="form-input"
               rows={3}
               value={current}
               onChange={(e) => updatePrompt(key, e.target.value)}
               style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+              autoFocus={index === 0}
             />
           </div>
         );
@@ -651,9 +617,11 @@ function GenerationTab({
 
 function AnalysisPromptsTab({
   prompts,
+  defaults,
   onChange,
 }: {
   prompts: AnalysisPrompt[];
+  defaults: AnalysisPrompt[];
   onChange: (p: AnalysisPrompt[]) => void;
 }) {
   const addPrompt = () => {
@@ -671,13 +639,17 @@ function AnalysisPromptsTab({
     onChange(prompts.filter((_, i) => i !== index));
   };
 
-  const sortedPrompts = prompts
-    .map((p, i) => ({ p, i }))
-    .sort((a, b) => a.p.name.localeCompare(b.p.name, undefined, { sensitivity: "base" }));
-
   return (
     <div className="settings-section">
-      {sortedPrompts.map(({ p, i }) => (
+      <div className="metadata-generate-all-row">
+        <button
+          className="btn-toolbar"
+          onClick={() => onChange(defaults.map((prompt) => ({ ...prompt })))}
+        >
+          Restore built-in prompts
+        </button>
+      </div>
+      {prompts.map((p, i) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
@@ -685,7 +657,7 @@ function AnalysisPromptsTab({
                 className="form-input"
                 value={p.name}
                 onChange={(e) => updatePrompt(i, { name: e.target.value })}
-                autoFocus={i === sortedPrompts[0]?.i}
+                autoFocus={i === 0}
               />
             {!p.name.trim() && <FieldError msg="Name is required." />}
           </div>
@@ -711,7 +683,7 @@ function AnalysisPromptsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addPrompt} autoFocus={sortedPrompts.length === 0}>
+      <button className="btn-toolbar" onClick={addPrompt} autoFocus={prompts.length === 0}>
         + Add Prompt
       </button>
     </div>

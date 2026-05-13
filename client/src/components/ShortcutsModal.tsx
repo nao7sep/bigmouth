@@ -22,19 +22,16 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
           <tbody>
             {SHORTCUTS.map(({ key, description }) => (
               <tr key={key}>
+                <td className="shortcut-desc">{description}</td>
                 <td className="shortcut-key">
                   <kbd>{key}</kbd>
                 </td>
-                <td className="shortcut-desc">{description}</td>
               </tr>
             ))}
           </tbody>
         </table>
         <p className="shortcuts-note">
           On Windows/Linux, use Ctrl instead of Cmd.
-        </p>
-        <p className="shortcuts-note">
-          Edits autosave after 2 seconds, and the current post entry updates in place while you work.
         </p>
       </div>
     </ModalShell>
