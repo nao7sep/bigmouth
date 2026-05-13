@@ -73,6 +73,18 @@ export async function deleteWorkspace(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete workspace: ${res.status}`);
 }
 
+export async function revealCurrentLogFile(): Promise<string> {
+  const res = await fetch("/api/logs/current/reveal", { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to reveal current log file: ${res.status}`
+    );
+  }
+  const data = (await res.json()) as { path: string };
+  return data.path;
+}
+
 // --- Workspace-scoped API ---
 
 export async function fetchPosts(

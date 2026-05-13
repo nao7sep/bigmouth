@@ -36,6 +36,10 @@ postsRouter.get("/", (req, res) => {
   const published = listPublished(dataDir, publishedOffset, limit);
   const publishedTotal = countPublished(dataDir);
 
+  logger.info(
+    `Posts listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, drafts=${drafts.length}, ready=${ready.length}, publishedReturned=${published.length}, publishedTotal=${publishedTotal}, publishedOffset=${publishedOffset}, limit=${limit}`
+  );
+
   res.json({
     drafts,
     ready,
@@ -49,9 +53,16 @@ postsRouter.get("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const post = getPost(dataDir, req.params.id);
   if (!post) {
+    logger.warn(
+      `Post lookup failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found`
+    );
     res.status(404).json({ error: "Post not found" });
     return;
   }
+
+  logger.info(
+    `Post loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, status=${post.frontMatter.status}, contentLength=${post.content.length}`
+  );
 
   res.json({
     frontMatter: post.frontMatter,
@@ -109,7 +120,9 @@ postsRouter.post("/", (req, res) => {
   }
 
   const post = createPost(dataDir, normalizedTarget, normalizedLanguage, normalizedSourceId);
-  logger.info(`Post created: id=${post.frontMatter.id}, target=${normalizedTarget}`);
+  logger.info(
+    `Post created: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${post.frontMatter.id}, target=${normalizedTarget}, language=${normalizedLanguage}, sourceId=${normalizedSourceId ?? "-"}`
+  );
 
   res.status(201).json({
     frontMatter: post.frontMatter,
@@ -145,9 +158,16 @@ postsRouter.put("/:id", (req, res) => {
 
   const post = updatePost(dataDir, req.params.id, { content, frontMatter });
   if (!post) {
+    logger.warn(
+      `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found-after-update`
+    );
     res.status(404).json({ error: "Post not found" });
     return;
   }
+
+  logger.info(
+    `Post updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, status=${post.frontMatter.status}, contentUpdated=${content !== undefined}, frontMatterKeys=${frontMatter ? Object.keys(frontMatter).join(",") : "-"}`
+  );
 
   res.json({
     frontMatter: post.frontMatter,
@@ -172,7 +192,7 @@ postsRouter.put("/:id/status", (req, res) => {
     }
 
     logger.info(
-      `Post status changed: id=${req.params.id}, status=${status}`
+      `Post status changed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, status=${status}`
     );
 
     res.json({
@@ -181,6 +201,9 @@ postsRouter.put("/:id/status", (req, res) => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    logger.error(
+      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, status=${status}, message=${message}`
+    );
     res.status(400).json({ error: message });
   }
 });
@@ -189,10 +212,15 @@ postsRouter.delete("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const deleted = deletePost(dataDir, req.params.id);
   if (!deleted) {
+    logger.warn(
+      `Post delete failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found`
+    );
     res.status(404).json({ error: "Post not found" });
     return;
   }
 
-  logger.info(`Post deleted: id=${req.params.id}`);
+  logger.info(
+    `Post deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}`
+  );
   res.json({ deleted: true });
 });

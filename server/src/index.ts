@@ -3,10 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { initAppDir, getAppConfig, getLogsDir } from "./services/workspaceStore.js";
-import { initLogger, info, error as logError } from "./services/logger.js";
+import {
+  initLogger,
+  info,
+  warn,
+  error as logError,
+  formatLogValue,
+} from "./services/logger.js";
 import { DEFAULT_HOST, DEFAULT_PORT } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
 import { workspacesRouter } from "./routes/workspaces.js";
+import { logsRouter } from "./routes/logs.js";
 import { postsRouter } from "./routes/posts.js";
 import { settingsRouter } from "./routes/settings.js";
 import { targetsRouter } from "./routes/targets.js";
@@ -26,6 +33,7 @@ const port = appConfig.port || DEFAULT_PORT;
 const host = appConfig.host || DEFAULT_HOST;
 
 const app = express();
+let nextRequestId = 1;
 
 // --- Origin guard (CSRF protection) ---
 //
@@ -70,11 +78,46 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const requestId = `req-${nextRequestId++}`;
+  const startedAt = Date.now();
+  let finished = false;
+
+  res.locals.requestId = requestId;
+
+  info(
+    `Request started: id=${requestId}, method=${req.method}, path=${req.originalUrl}, ` +
+      `contentType=${req.headers["content-type"] ?? "-"}, origin=${req.headers.origin ?? "-"}, ` +
+      `query=${formatLogValue(req.query)}, body=${formatLogValue(req.body)}`
+  );
+
+  res.on("finish", () => {
+    finished = true;
+    const durationMs = Date.now() - startedAt;
+    info(
+      `Request finished: id=${requestId}, status=${res.statusCode}, durationMs=${durationMs}, ` +
+        `workspace=${res.locals.workspaceId ?? "-"}, responseBytes=${res.getHeader("content-length") ?? "-"}`
+    );
+  });
+
+  res.on("close", () => {
+    if (finished) return;
+    const durationMs = Date.now() - startedAt;
+    warn(
+      `Request closed early: id=${requestId}, method=${req.method}, path=${req.originalUrl}, ` +
+        `durationMs=${durationMs}, workspace=${res.locals.workspaceId ?? "-"}`
+    );
+  });
+
+  next();
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
 // Workspace management (no workspace prefix)
+app.use("/api/logs", logsRouter);
 app.use("/api/workspaces", workspacesRouter);
 
 // All workspace-scoped routes under /api/w/:wsId/
@@ -114,6 +157,14 @@ if (fs.existsSync(clientDist)) {
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logError(`Unhandled error: ${err.message}`);
   res.status(500).json({ error: "Internal server error" });
+});
+
+process.on("unhandledRejection", (reason) => {
+  logError(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+});
+
+process.on("uncaughtException", (err) => {
+  logError(`Uncaught exception: ${err.stack ?? err.message}`);
 });
 
 app.listen(port, host, () => {

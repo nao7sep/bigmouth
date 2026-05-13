@@ -52,7 +52,7 @@ All data is stored locally under `~/.bigmouth/`:
 ```
 ~/.bigmouth/
   app.json                         ← port and workspace registry
-  logs/                            ← server log files (shared across workspaces)
+  logs/                            ← server log files, one per server start (shared across workspaces)
   workspaces/
     {workspace-id}/                ← default location for workspace data
       posts/
@@ -104,6 +104,12 @@ The central configuration file. Contains the server port, bind host, origin allo
 Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. Leaving the location blank uses the default `~/.bigmouth/workspaces/{workspace-id}` location. If the chosen folder already contains a bigmouth workspace, the app opens it; otherwise bigmouth creates a new workspace there. It will still refuse to initialize inside a non-empty folder that contains unrelated files.
 
 Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
+
+### Logging
+
+Logs are written under `~/.bigmouth/logs/`, with one log file per server start. They are shared across workspaces because the app runs as a single local server process.
+
+The server logs request start/finish, workspace resolution, major app actions, successes, failures, and unexpected process-level errors. For debugging AI issues, failed analysis/generation/imaging requests also log detailed provider error info, the prompt payload that was sent, and raw model output when JSON parsing fails.
 
 ## Workspaces
 
@@ -199,6 +205,8 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Route | Description |
 |---|---|
 | `GET /api/health` | Health check |
+| `GET /api/logs/current` | Get the current log file path |
+| `POST /api/logs/current/reveal` | Reveal the current log file in the OS file manager |
 | `GET /api/workspaces` | List all workspaces |
 | `POST /api/workspaces/open-or-create` | Open an existing workspace folder or create one there |
 | `PUT /api/workspaces/:id` | Update a workspace |

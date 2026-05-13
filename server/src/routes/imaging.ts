@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { error as logError } from "../services/logger.js";
+import { error as logError, info as logInfo, logBlock } from "../services/logger.js";
 import {
   buildImagingSystemPrompt,
   buildImagingUserContent,
@@ -15,6 +15,7 @@ import {
   type ImagingOptions,
 } from "../ai/imaging.js";
 import { parseJsonCandidates } from "../ai/jsonResponse.js";
+import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 
 export const imagingRouter = Router({ mergeParams: true });
 
@@ -88,9 +89,7 @@ imagingRouter.post("/", async (req, res) => {
         : "domain",
     emotionalLens:
       typeof emotionalLens === "string" &&
-      IMAGING_MOODS.includes(
-        emotionalLens as (typeof IMAGING_MOODS)[number]
-      )
+      IMAGING_MOODS.includes(emotionalLens as (typeof IMAGING_MOODS)[number])
         ? (emotionalLens as ImagingOptions["emotionalLens"])
         : "hopeful",
     literalness:
@@ -111,7 +110,12 @@ imagingRouter.post("/", async (req, res) => {
   };
 
   const postContent = content?.trim() ? content : post.content;
+  const systemPrompt = buildImagingSystemPrompt(options.count);
+  const userContent = buildImagingUserContent(postContent, options, {
+    targetName: post.frontMatter.target,
+  });
 
+  let provider;
   try {
     const aiConfigs = getAiConfigsForServer(dataDir);
     const activeConfig = aiConfigs.configs.find((c) => c.id === aiConfigs.activeId);
@@ -119,18 +123,52 @@ imagingRouter.post("/", async (req, res) => {
       res.status(503).json({ error: "No active AI configuration selected" });
       return;
     }
-
-    const provider = createProvider(activeConfig);
-    const raw = await provider.generateText(
-      buildImagingSystemPrompt(options.count),
-      buildImagingUserContent(postContent, options, {
-        targetName: post.frontMatter.target,
-      })
-    );
-    res.json({ items: parseImagingResponse(raw) });
+    provider = createProvider(activeConfig);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Request failed";
-    logError(`Imaging failed for post ${postId}: ${msg}`);
-    res.status(502).json({ error: msg });
+    const details = describeAiError(err);
+    logError(
+      `Imaging provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
+    );
+    res.status(503).json({ error: err instanceof Error ? err.message : "Request failed" });
+    return;
+  }
+
+  logInfo(
+    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${JSON.stringify(options)}, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
+  );
+
+  try {
+    const raw = await provider.generateText(systemPrompt, userContent);
+    let items: string[];
+    try {
+      items = parseImagingResponse(raw);
+    } catch (err) {
+      logBlock(
+        "ERROR",
+        `Imaging JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, rawLength=${raw.length}`,
+        raw
+      );
+      throw err;
+    }
+    logInfo(
+      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, rawLength=${raw.length}`
+    );
+    res.json({ items });
+  } catch (err) {
+    const details = logAiFailure(
+      {
+        kind: "Imaging",
+        requestId: res.locals.requestId,
+        workspaceId: res.locals.workspaceId,
+        postId,
+        extra: options,
+      },
+      err,
+      {
+        systemPrompt,
+        userContent,
+      }
+    );
+    res.status(502).json({ error: err instanceof Error ? err.message : details });
   }
 });

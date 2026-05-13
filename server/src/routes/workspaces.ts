@@ -20,7 +20,11 @@ export const workspacesRouter = Router();
  * Returns all workspaces.
  */
 workspacesRouter.get("/", (_req, res) => {
-  res.json(listWorkspaces());
+  const workspaces = listWorkspaces();
+  logger.info(
+    `Workspaces listed: requestId=${res.locals.requestId ?? "-"}, count=${workspaces.length}`
+  );
+  res.json(workspaces);
 });
 
 /**
@@ -30,9 +34,15 @@ workspacesRouter.get("/", (_req, res) => {
 workspacesRouter.get("/:id", (req, res) => {
   const ws = getWorkspace(req.params.id);
   if (!ws) {
+    logger.warn(
+      `Workspace lookup failed: requestId=${res.locals.requestId ?? "-"}, workspaceId=${req.params.id}, reason=not-found`
+    );
     res.status(404).json({ error: "Workspace not found" });
     return;
   }
+  logger.info(
+    `Workspace loaded: requestId=${res.locals.requestId ?? "-"}, workspaceId=${ws.id}, workspaceName="${ws.name}"`
+  );
   res.json(ws);
 });
 
@@ -46,10 +56,15 @@ workspacesRouter.post("/open-or-create", (req, res) => {
 
   try {
     const ws = openOrCreateWorkspace(name?.trim(), dataDirectory?.trim());
-    logger.info(`Workspace selected: id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`);
+    logger.info(
+      `Workspace selected: requestId=${res.locals.requestId ?? "-"}, id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`
+    );
     res.status(201).json(ws);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to open or create workspace";
+    logger.error(
+      `Workspace open-or-create failed: requestId=${res.locals.requestId ?? "-"}, message=${message}`
+    );
     res.status(400).json({ error: message });
   }
 });
@@ -69,14 +84,22 @@ workspacesRouter.put("/:id", (req, res) => {
     });
 
     if (!ws) {
+      logger.warn(
+        `Workspace update failed: requestId=${res.locals.requestId ?? "-"}, workspaceId=${req.params.id}, reason=not-found`
+      );
       res.status(404).json({ error: "Workspace not found" });
       return;
     }
 
-    logger.info(`Workspace updated: id=${ws.id}, name="${ws.name}"`);
+    logger.info(
+      `Workspace updated: requestId=${res.locals.requestId ?? "-"}, id=${ws.id}, name="${ws.name}", dir=${ws.dataDirectory}`
+    );
     res.json(ws);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to update workspace";
+    logger.error(
+      `Workspace update failed: requestId=${res.locals.requestId ?? "-"}, workspaceId=${req.params.id}, message=${message}`
+    );
     res.status(400).json({ error: message });
   }
 });
@@ -88,10 +111,15 @@ workspacesRouter.put("/:id", (req, res) => {
 workspacesRouter.delete("/:id", (req, res) => {
   const deleted = deleteWorkspace(req.params.id);
   if (!deleted) {
+    logger.warn(
+      `Workspace delete failed: requestId=${res.locals.requestId ?? "-"}, workspaceId=${req.params.id}, reason=not-found`
+    );
     res.status(404).json({ error: "Workspace not found" });
     return;
   }
 
-  logger.info(`Workspace removed from registry: id=${req.params.id}`);
+  logger.info(
+    `Workspace removed from registry: requestId=${res.locals.requestId ?? "-"}, id=${req.params.id}`
+  );
   res.json({ deleted: true });
 });

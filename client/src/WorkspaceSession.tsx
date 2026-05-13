@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, MouseEventHandler } from "react";
-import { fetchPosts, createPost, fetchTargets, fetchSettings } from "./api";
+import { fetchPosts, createPost, fetchTargets, fetchSettings, revealCurrentLogFile } from "./api";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
@@ -359,6 +359,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       void loadPosts(publishedOffset, true);
     }, [loadPosts, publishedOffset]);
 
+    const handleRevealCurrentLogFile = useCallback(async () => {
+      try {
+        await revealCurrentLogFile();
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Failed to reveal current log file.");
+      }
+    }, []);
+
     const currentTarget =
       currentPost && currentPost.frontMatter.id === selectedPostId
         ? targets.find((target) => target.name === currentPost.frontMatter.target) ?? null
@@ -389,6 +397,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
           onOpenAbout={() => setAboutOpen(true)}
+          onRevealCurrentLogFile={handleRevealCurrentLogFile}
           onSwitchWorkspace={onSwitchWorkspace}
           workspaceName={workspace.name}
         />

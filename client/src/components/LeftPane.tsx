@@ -14,6 +14,7 @@ interface LeftPaneProps {
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenAbout: () => void;
+  onRevealCurrentLogFile: () => Promise<void> | void;
   onSwitchWorkspace: () => void;
   workspaceName: string;
 }
@@ -30,6 +31,7 @@ export function LeftPane({
   onOpenSettings,
   onOpenShortcuts,
   onOpenAbout,
+  onRevealCurrentLogFile,
   onSwitchWorkspace,
   workspaceName,
 }: LeftPaneProps) {
@@ -73,6 +75,15 @@ export function LeftPane({
               {menuOpen && (
                 <div className="hamburger-menu">
                   <div className="hamburger-menu-workspace">{workspaceName}</div>
+                  <button
+                    className="hamburger-menu-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void onRevealCurrentLogFile();
+                    }}
+                  >
+                    Reveal Log
+                  </button>
                   <button
                     className="hamburger-menu-item"
                     onClick={() => { setMenuOpen(false); onSwitchWorkspace(); }}

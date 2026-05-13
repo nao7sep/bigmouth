@@ -7,13 +7,21 @@ export const targetsRouter = Router({ mergeParams: true });
 
 targetsRouter.get("/", (_req, res) => {
   const dataDir = res.locals.dataDir as string;
-  res.json(getTargets(dataDir));
+  const targets = getTargets(dataDir);
+  logger.info(
+    `Targets loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${targets.length}`
+  );
+  res.json(targets);
 });
 
 targetsRouter.put("/", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   saveTargets(dataDir, req.body);
-  res.json(getTargets(dataDir));
+  const targets = getTargets(dataDir);
+  logger.info(
+    `Targets saved: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${targets.length}`
+  );
+  res.json(targets);
 });
 
 targetsRouter.put("/rename", (req, res) => {
@@ -38,7 +46,7 @@ targetsRouter.put("/rename", (req, res) => {
   const postsUpdated = renameTarget(dataDir, oldName, newName);
 
   logger.info(
-    `Target renamed: "${oldName}" → "${newName}", ${postsUpdated} posts updated`
+    `Target renamed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, "${oldName}" → "${newName}", postsUpdated=${postsUpdated}`
   );
 
   res.json({ targets: getTargets(dataDir), postsUpdated });

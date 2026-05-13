@@ -16,7 +16,8 @@ import {
   usesJsonPlaceholder,
 } from "../ai/promptTemplates.js";
 import { parseJsonCandidates } from "../ai/jsonResponse.js";
-import { error as logError } from "../services/logger.js";
+import { error as logError, info as logInfo, logBlock } from "../services/logger.js";
+import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 
 export const generationRouter = Router({ mergeParams: true });
 
@@ -128,20 +129,54 @@ generationRouter.post("/", async (req, res) => {
     }
     provider = createProvider(activeConfig);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI provider error";
-    logError(`AI provider init failed for post ${postId}: ${msg}`);
-    res.status(503).json({ error: msg });
+    const details = describeAiError(err);
+    logError(
+      `Generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, ${details}`
+    );
+    res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
     return;
   }
 
+  logInfo(
+    `Generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
+  );
+
   try {
     const raw = await provider.generateText(request.systemPrompt, request.userContent);
-    const value = normalizeGeneratedValue(field, raw, expectsJson);
+    let value: string;
+    try {
+      value = normalizeGeneratedValue(field, raw, expectsJson);
+    } catch (err) {
+      if (expectsJson && (field === "tags" || field === "tagsEn")) {
+        logBlock(
+          "ERROR",
+          `Tag JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, rawLength=${raw.length}`,
+          raw
+        );
+      }
+      throw err;
+    }
+    logInfo(
+      `Generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, rawLength=${raw.length}, valueLength=${value.length}`
+    );
     res.json({ value });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI request failed";
-    logError(`Generate failed for post ${postId} field ${field}: ${msg}`);
-    res.status(502).json({ error: msg });
+    const details = logAiFailure(
+      {
+        kind: "Generation",
+        requestId: res.locals.requestId,
+        workspaceId: res.locals.workspaceId,
+        postId,
+        field,
+        extra: { expectsJson },
+      },
+      err,
+      {
+        systemPrompt: request.systemPrompt,
+        userContent: request.userContent,
+      }
+    );
+    res.status(502).json({ error: err instanceof Error ? err.message : details });
   }
 });
 
@@ -181,9 +216,11 @@ generationRouter.post("/batch", async (req, res) => {
     }
     provider = createProvider(activeConfig);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI provider error";
-    logError(`AI provider init failed for batch generate, post ${postId}: ${msg}`);
-    res.status(503).json({ error: msg });
+    const details = describeAiError(err);
+    logError(
+      `Batch generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
+    );
+    res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
     return;
   }
 
@@ -202,14 +239,45 @@ generationRouter.post("/batch", async (req, res) => {
         content: postContent,
         json: expectsJson ? tagJsonFormatForField(field) : undefined,
       });
+      logInfo(
+        `Batch generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
+      );
       try {
         const raw = await provider.generateText(request.systemPrompt, request.userContent);
-        const value = normalizeGeneratedValue(field, raw, expectsJson);
+        let value: string;
+        try {
+          value = normalizeGeneratedValue(field, raw, expectsJson);
+        } catch (err) {
+          if (expectsJson && (field === "tags" || field === "tagsEn")) {
+            logBlock(
+              "ERROR",
+              `Batch tag JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, rawLength=${raw.length}`,
+              raw
+            );
+          }
+          throw err;
+        }
+        logInfo(
+          `Batch generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, rawLength=${raw.length}, valueLength=${value.length}`
+        );
         return { field, value };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "AI request failed";
-        logError(`Generate failed for post ${postId} field ${field}: ${msg}`);
-        return { field, error: msg };
+        const details = logAiFailure(
+          {
+            kind: "Batch generation",
+            requestId: res.locals.requestId,
+            workspaceId: res.locals.workspaceId,
+            postId,
+            field,
+            extra: { expectsJson },
+          },
+          err,
+          {
+            systemPrompt: request.systemPrompt,
+            userContent: request.userContent,
+          }
+        );
+        return { field, error: err instanceof Error ? err.message : details };
       }
     })
   );

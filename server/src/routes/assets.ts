@@ -14,7 +14,7 @@ import exifr from "exifr";
 import { imageSize } from "image-size";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
 import { getSettings } from "../services/configStore.js";
-import { error as logError } from "../services/logger.js";
+import { error as logError, info as logInfo, warn as logWarn } from "../services/logger.js";
 import { getPost } from "../services/postStore.js";
 import {
   listAssets,
@@ -59,7 +59,11 @@ assetsRouter.get("/:postId", (req, res) => {
     res.status(400).json({ error: "Invalid postId" });
     return;
   }
-  res.json(listAssets(dataDir, postId));
+  const assets = listAssets(dataDir, postId);
+  logInfo(
+    `Assets listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, count=${assets.length}`
+  );
+  res.json(assets);
 });
 
 // --- GET /api/w/:wsId/assets/:postId/:filename/raw ---
@@ -82,10 +86,16 @@ assetsRouter.get("/:postId/:filename/raw", (req, res) => {
   }
 
   if (!fs.existsSync(filePath)) {
+    logWarn(
+      `Asset raw lookup failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", reason=not-found`
+    );
     res.status(404).json({ error: "Asset not found" });
     return;
   }
 
+  logInfo(
+    `Asset raw served: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
+  );
   res.type(filename);
   const stream = fs.createReadStream(filePath);
   stream.on("error", (err) => {
@@ -172,6 +182,9 @@ assetsRouter.post("/:postId", (req, res, next) => {
   };
 
   addAsset(dataDir, postId, meta);
+  logInfo(
+    `Asset uploaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", size=${req.file.buffer.length}, width=${width ?? "-"}, height=${height ?? "-"}, hasMetadata=${hasMetadata ?? false}`
+  );
   res.status(201).json(meta);
 });
 
@@ -195,6 +208,9 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   }
 
   if (!fs.existsSync(filePath)) {
+    logWarn(
+      `Asset delete failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", reason=not-found`
+    );
     res.status(404).json({ error: "Asset not found" });
     return;
   }
@@ -210,5 +226,8 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   }
 
   deleteAsset(dataDir, postId, filename);
+  logInfo(
+    `Asset deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
+  );
   res.status(204).send();
 });
