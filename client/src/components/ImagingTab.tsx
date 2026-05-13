@@ -1,39 +1,39 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  generateImagePrompts,
-  type ImagePromptEmotionalLens,
-  type ImagePromptLiteralness,
-  type ImagePromptOptions,
-  type ImagePromptPeople,
-  type ImagePromptRelation,
-  type ImagePromptStyle,
+  generateImaging,
+  type ImagingLiteralness,
+  type ImagingMood,
+  type ImagingOptions,
+  type ImagingPeople,
+  type ImagingRelation,
+  type ImagingStyle,
 } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 const COUNT_OPTIONS = [3, 5, 10] as const;
-const RELATION_OPTIONS: Array<{ value: ImagePromptRelation; label: string }> = [
+const RELATION_OPTIONS: Array<{ value: ImagingRelation; label: string }> = [
   { value: "direct", label: "Direct" },
   { value: "domain", label: "Domain" },
   { value: "abstract", label: "Abstract" },
 ];
-const EMOTIONAL_LENS_OPTIONS: Array<{ value: ImagePromptEmotionalLens; label: string }> = [
+const MOOD_OPTIONS: Array<{ value: ImagingMood; label: string }> = [
   { value: "bright", label: "Bright" },
   { value: "calm", label: "Calm" },
   { value: "neutral", label: "Neutral" },
   { value: "intense", label: "Intense" },
   { value: "hopeful", label: "Hopeful" },
 ];
-const LITERALNESS_OPTIONS: Array<{ value: ImagePromptLiteralness; label: string }> = [
+const LITERALNESS_OPTIONS: Array<{ value: ImagingLiteralness; label: string }> = [
   { value: "literal", label: "Literal" },
   { value: "stylized", label: "Stylized" },
   { value: "symbolic", label: "Symbolic" },
 ];
-const PEOPLE_OPTIONS: Array<{ value: ImagePromptPeople; label: string }> = [
+const PEOPLE_OPTIONS: Array<{ value: ImagingPeople; label: string }> = [
   { value: "people", label: "People" },
   { value: "mixed", label: "Mixed" },
   { value: "no-people", label: "No people" },
 ];
-const STYLE_OPTIONS: Array<{ value: ImagePromptStyle; label: string }> = [
+const STYLE_OPTIONS: Array<{ value: ImagingStyle; label: string }> = [
   { value: "photo", label: "Photo" },
   { value: "illustration", label: "Illustration" },
   { value: "anime", label: "Anime" },
@@ -41,7 +41,7 @@ const STYLE_OPTIONS: Array<{ value: ImagePromptStyle; label: string }> = [
   { value: "minimal", label: "Minimal" },
 ];
 
-const DEFAULT_OPTIONS: ImagePromptOptions = {
+const DEFAULT_OPTIONS: ImagingOptions = {
   count: 5,
   relation: "domain",
   emotionalLens: "hopeful",
@@ -50,13 +50,13 @@ const DEFAULT_OPTIONS: ImagePromptOptions = {
   style: "illustration",
 };
 
-interface ImagePromptsTabProps {
+interface ImagingTabProps {
   postId: string;
   content: string;
 }
 
-export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
-  const [options, setOptions] = useState<ImagePromptOptions>(DEFAULT_OPTIONS);
+export function ImagingTab({ postId, content }: ImagingTabProps) {
+  const [options, setOptions] = useState<ImagingOptions>(DEFAULT_OPTIONS);
   const [items, setItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
     };
   }, []);
 
-  const update = <K extends keyof ImagePromptOptions>(key: K, value: ImagePromptOptions[K]) => {
+  const update = <K extends keyof ImagingOptions>(key: K, value: ImagingOptions[K]) => {
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -97,13 +97,13 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
     setItems([]);
 
     try {
-      const nextItems = await generateImagePrompts(postId, content, options, controller.signal);
+      const nextItems = await generateImaging(postId, content, options, controller.signal);
       if (runIdRef.current !== myId) return;
       setItems(nextItems);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
-      setError(err instanceof Error ? err.message : "Image prompt generation failed");
+      setError(err instanceof Error ? err.message : "Imaging failed");
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -115,13 +115,13 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
   };
 
   return (
-    <div className="image-prompts-tab">
-      <div className="image-prompts-toolbar">
-        <div className="image-prompts-note">
+    <div className="imaging-tab">
+      <div className="imaging-toolbar">
+        <div className="imaging-note">
           English prompts only. The visual setting should still follow the draft&apos;s own cues. Results are temporary and not saved.
         </div>
         <button
-          className="btn-analyze"
+          className="action-button"
           onClick={run}
           disabled={loading || !content.trim()}
         >
@@ -129,13 +129,13 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
         </button>
       </div>
 
-      <div className="image-prompts-controls">
-        <div className="image-prompts-field">
+      <div className="imaging-controls">
+        <div className="imaging-field">
           <label>Count</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.count}
-            onChange={(e) => update("count", parseInt(e.target.value, 10) as ImagePromptOptions["count"])}
+            onChange={(e) => update("count", parseInt(e.target.value, 10) as ImagingOptions["count"])}
             disabled={loading}
           >
             {COUNT_OPTIONS.map((value) => (
@@ -145,12 +145,12 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
             ))}
           </select>
         </div>
-        <div className="image-prompts-field">
+        <div className="imaging-field">
           <label>Relation</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.relation}
-            onChange={(e) => update("relation", e.target.value as ImagePromptRelation)}
+            onChange={(e) => update("relation", e.target.value as ImagingRelation)}
             disabled={loading}
           >
             {RELATION_OPTIONS.map((option) => (
@@ -160,27 +160,27 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
             ))}
           </select>
         </div>
-        <div className="image-prompts-field">
-          <label>Emotional lens</label>
+        <div className="imaging-field">
+          <label>Mood</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.emotionalLens}
-            onChange={(e) => update("emotionalLens", e.target.value as ImagePromptEmotionalLens)}
+            onChange={(e) => update("emotionalLens", e.target.value as ImagingMood)}
             disabled={loading}
           >
-            {EMOTIONAL_LENS_OPTIONS.map((option) => (
+            {MOOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
         </div>
-        <div className="image-prompts-field">
+        <div className="imaging-field">
           <label>Literalness</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.literalness}
-            onChange={(e) => update("literalness", e.target.value as ImagePromptLiteralness)}
+            onChange={(e) => update("literalness", e.target.value as ImagingLiteralness)}
             disabled={loading}
           >
             {LITERALNESS_OPTIONS.map((option) => (
@@ -190,12 +190,12 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
             ))}
           </select>
         </div>
-        <div className="image-prompts-field">
+        <div className="imaging-field">
           <label>People</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.people}
-            onChange={(e) => update("people", e.target.value as ImagePromptPeople)}
+            onChange={(e) => update("people", e.target.value as ImagingPeople)}
             disabled={loading}
           >
             {PEOPLE_OPTIONS.map((option) => (
@@ -205,12 +205,12 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
             ))}
           </select>
         </div>
-        <div className="image-prompts-field">
+        <div className="imaging-field">
           <label>Style</label>
           <select
-            className="ai-prompt-select"
+            className="prompt-select"
             value={options.style}
-            onChange={(e) => update("style", e.target.value as ImagePromptStyle)}
+            onChange={(e) => update("style", e.target.value as ImagingStyle)}
             disabled={loading}
           >
             {STYLE_OPTIONS.map((option) => (
@@ -222,16 +222,16 @@ export function ImagePromptsTab({ postId, content }: ImagePromptsTabProps) {
         </div>
       </div>
 
-      {error && <div className="ai-error">{error}</div>}
+      {error && <div className="panel-error">{error}</div>}
 
       {!content.trim() && (
-        <div className="ai-empty">Write some post content first.</div>
+        <div className="panel-empty">Write some post content first.</div>
       )}
 
       {items.length > 0 && (
-        <div className="image-prompts-results">
-          <div className="image-prompts-results-header">
-            <div className="image-prompts-note">{items.length} prompts</div>
+        <div className="imaging-results">
+          <div className="imaging-results-header">
+            <div className="imaging-note">{items.length} prompts</div>
             <button
               className="meta-field-copy"
               onClick={() => copy(items.join("\n\n"), "all")}

@@ -84,19 +84,19 @@ export interface GenerationPromptsData {
   prompts: Record<string, string>;
 }
 
-export type ImagePromptRelation = "direct" | "domain" | "abstract";
-export type ImagePromptEmotionalLens = "bright" | "calm" | "neutral" | "intense" | "hopeful";
-export type ImagePromptLiteralness = "literal" | "stylized" | "symbolic";
-export type ImagePromptPeople = "people" | "mixed" | "no-people";
-export type ImagePromptStyle = "photo" | "illustration" | "anime" | "cinematic" | "minimal";
+export type ImagingRelation = "direct" | "domain" | "abstract";
+export type ImagingMood = "bright" | "calm" | "neutral" | "intense" | "hopeful";
+export type ImagingLiteralness = "literal" | "stylized" | "symbolic";
+export type ImagingPeople = "people" | "mixed" | "no-people";
+export type ImagingStyle = "photo" | "illustration" | "anime" | "cinematic" | "minimal";
 
-export interface ImagePromptOptions {
+export interface ImagingOptions {
   count: 3 | 5 | 10;
-  relation: ImagePromptRelation;
-  emotionalLens: ImagePromptEmotionalLens;
-  literalness: ImagePromptLiteralness;
-  people: ImagePromptPeople;
-  style: ImagePromptStyle;
+  relation: ImagingRelation;
+  emotionalLens: ImagingMood;
+  literalness: ImagingLiteralness;
+  people: ImagingPeople;
+  style: ImagingStyle;
 }
 
 export interface AiConfigsData {

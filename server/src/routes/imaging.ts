@@ -4,19 +4,19 @@ import { getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { error as logError } from "../services/logger.js";
 import {
-  buildImagePromptSystemPrompt,
-  buildImagePromptUserContent,
-  IMAGE_PROMPT_COUNTS,
-  IMAGE_PROMPT_EMOTIONAL_LENSES,
-  IMAGE_PROMPT_LITERALNESS,
-  IMAGE_PROMPT_PEOPLE,
-  IMAGE_PROMPT_RELATIONS,
-  IMAGE_PROMPT_STYLES,
-  type ImagePromptOptions,
-} from "../ai/imagePrompts.js";
+  buildImagingSystemPrompt,
+  buildImagingUserContent,
+  IMAGING_COUNTS,
+  IMAGING_MOODS,
+  IMAGING_LITERALNESS,
+  IMAGING_PEOPLE,
+  IMAGING_RELATIONS,
+  IMAGING_STYLES,
+  type ImagingOptions,
+} from "../ai/imaging.js";
 import { parseJsonCandidates } from "../ai/jsonResponse.js";
 
-export const imagePromptsRouter = Router({ mergeParams: true });
+export const imagingRouter = Router({ mergeParams: true });
 
 function normalizePromptList(items: unknown): string[] | null {
   if (!Array.isArray(items)) return null;
@@ -26,7 +26,7 @@ function normalizePromptList(items: unknown): string[] | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function parseImagePromptResponse(raw: string): string[] {
+function parseImagingResponse(raw: string): string[] {
   for (const parsed of parseJsonCandidates(raw)) {
     const direct = normalizePromptList(parsed);
     if (direct) return direct;
@@ -40,10 +40,10 @@ function parseImagePromptResponse(raw: string): string[] {
     }
   }
 
-  throw new Error("Generated image prompts were not valid JSON");
+  throw new Error("Generated prompts were not valid JSON");
 }
 
-imagePromptsRouter.post("/", async (req, res) => {
+imagingRouter.post("/", async (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const {
     postId,
@@ -76,37 +76,37 @@ imagePromptsRouter.post("/", async (req, res) => {
     return;
   }
 
-  const options: ImagePromptOptions = {
+  const options: ImagingOptions = {
     count:
-      typeof count === "number" && IMAGE_PROMPT_COUNTS.includes(count as (typeof IMAGE_PROMPT_COUNTS)[number])
+      typeof count === "number" && IMAGING_COUNTS.includes(count as (typeof IMAGING_COUNTS)[number])
         ? count
         : 5,
     relation:
       typeof relation === "string" &&
-      IMAGE_PROMPT_RELATIONS.includes(relation as (typeof IMAGE_PROMPT_RELATIONS)[number])
-        ? (relation as ImagePromptOptions["relation"])
+      IMAGING_RELATIONS.includes(relation as (typeof IMAGING_RELATIONS)[number])
+        ? (relation as ImagingOptions["relation"])
         : "domain",
     emotionalLens:
       typeof emotionalLens === "string" &&
-      IMAGE_PROMPT_EMOTIONAL_LENSES.includes(
-        emotionalLens as (typeof IMAGE_PROMPT_EMOTIONAL_LENSES)[number]
+      IMAGING_MOODS.includes(
+        emotionalLens as (typeof IMAGING_MOODS)[number]
       )
-        ? (emotionalLens as ImagePromptOptions["emotionalLens"])
+        ? (emotionalLens as ImagingOptions["emotionalLens"])
         : "hopeful",
     literalness:
       typeof literalness === "string" &&
-      IMAGE_PROMPT_LITERALNESS.includes(literalness as (typeof IMAGE_PROMPT_LITERALNESS)[number])
-        ? (literalness as ImagePromptOptions["literalness"])
+      IMAGING_LITERALNESS.includes(literalness as (typeof IMAGING_LITERALNESS)[number])
+        ? (literalness as ImagingOptions["literalness"])
         : "stylized",
     people:
       typeof people === "string" &&
-      IMAGE_PROMPT_PEOPLE.includes(people as (typeof IMAGE_PROMPT_PEOPLE)[number])
-        ? (people as ImagePromptOptions["people"])
+      IMAGING_PEOPLE.includes(people as (typeof IMAGING_PEOPLE)[number])
+        ? (people as ImagingOptions["people"])
         : "mixed",
     style:
       typeof style === "string" &&
-      IMAGE_PROMPT_STYLES.includes(style as (typeof IMAGE_PROMPT_STYLES)[number])
-        ? (style as ImagePromptOptions["style"])
+      IMAGING_STYLES.includes(style as (typeof IMAGING_STYLES)[number])
+        ? (style as ImagingOptions["style"])
         : "illustration",
   };
 
@@ -122,15 +122,15 @@ imagePromptsRouter.post("/", async (req, res) => {
 
     const provider = createProvider(activeConfig);
     const raw = await provider.generateText(
-      buildImagePromptSystemPrompt(options.count),
-      buildImagePromptUserContent(postContent, options, {
+      buildImagingSystemPrompt(options.count),
+      buildImagingUserContent(postContent, options, {
         targetName: post.frontMatter.target,
       })
     );
-    res.json({ items: parseImagePromptResponse(raw) });
+    res.json({ items: parseImagingResponse(raw) });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI request failed";
-    logError(`Image prompt generation failed for post ${postId}: ${msg}`);
+    const msg = err instanceof Error ? err.message : "Request failed";
+    logError(`Imaging failed for post ${postId}: ${msg}`);
     res.status(502).json({ error: msg });
   }
 });

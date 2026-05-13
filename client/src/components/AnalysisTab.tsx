@@ -3,19 +3,19 @@ import { marked } from "marked";
 import { fetchAnalysisPrompts, runAnalysisStream } from "../api";
 import type { AnalysisPrompt } from "../types";
 
-interface AiAnalysisTabProps {
+interface AnalysisTabProps {
   postId: string;
   content: string;
   analysisTrigger: number;
   promptsVersion: number;
 }
 
-export function AiAnalysisTab({
+export function AnalysisTab({
   postId,
   content,
   analysisTrigger,
   promptsVersion,
-}: AiAnalysisTabProps) {
+}: AnalysisTabProps) {
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function AiAnalysisTab({
     }
   };
 
-  // Fire when analysisTrigger increments (Cmd+Enter)
+  // Fire when analysisTrigger increments (Cmd+Enter).
   const prevTriggerRef = useRef(analysisTrigger);
   useEffect(() => {
     if (analysisTrigger > prevTriggerRef.current) {
@@ -94,7 +94,7 @@ export function AiAnalysisTab({
 
   if (prompts.length === 0 && !loading) {
     return (
-      <div className="ai-empty">
+      <div className="panel-empty">
         No prompts configured. Add prompts in{" "}
         <strong>Settings → Analysis</strong>.
       </div>
@@ -104,10 +104,10 @@ export function AiAnalysisTab({
   const html = result ? (marked(result) as string) : null;
 
   return (
-    <div className="ai-analysis-tab">
-      <div className="ai-toolbar">
+    <div className="analysis-tab">
+      <div className="analysis-toolbar">
         <select
-          className="ai-prompt-select"
+          className="prompt-select"
           value={selectedPrompt}
           onChange={(e) => setSelectedPrompt(e.target.value)}
           disabled={loading}
@@ -119,7 +119,7 @@ export function AiAnalysisTab({
           ))}
         </select>
         <button
-          className="btn-analyze"
+          className="action-button"
           onClick={run}
           disabled={loading || !selectedPrompt || !content.trim()}
         >
@@ -127,15 +127,15 @@ export function AiAnalysisTab({
         </button>
       </div>
 
-      {error && <div className="ai-error">{error}</div>}
+      {error && <div className="panel-error">{error}</div>}
 
       {loading && (
-        <div className="ai-loading">Running analysis…</div>
+        <div className="analysis-loading">Running analysis…</div>
       )}
 
       {html && (
         <div
-          className="ai-result preview-content"
+          className="analysis-result preview-content"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       )}

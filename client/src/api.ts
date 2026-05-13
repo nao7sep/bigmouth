@@ -7,13 +7,13 @@ import type {
   AssetMeta,
   AiConfigsData,
   GenerationPromptsData,
-  ImagePromptOptions,
+  ImagingOptions,
   Workspace,
-  ImagePromptRelation,
-  ImagePromptEmotionalLens,
-  ImagePromptLiteralness,
-  ImagePromptPeople,
-  ImagePromptStyle,
+  ImagingRelation,
+  ImagingMood,
+  ImagingLiteralness,
+  ImagingPeople,
+  ImagingStyle,
 } from "./types";
 
 // --- Workspace context ---
@@ -382,21 +382,21 @@ export async function runAnalysisStream(
 }
 
 export type {
-  ImagePromptOptions,
-  ImagePromptRelation,
-  ImagePromptEmotionalLens,
-  ImagePromptLiteralness,
-  ImagePromptPeople,
-  ImagePromptStyle,
+  ImagingOptions,
+  ImagingRelation,
+  ImagingMood,
+  ImagingLiteralness,
+  ImagingPeople,
+  ImagingStyle,
 };
 
-export async function generateImagePrompts(
+export async function generateImaging(
   postId: string,
   content: string,
-  options: ImagePromptOptions,
+  options: ImagingOptions,
   signal?: AbortSignal
 ): Promise<string[]> {
-  const res = await fetch(`${base()}/image-prompts`, {
+  const res = await fetch(`${base()}/imaging`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ postId, content, ...options }),
@@ -405,7 +405,7 @@ export async function generateImagePrompts(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      (body as { error?: string }).error ?? `Image prompt generation failed: ${res.status}`
+      (body as { error?: string }).error ?? `Imaging failed: ${res.status}`
     );
   }
   const data = (await res.json()) as { items: string[] };

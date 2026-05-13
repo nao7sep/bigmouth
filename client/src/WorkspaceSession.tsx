@@ -69,7 +69,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
-    const [rightTab, setRightTab] = useState<RightTab>("AI Analysis");
+    const [rightTab, setRightTab] = useState<RightTab>("Analysis");
     const [analysisTrigger, setAnalysisTrigger] = useState(0);
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
     const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -216,10 +216,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       if (suspended) return;
 
       const TAB_KEYS: Record<string, RightTab> = {
-        "1": "AI Analysis",
-        "2": "Assets",
-        "3": "Preview",
-        "4": "Metadata",
+        "1": "Analysis",
+        "2": "Imaging",
+        "3": "Assets",
+        "4": "Preview",
+        "5": "Metadata",
       };
 
       const handler = (e: KeyboardEvent) => {
@@ -242,7 +243,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         }
         if (e.key === "Enter" && selectedPostIdRef.current) {
           e.preventDefault();
-          setRightTab("AI Analysis");
+          setRightTab("Analysis");
           setAnalysisTrigger((n) => n + 1);
           return;
         }

@@ -1,12 +1,12 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import { AiAnalysisTab } from "./AiAnalysisTab";
-import { ImagePromptsTab } from "./ImagePromptsTab";
+import { AnalysisTab } from "./AnalysisTab";
+import { ImagingTab } from "./ImagingTab";
 import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import type { Post, PostFrontMatter, Target } from "../types";
 
-export const RIGHT_TABS = ["AI Analysis", "Image Prompts", "Assets", "Preview", "Metadata"] as const;
+export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 interface RightPaneProps {
@@ -74,11 +74,11 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
         ))}
       </div>
       <div className="right-content">
-        <div className={activeTab === "AI Analysis" ? "" : "tab-hidden"}>
+        <div className={activeTab === "Analysis" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
-            <AiAnalysisTab
+            <AnalysisTab
               postId={postId}
               content={content}
               analysisTrigger={analysisTrigger}
@@ -86,11 +86,11 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             />
           )}
         </div>
-        <div className={activeTab === "Image Prompts" ? "" : "tab-hidden"}>
+        <div className={activeTab === "Imaging" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
-            <ImagePromptsTab postId={postId} content={content} />
+            <ImagingTab postId={postId} content={content} />
           )}
         </div>
         <div className={activeTab === "Preview" ? "" : "tab-hidden"}>

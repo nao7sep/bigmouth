@@ -1,42 +1,42 @@
-export const IMAGE_PROMPT_RELATIONS = ["direct", "domain", "abstract"] as const;
-export const IMAGE_PROMPT_EMOTIONAL_LENSES = [
+export const IMAGING_RELATIONS = ["direct", "domain", "abstract"] as const;
+export const IMAGING_MOODS = [
   "bright",
   "calm",
   "neutral",
   "intense",
   "hopeful",
 ] as const;
-export const IMAGE_PROMPT_LITERALNESS = ["literal", "stylized", "symbolic"] as const;
-export const IMAGE_PROMPT_PEOPLE = ["people", "mixed", "no-people"] as const;
-export const IMAGE_PROMPT_STYLES = [
+export const IMAGING_LITERALNESS = ["literal", "stylized", "symbolic"] as const;
+export const IMAGING_PEOPLE = ["people", "mixed", "no-people"] as const;
+export const IMAGING_STYLES = [
   "photo",
   "illustration",
   "anime",
   "cinematic",
   "minimal",
 ] as const;
-export const IMAGE_PROMPT_COUNTS = [3, 5, 10] as const;
+export const IMAGING_COUNTS = [3, 5, 10] as const;
 
-export type ImagePromptRelation = (typeof IMAGE_PROMPT_RELATIONS)[number];
-export type ImagePromptEmotionalLens = (typeof IMAGE_PROMPT_EMOTIONAL_LENSES)[number];
-export type ImagePromptLiteralness = (typeof IMAGE_PROMPT_LITERALNESS)[number];
-export type ImagePromptPeople = (typeof IMAGE_PROMPT_PEOPLE)[number];
-export type ImagePromptStyle = (typeof IMAGE_PROMPT_STYLES)[number];
+export type ImagingRelation = (typeof IMAGING_RELATIONS)[number];
+export type ImagingMood = (typeof IMAGING_MOODS)[number];
+export type ImagingLiteralness = (typeof IMAGING_LITERALNESS)[number];
+export type ImagingPeople = (typeof IMAGING_PEOPLE)[number];
+export type ImagingStyle = (typeof IMAGING_STYLES)[number];
 
-export type ImagePromptOptions = {
+export type ImagingOptions = {
   count: number;
-  relation: ImagePromptRelation;
-  emotionalLens: ImagePromptEmotionalLens;
-  literalness: ImagePromptLiteralness;
-  people: ImagePromptPeople;
-  style: ImagePromptStyle;
+  relation: ImagingRelation;
+  emotionalLens: ImagingMood;
+  literalness: ImagingLiteralness;
+  people: ImagingPeople;
+  style: ImagingStyle;
 };
 
-export type ImagePromptContext = {
+export type ImagingContext = {
   targetName?: string;
 };
 
-export function buildImagePromptSystemPrompt(count: number): string {
+export function buildImagingSystemPrompt(count: number): string {
   return [
     "Generate English image-generation prompts for a post.",
     `- Return exactly ${count} prompts.`,
@@ -55,10 +55,10 @@ export function buildImagePromptSystemPrompt(count: number): string {
   ].join("\n");
 }
 
-export function buildImagePromptUserContent(
+export function buildImagingUserContent(
   content: string,
-  options: ImagePromptOptions,
-  context: ImagePromptContext
+  options: ImagingOptions,
+  context: ImagingContext
 ): string {
   return [
     "<parameters>",

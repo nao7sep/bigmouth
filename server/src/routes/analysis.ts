@@ -1,6 +1,6 @@
 /**
  * POST /api/w/:wsId/analyze
- * Runs a named prompt against the post content using the configured AI provider.
+ * Runs a named prompt against the post content using the configured provider.
  */
 
 import { Router } from "express";
@@ -90,8 +90,8 @@ analysisRouter.post("/", async (req, res) => {
     );
     res.json({ result });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI request failed";
-    logError(`AI analysis failed for post ${request.postId}: ${msg}`);
+    const msg = err instanceof Error ? err.message : "Request failed";
+    logError(`Analysis failed for post ${request.postId}: ${msg}`);
     res.status(502).json({ error: msg });
   }
 });
@@ -133,8 +133,8 @@ analysisRouter.post("/stream", async (req, res) => {
     res.end();
   } catch (err) {
     if (clientClosed) return;
-    const msg = err instanceof Error ? err.message : "AI request failed";
-    logError(`AI analysis stream failed for post ${request.postId}: ${msg}`);
+    const msg = err instanceof Error ? err.message : "Request failed";
+    logError(`Analysis stream failed for post ${request.postId}: ${msg}`);
     if (!res.headersSent) {
       res.status(502).type("text/plain").send(msg);
       return;

@@ -7,11 +7,12 @@ interface ShortcutsModalProps {
 const SHORTCUTS = [
   { key: "Cmd+N", description: "New post" },
   { key: "Cmd+E", description: "Open export modal" },
-  { key: "Cmd+Enter", description: "Run AI analysis" },
-  { key: "Cmd+1", description: "Switch to AI Analysis tab" },
-  { key: "Cmd+2", description: "Switch to Assets tab" },
-  { key: "Cmd+3", description: "Switch to Preview tab" },
-  { key: "Cmd+4", description: "Switch to Metadata tab" },
+  { key: "Cmd+Enter", description: "Run analysis" },
+  { key: "Cmd+1", description: "Switch to Analysis tab" },
+  { key: "Cmd+2", description: "Switch to Imaging tab" },
+  { key: "Cmd+3", description: "Switch to Assets tab" },
+  { key: "Cmd+4", description: "Switch to Preview tab" },
+  { key: "Cmd+5", description: "Switch to Metadata tab" },
 ];
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
