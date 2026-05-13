@@ -163,11 +163,7 @@ imagingRouter.post("/", async (req, res) => {
         postId,
         extra: options,
       },
-      err,
-      {
-        systemPrompt,
-        userContent,
-      }
+      err
     );
     res.status(502).json({ error: err instanceof Error ? err.message : details });
   }

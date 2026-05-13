@@ -109,7 +109,7 @@ Each post is a Markdown file with YAML front matter. The filename encodes the sl
 
 Logs are written under `~/.bigmouth/logs/`, with one log file per server start. They are shared across workspaces because the app runs as a single local server process.
 
-The server logs request start/finish, workspace resolution, major app actions, successes, failures, and unexpected process-level errors. For debugging AI issues, failed analysis/generation/imaging requests also log detailed provider error info, the prompt payload that was sent, and raw model output when JSON parsing fails.
+The server logs request start/finish, workspace resolution, major app actions, successes, failures, and unexpected process-level errors. Request logs record metadata such as routes and body/query keys, not full post content. For AI debugging, failed analysis/generation/imaging requests log provider error details, and raw model output is only logged when the response cannot be parsed or otherwise cannot be used.
 
 ## Workspaces
 

@@ -140,6 +140,16 @@ export function formatLogValue(value: unknown): string {
   }
 }
 
+export function formatRequestShape(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>);
+    return keys.length > 0 ? keys.join(",") : "[empty-object]";
+  }
+  return typeof value;
+}
+
 export function logBlock(level: LogLevel, title: string, content: string): void {
   log(level, `${title} >>>`);
   const lines = content.length > 0 ? content.split(/\r?\n/) : ["[empty]"];

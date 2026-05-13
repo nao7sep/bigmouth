@@ -1,10 +1,5 @@
 import { error as logError, formatLogValue, logBlock } from "../services/logger.js";
 
-type PromptPayload = {
-  systemPrompt: string;
-  userContent: string;
-};
-
 type AiFailureContext = {
   kind: string;
   requestId?: string;
@@ -65,7 +60,6 @@ export function describeAiError(err: unknown): string {
 export function logAiFailure(
   context: AiFailureContext,
   err: unknown,
-  prompt?: PromptPayload,
   rawResponse?: string
 ): string {
   const details = describeAiError(err);
@@ -82,19 +76,6 @@ export function logAiFailure(
   }
   summaryParts.push(details);
   logError(summaryParts.join(", "));
-
-  if (prompt) {
-    logBlock(
-      "ERROR",
-      `${context.kind} system prompt: requestId=${context.requestId ?? "-"}, postId=${context.postId ?? "-"}`,
-      prompt.systemPrompt
-    );
-    logBlock(
-      "ERROR",
-      `${context.kind} user content: requestId=${context.requestId ?? "-"}, postId=${context.postId ?? "-"}`,
-      prompt.userContent
-    );
-  }
 
   if (rawResponse !== undefined) {
     logBlock(

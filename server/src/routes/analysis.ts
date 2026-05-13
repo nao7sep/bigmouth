@@ -110,11 +110,7 @@ analysisRouter.post("/", async (req, res) => {
         postId: request.postId,
         promptName: request.promptName,
       },
-      err,
-      {
-        systemPrompt: request.systemPrompt,
-        userContent: request.userContent,
-      }
+      err
     );
     res.status(502).json({ error: err instanceof Error ? err.message : details });
   }
@@ -171,11 +167,7 @@ analysisRouter.post("/stream", async (req, res) => {
         postId: request.postId,
         promptName: request.promptName,
       },
-      err,
-      {
-        systemPrompt: request.systemPrompt,
-        userContent: request.userContent,
-      }
+      err
     );
     if (!res.headersSent) {
       res.status(502).type("text/plain").send(err instanceof Error ? err.message : details);

@@ -170,11 +170,7 @@ generationRouter.post("/", async (req, res) => {
         field,
         extra: { expectsJson },
       },
-      err,
-      {
-        systemPrompt: request.systemPrompt,
-        userContent: request.userContent,
-      }
+      err
     );
     res.status(502).json({ error: err instanceof Error ? err.message : details });
   }
@@ -271,11 +267,7 @@ generationRouter.post("/batch", async (req, res) => {
             field,
             extra: { expectsJson },
           },
-          err,
-          {
-            systemPrompt: request.systemPrompt,
-            userContent: request.userContent,
-          }
+          err
         );
         return { field, error: err instanceof Error ? err.message : details };
       }

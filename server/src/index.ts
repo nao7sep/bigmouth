@@ -9,6 +9,7 @@ import {
   warn,
   error as logError,
   formatLogValue,
+  formatRequestShape,
 } from "./services/logger.js";
 import { DEFAULT_HOST, DEFAULT_PORT } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
@@ -88,7 +89,7 @@ app.use((req, res, next) => {
   info(
     `Request started: id=${requestId}, method=${req.method}, path=${req.originalUrl}, ` +
       `contentType=${req.headers["content-type"] ?? "-"}, origin=${req.headers.origin ?? "-"}, ` +
-      `query=${formatLogValue(req.query)}, body=${formatLogValue(req.body)}`
+      `queryKeys=${formatRequestShape(req.query)}, bodyKeys=${formatRequestShape(req.body)}`
   );
 
   res.on("finish", () => {
