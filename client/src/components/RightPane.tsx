@@ -1,11 +1,12 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { AiAnalysisTab } from "./AiAnalysisTab";
+import { ImagePromptsTab } from "./ImagePromptsTab";
 import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import type { Post, PostFrontMatter, Target } from "../types";
 
-export const RIGHT_TABS = ["AI Analysis", "Assets", "Preview", "Metadata"] as const;
+export const RIGHT_TABS = ["AI Analysis", "Image Prompts", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 interface RightPaneProps {
@@ -83,6 +84,13 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
               analysisTrigger={analysisTrigger}
               promptsVersion={analysisPromptsVersion}
             />
+          )}
+        </div>
+        <div className={activeTab === "Image Prompts" ? "" : "tab-hidden"}>
+          {loading ? (
+            <RightPanePlaceholder message="Loading post…" />
+          ) : (
+            <ImagePromptsTab postId={postId} content={content} />
           )}
         </div>
         <div className={activeTab === "Preview" ? "" : "tab-hidden"}>

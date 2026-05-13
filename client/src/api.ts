@@ -1,4 +1,20 @@
-import type { Post, PostListResponse, AnalysisPrompt, Settings, Target, AssetMeta, AiConfigsData, GenerationPromptsData, Workspace } from "./types";
+import type {
+  Post,
+  PostListResponse,
+  AnalysisPrompt,
+  Settings,
+  Target,
+  AssetMeta,
+  AiConfigsData,
+  GenerationPromptsData,
+  ImagePromptOptions,
+  Workspace,
+  ImagePromptRelation,
+  ImagePromptEmotionalLens,
+  ImagePromptLiteralness,
+  ImagePromptPeople,
+  ImagePromptStyle,
+} from "./types";
 
 // --- Workspace context ---
 
@@ -363,6 +379,37 @@ export async function runAnalysisStream(
   } finally {
     reader.releaseLock();
   }
+}
+
+export type {
+  ImagePromptOptions,
+  ImagePromptRelation,
+  ImagePromptEmotionalLens,
+  ImagePromptLiteralness,
+  ImagePromptPeople,
+  ImagePromptStyle,
+};
+
+export async function generateImagePrompts(
+  postId: string,
+  content: string,
+  options: ImagePromptOptions,
+  signal?: AbortSignal
+): Promise<string[]> {
+  const res = await fetch(`${base()}/image-prompts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postId, content, ...options }),
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Image prompt generation failed: ${res.status}`
+    );
+  }
+  const data = (await res.json()) as { items: string[] };
+  return data.items;
 }
 
 /**

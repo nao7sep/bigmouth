@@ -13,6 +13,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Three-stage workflow**: Draft → Ready → Published
 - **AI analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
+- **Image prompt generation** — generate temporary English image-prompt variants from the current post with adjustable relation, tone, literalness, people, and style
 - **Assets** — upload and manage images and files per post; embed links directly in the editor
 - **Export** — copy post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
@@ -212,6 +213,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `POST /api/w/:wsId/analyze/stream` | Stream AI analysis |
 | `POST /api/w/:wsId/generate` | Generate one metadata field |
 | `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields |
+| `POST /api/w/:wsId/image-prompts` | Generate temporary image prompts |
 | `GET /api/w/:wsId/assets/:postId` | List assets |
 | `POST /api/w/:wsId/assets/:postId` | Upload an asset |
 | `DELETE /api/w/:wsId/assets/:postId/:filename` | Delete an asset |

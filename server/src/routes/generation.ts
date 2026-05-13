@@ -15,6 +15,7 @@ import {
   resolvePromptRequest,
   usesJsonPlaceholder,
 } from "../ai/promptTemplates.js";
+import { parseJsonCandidates } from "../ai/jsonResponse.js";
 import { error as logError } from "../services/logger.js";
 
 export const generationRouter = Router({ mergeParams: true });
@@ -37,70 +38,8 @@ function normalizeTagList(tags: unknown): string[] | null {
   return normalized.length >= 2 ? normalized : null;
 }
 
-function extractBracketedJson(text: string, openChar: "[" | "{", closeChar: "]" | "}"): string | null {
-  const start = text.indexOf(openChar);
-  if (start < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-
-  for (let i = start; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-      } else if (ch === "\\") {
-        escape = true;
-      } else if (ch === "\"") {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === "\"") {
-      inString = true;
-      continue;
-    }
-    if (ch === openChar) {
-      depth += 1;
-      continue;
-    }
-    if (ch === closeChar) {
-      depth -= 1;
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
 function parseTagJsonResponse(field: string, value: string): string[] {
-  const candidates = new Set<string>();
-  const trimmed = value.trim();
-  candidates.add(trimmed);
-
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
-    const inner = match[1]?.trim();
-    if (inner) candidates.add(inner);
-  }
-
-  const arraySnippet = extractBracketedJson(trimmed, "[", "]");
-  if (arraySnippet) candidates.add(arraySnippet);
-
-  const objectSnippet = extractBracketedJson(trimmed, "{", "}");
-  if (objectSnippet) candidates.add(objectSnippet);
-
-  for (const candidate of candidates) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      continue;
-    }
-
+  for (const parsed of parseJsonCandidates(value)) {
     const direct = normalizeTagList(parsed);
     if (direct) return direct;
 
