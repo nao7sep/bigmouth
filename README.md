@@ -170,6 +170,18 @@ Prompts used to auto-generate individual metadata fields (title, slug, tags, etc
 
 Built-in prompt text is owned by the server, and the Settings UI can restore the current built-in set into your workspace file at any time.
 
+### Imaging
+
+Imaging is transient. Generated prompts are shown in the tab and can be copied, but they are not written to post front matter, workspace config, or history.
+
+The endpoint expects the model to return JSON in this shape:
+
+```json
+{"items":["prompt 1","prompt 2"]}
+```
+
+The server is tolerant of a few nearby variants when parsing, but that keyed `items` object is the intended contract.
+
 ## Post workflow
 
 1. **Draft** — Create a post, pick a target and language. Write in Markdown. Content autosaves every 2 seconds.

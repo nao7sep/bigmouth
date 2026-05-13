@@ -118,7 +118,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     <div className="imaging-tab">
       <div className="imaging-toolbar">
         <div className="imaging-note">
-          English prompts only. The visual setting should still follow the draft&apos;s own cues. Results are temporary and not saved.
+          English only. Not saved.
         </div>
         <button
           className="action-button"
