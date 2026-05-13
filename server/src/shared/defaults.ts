@@ -69,9 +69,9 @@ Respond with:
 ## Suggested fixes
 - Concrete rewrites or actions
 
----
-
-{content}`,
+<content>
+{content}
+</content>`,
   },
   {
     name: "Distinctiveness & Credibility Review",
@@ -97,9 +97,9 @@ Respond with:
 ## Suggested upgrades
 - Specific additions or rewrites that would help most
 
----
-
-{content}`,
+<content>
+{content}
+</content>`,
   },
   {
     name: "Calibration & Bias Review",
@@ -125,9 +125,9 @@ Respond with:
 ## Suggested rewrites
 - More balanced alternatives
 
----
-
-{content}`,
+<content>
+{content}
+</content>`,
   },
   {
     name: "Reader Value & Structure Review",
@@ -154,9 +154,9 @@ Respond with:
 ## Suggested edits
 - Concrete restructuring ideas
 
----
-
-{content}`,
+<content>
+{content}
+</content>`,
   },
   {
     name: "Elaboration Coach",
@@ -183,8 +183,8 @@ Respond with:
 ## Optional additions
 - A few concrete additions that could make the post stronger
 
----
-
-{content}`,
+<content>
+{content}
+</content>`,
   },
 ];

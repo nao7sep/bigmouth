@@ -151,13 +151,21 @@ When the Settings UI loads an existing AI configuration, the API key field stays
 
 ### Analysis prompts (`analysis-prompts.json`, per workspace)
 
-Named prompts for AI content review. Use `{content}` as a placeholder — text before it becomes the system prompt; the post content becomes the user message. If `{content}` is omitted, the full prompt is used as the system prompt.
+Named prompts for AI content review. Use `{content}` as a placeholder for the post body. This works well with XML-style sections such as:
+
+```text
+<content>
+{content}
+</content>
+```
+
+If `{content}` is omitted, the app keeps the older compatibility behavior and sends the prompt as instructions plus the post content separately.
 
 The built-in prompt set now covers publishing risk, distinctiveness and credibility, calibration and bias, reader value and structure, and elaboration coaching. They are designed to reply in the same language as the post, focus on the most important points, and stay constructive rather than nitpicky. The Settings UI can restore the current built-in set into your workspace file at any time.
 
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
-Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). Each field prompt is self-contained; there is no shared preamble. The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, and tell the English title/description prompts not to add extra drama or stronger emotion.
+Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). Use `{content}` as a placeholder for the draft content. Tag prompts may also use `{json}`, which the app replaces with the exact field-specific JSON shape it expects, such as `{"tags":[...]}` or `{"tagsEn":[...]}`. The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, ask for one plain title instead of split or decorated titles, make slugs read like short phrases, ask for short hashtag-style tags, and tell the English title/description prompts not to add extra drama or stronger emotion.
 
 Built-in prompt text is owned by the server, and the Settings UI can restore the current built-in set into your workspace file at any time.
 

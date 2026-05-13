@@ -18,8 +18,8 @@ export class ClaudeProvider implements AiProvider {
     const message = await this.client.messages.create({
       model: this.model,
       max_tokens: 4096,
-      system: systemPrompt,
       messages: [{ role: "user", content: userContent }],
+      ...(systemPrompt ? { system: systemPrompt } : {}),
     });
 
     const block = message.content[0];

@@ -7,6 +7,7 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getAnalysisPrompts, getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
+import { resolvePromptRequest } from "../ai/promptTemplates.js";
 import { error as logError } from "../services/logger.js";
 
 export const analysisRouter = Router({ mergeParams: true });
@@ -37,12 +38,10 @@ analysisRouter.post("/", async (req, res) => {
     return;
   }
 
-  const markerIndex = prompt.text.indexOf("{content}");
-  const systemPrompt =
-    markerIndex >= 0
-      ? prompt.text.slice(0, markerIndex).trim()
-      : prompt.text.trim();
-  const userContent = (content?.trim()) ? content : post.content;
+  const postContent = (content?.trim()) ? content : post.content;
+  const { systemPrompt, userContent } = resolvePromptRequest(prompt.text, {
+    content: postContent,
+  });
 
   let provider;
   try {

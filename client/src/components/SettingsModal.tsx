@@ -584,7 +584,7 @@ function GenerationTab({
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        Prompts used to generate metadata fields.
+        Use {`{content}`} for the draft. In tag prompts, {`{json}`} is replaced with the required field-specific JSON shape.
       </p>
 
       <div className="metadata-generate-all-row">

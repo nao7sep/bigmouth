@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { Post, PostFrontMatter, Target } from "../types";
-import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
+import { updatePost, generateMetadata } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface MetadataTabProps {
@@ -51,10 +51,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
     const [generatingAll, setGeneratingAll] = useState(false);
     const [genError, setGenError] = useState<string | null>(null);
-    const genErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const dirtyKeysRef = useRef<Set<string>>(new Set());
-    const generationPromisesRef = useRef<Set<Promise<void>>>(new Set());
+    const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
     const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
     const fieldsRef = useRef(fields);
     const onPostUpdatedRef = useRef(onPostUpdated);
@@ -82,8 +81,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     const showGenError = useCallback((msg: string) => {
       setGenError(msg);
-      if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
-      genErrorTimer.current = setTimeout(() => setGenError(null), 8000);
+    }, []);
+
+    const clearGenError = useCallback(() => {
+      setGenError(null);
     }, []);
 
     const clearDirtyKey = (key: string) => {
@@ -150,8 +151,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     useEffect(() => {
       return () => {
-        if (genErrorTimer.current) clearTimeout(genErrorTimer.current);
-
         const pendingKeys = new Set<string>([
           ...Object.keys(saveTimers.current),
           ...dirtyKeysRef.current,
@@ -200,32 +199,42 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       }, 1_000);
     };
 
+    const runGeneration = useCallback(
+      (key: string, isTags = false) => {
+        const task = (async () => {
+          setGenerating((prev) => ({ ...prev, [key]: true }));
+          try {
+            const value = await generateMetadata(postId, key, content);
+            if (saveTimers.current[key]) {
+              clearTimeout(saveTimers.current[key]);
+              delete saveTimers.current[key];
+            }
+            markDirtyKey(key);
+            setFields((prev) => ({ ...prev, [key]: value }));
+            await saveField(key, normalizeFieldValue(value, isTags));
+            return { key, ok: true as const };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Generation failed";
+            showGenError(message);
+            return { key, ok: false as const, error: message };
+          } finally {
+            setGenerating((prev) => ({ ...prev, [key]: false }));
+          }
+        })();
+
+        generationPromisesRef.current.add(task);
+        task.finally(() => {
+          generationPromisesRef.current.delete(task);
+        });
+        return task;
+      },
+      [content, postId, saveField, showGenError]
+    );
+
     const generate = async (key: string, isTags = false) => {
       if (readOnly || !content.trim()) return;
-      const task = (async () => {
-        setGenerating((prev) => ({ ...prev, [key]: true }));
-        try {
-          const value = await generateMetadata(postId, key, content);
-          if (saveTimers.current[key]) {
-            clearTimeout(saveTimers.current[key]);
-            delete saveTimers.current[key];
-          }
-          markDirtyKey(key);
-          setFields((prev) => ({ ...prev, [key]: value }));
-          await saveField(key, normalizeFieldValue(value, isTags));
-        } catch (err) {
-          showGenError(err instanceof Error ? err.message : "Generation failed");
-        } finally {
-          setGenerating((prev) => ({ ...prev, [key]: false }));
-        }
-      })();
-
-      generationPromisesRef.current.add(task);
-      try {
-        await task;
-      } finally {
-        generationPromisesRef.current.delete(task);
-      }
+      clearGenError();
+      await runGeneration(key, isTags);
     };
 
     const isGenerating = (key: string) => !!generating[key];
@@ -237,7 +246,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           {genError && (
             <div className="metadata-error">
               {genError}
-              <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>
+              <button className="metadata-error-dismiss" onClick={clearGenError}>
                 ×
               </button>
             </div>
@@ -272,6 +281,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     const generateAll = async () => {
       if (readOnly || !content.trim()) return;
+      clearGenError();
       const task = (async () => {
         const fieldKeys = allFields.map((f) => f.key);
         for (const key of fieldKeys) {
@@ -283,27 +293,13 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
         setGeneratingAll(true);
         try {
-          const results = await generateMetadataBatch(postId, fieldKeys, content);
-          const failed: string[] = [];
-
-          for (const { key, isTags } of allFields) {
-            const result = results[key];
-            if (!result || "error" in result) {
-              failed.push(key);
-              continue;
-            }
-
-            const value = result.value;
-            markDirtyKey(key);
-            setFields((prev) => ({ ...prev, [key]: value }));
-            await saveField(key, normalizeFieldValue(value, !!isTags));
-          }
-
+          const results = await Promise.all(
+            allFields.map(({ key, isTags }) => runGeneration(key, !!isTags))
+          );
+          const failed = results.filter((result) => !result.ok).map((result) => result.key);
           if (failed.length > 0) {
             showGenError(`Failed to generate: ${failed.join(", ")}`);
           }
-        } catch (err) {
-          showGenError(err instanceof Error ? err.message : "Batch generation failed");
         } finally {
           setGeneratingAll(false);
         }
@@ -322,7 +318,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         {genError && (
           <div className="metadata-error">
             {genError}
-            <button className="metadata-error-dismiss" onClick={() => setGenError(null)}>
+            <button className="metadata-error-dismiss" onClick={clearGenError}>
               ×
             </button>
           </div>
@@ -588,7 +584,7 @@ function extractFields(fm: PostFrontMatter): Record<string, string> {
 function normalizeFieldValue(value: string, isTags: boolean): string | string[] {
   if (!isTags) return value;
   return value
-    .split(",")
+    .split(/[,\u3001]/)
     .map((t) => t.trim())
     .filter(Boolean);
 }
