@@ -111,6 +111,8 @@ Logs are written under `~/.bigmouth/logs/`, with one log file per server start. 
 
 The server logs request start/finish, workspace resolution, major app actions, successes, failures, and unexpected process-level errors. Request logs record metadata such as routes and body/query keys, not full post content. For AI debugging, failed analysis/generation/imaging requests log provider error details, and raw model output is only logged when the response cannot be parsed or otherwise cannot be used.
 
+Use the hamburger menu → **Reveal Log** to open the current log file in your OS file manager.
+
 ## Workspaces
 
 Workspaces provide complete isolation: each has its own posts, assets, settings, targets, AI configs, and prompts.
