@@ -22,12 +22,16 @@ export class ClaudeProvider implements AiProvider {
       ...(systemPrompt ? { system: systemPrompt } : {}),
     });
 
-    const block = message.content[0];
-    if (block.type !== "text") {
+    const text = message.content
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+
+    if (!text) {
       throw new Error("Unexpected response type from Claude");
     }
 
-    return block.text;
+    return text;
   }
 
   generateTextStream(

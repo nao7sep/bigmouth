@@ -129,10 +129,6 @@ export function AnalysisTab({
 
       {error && <div className="panel-error">{error}</div>}
 
-      {loading && (
-        <div className="analysis-loading">Running analysis…</div>
-      )}
-
       {html && (
         <div
           className="analysis-result preview-content"
