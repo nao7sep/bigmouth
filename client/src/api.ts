@@ -324,6 +324,47 @@ export async function runAnalysis(
   return data.result;
 }
 
+export async function runAnalysisStream(
+  postId: string,
+  promptName: string,
+  content: string,
+  options: {
+    signal?: AbortSignal;
+    onChunk: (delta: string) => void;
+  }
+): Promise<void> {
+  const res = await fetch(`${base()}/analyze/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postId, promptName, content }),
+    signal: options.signal,
+  });
+  if (!res.ok) {
+    const message = await res.text().catch(() => "");
+    throw new Error(message || `Analysis failed: ${res.status}`);
+  }
+  if (!res.body) {
+    const fallback = await res.text();
+    if (fallback) options.onChunk(fallback);
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      if (text) options.onChunk(text);
+    }
+    const finalChunk = decoder.decode();
+    if (finalChunk) options.onChunk(finalChunk);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /**
  * Returns the URL for serving a raw asset file.
  */

@@ -238,7 +238,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     };
 
     const isGenerating = (key: string) => !!generating[key];
-    const anyGenerating = generatingAll || Object.values(generating).some(Boolean);
+    const anyGeneratingField = Object.values(generating).some(Boolean);
 
     if (!requiresMetadata) {
       return (
@@ -260,7 +260,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "slug"}
             onGenerate={() => generate("slug")}
             generating={isGenerating("slug")}
-            generateDisabled={readOnly || anyGenerating || noContent}
+            generateDisabled={readOnly || generatingAll || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />
@@ -329,11 +329,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           </p>
         )}
         <div className="metadata-generate-all-row">
-          <button
-            className="btn-generate-all"
-            onClick={generateAll}
-            disabled={readOnly || anyGenerating || noContent}
-          >
+            <button
+              className="btn-generate-all"
+              onClick={generateAll}
+              disabled={readOnly || generatingAll || anyGeneratingField || noContent}
+            >
             {generatingAll ? "Generating All…" : "Generate All"}
           </button>
         </div>
@@ -346,7 +346,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "title"}
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
-          generateDisabled={readOnly || anyGenerating || noContent}
+          generateDisabled={readOnly || generatingAll || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -360,7 +360,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "titleEn"}
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
-            generateDisabled={readOnly || anyGenerating || noContent}
+            generateDisabled={readOnly || generatingAll || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />
@@ -374,7 +374,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "slug"}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
-          generateDisabled={readOnly || anyGenerating || noContent}
+          generateDisabled={readOnly || generatingAll || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -387,7 +387,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "tags"}
           onGenerate={() => generate("tags", true)}
           generating={isGenerating("tags")}
-          generateDisabled={readOnly || anyGenerating || noContent}
+          generateDisabled={readOnly || generatingAll || noContent}
           placeholder="tag1, tag2, tag3"
           readOnly={readOnly}
           isActive={isActive}
@@ -402,7 +402,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "tagsEn"}
             onGenerate={() => generate("tagsEn", true)}
             generating={isGenerating("tagsEn")}
-            generateDisabled={readOnly || anyGenerating || noContent}
+            generateDisabled={readOnly || generatingAll || noContent}
             placeholder="tag1, tag2, tag3"
             readOnly={readOnly}
             isActive={isActive}
@@ -417,7 +417,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "metaDescription"}
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
-          generateDisabled={readOnly || anyGenerating || noContent}
+          generateDisabled={readOnly || generatingAll || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -431,7 +431,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "metaDescriptionEn"}
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
-            generateDisabled={readOnly || anyGenerating || noContent}
+            generateDisabled={readOnly || generatingAll || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />

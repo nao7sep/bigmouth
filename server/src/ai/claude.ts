@@ -29,4 +29,29 @@ export class ClaudeProvider implements AiProvider {
 
     return block.text;
   }
+
+  generateTextStream(
+    systemPrompt: string,
+    userContent: string,
+    onText: (delta: string) => void
+  ): {
+    abort: () => void;
+    finished: Promise<string>;
+  } {
+    const stream = this.client.messages.stream({
+      model: this.model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: userContent }],
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+    });
+
+    stream.on("text", (delta) => {
+      onText(delta);
+    });
+
+    return {
+      abort: () => stream.abort(),
+      finished: stream.finalText(),
+    };
+  }
 }

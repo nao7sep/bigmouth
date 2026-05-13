@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import { fetchAnalysisPrompts, runAnalysis } from "../api";
+import { fetchAnalysisPrompts, runAnalysisStream } from "../api";
 import type { AnalysisPrompt } from "../types";
 
 interface AiAnalysisTabProps {
@@ -22,6 +22,7 @@ export function AiAnalysisTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Load prompts on mount and after Settings updates them
   useEffect(() => {
@@ -39,25 +40,45 @@ export function AiAnalysisTab({
   // Reset state and cancel any in-flight analysis when post changes
   useEffect(() => {
     runIdRef.current++;
+    abortRef.current?.abort();
+    abortRef.current = null;
     setResult(null);
     setError(null);
     setLoading(false);
   }, [postId]);
 
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
+
   const run = async () => {
     if (!selectedPrompt || loading || !content.trim()) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const myId = ++runIdRef.current;
     setLoading(true);
     setError(null);
-    setResult(null);
+    setResult("");
     try {
-      const text = await runAnalysis(postId, selectedPrompt, content);
-      if (runIdRef.current !== myId) return; // post switched while in-flight
-      setResult(text);
+      await runAnalysisStream(postId, selectedPrompt, content, {
+        signal: controller.signal,
+        onChunk: (delta) => {
+          if (runIdRef.current !== myId) return;
+          setResult((prev) => (prev ?? "") + delta);
+        },
+      });
     } catch (err) {
+      if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       if (runIdRef.current === myId) setLoading(false);
     }
   };
@@ -112,7 +133,7 @@ export function AiAnalysisTab({
         <div className="ai-loading">Running analysis…</div>
       )}
 
-      {html && !loading && (
+      {html && (
         <div
           className="ai-result preview-content"
           dangerouslySetInnerHTML={{ __html: html }}

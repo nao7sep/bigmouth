@@ -11,7 +11,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Workspaces** — manage multiple isolated workspaces, each with its own posts, assets, settings, and AI configuration. Switch between workspaces without reloading. You can point a workspace at any directory, making it easy to version-control workspace data with Git.
 - **Markdown editor** with autosave, live post-list updates, and resizable panes
 - **Three-stage workflow**: Draft → Ready → Published
-- **AI analysis** — run named prompts against post content to catch issues before publishing
+- **AI analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
 - **Assets** — upload and manage images and files per post; embed links directly in the editor
 - **Export** — copy post content as HTML or plain text
@@ -161,7 +161,7 @@ Named prompts for AI content review. Use `{content}` as a placeholder for the po
 
 If `{content}` is omitted, the app keeps the older compatibility behavior and sends the prompt as instructions plus the post content separately.
 
-The built-in prompt set now covers publishing risk, distinctiveness and credibility, calibration and bias, reader value and structure, and elaboration coaching. They are designed to reply in the same language as the post, focus on the most important points, and stay constructive rather than nitpicky. The Settings UI can restore the current built-in set into your workspace file at any time.
+The built-in prompt set now covers publishing risk, distinctiveness and credibility, calibration and bias, reader value and structure, and elaboration coaching. They are designed to reply in the same language as the post, focus on the most important points, and stay constructive rather than nitpicky. Analysis output is streamed into the pane progressively while the model is still responding. The Settings UI can restore the current built-in set into your workspace file at any time.
 
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
@@ -209,6 +209,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `GET /api/w/:wsId/generation-prompts/defaults` | Get built-in generation prompts |
 | `PUT /api/w/:wsId/generation-prompts` | Save generation prompts |
 | `POST /api/w/:wsId/analyze` | Run AI analysis |
+| `POST /api/w/:wsId/analyze/stream` | Stream AI analysis |
 | `POST /api/w/:wsId/generate` | Generate one metadata field |
 | `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields |
 | `GET /api/w/:wsId/assets/:postId` | List assets |

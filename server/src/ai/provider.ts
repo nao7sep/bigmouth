@@ -11,4 +11,12 @@
 
 export interface AiProvider {
   generateText(systemPrompt: string, userContent: string): Promise<string>;
+  generateTextStream(
+    systemPrompt: string,
+    userContent: string,
+    onText: (delta: string) => void
+  ): {
+    abort: () => void;
+    finished: Promise<string>;
+  };
 }
