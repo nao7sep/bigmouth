@@ -50,6 +50,10 @@ function readFilename(raw: unknown): string | null {
   return name;
 }
 
+function assetStoreErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Asset store error";
+}
+
 // --- GET /api/w/:wsId/assets/:postId ---
 
 assetsRouter.get("/:postId", (req, res) => {
@@ -59,7 +63,17 @@ assetsRouter.get("/:postId", (req, res) => {
     res.status(400).json({ error: "Invalid postId" });
     return;
   }
-  const assets = listAssets(dataDir, postId);
+  let assets;
+  try {
+    assets = listAssets(dataDir, postId);
+  } catch (err) {
+    const message = assetStoreErrorMessage(err);
+    logError(
+      `Assets list failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, message=${message}`
+    );
+    res.status(500).json({ error: message });
+    return;
+  }
   logInfo(
     `Assets listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, count=${assets.length}`
   );
@@ -177,7 +191,16 @@ assetsRouter.post("/:postId", (req, res, next) => {
     uploadedAt: formatForFrontMatter(utcNow()),
   };
 
-  addAsset(dataDir, postId, meta);
+  try {
+    addAsset(dataDir, postId, meta);
+  } catch (err) {
+    const message = assetStoreErrorMessage(err);
+    logError(
+      `Asset metadata save failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", message=${message}`
+    );
+    res.status(500).json({ error: message });
+    return;
+  }
   logInfo(
     `Asset uploaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", size=${req.file.buffer.length}, width=${width ?? "-"}, height=${height ?? "-"}, hasMetadata=${hasMetadata ?? false}`
   );
@@ -217,7 +240,16 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
     return;
   }
 
-  deleteAsset(dataDir, postId, filename);
+  try {
+    deleteAsset(dataDir, postId, filename);
+  } catch (err) {
+    const message = assetStoreErrorMessage(err);
+    logError(
+      `Asset metadata update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", message=${message}`
+    );
+    res.status(500).json({ error: message });
+    return;
+  }
   logInfo(
     `Asset deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
   );

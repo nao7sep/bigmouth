@@ -101,7 +101,7 @@ The central configuration file. Contains the server port, bind host, origin allo
 | `allowedOrigins` | `[]` | Extra `Origin` values the CSRF guard accepts. Loopback origins are always allowed; any non-loopback hostname you want to access bigmouth from must appear here. |
 | `workspaces` | `[]` | Workspace registry, managed through the API. |
 
-Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. Leaving the location blank uses the default `~/.bigmouth/workspaces/{workspace-id}` location. If the chosen folder already contains a bigmouth workspace, the app opens it; otherwise bigmouth creates a new workspace there. It will still refuse to initialize inside a non-empty folder that contains unrelated files.
+Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. Leaving the location blank uses the default `~/.bigmouth/workspaces/{workspace-id}` location. If the chosen folder already contains a complete bigmouth workspace, the app opens it; otherwise bigmouth creates a new workspace there. It refuses to initialize inside a non-empty folder that contains unrelated or partial workspace files.
 
 Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
 
@@ -120,7 +120,7 @@ Workspaces provide complete isolation: each has its own posts, assets, settings,
 - On startup, the frontend shows a workspace modal if no workspace is selected (or the saved workspace no longer exists).
 - Switch workspaces at any time via the hamburger menu → "Workspaces".
 - The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
-- Open an existing workspace folder, or create a new workspace in the chosen folder.
+- Open an existing complete workspace folder, or create a new workspace in the chosen folder.
 - **Deleting a workspace only removes it from the registry** (`app.json`). The data directory and all files inside it are left untouched on disk.
 
 ## Configuration
@@ -168,15 +168,13 @@ Named prompts for AI content review. Use `{content}` as a placeholder for the po
 </content>
 ```
 
-If `{content}` is omitted, the app keeps the older compatibility behavior and sends the prompt as instructions plus the post content separately.
+If `{content}` is omitted, the app sends the prompt as instructions and the post content as the user message.
 
-The built-in prompt set now covers publishing risk, distinctiveness and credibility, calibration and bias, reader value and structure, and elaboration coaching. They are designed to reply in the same language as the post, focus on the most important points, and stay constructive rather than nitpicky. Analysis output is streamed into the pane progressively while the model is still responding. The Settings UI can restore the current built-in set into your workspace file at any time.
+The built-in prompt set covers publishability and trust, reader momentum and structure, depth and credibility, and completion coaching. They are designed to reply in the same language as the post, name real strengths without empty praise, focus on high-leverage edits, and help the writer finish rather than over-polish. Analysis output is streamed into the pane progressively while the model is still responding. The Settings UI can restore the current built-in set into your workspace file at any time.
 
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
 Field guidance used when auto-generating metadata fields (title, slug, tags, etc.). The app now owns the request-level prompt and JSON schema, sends the draft content and existing metadata automatically, and asks Claude for only the requested fields. `Generate All` uses one structured request so titles, tags, slugs, and descriptions are generated together; individual Generate buttons use the same structured path with a one-field schema.
-
-Older workspace prompt files that still contain `{content}`, `{json}`, or return-format instructions continue to load. Those legacy output-format lines are ignored when building the structured metadata request.
 
 The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, align fields around the same central angle, make slugs read like short English phrases, keep tags short and searchable, and tell the English title/description prompts not to add extra drama or stronger emotion.
 
@@ -289,7 +287,7 @@ BigMouth has no authentication — it is designed for a single user on their own
 - **Same-origin only.** Requests from any `Origin` other than the loopback host (production), the Vite dev server, or an entry in `allowedOrigins` are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the API.
 - **API keys never leave the server in plaintext.** The `GET /api/w/:wsId/ai-configs` response masks every API key. The plaintext form is only deobfuscated in-process when calling the AI provider.
 - **Path validation.** Asset filenames and post slugs are validated against a strict character set, and asset paths are resolved under the per-post asset directory and rejected if they escape.
-- **Workspace data directories.** Pointing a workspace at a custom path creates the directory if it does not exist. If the path already exists, it must be either empty or an existing bigmouth workspace; non-empty unrelated folders are rejected.
+- **Workspace data directories.** Pointing a workspace at a custom path creates the directory if it does not exist. If the path already exists, it must be either empty or a complete bigmouth workspace; non-empty unrelated or partial workspace folders are rejected rather than repaired.
 
 If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
 

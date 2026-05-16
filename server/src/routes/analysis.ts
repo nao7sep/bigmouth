@@ -8,9 +8,16 @@ import type { Request, Response } from "express";
 import { getPost } from "../services/postStore.js";
 import { getAnalysisPrompts, getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { resolvePromptRequest } from "../ai/promptTemplates.js";
-import { error as logError, info as logInfo } from "../services/logger.js";
+import { resolvePromptRequest, usesContentPlaceholder } from "../ai/promptTemplates.js";
+import { error as logError, formatLogValue, info as logInfo, warn as logWarn } from "../services/logger.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
+import {
+  metadataKeys,
+  safeAiConfigLogContext,
+  safePostLogContext,
+} from "../shared/logSummaries.js";
+import type { AiProvider } from "../ai/provider.js";
+import type { AiConfig, Post } from "../shared/types.js";
 
 export const analysisRouter = Router({ mergeParams: true });
 
@@ -21,9 +28,14 @@ async function resolveAnalysisRequest(
   | {
       postId: string;
       promptName: string;
+      post: Post;
+      postContent: string;
+      contentSource: "request" | "stored";
+      promptMode: "inline-content" | "split-system-user";
       systemPrompt: string;
       userContent: string;
-      provider: ReturnType<typeof createProvider>;
+      aiConfig: AiConfig;
+      provider: AiProvider;
     }
   | null
 > {
@@ -52,12 +64,15 @@ async function resolveAnalysisRequest(
     return null;
   }
 
-  const postContent = (content?.trim()) ? content : post.content;
+  const postContent = content?.trim() ? content : post.content;
+  const contentSource = content?.trim() ? "request" : "stored";
   const { systemPrompt, userContent } = resolvePromptRequest(prompt.text, {
     content: postContent,
   });
+  const promptMode = usesContentPlaceholder(prompt.text)
+    ? "inline-content"
+    : "split-system-user";
 
-  let provider;
   try {
     const aiConfigs = getAiConfigsForServer(dataDir);
     const activeConfig = aiConfigs.configs.find(
@@ -67,12 +82,17 @@ async function resolveAnalysisRequest(
       res.status(503).json({ error: "No active AI configuration selected" });
       return null;
     }
-      return {
-        postId,
-        promptName,
-        systemPrompt,
-        userContent,
-        provider: createProvider(activeConfig),
+    return {
+      postId,
+      promptName,
+      post,
+      postContent,
+      contentSource,
+      promptMode,
+      systemPrompt,
+      userContent,
+      aiConfig: activeConfig,
+      provider: createProvider(activeConfig),
     };
   } catch (err) {
     const details = describeAiError(err);
@@ -89,7 +109,7 @@ analysisRouter.post("/", async (req, res) => {
   if (!request) return;
 
   logInfo(
-    `Analysis started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
+    `Analysis started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, contentSource=${request.contentSource}, contentLength=${request.postContent.length}, promptMode=${request.promptMode}, language=${request.post.frontMatter.language}, target=${request.post.frontMatter.target}, metadataKeys=${metadataKeys(request.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(request.aiConfig))}, post=${formatLogValue(safePostLogContext(request.post))}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
   );
 
   try {
@@ -109,6 +129,15 @@ analysisRouter.post("/", async (req, res) => {
         workspaceId: res.locals.workspaceId,
         postId: request.postId,
         promptName: request.promptName,
+        extra: {
+          contentSource: request.contentSource,
+          contentLength: request.postContent.length,
+          promptMode: request.promptMode,
+          language: request.post.frontMatter.language,
+          target: request.post.frontMatter.target,
+          metadataKeys: metadataKeys(request.post.frontMatter),
+          ai: safeAiConfigLogContext(request.aiConfig),
+        },
       },
       err
     );
@@ -123,7 +152,7 @@ analysisRouter.post("/stream", async (req, res) => {
   let clientClosed = false;
   let wroteChunk = false;
   logInfo(
-    `Analysis stream started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}`
+    `Analysis stream started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, contentSource=${request.contentSource}, contentLength=${request.postContent.length}, promptMode=${request.promptMode}, language=${request.post.frontMatter.language}, target=${request.post.frontMatter.target}, metadataKeys=${metadataKeys(request.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(request.aiConfig))}, post=${formatLogValue(safePostLogContext(request.post))}`
   );
   const stream = request.provider.generateTextStream(
     request.systemPrompt,
@@ -140,8 +169,12 @@ analysisRouter.post("/stream", async (req, res) => {
   );
 
   const closeHandler = () => {
+    if (res.writableEnded) return;
     clientClosed = true;
     stream.abort();
+    logWarn(
+      `Analysis stream closed early: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, wroteChunk=${wroteChunk}`
+    );
   };
   req.on("close", closeHandler);
 
@@ -166,6 +199,16 @@ analysisRouter.post("/stream", async (req, res) => {
         workspaceId: res.locals.workspaceId,
         postId: request.postId,
         promptName: request.promptName,
+        extra: {
+          contentSource: request.contentSource,
+          contentLength: request.postContent.length,
+          promptMode: request.promptMode,
+          language: request.post.frontMatter.language,
+          target: request.post.frontMatter.target,
+          metadataKeys: metadataKeys(request.post.frontMatter),
+          ai: safeAiConfigLogContext(request.aiConfig),
+          wroteChunk,
+        },
       },
       err
     );

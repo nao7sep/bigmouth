@@ -12,7 +12,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { warn as logWarn } from "./logger.js";
 
 export interface AssetMeta {
   filename: string;
@@ -40,14 +39,15 @@ export function assetFilePath(dataDir: string, postId: string, filename: string)
 }
 
 export function listAssets(dataDir: string, postId: string): AssetMeta[] {
-  const metaPath = path.join(assetDir(dataDir, postId), META_FILENAME);
-  if (!fs.existsSync(metaPath)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(metaPath, "utf-8")) as AssetMeta[];
-  } catch (err) {
-    logWarn(`Malformed asset metadata file: ${metaPath} — ${err instanceof Error ? err.message : err}`);
+  const dir = assetDir(dataDir, postId);
+  const metaPath = path.join(dir, META_FILENAME);
+  if (!fs.existsSync(metaPath)) {
+    if (fs.existsSync(dir) && fs.readdirSync(dir).some((entry) => entry !== META_FILENAME)) {
+      throw new Error(`Asset metadata missing for non-empty asset directory: ${dir}`);
+    }
     return [];
   }
+  return JSON.parse(fs.readFileSync(metaPath, "utf-8")) as AssetMeta[];
 }
 
 export function addAsset(dataDir: string, postId: string, meta: AssetMeta): void {

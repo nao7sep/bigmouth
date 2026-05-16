@@ -42,146 +42,138 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const DEFAULT_ANALYSIS_PROMPTS: AnalysisPrompt[] = [
   {
-    name: "Publishing Risk Review",
-    text: `Review the following post for publishing readiness.
+    name: "Publishability & Trust",
+    text: `Review the draft for publishability, safety, accuracy, and reader trust.
 
-- Write the whole response in the same language as the post.
-- Be constructive and calm.
-- Focus only on issues that materially affect safety, trust, or publishability.
-- Ignore minor issues that most readers would not care about.
-- If the post is already workable, say so clearly.
+- Write the whole response in the same language as the draft.
+- Act as a precise editor who wants the writer to finish and publish.
+- Start with concrete strengths that are actually present in the draft.
+- Do not flatter. Name structural strengths, useful observations, or effective choices.
+- Ignore micro-optimizations unless they materially affect trust or clarity.
+- Focus on the few issues that would make the post unsafe, misleading, confusing, or unfinished.
 
-Check only for:
-- secrets or internal information
-- private personal information
-- offensive or needlessly inflammatory wording
-- overclaiming that could damage trust
-- obvious placeholder or unfinished text
-- major clarity problems that would genuinely hurt publication
+Check for:
+- private information, secrets, or unnecessary identifying detail
+- factual overreach, unsupported certainty, or claims that need qualification
+- wording that is needlessly inflammatory, unfair, or likely to damage credibility
+- obvious placeholders, broken structure, missing context, or unfinished sections
+- the strongest reason the draft is worth publishing
 
 Respond with:
-## What already works
-- Briefly note what feels publishable already
+## What is already publishable
+- Specific strengths that should be kept
 
-## Important issues
-- Only the few issues worth fixing before publishing
+## Must fix before publishing
+- Only high-impact issues, or say "None" if there are none
 
-## Suggested fixes
-- Concrete rewrites or actions
+## Fast fixes
+- Concrete edits or decisions that would make the draft ready sooner
+
+## Publishability call
+- Ready / Nearly ready / Needs revision, with one sentence explaining why
 
 <content>
 {content}
 </content>`,
   },
   {
-    name: "Distinctiveness & Credibility Review",
-    text: `Review the following post for distinctiveness and credibility.
+    name: "Structure & Reader Momentum",
+    text: `Review the draft for reader value, structure, and momentum.
 
-- Write the whole response in the same language as the post.
-- Be encouraging.
-- Start from what is already strong.
-- Focus on the few biggest opportunities, not a long list of complaints.
-
-Look at:
-- first-hand experience, concrete observation, or real expertise
-- places that feel generic or could use more specificity
-- the strongest original insight and whether it stands out enough
-
-Respond with:
-## What stands out
-- The strongest distinctive elements already here
-
-## Biggest opportunities
-- Only the most useful places to make the post more believable or memorable
-
-## Suggested upgrades
-- Specific additions or rewrites that would help most
-
-<content>
-{content}
-</content>`,
-  },
-  {
-    name: "Calibration & Bias Review",
-    text: `Review the following post for calibration.
-
-- Write the whole response in the same language as the post.
-- Be fair and measured.
-- Only point out passages that clearly feel overstated, emotionally skewed, or under-qualified.
-- Do not treat ordinary personality or strong voice as a problem by itself.
+- Write the whole response in the same language as the draft.
+- Treat the draft as work in progress, not as a school assignment.
+- Help the writer see what is carrying the piece forward.
+- Focus on high-leverage structure: opening, promise, through-line, pacing, transitions, and ending.
+- Do not make a long checklist. Prefer the smallest structural move that improves the piece most.
 
 Look for:
-- claims that sound too absolute or too certain
-- places where observation and interpretation are mixed together
-- missing caveats that would clearly improve trust
+- whether the opening gives readers a reason to continue
+- what question, tension, claim, or story thread organizes the piece
+- where the draft repeats, drifts, jumps, or loses energy
+- whether the ending leaves a clear takeaway or emotional landing
+- what the reader will remember after closing the page
 
 Respond with:
-## What feels well judged
-- Parts that already feel measured or honest
+## Momentum already present
+- Where the draft is already easy to follow or compelling
 
-## Passages to recalibrate
-- Only the passages that would clearly benefit from softer or more precise wording
+## Where momentum drops
+- The few places readers may slow down, get lost, or stop caring
 
-## Suggested rewrites
-- More balanced alternatives
+## Best structural move
+- The single highest-impact reordering, cut, bridge, or expansion
+
+## Ending or next-step suggestion
+- A concrete way to land the piece or move it closer to completion
 
 <content>
 {content}
 </content>`,
   },
   {
-    name: "Reader Value & Structure Review",
-    text: `Review the following post for reader value and structure.
+    name: "Depth & Credibility",
+    text: `Review the draft for specificity, depth, credibility, and distinctiveness.
 
-- Write the whole response in the same language as the post.
-- Be constructive.
-- Focus on the few changes that would help readers most.
-- Ignore minor imperfections if the post already reads well enough.
+- Write the whole response in the same language as the draft.
+- Help the writer make the post more believable and memorable without bloating it.
+- Prefer concrete additions over abstract advice.
+- Preserve the writer's voice, stance, and level of emotion unless they undermine trust.
+- Do not ask for citations or caveats unless they would genuinely improve credibility.
 
-Check:
-- whether the opening earns attention
-- whether the post has a clear through-line
-- whether any section drags or repeats too much
-- whether the ending leaves a clear takeaway
+Look for:
+- first-hand observation, lived detail, examples, scenes, comparisons, or useful evidence
+- places that sound generic even though the writer likely knows something more specific
+- claims that need a softer wording, narrower scope, or clearer distinction between fact and interpretation
+- the strongest original angle and whether it is visible enough
+- one or two details that would make the piece feel more earned
 
 Respond with:
-## What already works
-- Structural choices that already help the reader
+## Strongest original material
+- The details, observations, or angles that give the draft life
 
-## Best improvements
-- The most useful fixes for hook, flow, pacing, or ending
+## Add specificity here
+- The best places to add an example, scene, evidence, or concrete detail
 
-## Suggested edits
-- Concrete restructuring ideas
+## Calibration notes
+- Only claims or passages that would clearly benefit from more precise wording
+
+## Suggested additions
+- A few concrete additions or rewrites that would deepen the post efficiently
 
 <content>
 {content}
 </content>`,
   },
   {
-    name: "Elaboration Coach",
-    text: `Act as a thoughtful editor helping the writer deepen the post.
+    name: "Completion Coach",
+    text: `Help the writer finish the draft sooner and with more confidence.
 
-- Write the whole response in the same language as the post.
-- Be energizing, not discouraging.
-- Do not focus on grammar or formality.
-- Suggest only additions that seem genuinely worth the effort.
-- Treat every suggestion as optional, not mandatory.
+- Write the whole response in the same language as the draft.
+- Be candid, warm, and practical, but never generically nice.
+- Encourage momentum by identifying what is already working and what the next useful writing action is.
+- Avoid grammar policing, line edits, and perfectionism.
+- Do not redesign the whole piece unless the draft truly needs it.
+- Treat suggestions as options for progress, not obligations.
 
-Look for chances to:
-- add a missing example, scene, comparison, or evidence
-- explore a better angle or a question the draft opens up
-- extend the post in a way that makes it richer or more memorable
+Look for:
+- the part of the draft with the most energy or promise
+- the smallest next section, paragraph, example, or transition the writer should write
+- questions that would unlock useful material without sending the writer into research mode
+- what can be left imperfect or ignored for now
+- a reasonable stopping point for this editing pass
 
 Respond with:
-## Strong parts to build on
-- What already gives this post life
+## Keep going from here
+- The strongest live thread in the draft and why it is worth continuing
 
-## Questions worth exploring
-- The most valuable questions to think about next
+## Write next
+- The next paragraph, section, example, or transition to draft
 
-## Optional additions
-- A few concrete additions that could make the post stronger
+## Useful questions
+- A few questions that would produce better material quickly
+
+## Stop rule
+- What is good enough for this pass, so the writer does not overwork the piece
 
 <content>
 {content}

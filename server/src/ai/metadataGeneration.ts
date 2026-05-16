@@ -79,9 +79,6 @@ const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
   },
 };
 
-const LEGACY_RETURN_LINE =
-  /\b(return only|return json|do not wrap|do not add any text|use this exact shape)\b/i;
-
 export function isMetadataField(value: string): value is MetadataField {
   return METADATA_FIELD_SET.has(value);
 }
@@ -205,13 +202,10 @@ export function metadataValueToClientString(value: GeneratedMetadataValue): stri
 }
 
 function cleanFieldGuidance(prompt: string): string {
-  const withoutContentBlock = prompt.replace(/<content>[\s\S]*?<\/content>/gi, "");
-  const lines = withoutContentBlock
-    .replaceAll("{content}", "the draft content")
-    .replaceAll("{json}", "the structured output schema")
+  const lines = prompt
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line && !LEGACY_RETURN_LINE.test(line));
+    .filter(Boolean);
 
   return lines.join("\n");
 }

@@ -641,6 +641,9 @@ function AnalysisPromptsTab({
 
   return (
     <div className="settings-section">
+      <p className="settings-hint">
+        Built-ins focus on publishability, structure, credibility, and completion momentum. Use {"{content}"} where the draft should be inserted.
+      </p>
       <div className="metadata-generate-all-row">
         <button
           className="btn-toolbar"

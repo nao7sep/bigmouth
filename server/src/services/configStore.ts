@@ -77,13 +77,7 @@ export function getAiConfigsForClient(dataDir: string): AiConfigsData {
  * hasApiKey=true, the previously stored key is preserved.
  */
 export function saveAiConfigs(dataDir: string, data: AiConfigsData): void {
-  const existing = (() => {
-    try {
-      return readAiConfigsRaw(dataDir);
-    } catch {
-      return { configs: [], activeId: "" } as AiConfigsData;
-    }
-  })();
+  const existing = readAiConfigsRaw(dataDir);
   const existingById = new Map(existing.configs?.map((c) => [c.id, c]) ?? []);
 
   const toWrite: AiConfigsData = {

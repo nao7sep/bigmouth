@@ -141,18 +141,36 @@ export function getWorkspace(id: string): Workspace | undefined {
 }
 
 /**
- * Returns true when the directory already looks like a bigmouth workspace.
+ * Returns true only when the directory has the required bigmouth workspace
+ * shape. Partially present workspace files are treated as broken, not as a
+ * workspace to repair.
  */
 function isWorkspaceDirectory(dir: string): boolean {
   if (!fs.existsSync(dir)) return false;
   const stat = fs.statSync(dir);
   if (!stat.isDirectory()) return false;
 
-  const entries = fs.readdirSync(dir);
+  const requiredFiles = [
+    "settings.json",
+    "ai-configs.json",
+    "targets.json",
+    "analysis-prompts.json",
+    "generation-prompts.json",
+  ];
+  const requiredDirs = [
+    "posts",
+    "posts/drafts",
+    "posts/ready",
+    "posts/published",
+    "assets",
+  ];
+
   return (
-    entries.includes("settings.json") ||
-    entries.includes("ai-configs.json") ||
-    entries.includes("posts")
+    requiredFiles.every((entry) => fs.existsSync(path.join(dir, entry))) &&
+    requiredDirs.every((entry) => {
+      const entryPath = path.join(dir, entry);
+      return fs.existsSync(entryPath) && fs.statSync(entryPath).isDirectory();
+    })
   );
 }
 
