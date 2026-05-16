@@ -14,7 +14,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
 - **Imaging** — generate temporary English image-prompt variants from the current post and metadata with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
-- **Assets** — upload and manage images and files per post; embed links directly in the editor
+- **Assets** — upload and manage images and files per post; embed links directly in the editor. Raster images preview inline; other files are served as downloads.
 - **Export** — copy or download post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
 - **Targets** — configure multiple publishing destinations with per-target metadata requirements
@@ -286,7 +286,9 @@ BigMouth has no authentication — it is designed for a single user on their own
 - **Loopback only by default.** The server binds to `127.0.0.1`. Set `host` in `app.json` to expose it to a trusted LAN — see [LAN access](#lan-access).
 - **Same-origin only.** Requests from any `Origin` other than the loopback host (production), the Vite dev server, or an entry in `allowedOrigins` are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the API.
 - **API keys never leave the server in plaintext.** The `GET /api/w/:wsId/ai-configs` response masks every API key. The plaintext form is only deobfuscated in-process when calling the AI provider.
+- **Rendered Markdown is sanitized.** Preview and streamed analysis output are sanitized before being inserted into the app UI, so raw HTML in drafts or AI output cannot run scripts in the BigMouth origin.
 - **Path validation.** Asset filenames and post slugs are validated against a strict character set, and asset paths are resolved under the per-post asset directory and rejected if they escape.
+- **Safer asset serving.** Raster image assets can render inline. Other uploaded file types are served as downloads with `nosniff` and a sandbox content policy, so uploaded HTML/SVG-like files are not treated as executable same-origin documents.
 - **Workspace data directories.** Pointing a workspace at a custom path creates the directory if it does not exist. If the path already exists, it must be either empty or a complete bigmouth workspace; non-empty unrelated or partial workspace folders are rejected rather than repaired.
 
 If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.

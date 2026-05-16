@@ -128,9 +128,9 @@ export function WorkspaceModal({
     >
       <div className="modal-body">
         {loading ? (
-          <p style={{ color: "var(--bm-text-muted)" }}>Loading...</p>
+          <p className="modal-empty-message">Loading...</p>
         ) : sorted.length === 0 ? (
-          <p style={{ color: "var(--bm-text-muted)", marginBottom: 12 }}>
+          <p className="modal-empty-message">
             No workspaces yet. Open or create one to get started.
           </p>
         ) : (

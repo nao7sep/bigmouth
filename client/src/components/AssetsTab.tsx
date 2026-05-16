@@ -11,7 +11,7 @@ interface AssetsTabProps {
   readOnly?: boolean;
 }
 
-const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 
 function ext(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
@@ -53,8 +53,8 @@ export function AssetsTab({
     try {
       const list = await fetchAssets(postId, workspaceId);
       setAssets(list);
-    } catch {
-      // Failed to load — leave list empty
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to load assets");
     }
   }, [postId, workspaceId]);
 
@@ -69,14 +69,20 @@ export function AssetsTab({
   const uploadFiles = async (files: File[]) => {
     if (readOnly) return;
     setUploading(true);
+    setUploadError(null);
+    const failures: string[] = [];
     for (const file of files) {
       try {
         await uploadAsset(postId, file, workspaceId);
-      } catch {
-        // Skip failed uploads
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Upload failed";
+        failures.push(`${file.name}: ${message}`);
       }
     }
     await load();
+    if (failures.length > 0) {
+      setUploadError(`Failed to upload ${failures.length} file(s): ${failures.join("; ")}`);
+    }
     setUploading(false);
   };
 
@@ -142,8 +148,8 @@ export function AssetsTab({
     try {
       await deleteAsset(postId, filename, workspaceId);
       setAssets((prev) => prev.filter((a) => a.filename !== filename));
-    } catch {
-      // Delete failed
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Delete failed");
     }
   };
 

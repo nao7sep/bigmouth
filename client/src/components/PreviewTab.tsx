@@ -1,8 +1,6 @@
 import { useMemo } from "react";
-import { Marked } from "marked";
 import { assetUrl } from "../api";
-
-const marked = new Marked({ gfm: true, breaks: false });
+import { renderSafeMarkdown } from "../util/safeMarkdown";
 
 interface PreviewTabProps {
   workspaceId: string;
@@ -18,7 +16,7 @@ export function PreviewTab({ workspaceId, content, postId }: PreviewTabProps) {
       /!\[([^\]]*)\]\(([^/)][^)]*)\)/g,
       (_, alt, filename) => `![${alt}](${assetUrl(postId, filename, workspaceId)})`
     );
-    return marked.parse(resolved) as string;
+    return renderSafeMarkdown(resolved);
   }, [content, postId, workspaceId]);
 
   if (!html) {

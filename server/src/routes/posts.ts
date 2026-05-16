@@ -184,7 +184,17 @@ postsRouter.put("/:id", (req, res) => {
   const oldSlug = presentString(existing.frontMatter.slug);
   const oldFilePath = existing.filePath;
   const oldPublishedAtUtc = presentString(existing.frontMatter.publishedAtUtc);
-  const post = updatePost(dataDir, req.params.id, { content, frontMatter });
+  let post;
+  try {
+    post = updatePost(dataDir, req.params.id, { content, frontMatter });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Post update failed";
+    logger.warn(
+      `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, message=${message}`
+    );
+    res.status(400).json({ error: message });
+    return;
+  }
   if (!post) {
     logger.warn(
       `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found-after-update`

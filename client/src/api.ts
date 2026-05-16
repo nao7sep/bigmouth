@@ -270,6 +270,22 @@ export async function saveTargets(targets: Target[]): Promise<Target[]> {
   return res.json();
 }
 
+export async function renameTarget(
+  oldName: string,
+  newName: string
+): Promise<{ targets: Target[]; postsUpdated: number }> {
+  const res = await fetch(`${base()}/targets/rename`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldName, newName }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Failed to rename target: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
   const res = await fetch(`${base()}/analysis-prompts`);
   if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);

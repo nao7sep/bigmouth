@@ -20,7 +20,6 @@ import type {
   PostStatus,
 } from "../shared/types.js";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
-import { warn as logWarn } from "../services/logger.js";
 import {
   draftFilename,
   readyFilename,
@@ -157,16 +156,16 @@ export function updatePost(
     post.content = updates.content;
   }
 
-  // For published posts the slug may have changed, which changes the filename
-  if (post.frontMatter.status === "published") {
-    const newFilePath = path.join(postsDir(dataDir), "published", buildFilename(post.frontMatter));
-    writePostFile(newFilePath, post.frontMatter, post.content);
-    if (newFilePath !== post.filePath) {
-      fs.unlinkSync(post.filePath);
-      post.filePath = newFilePath;
-    }
-  } else {
-    writePostFile(post.filePath, post.frontMatter, post.content);
+  const newFilePath = path.join(
+    postsDir(dataDir),
+    statusSubdir(post.frontMatter.status),
+    buildFilename(post.frontMatter)
+  );
+  assertWritablePostPath(newFilePath, post.filePath);
+  writePostFile(newFilePath, post.frontMatter, post.content);
+  if (newFilePath !== post.filePath) {
+    fs.unlinkSync(post.filePath);
+    post.filePath = newFilePath;
   }
 
   upsertSummary(dataDir, post);
@@ -216,6 +215,7 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
     newFileName
   );
 
+  assertWritablePostPath(newFilePath, oldFilePath);
   writePostFile(newFilePath, post.frontMatter, post.content);
   if (newFilePath !== oldFilePath) {
     fs.unlinkSync(oldFilePath);
@@ -310,6 +310,13 @@ function writePostFile(
   fs.writeFileSync(filePath, output);
 }
 
+function assertWritablePostPath(newFilePath: string, oldFilePath: string): void {
+  if (path.resolve(newFilePath) === path.resolve(oldFilePath)) return;
+  if (fs.existsSync(newFilePath)) {
+    throw new Error(`Post file already exists: ${path.basename(newFilePath)}`);
+  }
+}
+
 function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, unknown> {
   const orderedKeys = [
     "id",
@@ -395,19 +402,20 @@ function loadStatusEntries(
 
   for (const file of files) {
     const filePath = path.join(dir, file);
-    try {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = matter(raw);
-      const frontMatter = parsed.data as PostFrontMatter;
-      if (!frontMatter.id) {
-        logWarn(`Skipping ${subdir} file without id: ${filePath}`);
-        continue;
-      }
-      index.byId.set(frontMatter.id, { frontMatter, filePath });
-      ids.push(frontMatter.id);
-    } catch (err) {
-      logWarn(`Skipping malformed ${subdir} file: ${filePath} — ${err instanceof Error ? err.message : err}`);
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = matter(raw);
+    const frontMatter = parsed.data as PostFrontMatter;
+    if (!frontMatter.id) {
+      throw new Error(`Post file is missing required front matter id: ${filePath}`);
     }
+    const existing = index.byId.get(frontMatter.id);
+    if (existing) {
+      throw new Error(
+        `Duplicate post id "${frontMatter.id}" in ${existing.filePath} and ${filePath}`
+      );
+    }
+    index.byId.set(frontMatter.id, { frontMatter, filePath });
+    ids.push(frontMatter.id);
   }
 }
 

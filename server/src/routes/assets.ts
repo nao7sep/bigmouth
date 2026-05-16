@@ -18,10 +18,9 @@ import { error as logError, info as logInfo, warn as logWarn } from "../services
 import { getPost } from "../services/postStore.js";
 import {
   listAssets,
-  addAsset,
+  saveAssetFile,
   deleteAsset,
   assetDir,
-  assetFilePath,
   sanitizeFilename,
   safeResolveUnder,
 } from "../services/assetStore.js";
@@ -34,6 +33,7 @@ export const assetsRouter = Router({ mergeParams: true });
 // filename is a single path component → must not contain separators or `..`.
 
 const POST_ID_RE = /^[A-Za-z0-9_-]+$/;
+const INLINE_ASSET_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 
 function readPostId(raw: unknown): string | null {
   const id = String(raw);
@@ -52,6 +52,10 @@ function readFilename(raw: unknown): string | null {
 
 function assetStoreErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Asset store error";
+}
+
+function safeContentDispositionFilename(filename: string): string {
+  return filename.replace(/["\\\r\n]/g, "_");
 }
 
 // --- GET /api/w/:wsId/assets/:postId ---
@@ -110,7 +114,18 @@ assetsRouter.get("/:postId/:filename/raw", (req, res) => {
   logInfo(
     `Asset raw served: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
   );
-  res.type(filename);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "sandbox");
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  if (INLINE_ASSET_EXTS.has(ext)) {
+    res.type(filename);
+  } else {
+    res.type("application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeContentDispositionFilename(filename)}"`
+    );
+  }
   const stream = fs.createReadStream(filePath);
   stream.on("error", (err) => {
     logError(
@@ -154,9 +169,6 @@ assetsRouter.post("/:postId", (req, res, next) => {
   }
 
   const filename = sanitizeFilename(req.file.originalname);
-  const destPath = assetFilePath(dataDir, postId, filename);
-
-  fs.writeFileSync(destPath, req.file.buffer);
 
   let width: number | undefined;
   let height: number | undefined;
@@ -192,7 +204,7 @@ assetsRouter.post("/:postId", (req, res, next) => {
   };
 
   try {
-    addAsset(dataDir, postId, meta);
+    saveAssetFile(dataDir, postId, filename, req.file.buffer, meta);
   } catch (err) {
     const message = assetStoreErrorMessage(err);
     logError(

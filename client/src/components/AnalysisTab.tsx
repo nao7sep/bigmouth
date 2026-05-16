@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { marked } from "marked";
 import { fetchAnalysisPrompts, runAnalysisStream } from "../api";
 import type { AnalysisPrompt } from "../types";
+import { renderSafeMarkdown } from "../util/safeMarkdown";
 
 interface AnalysisTabProps {
   postId: string;
@@ -101,7 +101,7 @@ export function AnalysisTab({
     );
   }
 
-  const html = result ? (marked(result) as string) : null;
+  const html = result ? renderSafeMarkdown(result) : null;
 
   return (
     <div className="analysis-tab">

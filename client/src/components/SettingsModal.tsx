@@ -7,6 +7,7 @@ import {
   saveSettings,
   fetchTargets,
   saveTargets,
+  renameTarget,
   fetchAnalysisPrompts,
   fetchAnalysisPromptDefaults,
   saveAnalysisPrompts,
@@ -30,6 +31,11 @@ interface SettingsModalProps {
 
 type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
 
+type EditableTarget = Target & {
+  rowId: string;
+  originalName?: string;
+};
+
 const TAB_LABELS: Record<Tab, string> = {
   general: "General",
   targets: "Targets",
@@ -37,6 +43,22 @@ const TAB_LABELS: Record<Tab, string> = {
   analysis: "Analysis",
   generation: "Generation",
 };
+
+function editableTargets(targets: Target[]): EditableTarget[] {
+  return targets.map((target) => ({
+    ...target,
+    rowId: nanoid(),
+    originalName: target.name,
+  }));
+}
+
+function targetPayload(targets: EditableTarget[]): Target[] {
+  return targets.map(({ name, defaultLanguage, requiresMetadata }) => ({
+    name: name.trim(),
+    defaultLanguage: defaultLanguage.trim(),
+    requiresMetadata,
+  }));
+}
 
 export function SettingsModal({
   onClose,
@@ -47,17 +69,18 @@ export function SettingsModal({
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
-  const [targets, setTargets] = useState<Target[]>([]);
+  const [targets, setTargets] = useState<EditableTarget[]>([]);
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   // Snapshot of server-loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
   const initialAiConfigs = useRef<AiConfigsData | null>(null);
   const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
-  const initialTargets = useRef<Target[]>([]);
+  const initialTargets = useRef<EditableTarget[]>([]);
   const initialPrompts = useRef<AnalysisPrompt[]>([]);
 
   useEffect(() => {
@@ -65,7 +88,11 @@ export function SettingsModal({
     fetchAiConfigs().then((d) => { setAiConfigs(d); initialAiConfigs.current = d; }).catch(() => {});
     fetchGenerationPromptDefaults().then((d) => setGenerationPromptDefaults(d)).catch(() => {});
     fetchGenerationPrompts().then((d) => { setGenerationPrompts(d); initialGenerationPrompts.current = d; }).catch(() => {});
-    fetchTargets().then((d) => { setTargets(d); initialTargets.current = d; }).catch(() => {});
+    fetchTargets().then((d) => {
+      const editable = editableTargets(d);
+      setTargets(editable);
+      initialTargets.current = editable;
+    }).catch(() => {});
     fetchAnalysisPromptDefaults().then((d) => setAnalysisPromptDefaults(d)).catch(() => {});
     fetchAnalysisPrompts().then((d) => { setPrompts(d); initialPrompts.current = d; }).catch(() => {});
   }, []);
@@ -74,7 +101,7 @@ export function SettingsModal({
     JSON.stringify(settings) !== JSON.stringify(initialSettings.current) ||
     JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current) ||
     JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current) ||
-    JSON.stringify(targets) !== JSON.stringify(initialTargets.current) ||
+    JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current)) ||
     JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
 
   const handleRequestClose = () => {
@@ -105,20 +132,37 @@ export function SettingsModal({
   const handleSaveAll = async () => {
     if (!settings || !aiConfigs || !generationPrompts) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      const [, savedAiConfigs, savedGenPrompts, savedTargets, savedPrompts] = await Promise.all([
+      const renames = targets
+        .map((target) => ({
+          oldName: target.originalName?.trim() ?? "",
+          newName: target.name.trim(),
+        }))
+        .filter(({ oldName, newName }) => oldName && newName && oldName !== newName);
+
+      const [, savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
         saveSettings(settings),
         saveAiConfigs(aiConfigs),
         saveGenerationPrompts(generationPrompts),
-        saveTargets(targets),
         saveAnalysisPrompts(prompts),
       ]);
+
+      for (const { oldName, newName } of renames) {
+        await renameTarget(oldName, newName);
+      }
+      const savedTargets = await saveTargets(targetPayload(targets));
+
       setAiConfigs(savedAiConfigs);
       setGenerationPrompts(savedGenPrompts);
-      setTargets(savedTargets);
+      const editableSavedTargets = editableTargets(savedTargets);
+      setTargets(editableSavedTargets);
+      initialTargets.current = editableSavedTargets;
       setPrompts(savedPrompts);
       onSettingsChanged();
       onClose();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -180,6 +224,7 @@ export function SettingsModal({
             />
           )}
         </div>
+        {saveError && <p className="settings-field-error">{saveError}</p>}
         <div className="modal-footer">
           <button
             className="btn-primary"
@@ -460,9 +505,9 @@ function TargetsTab({
   supportedLanguages,
   onChange,
 }: {
-  targets: Target[];
+  targets: EditableTarget[];
   supportedLanguages: string[];
-  onChange: (t: Target[]) => void;
+  onChange: (t: EditableTarget[]) => void;
 }) {
   const canAddTarget = supportedLanguages.length > 0;
 
@@ -473,7 +518,7 @@ function TargetsTab({
       : supportedLanguages[0];
     onChange([
       ...targets,
-      { name: "", defaultLanguage: defaultLang, requiresMetadata: false },
+      { rowId: nanoid(), name: "", defaultLanguage: defaultLang, requiresMetadata: false },
     ]);
   };
 
@@ -498,7 +543,7 @@ function TargetsTab({
         <FieldError msg="Add at least one supported language in General before creating targets." />
       )}
       {targets.map((t, i) => (
-        <div key={i} className="settings-list-item">
+        <div key={t.rowId} className="settings-list-item">
           <div className="form-field">
             <label className="form-label">Name</label>
               <input
