@@ -1,86 +1,116 @@
 /**
  * POST /api/w/:wsId/generate
- * Generates a metadata field value for a post using the configured AI provider.
+ * Generates one metadata field value for a post using structured AI output.
  *
  * POST /api/w/:wsId/generate/batch
- * Generates multiple metadata fields in parallel.
+ * Generates multiple metadata fields in one structured AI call.
  */
 
 import { Router } from "express";
+import type { Response } from "express";
 import { getPost } from "../services/postStore.js";
 import { getGenerationPrompts, getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { systemPromptForField } from "../ai/generationPrompts.js";
 import {
-  resolvePromptRequest,
-  usesJsonPlaceholder,
-} from "../ai/promptTemplates.js";
-import { parseJsonCandidates } from "../ai/jsonResponse.js";
-import { error as logError, info as logInfo, logBlock } from "../services/logger.js";
+  buildMetadataGenerationRequest,
+  isMetadataField,
+  metadataValueToClientString,
+  normalizeGeneratedMetadata,
+  normalizeMetadataFields,
+  type MetadataField,
+} from "../ai/metadataGeneration.js";
+import { error as logError, info as logInfo } from "../services/logger.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
+import type { AiProvider } from "../ai/provider.js";
+import type { Post } from "../shared/types.js";
 
 export const generationRouter = Router({ mergeParams: true });
 
-function tagJsonFormatForField(field: string): string {
-  return `{
-  "${field}": [
-    "tag1",
-    "tag2",
-    "tag3"
-  ]
-}`;
-}
+const METADATA_GENERATION_TIMEOUT_MS = 45_000;
+const METADATA_GENERATION_MAX_RETRIES = 1;
 
-function normalizeTagList(tags: unknown): string[] | null {
-  if (!Array.isArray(tags)) return null;
-  const normalized = tags
-    .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
-    .filter(Boolean);
-  return normalized.length >= 2 ? normalized : null;
-}
+type GenerationContext = {
+  post: Post;
+  postContent: string;
+  customPrompts: Record<string, string>;
+  provider: AiProvider;
+};
 
-function parseTagJsonResponse(field: string, value: string): string[] {
-  for (const parsed of parseJsonCandidates(value)) {
-    const direct = normalizeTagList(parsed);
-    if (direct) return direct;
+type BatchResultMap = Record<string, { value: string } | { error: string }>;
 
-    if (parsed && typeof parsed === "object") {
-      const record = parsed as Record<string, unknown>;
-      for (const key of [field, "tags", "tagsEn", "value", "items"]) {
-        const extracted = normalizeTagList(record[key]);
-        if (extracted) return extracted;
-      }
-    }
+function getGenerationContext(
+  res: Response,
+  postId: string,
+  content: string | undefined
+): GenerationContext | null {
+  const dataDir = res.locals.dataDir as string;
+  const post = getPost(dataDir, postId);
+  if (!post) {
+    res.status(404).json({ error: "Post not found" });
+    return null;
   }
 
-  throw new Error("Generated tags were not valid JSON");
+  try {
+    const aiConfigs = getAiConfigsForServer(dataDir);
+    const activeConfig = aiConfigs.configs.find(
+      (config) => config.id === aiConfigs.activeId
+    );
+    if (!activeConfig) {
+      res.status(503).json({ error: "No active AI configuration selected" });
+      return null;
+    }
+
+    return {
+      post,
+      postContent: content?.trim() ? content : post.content,
+      customPrompts: getGenerationPrompts(dataDir).prompts,
+      provider: createProvider(activeConfig),
+    };
+  } catch (err) {
+    const details = describeAiError(err);
+    logError(
+      `Generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
+    );
+    res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
+    return null;
+  }
 }
 
-function normalizeGeneratedValue(field: string, raw: string, expectsJson = false): string {
-  const value = raw.trim().replace(/^["']|["']$/g, "");
+async function generateMetadataFields(
+  context: GenerationContext,
+  fields: MetadataField[]
+): Promise<Record<MetadataField, string>> {
+  const request = buildMetadataGenerationRequest({
+    fields,
+    content: context.postContent,
+    frontMatter: context.post.frontMatter,
+    customPrompts: context.customPrompts,
+  });
 
-  if (field === "tags" || field === "tagsEn") {
-    if (expectsJson) {
-      return parseTagJsonResponse(field, value).join(", ");
+  const raw = await context.provider.generateJson(
+    request.systemPrompt,
+    request.userContent,
+    request.schema,
+    {
+      timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
+      maxRetries: METADATA_GENERATION_MAX_RETRIES,
     }
+  );
+  const generated = normalizeGeneratedMetadata(raw, fields);
+  const values = {} as Record<MetadataField, string>;
 
-    if (value.includes("\n") || value.includes("\r")) {
-      throw new Error("Generated tags were not a single comma-separated list");
+  for (const field of fields) {
+    const value = generated[field];
+    if (value === undefined) {
+      throw new Error(`Structured metadata response omitted ${field}`);
     }
-    const tags = value
-      .split(/[,\u3001]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    if (tags.length < 2) {
-      throw new Error("Generated tags were not a valid comma-separated list");
-    }
+    values[field] = metadataValueToClientString(value);
   }
 
-  return value;
+  return values;
 }
 
 generationRouter.post("/", async (req, res) => {
-  const dataDir = res.locals.dataDir as string;
   const { postId, field, content } = req.body as {
     postId?: string;
     field?: string;
@@ -91,73 +121,23 @@ generationRouter.post("/", async (req, res) => {
     res.status(400).json({ error: "postId and field are required" });
     return;
   }
-
-  const post = getPost(dataDir, postId);
-  if (!post) {
-    res.status(404).json({ error: "Post not found" });
+  if (!isMetadataField(field)) {
+    res.status(400).json({ error: `Field is not generatable: ${field}` });
     return;
   }
 
-  const postContent = (content?.trim()) ? content : post.content;
-
-  let provider;
-  let request: { systemPrompt: string; userContent: string };
-  let expectsJson = false;
-  try {
-    const genPrompts = getGenerationPrompts(dataDir);
-    const resolved = systemPromptForField(field, genPrompts.prompts);
-    if (!resolved) {
-      res.status(400).json({ error: `Field is not generatable: ${field}` });
-      return;
-    }
-    expectsJson = (field === "tags" || field === "tagsEn") && usesJsonPlaceholder(resolved);
-    if ((field !== "tags" && field !== "tagsEn") && usesJsonPlaceholder(resolved)) {
-      res.status(400).json({ error: "{json} is only supported for tags and tagsEn" });
-      return;
-    }
-    request = resolvePromptRequest(resolved, {
-      content: postContent,
-      json: expectsJson ? tagJsonFormatForField(field) : undefined,
-    });
-    const aiConfigs = getAiConfigsForServer(dataDir);
-    const activeConfig = aiConfigs.configs.find(
-      (c) => c.id === aiConfigs.activeId
-    );
-    if (!activeConfig) {
-      res.status(503).json({ error: "No active AI configuration selected" });
-      return;
-    }
-    provider = createProvider(activeConfig);
-  } catch (err) {
-    const details = describeAiError(err);
-    logError(
-      `Generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, ${details}`
-    );
-    res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
-    return;
-  }
+  const context = getGenerationContext(res, postId, content);
+  if (!context) return;
 
   logInfo(
-    `Generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
+    `Generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, mode=structured, contentLength=${context.postContent.length}`
   );
 
   try {
-    const raw = await provider.generateText(request.systemPrompt, request.userContent);
-    let value: string;
-    try {
-      value = normalizeGeneratedValue(field, raw, expectsJson);
-    } catch (err) {
-      if (expectsJson && (field === "tags" || field === "tagsEn")) {
-        logBlock(
-          "ERROR",
-          `Tag JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, rawLength=${raw.length}`,
-          raw
-        );
-      }
-      throw err;
-    }
+    const values = await generateMetadataFields(context, [field]);
+    const value = values[field];
     logInfo(
-      `Generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, rawLength=${raw.length}, valueLength=${value.length}`
+      `Generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, mode=structured, valueLength=${value.length}`
     );
     res.json({ value });
   } catch (err) {
@@ -168,7 +148,11 @@ generationRouter.post("/", async (req, res) => {
         workspaceId: res.locals.workspaceId,
         postId,
         field,
-        extra: { expectsJson },
+        extra: {
+          mode: "structured",
+          timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
+          maxRetries: METADATA_GENERATION_MAX_RETRIES,
+        },
       },
       err
     );
@@ -177,7 +161,6 @@ generationRouter.post("/", async (req, res) => {
 });
 
 generationRouter.post("/batch", async (req, res) => {
-  const dataDir = res.locals.dataDir as string;
   const { postId, fields, content } = req.body as {
     postId?: string;
     fields?: string[];
@@ -189,95 +172,55 @@ generationRouter.post("/batch", async (req, res) => {
     return;
   }
 
-  const post = getPost(dataDir, postId);
-  if (!post) {
-    res.status(404).json({ error: "Post not found" });
-    return;
-  }
-
-  const postContent = (content?.trim()) ? content : post.content;
-
-  let provider;
-  let customPrompts: Record<string, string>;
-  try {
-    const genPrompts = getGenerationPrompts(dataDir);
-    customPrompts = genPrompts.prompts;
-    const aiConfigs = getAiConfigsForServer(dataDir);
-    const activeConfig = aiConfigs.configs.find(
-      (c) => c.id === aiConfigs.activeId
-    );
-    if (!activeConfig) {
-      res.status(503).json({ error: "No active AI configuration selected" });
-      return;
+  const results: BatchResultMap = {};
+  for (const field of fields) {
+    if (!isMetadataField(field)) {
+      results[field] = { error: `Field is not generatable: ${field}` };
     }
-    provider = createProvider(activeConfig);
-  } catch (err) {
-    const details = describeAiError(err);
-    logError(
-      `Batch generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
-    );
-    res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
+  }
+
+  const validFields = normalizeMetadataFields(fields);
+  if (validFields.length === 0) {
+    res.json({ results });
     return;
   }
 
-  const results = await Promise.all(
-    fields.map(async (field): Promise<{ field: string; value: string } | { field: string; error: string }> => {
-      const promptTemplate = systemPromptForField(field, customPrompts);
-      if (!promptTemplate) {
-        return { field, error: `Field is not generatable: ${field}` };
-      }
-      const expectsJson =
-        (field === "tags" || field === "tagsEn") && usesJsonPlaceholder(promptTemplate);
-      if ((field !== "tags" && field !== "tagsEn") && usesJsonPlaceholder(promptTemplate)) {
-        return { field, error: "{json} is only supported for tags and tagsEn" };
-      }
-      const request = resolvePromptRequest(promptTemplate, {
-        content: postContent,
-        json: expectsJson ? tagJsonFormatForField(field) : undefined,
-      });
-      logInfo(
-        `Batch generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
-      );
-      try {
-        const raw = await provider.generateText(request.systemPrompt, request.userContent);
-        let value: string;
-        try {
-          value = normalizeGeneratedValue(field, raw, expectsJson);
-        } catch (err) {
-          if (expectsJson && (field === "tags" || field === "tagsEn")) {
-            logBlock(
-              "ERROR",
-              `Batch tag JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, rawLength=${raw.length}`,
-              raw
-            );
-          }
-          throw err;
-        }
-        logInfo(
-          `Batch generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, expectsJson=${expectsJson}, rawLength=${raw.length}, valueLength=${value.length}`
-        );
-        return { field, value };
-      } catch (err) {
-        const details = logAiFailure(
-          {
-            kind: "Batch generation",
-            requestId: res.locals.requestId,
-            workspaceId: res.locals.workspaceId,
-            postId,
-            field,
-            extra: { expectsJson },
-          },
-          err
-        );
-        return { field, error: err instanceof Error ? err.message : details };
-      }
-    })
+  const context = getGenerationContext(res, postId, content);
+  if (!context) return;
+
+  logInfo(
+    `Batch generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentLength=${context.postContent.length}`
   );
 
-  const resultMap: Record<string, { value: string } | { error: string }> = {};
-  for (const r of results) {
-    resultMap[r.field] = "value" in r ? { value: r.value } : { error: r.error };
+  try {
+    const values = await generateMetadataFields(context, validFields);
+    for (const field of validFields) {
+      results[field] = { value: values[field] };
+    }
+    logInfo(
+      `Batch generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured`
+    );
+  } catch (err) {
+    const details = logAiFailure(
+      {
+        kind: "Batch generation",
+        requestId: res.locals.requestId,
+        workspaceId: res.locals.workspaceId,
+        postId,
+        extra: {
+          fields: validFields,
+          mode: "structured",
+          timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
+          maxRetries: METADATA_GENERATION_MAX_RETRIES,
+        },
+      },
+      err
+    );
+    const message = err instanceof Error ? err.message : details;
+    for (const field of validFields) {
+      results[field] = { error: message };
+    }
   }
 
-  res.json({ results: resultMap });
+  res.json({ results });
 });

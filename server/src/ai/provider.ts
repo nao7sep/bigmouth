@@ -11,6 +11,16 @@
 
 export interface AiProvider {
   generateText(systemPrompt: string, userContent: string): Promise<string>;
+  generateJson(
+    systemPrompt: string,
+    userContent: string,
+    schema: Record<string, unknown>,
+    options?: {
+      timeoutMs?: number;
+      maxRetries?: number;
+      signal?: AbortSignal;
+    }
+  ): Promise<unknown>;
   generateTextStream(
     systemPrompt: string,
     userContent: string,

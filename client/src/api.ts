@@ -19,6 +19,7 @@ import type {
 // --- Workspace context ---
 
 let wsId = "";
+const METADATA_GENERATION_TIMEOUT_MS = 95_000;
 
 export function setActiveWorkspace(id: string): void {
   wsId = id;
@@ -27,6 +28,29 @@ export function setActiveWorkspace(id: string): void {
 function base(workspaceId = wsId): string {
   if (!workspaceId) throw new Error("No active workspace set");
   return `/api/w/${workspaceId}`;
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error && err.name === "AbortError")
+    ) {
+      throw new Error(timeoutMessage);
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 // --- Workspace management (no workspace prefix) ---
@@ -297,11 +321,16 @@ export async function generateMetadata(
   field: string,
   content: string
 ): Promise<string> {
-  const res = await fetch(`${base()}/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, field, content }),
-  });
+  const res = await fetchWithTimeout(
+    `${base()}/generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId, field, content }),
+    },
+    METADATA_GENERATION_TIMEOUT_MS,
+    "Generation timed out"
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
@@ -317,11 +346,16 @@ export async function generateMetadataBatch(
   fields: string[],
   content: string
 ): Promise<Record<string, { value: string } | { error: string }>> {
-  const res = await fetch(`${base()}/generate/batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, fields, content }),
-  });
+  const res = await fetchWithTimeout(
+    `${base()}/generate/batch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId, fields, content }),
+    },
+    METADATA_GENERATION_TIMEOUT_MS,
+    "Batch generation timed out"
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(

@@ -174,7 +174,11 @@ The built-in prompt set now covers publishing risk, distinctiveness and credibil
 
 ### Generation prompts (`generation-prompts.json`, per workspace)
 
-Prompts used to auto-generate individual metadata fields (title, slug, tags, etc.). Use `{content}` as a placeholder for the draft content. Tag prompts may also use `{json}`, which the app replaces with the exact field-specific JSON shape it expects, such as `{"tags":[...]}` or `{"tagsEn":[...]}`. The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, ask for one plain title instead of split or decorated titles, make slugs read like short phrases, ask for short hashtag-style tags, and tell the English title/description prompts not to add extra drama or stronger emotion.
+Field guidance used when auto-generating metadata fields (title, slug, tags, etc.). The app now owns the request-level prompt and JSON schema, sends the draft content and existing metadata automatically, and asks Claude for only the requested fields. `Generate All` uses one structured request so titles, tags, slugs, and descriptions are generated together; individual Generate buttons use the same structured path with a one-field schema.
+
+Older workspace prompt files that still contain `{content}`, `{json}`, or return-format instructions continue to load. Those legacy output-format lines are ignored when building the structured metadata request.
+
+The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, ask for one plain title instead of split or decorated titles, make slugs read like short phrases, ask for short hashtag-style tags, and tell the English title/description prompts not to add extra drama or stronger emotion.
 
 Built-in prompt text is owned by the server, and the Settings UI can restore the current built-in set into your workspace file at any time.
 
@@ -234,7 +238,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `POST /api/w/:wsId/analyze` | Run analysis |
 | `POST /api/w/:wsId/analyze/stream` | Stream analysis |
 | `POST /api/w/:wsId/generate` | Generate one metadata field |
-| `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields |
+| `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields in one structured request |
 | `POST /api/w/:wsId/imaging` | Generate temporary image prompts |
 | `GET /api/w/:wsId/assets/:postId` | List assets |
 | `POST /api/w/:wsId/assets/:postId` | Upload an asset |

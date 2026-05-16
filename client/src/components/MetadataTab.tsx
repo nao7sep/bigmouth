@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { Post, PostFrontMatter, Target } from "../types";
-import { updatePost, generateMetadata } from "../api";
+import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface MetadataTabProps {
@@ -53,6 +53,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const [genError, setGenError] = useState<string | null>(null);
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const dirtyKeysRef = useRef<Set<string>>(new Set());
+    const generationLockRef = useRef(false);
     const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
     const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
     const fieldsRef = useRef(fields);
@@ -202,6 +203,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const runGeneration = useCallback(
       (key: string, isTags = false) => {
         const task = (async () => {
+          if (generationLockRef.current) {
+            return { key, ok: false as const, skipped: true as const };
+          }
+          generationLockRef.current = true;
           setGenerating((prev) => ({ ...prev, [key]: true }));
           try {
             const value = await generateMetadata(postId, key, content);
@@ -219,6 +224,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             return { key, ok: false as const, error: message };
           } finally {
             setGenerating((prev) => ({ ...prev, [key]: false }));
+            generationLockRef.current = false;
           }
         })();
 
@@ -232,13 +238,14 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     );
 
     const generate = async (key: string, isTags = false) => {
-      if (readOnly || !content.trim()) return;
+      if (readOnly || !content.trim() || generationLockRef.current) return;
       clearGenError();
       await runGeneration(key, isTags);
     };
 
     const isGenerating = (key: string) => !!generating[key];
     const anyGeneratingField = Object.values(generating).some(Boolean);
+    const generationLocked = generatingAll || anyGeneratingField;
 
     if (!requiresMetadata) {
       return (
@@ -260,7 +267,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "slug"}
             onGenerate={() => generate("slug")}
             generating={isGenerating("slug")}
-            generateDisabled={readOnly || generatingAll || noContent}
+            generateDisabled={readOnly || generationLocked || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />
@@ -280,7 +287,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     allFields.push({ key: "metaDescription" });
 
     const generateAll = async () => {
-      if (readOnly || !content.trim()) return;
+      if (readOnly || !content.trim() || generationLockRef.current) return;
+      generationLockRef.current = true;
       clearGenError();
       const task = (async () => {
         const fieldKeys = allFields.map((f) => f.key);
@@ -293,15 +301,51 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
         setGeneratingAll(true);
         try {
-          const results = await Promise.all(
-            allFields.map(({ key, isTags }) => runGeneration(key, !!isTags))
-          );
-          const failed = results.filter((result) => !result.ok).map((result) => result.key);
+          const results = await generateMetadataBatch(postId, fieldKeys, content);
+          const generatedFields: Record<string, string> = {};
+          const frontMatterPatch = {} as {
+            [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
+          };
+          const savedKeys: string[] = [];
+          const failed: string[] = [];
+
+          for (const { key, isTags } of allFields) {
+            const result = results[key];
+            if (!result || !("value" in result)) {
+              failed.push(key);
+              continue;
+            }
+
+            generatedFields[key] = result.value;
+            (frontMatterPatch as Record<string, string | string[]>)[key] =
+              normalizeFieldValue(result.value, !!isTags);
+            savedKeys.push(key);
+          }
+
+          if (savedKeys.length > 0) {
+            for (const key of savedKeys) markDirtyKey(key);
+            setFields((prev) => ({ ...prev, ...generatedFields }));
+            try {
+              const updated = await updatePost(
+                postId,
+                { frontMatter: frontMatterPatch },
+                workspaceId
+              );
+              for (const key of savedKeys) clearDirtyKey(key);
+              onPostUpdatedRef.current(updated);
+            } catch (err) {
+              showGenError(err instanceof Error ? err.message : "Failed to save generated metadata");
+            }
+          }
+
           if (failed.length > 0) {
             showGenError(`Failed to generate: ${failed.join(", ")}`);
           }
+        } catch (err) {
+          showGenError(err instanceof Error ? err.message : "Batch generation failed");
         } finally {
           setGeneratingAll(false);
+          generationLockRef.current = false;
         }
       })();
 
@@ -332,7 +376,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             <button
               className="btn-generate-all"
               onClick={generateAll}
-              disabled={readOnly || generatingAll || anyGeneratingField || noContent}
+              disabled={readOnly || generationLocked || noContent}
             >
             {generatingAll ? "Generating All…" : "Generate All"}
           </button>
@@ -346,7 +390,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "title"}
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
-          generateDisabled={readOnly || generatingAll || noContent}
+          generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -360,7 +404,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "titleEn"}
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
-            generateDisabled={readOnly || generatingAll || noContent}
+            generateDisabled={readOnly || generationLocked || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />
@@ -374,7 +418,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "slug"}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
-          generateDisabled={readOnly || generatingAll || noContent}
+          generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -387,7 +431,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "tags"}
           onGenerate={() => generate("tags", true)}
           generating={isGenerating("tags")}
-          generateDisabled={readOnly || generatingAll || noContent}
+          generateDisabled={readOnly || generationLocked || noContent}
           placeholder="tag1, tag2, tag3"
           readOnly={readOnly}
           isActive={isActive}
@@ -402,7 +446,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "tagsEn"}
             onGenerate={() => generate("tagsEn", true)}
             generating={isGenerating("tagsEn")}
-            generateDisabled={readOnly || generatingAll || noContent}
+            generateDisabled={readOnly || generationLocked || noContent}
             placeholder="tag1, tag2, tag3"
             readOnly={readOnly}
             isActive={isActive}
@@ -417,7 +461,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copied={copiedKey === "metaDescription"}
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
-          generateDisabled={readOnly || generatingAll || noContent}
+          generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
         />
@@ -431,7 +475,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             copied={copiedKey === "metaDescriptionEn"}
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
-            generateDisabled={readOnly || generatingAll || noContent}
+            generateDisabled={readOnly || generationLocked || noContent}
             readOnly={readOnly}
             isActive={isActive}
           />

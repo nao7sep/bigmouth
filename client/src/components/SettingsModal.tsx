@@ -584,7 +584,7 @@ function GenerationTab({
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        Use {`{content}`} for the draft. In tag prompts, {`{json}`} is replaced with the required field-specific JSON shape.
+        Field guidance is inserted into a structured metadata request. The app controls the JSON schema and draft content automatically.
       </p>
 
       <div className="metadata-generate-all-row">
