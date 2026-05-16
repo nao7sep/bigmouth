@@ -178,7 +178,7 @@ Field guidance used when auto-generating metadata fields (title, slug, tags, etc
 
 Older workspace prompt files that still contain `{content}`, `{json}`, or return-format instructions continue to load. Those legacy output-format lines are ignored when building the structured metadata request.
 
-The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, ask for one plain title instead of split or decorated titles, make slugs read like short phrases, ask for short hashtag-style tags, and tell the English title/description prompts not to add extra drama or stronger emotion.
+The built-in defaults keep metadata close to what the draft actually says, preserve the author's perspective, align fields around the same central angle, make slugs read like short English phrases, keep tags short and searchable, and tell the English title/description prompts not to add extra drama or stronger emotion.
 
 Built-in prompt text is owned by the server, and the Settings UI can restore the current built-in set into your workspace file at any time.
 

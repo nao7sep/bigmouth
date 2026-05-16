@@ -17,50 +17,48 @@ export const GENERATION_PROMPT_KEYS = [
 
 export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
   title:
-    `Generate a concise title in the same language as the draft.\n` +
-    `- Stay close to what the draft actually says.\n` +
-    `- Keep the author's perspective.\n` +
-    `- Write one plain title.\n` +
-    `- Do not split it into multiple parts.\n` +
-    `- Do not add a subtitle or decorative framing.`,
+    `Write the title in the same language as the draft.\n` +
+    `- Use the draft's central angle, not just its broad topic.\n` +
+    `- Keep it concise, plain, and natural.\n` +
+    `- Preserve the author's perspective and degree of emotion.\n` +
+    `- Do not add a subtitle, decorative framing, clickbait, or claims not in the draft.`,
   titleEn:
-    `Generate a concise English title for the draft.\n` +
-    `- Stay close to what the draft actually says.\n` +
-    `- Keep the author's perspective.\n` +
-    `- Do not add extra drama or stronger emotion.\n` +
-    `- Write one plain title.\n` +
-    `- Do not split it into multiple parts.\n` +
-    `- Do not add a subtitle or decorative framing.`,
+    `Write the English title for the draft.\n` +
+    `- Match the same central angle as the native title when one exists or is also requested.\n` +
+    `- Prefer natural English over literal translation.\n` +
+    `- Keep it concise, plain, and natural.\n` +
+    `- Do not add extra drama, stronger emotion, clickbait, or claims not in the draft.`,
   slug:
-    `Generate a short readable English slug for the draft.\n` +
-    `- Prefer a natural phrase, not a keyword list.\n` +
+    `Write a short readable English URL slug.\n` +
+    `- Derive it from the English title or central angle when available.\n` +
+    `- Prefer a natural phrase over a keyword list.\n` +
     `- Use only lowercase letters, numbers, and hyphens.\n` +
-    `- Maximum 60 characters.`,
+    `- Keep it specific, memorable, and under 60 characters.`,
   tags:
-    `Generate 5 to 8 tags in the same language as the draft.\n` +
-    `- Focus on the main concrete topics.\n` +
-    `- Return short hashtag-style topic labels.\n` +
-    `- Prefer the shortest natural form that still makes sense.\n` +
-    `- Use searchable topic words, not explanatory phrases.\n` +
-    `- Keep each tag to one concept.`,
+    `Write 5 to 8 tags in the same language as the draft.\n` +
+    `- Cover the main concrete topics and useful searchable concepts.\n` +
+    `- Use short topic labels, not explanatory phrases.\n` +
+    `- Keep each tag to one concept.\n` +
+    `- Prefer the shortest natural form that still makes sense.`,
   tagsEn:
-    `Generate 5 to 8 tags in English.\n` +
-    `- Focus on the main concrete topics.\n` +
-    `- Return short hashtag-style topic labels.\n` +
-    `- Prefer the shortest natural form that still makes sense.\n` +
-    `- Use searchable topic words, not explanatory phrases.\n` +
-    `- Keep each tag to one concept.`,
+    `Write 5 to 8 English tags.\n` +
+    `- Cover the same core concepts as the native tags when they exist or are also requested.\n` +
+    `- Use short searchable topic labels, not explanatory phrases.\n` +
+    `- Keep each tag to one concept.\n` +
+    `- Prefer natural English terms over literal translation.`,
   metaDescription:
     `Write a meta description in the same language as the draft.\n` +
-    `- Length: 120-160 characters.\n` +
-    `- Stay close to what the draft actually says.\n` +
-    `- Keep the author's perspective.`,
+    `- Align it with the selected title and central angle.\n` +
+    `- Summarize what the post actually offers, without adding a new thesis.\n` +
+    `- Keep the author's perspective and tone.\n` +
+    `- Aim for 120-160 characters.`,
   metaDescriptionEn:
     `Write an English meta description for the draft.\n` +
-    `- Length: 120-160 characters.\n` +
-    `- Stay close to what the draft actually says.\n` +
-    `- Keep the author's perspective.\n` +
-    `- Do not add extra drama or stronger emotion.`,
+    `- Align it with the English title and central angle.\n` +
+    `- Summarize what the post actually offers, without adding a new thesis.\n` +
+    `- Keep the author's perspective and tone.\n` +
+    `- Do not add extra drama or stronger emotion.\n` +
+    `- Aim for 120-160 characters.`,
 };
 
 /**
