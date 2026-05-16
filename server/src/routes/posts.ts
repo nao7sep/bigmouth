@@ -12,6 +12,7 @@ import {
 } from "../services/postStore.js";
 import { getSettings, getTargets } from "../services/configStore.js";
 import type { PostStatus } from "../shared/types.js";
+import { presentString, safePostLogContext } from "../shared/logSummaries.js";
 import * as logger from "../services/logger.js";
 
 export const postsRouter = Router({ mergeParams: true });
@@ -157,6 +158,9 @@ postsRouter.put("/:id", (req, res) => {
     ORDINARY_UPDATE_RESERVED_FRONT_MATTER_KEYS.has(key)
   );
   if (reservedKeys.length > 0) {
+    logger.warn(
+      `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=reserved-front-matter, reservedKeys=${reservedKeys.join(",")}`
+    );
     res.status(400).json({
       error: `Reserved front matter fields cannot be updated here: ${reservedKeys.join(", ")}`,
     });
@@ -168,12 +172,18 @@ postsRouter.put("/:id", (req, res) => {
     const slug = frontMatter.slug;
     if (slug !== null && slug !== undefined && slug !== "") {
       if (!validateSlug(slug)) {
+        logger.warn(
+          `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=invalid-slug`
+        );
         res.status(400).json({ error: "Invalid slug: only letters, digits, hyphens, and underscores are allowed" });
         return;
       }
     }
   }
 
+  const oldSlug = presentString(existing.frontMatter.slug);
+  const oldFilePath = existing.filePath;
+  const oldPublishedAtUtc = presentString(existing.frontMatter.publishedAtUtc);
   const post = updatePost(dataDir, req.params.id, { content, frontMatter });
   if (!post) {
     logger.warn(
@@ -183,8 +193,29 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
+  const frontMatterKeys = Object.keys(frontMatter ?? {});
+  const newSlug = presentString(post.frontMatter.slug);
+  const newPublishedAtUtc = presentString(post.frontMatter.publishedAtUtc);
+  const updateDetails = {
+    contentUpdated: content !== undefined,
+    contentLengthBefore: existing.content.length,
+    contentLengthAfter: post.content.length,
+    frontMatterKeys,
+    slugBefore: oldSlug,
+    slugAfter: newSlug,
+    slugChanged: oldSlug !== newSlug,
+    fileChanged: oldFilePath !== post.filePath,
+    publishedAtUtcBefore: oldPublishedAtUtc,
+    publishedAtUtcAfter: newPublishedAtUtc,
+    publishedAtUtcPreserved:
+      existing.frontMatter.status === "published"
+        ? oldPublishedAtUtc === newPublishedAtUtc
+        : null,
+    before: safePostLogContext(existing),
+    after: safePostLogContext(post),
+  };
   logger.info(
-    `Post updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, status=${post.frontMatter.status}, contentUpdated=${content !== undefined}, frontMatterKeys=${frontMatter ? Object.keys(frontMatter).join(",") : "-"}`
+    `Post updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, details=${logger.formatLogValue(updateDetails)}`
   );
 
   res.json({
@@ -202,6 +233,15 @@ postsRouter.put("/:id/status", (req, res) => {
     return;
   }
 
+  const before = getPost(dataDir, req.params.id);
+  if (!before) {
+    logger.warn(
+      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, requestedStatus=${status}, reason=not-found`
+    );
+    res.status(404).json({ error: "Post not found" });
+    return;
+  }
+
   try {
     const post = changeStatus(dataDir, req.params.id, status);
     if (!post) {
@@ -209,8 +249,21 @@ postsRouter.put("/:id/status", (req, res) => {
       return;
     }
 
+    const statusDetails = {
+      requestedStatus: status,
+      statusBefore: before.frontMatter.status,
+      statusAfter: post.frontMatter.status,
+      slug: presentString(post.frontMatter.slug),
+      fileChanged: before.filePath !== post.filePath,
+      readyAtUtcBefore: presentString(before.frontMatter.readyAtUtc),
+      readyAtUtcAfter: presentString(post.frontMatter.readyAtUtc),
+      publishedAtUtcBefore: presentString(before.frontMatter.publishedAtUtc),
+      publishedAtUtcAfter: presentString(post.frontMatter.publishedAtUtc),
+      before: safePostLogContext(before),
+      after: safePostLogContext(post),
+    };
     logger.info(
-      `Post status changed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, status=${status}`
+      `Post status changed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, details=${logger.formatLogValue(statusDetails)}`
     );
 
     res.json({
@@ -220,7 +273,7 @@ postsRouter.put("/:id/status", (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.error(
-      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, status=${status}, message=${message}`
+      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, statusBefore=${before.frontMatter.status}, requestedStatus=${status}, slug=${presentString(before.frontMatter.slug)}, message=${message}`
     );
     res.status(400).json({ error: message });
   }

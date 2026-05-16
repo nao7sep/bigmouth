@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { error as logError, info as logInfo } from "../services/logger.js";
+import { error as logError, formatLogValue, info as logInfo } from "../services/logger.js";
 import {
   buildImagingSchema,
   buildImagingSystemPrompt,
@@ -17,6 +17,12 @@ import {
   type ImagingOptions,
 } from "../ai/imaging.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
+import {
+  metadataKeys,
+  safeAiConfigLogContext,
+  safePromptListSummary,
+} from "../shared/logSummaries.js";
+import type { AiConfig } from "../shared/types.js";
 
 export const imagingRouter = Router({ mergeParams: true });
 
@@ -96,14 +102,16 @@ imagingRouter.post("/", async (req, res) => {
     frontMatter: post.frontMatter,
   });
 
+  let activeConfig: AiConfig;
   let provider;
   try {
     const aiConfigs = getAiConfigsForServer(dataDir);
-    const activeConfig = aiConfigs.configs.find((c) => c.id === aiConfigs.activeId);
-    if (!activeConfig) {
+    const resolvedConfig = aiConfigs.configs.find((c) => c.id === aiConfigs.activeId);
+    if (!resolvedConfig) {
       res.status(503).json({ error: "No active AI configuration selected" });
       return;
     }
+    activeConfig = resolvedConfig;
     provider = createProvider(activeConfig);
   } catch (err) {
     const details = describeAiError(err);
@@ -115,7 +123,7 @@ imagingRouter.post("/", async (req, res) => {
   }
 
   logInfo(
-    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${JSON.stringify(options)}, mode=structured, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
+    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${formatLogValue(options)}, mode=structured, contentLength=${postContent.length}, metadataKeys=${metadataKeys(post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(activeConfig))}, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
   );
 
   try {
@@ -131,7 +139,7 @@ imagingRouter.post("/", async (req, res) => {
     );
     const items = normalizeImagingOutput(raw, options.count);
     logInfo(
-      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, mode=structured`
+      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, mode=structured, promptSummary=${formatLogValue(safePromptListSummary(items))}`
     );
     res.json({ items });
   } catch (err) {
@@ -146,6 +154,9 @@ imagingRouter.post("/", async (req, res) => {
           mode: "structured",
           timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
           maxRetries: IMAGING_GENERATION_MAX_RETRIES,
+          contentLength: postContent.length,
+          metadataKeys: metadataKeys(post.frontMatter),
+          ai: safeAiConfigLogContext(activeConfig),
         },
       },
       err

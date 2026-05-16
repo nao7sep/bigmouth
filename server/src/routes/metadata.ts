@@ -16,10 +16,15 @@ import {
   normalizeMetadataFields,
   type MetadataField,
 } from "../ai/metadataGeneration.js";
-import { error as logError, info as logInfo } from "../services/logger.js";
+import { error as logError, formatLogValue, info as logInfo } from "../services/logger.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
+import {
+  metadataKeys,
+  safeAiConfigLogContext,
+  safeGeneratedFieldSummary,
+} from "../shared/logSummaries.js";
 import type { AiProvider } from "../ai/provider.js";
-import type { Post } from "../shared/types.js";
+import type { AiConfig, Post } from "../shared/types.js";
 
 export const metadataRouter = Router({ mergeParams: true });
 
@@ -29,7 +34,9 @@ const METADATA_GENERATION_MAX_RETRIES = 1;
 type GenerationContext = {
   post: Post;
   postContent: string;
+  contentSource: "request" | "stored";
   customPrompts: Record<string, string>;
+  aiConfig: AiConfig;
   provider: AiProvider;
 };
 
@@ -60,7 +67,9 @@ function getGenerationContext(
     return {
       post,
       postContent: content?.trim() ? content : post.content,
+      contentSource: content?.trim() ? "request" : "stored",
       customPrompts: getGenerationPrompts(dataDir).prompts,
+      aiConfig: activeConfig,
       provider: createProvider(activeConfig),
     };
   } catch (err) {
@@ -136,7 +145,7 @@ metadataRouter.post("/generate", async (req, res) => {
   if (!context) return;
 
   logInfo(
-    `Metadata generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentLength=${context.postContent.length}`
+    `Metadata generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentSource=${context.contentSource}, contentLength=${context.postContent.length}, language=${context.post.frontMatter.language}, target=${context.post.frontMatter.target}, existingMetadataKeys=${metadataKeys(context.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(context.aiConfig))}`
   );
 
   try {
@@ -145,7 +154,7 @@ metadataRouter.post("/generate", async (req, res) => {
       results[field] = { value: values[field] };
     }
     logInfo(
-      `Metadata generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured`
+      `Metadata generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, resultSummary=${formatLogValue(safeGeneratedFieldSummary(values))}`
     );
   } catch (err) {
     const details = logAiFailure(
@@ -159,6 +168,12 @@ metadataRouter.post("/generate", async (req, res) => {
           mode: "structured",
           timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
           maxRetries: METADATA_GENERATION_MAX_RETRIES,
+          contentSource: context.contentSource,
+          contentLength: context.postContent.length,
+          language: context.post.frontMatter.language,
+          target: context.post.frontMatter.target,
+          existingMetadataKeys: metadataKeys(context.post.frontMatter),
+          ai: safeAiConfigLogContext(context.aiConfig),
         },
       },
       err
