@@ -369,7 +369,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         )}
         {readOnly && (
           <p className="meta-field-hint">
-            Published posts are read-only. Move back to Ready to edit.
+            Metadata is read-only.
           </p>
         )}
         <div className="metadata-generate-all-row">

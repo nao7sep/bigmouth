@@ -138,10 +138,6 @@ assetsRouter.post("/:postId", (req, res, next) => {
     res.status(404).json({ error: "Post not found" });
     return;
   }
-  if (post.frontMatter.status === "published") {
-    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before changing assets." });
-    return;
-  }
 
   const filename = sanitizeFilename(req.file.originalname);
   const destPath = assetFilePath(dataDir, postId, filename);
@@ -218,10 +214,6 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   const post = getPost(dataDir, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
-    return;
-  }
-  if (post.frontMatter.status === "published") {
-    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before changing assets." });
     return;
   }
 

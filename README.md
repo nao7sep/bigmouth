@@ -15,7 +15,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
 - **Imaging** — generate temporary English image-prompt variants from the current post with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
 - **Assets** — upload and manage images and files per post; embed links directly in the editor
-- **Export** — copy post content as HTML or plain text
+- **Export** — copy or download post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
 - **Targets** — configure multiple publishing destinations with per-target metadata requirements
 - **Source linking** — link a post to a source post (e.g. a translation derived from an original)
@@ -198,9 +198,9 @@ The server is tolerant of a few nearby variants when parsing, but that keyed `it
 
 1. **Draft** — Create a post, pick a target and language. Write in Markdown. Content autosaves every 2 seconds.
 2. **Ready** — Mark ready when reviewed. A slug is required to advance from draft.
-3. **Published** — Mark as published after copying to your platform. The post moves to the published archive and becomes read-only until you move it back to Ready.
+3. **Published** — Mark as published after copying to your platform. The post moves to the published archive. Content, metadata, and assets remain editable for small corrections; `publishedAtUtc` changes only when the status changes to Published.
 
-Posts can be moved backward (Published → Ready → Draft) at any time.
+Posts can be moved backward (Published → Ready → Draft) at any time. Moving a published post backward clears `publishedAtUtc`; publishing it again sets a new publication timestamp.
 
 While you edit, the left-hand post list updates the affected entry in place instead of reloading every section from scratch. The published archive still loads in pages via “Load more…”.
 
@@ -214,6 +214,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `GET /api/logs/current` | Get the current log file path |
 | `POST /api/logs/current/reveal` | Reveal the current log file in the OS file manager |
 | `GET /api/workspaces` | List all workspaces |
+| `GET /api/workspaces/:id` | Get a workspace |
 | `POST /api/workspaces/open-or-create` | Open an existing workspace folder or create one there |
 | `PUT /api/workspaces/:id` | Update a workspace |
 | `DELETE /api/workspaces/:id` | Remove a workspace from the registry (data files are not deleted) |
@@ -227,6 +228,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `PUT /api/w/:wsId/settings` | Save settings |
 | `GET /api/w/:wsId/targets` | Get targets |
 | `PUT /api/w/:wsId/targets` | Save targets |
+| `PUT /api/w/:wsId/targets/rename` | Rename a target and update posts using it |
 | `GET /api/w/:wsId/ai-configs` | Get AI configs |
 | `PUT /api/w/:wsId/ai-configs` | Save AI configs |
 | `GET /api/w/:wsId/analysis-prompts` | Get analysis prompts |
@@ -289,7 +291,7 @@ BigMouth has no authentication — it is designed for a single user on their own
 - **Same-origin only.** Requests from any `Origin` other than the loopback host (production), the Vite dev server, or an entry in `allowedOrigins` are rejected with `403 Forbidden`. CORS is disabled. This prevents a malicious page you visit in your browser from issuing cross-site requests against the API.
 - **API keys never leave the server in plaintext.** The `GET /api/w/:wsId/ai-configs` response masks every API key. The plaintext form is only deobfuscated in-process when calling the AI provider.
 - **Path validation.** Asset filenames and post slugs are validated against a strict character set, and asset paths are resolved under the per-post asset directory and rejected if they escape.
-- **Workspace data directories.** Pointing a workspace at a custom path requires the directory to already exist and be either empty or an existing workspace. Bigmouth will not seed arbitrary paths.
+- **Workspace data directories.** Pointing a workspace at a custom path creates the directory if it does not exist. If the path already exists, it must be either empty or an existing bigmouth workspace; non-empty unrelated folders are rejected.
 
 If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
 

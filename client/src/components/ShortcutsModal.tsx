@@ -6,7 +6,7 @@ interface ShortcutsModalProps {
 
 const SHORTCUTS = [
   { key: "Cmd+N", description: "New post" },
-  { key: "Cmd+E", description: "Open export modal" },
+  { key: "Cmd+E", description: "Export" },
   { key: "Cmd+Enter", description: "Run analysis" },
   { key: "Cmd+1", description: "Switch to Analysis tab" },
   { key: "Cmd+2", description: "Switch to Imaging tab" },

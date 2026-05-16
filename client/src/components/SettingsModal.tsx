@@ -584,7 +584,7 @@ function GenerationTab({
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        Field guidance is inserted into a structured metadata request. The app controls the JSON schema and draft content automatically.
+        Field guidance is inserted into a structured metadata request. BigMouth controls the JSON schema, draft content, existing metadata, and requested field list automatically.
       </p>
 
       <div className="metadata-generate-all-row">

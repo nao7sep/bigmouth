@@ -180,7 +180,7 @@ export function AssetsTab({
           onChange={handleFileInput}
         />
         {readOnly
-          ? "Published posts are read-only. Move back to Ready to edit."
+          ? "Assets are read-only."
           : uploading
             ? "Uploading…"
             : "Drop files here or click to upload"}

@@ -20,6 +20,14 @@ export const postsRouter = Router({ mergeParams: true });
 // must not contain path separators or any character that could escape the
 // posts directory. Allow only ASCII alphanumerics, hyphens, and underscores.
 const SLUG_RE = /^[a-zA-Z0-9_-]+$/;
+const ORDINARY_UPDATE_RESERVED_FRONT_MATTER_KEYS = new Set([
+  "id",
+  "status",
+  "createdAtUtc",
+  "updatedAtUtc",
+  "readyAtUtc",
+  "publishedAtUtc",
+]);
 
 function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -140,8 +148,18 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
-  if (existing.frontMatter.status === "published") {
-    res.status(409).json({ error: "Published posts are read-only. Move the post back to ready before editing it." });
+  if (frontMatter !== undefined && (!frontMatter || typeof frontMatter !== "object" || Array.isArray(frontMatter))) {
+    res.status(400).json({ error: "frontMatter must be an object" });
+    return;
+  }
+
+  const reservedKeys = Object.keys(frontMatter ?? {}).filter((key) =>
+    ORDINARY_UPDATE_RESERVED_FRONT_MATTER_KEYS.has(key)
+  );
+  if (reservedKeys.length > 0) {
+    res.status(400).json({
+      error: `Reserved front matter fields cannot be updated here: ${reservedKeys.join(", ")}`,
+    });
     return;
   }
 

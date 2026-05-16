@@ -129,6 +129,14 @@ export function updatePost(
   const post = getPost(dataDir, id);
   if (!post) return null;
 
+  const protectedFrontMatter = {
+    id,
+    status: post.frontMatter.status,
+    createdAtUtc: post.frontMatter.createdAtUtc,
+    readyAtUtc: post.frontMatter.readyAtUtc,
+    publishedAtUtc: post.frontMatter.publishedAtUtc,
+  };
+
   if (updates.frontMatter) {
     for (const [key, value] of Object.entries(updates.frontMatter)) {
       if (value === null) {
@@ -138,14 +146,16 @@ export function updatePost(
       }
     }
   }
+  post.frontMatter.id = protectedFrontMatter.id;
+  post.frontMatter.status = protectedFrontMatter.status;
+  post.frontMatter.createdAtUtc = protectedFrontMatter.createdAtUtc;
+  post.frontMatter.readyAtUtc = protectedFrontMatter.readyAtUtc;
+  post.frontMatter.publishedAtUtc = protectedFrontMatter.publishedAtUtc;
   post.frontMatter.updatedAtUtc = formatForFrontMatter(utcNow());
 
   if (updates.content !== undefined) {
     post.content = updates.content;
   }
-
-  // Protect immutable fields
-  post.frontMatter.id = id;
 
   // For published posts the slug may have changed, which changes the filename
   if (post.frontMatter.status === "published") {
