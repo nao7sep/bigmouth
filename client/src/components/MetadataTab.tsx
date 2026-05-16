@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { Post, PostFrontMatter, Target } from "../types";
-import { updatePost, generateMetadata, generateMetadataBatch } from "../api";
+import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
 interface MetadataTabProps {
@@ -209,7 +209,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           generationLockRef.current = true;
           setGenerating((prev) => ({ ...prev, [key]: true }));
           try {
-            const value = await generateMetadata(postId, key, content);
+            const value = await generateMetadataField(postId, key, content);
             if (saveTimers.current[key]) {
               clearTimeout(saveTimers.current[key]);
               delete saveTimers.current[key];
@@ -301,7 +301,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
         setGeneratingAll(true);
         try {
-          const results = await generateMetadataBatch(postId, fieldKeys, content);
+          const results = await generateMetadataFields(postId, fieldKeys, content);
           const generatedFields: Record<string, string> = {};
           const frontMatterPatch = {} as {
             [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;

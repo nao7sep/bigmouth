@@ -237,8 +237,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `PUT /api/w/:wsId/generation-prompts` | Save generation prompts |
 | `POST /api/w/:wsId/analyze` | Run analysis |
 | `POST /api/w/:wsId/analyze/stream` | Stream analysis |
-| `POST /api/w/:wsId/generate` | Generate one metadata field |
-| `POST /api/w/:wsId/generate/batch` | Generate multiple metadata fields in one structured request |
+| `POST /api/w/:wsId/metadata/generate` | Generate requested metadata fields in one structured request |
 | `POST /api/w/:wsId/imaging` | Generate temporary image prompts |
 | `GET /api/w/:wsId/assets/:postId` | List assets |
 | `POST /api/w/:wsId/assets/:postId` | Upload an asset |

@@ -316,53 +316,43 @@ export async function deleteAsset(
   }
 }
 
-export async function generateMetadata(
+type MetadataGenerationResults = Record<string, { value: string } | { error: string }>;
+
+export async function generateMetadataField(
   postId: string,
   field: string,
   content: string
 ): Promise<string> {
-  const res = await fetchWithTimeout(
-    `${base()}/generate`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ postId, field, content }),
-    },
-    METADATA_GENERATION_TIMEOUT_MS,
-    "Generation timed out"
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Generate failed: ${res.status}`
-    );
+  const results = await generateMetadataFields(postId, [field], content);
+  const result = results[field];
+  if (!result || !("value" in result)) {
+    throw new Error(result?.error ?? `Failed to generate ${field}`);
   }
-  const data = (await res.json()) as { value: string };
-  return data.value;
+  return result.value;
 }
 
-export async function generateMetadataBatch(
+export async function generateMetadataFields(
   postId: string,
   fields: string[],
   content: string
-): Promise<Record<string, { value: string } | { error: string }>> {
+): Promise<MetadataGenerationResults> {
   const res = await fetchWithTimeout(
-    `${base()}/generate/batch`,
+    `${base()}/metadata/generate`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ postId, fields, content }),
     },
     METADATA_GENERATION_TIMEOUT_MS,
-    "Batch generation timed out"
+    "Metadata generation timed out"
   );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      (body as { error?: string }).error ?? `Batch generate failed: ${res.status}`
+      (body as { error?: string }).error ?? `Metadata generation failed: ${res.status}`
     );
   }
-  const data = await res.json() as { results: Record<string, { value: string } | { error: string }> };
+  const data = await res.json() as { results: MetadataGenerationResults };
   return data.results;
 }
 

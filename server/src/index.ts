@@ -22,7 +22,7 @@ import { aiConfigsRouter } from "./routes/aiConfigs.js";
 import { analysisPromptsRouter } from "./routes/analysisPrompts.js";
 import { generationPromptsRouter } from "./routes/generationPrompts.js";
 import { analysisRouter } from "./routes/analysis.js";
-import { generationRouter } from "./routes/generation.js";
+import { metadataRouter } from "./routes/metadata.js";
 import { imagingRouter } from "./routes/imaging.js";
 import { assetsRouter } from "./routes/assets.js";
 
@@ -130,7 +130,7 @@ app.use("/api/w/:wsId/ai-configs", aiConfigsRouter);
 app.use("/api/w/:wsId/analysis-prompts", analysisPromptsRouter);
 app.use("/api/w/:wsId/generation-prompts", generationPromptsRouter);
 app.use("/api/w/:wsId/analyze", analysisRouter);
-app.use("/api/w/:wsId/generate", generationRouter);
+app.use("/api/w/:wsId/metadata", metadataRouter);
 app.use("/api/w/:wsId/imaging", imagingRouter);
 app.use("/api/w/:wsId/assets", assetsRouter);
 

@@ -1,9 +1,6 @@
 /**
- * POST /api/w/:wsId/generate
- * Generates one metadata field value for a post using structured AI output.
- *
- * POST /api/w/:wsId/generate/batch
- * Generates multiple metadata fields in one structured AI call.
+ * POST /api/w/:wsId/metadata/generate
+ * Generates requested metadata field values for a post in one structured AI call.
  */
 
 import { Router } from "express";
@@ -24,7 +21,7 @@ import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 import type { AiProvider } from "../ai/provider.js";
 import type { Post } from "../shared/types.js";
 
-export const generationRouter = Router({ mergeParams: true });
+export const metadataRouter = Router({ mergeParams: true });
 
 const METADATA_GENERATION_TIMEOUT_MS = 45_000;
 const METADATA_GENERATION_MAX_RETRIES = 1;
@@ -36,7 +33,7 @@ type GenerationContext = {
   provider: AiProvider;
 };
 
-type BatchResultMap = Record<string, { value: string } | { error: string }>;
+type MetadataGenerationResults = Record<string, { value: string } | { error: string }>;
 
 function getGenerationContext(
   res: Response,
@@ -69,7 +66,7 @@ function getGenerationContext(
   } catch (err) {
     const details = describeAiError(err);
     logError(
-      `Generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
+      `Metadata generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
     );
     res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
     return null;
@@ -110,57 +107,7 @@ async function generateMetadataFields(
   return values;
 }
 
-generationRouter.post("/", async (req, res) => {
-  const { postId, field, content } = req.body as {
-    postId?: string;
-    field?: string;
-    content?: string;
-  };
-
-  if (!postId || !field) {
-    res.status(400).json({ error: "postId and field are required" });
-    return;
-  }
-  if (!isMetadataField(field)) {
-    res.status(400).json({ error: `Field is not generatable: ${field}` });
-    return;
-  }
-
-  const context = getGenerationContext(res, postId, content);
-  if (!context) return;
-
-  logInfo(
-    `Generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, mode=structured, contentLength=${context.postContent.length}`
-  );
-
-  try {
-    const values = await generateMetadataFields(context, [field]);
-    const value = values[field];
-    logInfo(
-      `Generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, field=${field}, mode=structured, valueLength=${value.length}`
-    );
-    res.json({ value });
-  } catch (err) {
-    const details = logAiFailure(
-      {
-        kind: "Generation",
-        requestId: res.locals.requestId,
-        workspaceId: res.locals.workspaceId,
-        postId,
-        field,
-        extra: {
-          mode: "structured",
-          timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
-          maxRetries: METADATA_GENERATION_MAX_RETRIES,
-        },
-      },
-      err
-    );
-    res.status(502).json({ error: err instanceof Error ? err.message : details });
-  }
-});
-
-generationRouter.post("/batch", async (req, res) => {
+metadataRouter.post("/generate", async (req, res) => {
   const { postId, fields, content } = req.body as {
     postId?: string;
     fields?: string[];
@@ -172,7 +119,7 @@ generationRouter.post("/batch", async (req, res) => {
     return;
   }
 
-  const results: BatchResultMap = {};
+  const results: MetadataGenerationResults = {};
   for (const field of fields) {
     if (!isMetadataField(field)) {
       results[field] = { error: `Field is not generatable: ${field}` };
@@ -189,7 +136,7 @@ generationRouter.post("/batch", async (req, res) => {
   if (!context) return;
 
   logInfo(
-    `Batch generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentLength=${context.postContent.length}`
+    `Metadata generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentLength=${context.postContent.length}`
   );
 
   try {
@@ -198,12 +145,12 @@ generationRouter.post("/batch", async (req, res) => {
       results[field] = { value: values[field] };
     }
     logInfo(
-      `Batch generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured`
+      `Metadata generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured`
     );
   } catch (err) {
     const details = logAiFailure(
       {
-        kind: "Batch generation",
+        kind: "Metadata generation",
         requestId: res.locals.requestId,
         workspaceId: res.locals.workspaceId,
         postId,
