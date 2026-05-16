@@ -2,8 +2,9 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getAiConfigsForServer } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { error as logError, info as logInfo, logBlock } from "../services/logger.js";
+import { error as logError, info as logInfo } from "../services/logger.js";
 import {
+  buildImagingSchema,
   buildImagingSystemPrompt,
   buildImagingUserContent,
   IMAGING_COUNTS,
@@ -12,37 +13,16 @@ import {
   IMAGING_PEOPLE,
   IMAGING_RELATIONS,
   IMAGING_STYLES,
+  normalizeImagingOutput,
   type ImagingOptions,
 } from "../ai/imaging.js";
-import { parseJsonCandidates } from "../ai/jsonResponse.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 
 export const imagingRouter = Router({ mergeParams: true });
 
-function normalizePromptList(items: unknown): string[] | null {
-  if (!Array.isArray(items)) return null;
-  const normalized = items
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
-  return normalized.length > 0 ? normalized : null;
-}
-
-function parseImagingResponse(raw: string): string[] {
-  for (const parsed of parseJsonCandidates(raw)) {
-    const direct = normalizePromptList(parsed);
-    if (direct) return direct;
-
-    if (parsed && typeof parsed === "object") {
-      const record = parsed as Record<string, unknown>;
-      for (const key of ["items", "prompts", "value"]) {
-        const extracted = normalizePromptList(record[key]);
-        if (extracted) return extracted;
-      }
-    }
-  }
-
-  throw new Error("Generated prompts were not valid JSON");
-}
+const IMAGING_GENERATION_TIMEOUT_MS = 60_000;
+const IMAGING_GENERATION_MAX_RETRIES = 1;
+const IMAGING_GENERATION_MAX_TOKENS = 4096;
 
 imagingRouter.post("/", async (req, res) => {
   const dataDir = res.locals.dataDir as string;
@@ -113,6 +93,7 @@ imagingRouter.post("/", async (req, res) => {
   const systemPrompt = buildImagingSystemPrompt(options.count);
   const userContent = buildImagingUserContent(postContent, options, {
     targetName: post.frontMatter.target,
+    frontMatter: post.frontMatter,
   });
 
   let provider;
@@ -134,24 +115,23 @@ imagingRouter.post("/", async (req, res) => {
   }
 
   logInfo(
-    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${JSON.stringify(options)}, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
+    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${JSON.stringify(options)}, mode=structured, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
   );
 
   try {
-    const raw = await provider.generateText(systemPrompt, userContent);
-    let items: string[];
-    try {
-      items = parseImagingResponse(raw);
-    } catch (err) {
-      logBlock(
-        "ERROR",
-        `Imaging JSON parse failure: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, rawLength=${raw.length}`,
-        raw
-      );
-      throw err;
-    }
+    const raw = await provider.generateJson(
+      systemPrompt,
+      userContent,
+      buildImagingSchema(options.count),
+      {
+        timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
+        maxRetries: IMAGING_GENERATION_MAX_RETRIES,
+        maxTokens: IMAGING_GENERATION_MAX_TOKENS,
+      }
+    );
+    const items = normalizeImagingOutput(raw, options.count);
     logInfo(
-      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, rawLength=${raw.length}`
+      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, mode=structured`
     );
     res.json({ items });
   } catch (err) {
@@ -161,7 +141,12 @@ imagingRouter.post("/", async (req, res) => {
         requestId: res.locals.requestId,
         workspaceId: res.locals.workspaceId,
         postId,
-        extra: options,
+        extra: {
+          ...options,
+          mode: "structured",
+          timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
+          maxRetries: IMAGING_GENERATION_MAX_RETRIES,
+        },
       },
       err
     );

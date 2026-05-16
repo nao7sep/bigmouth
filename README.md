@@ -13,7 +13,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Three-stage workflow**: Draft → Ready → Published
 - **Analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
-- **Imaging** — generate temporary English image-prompt variants from the current post with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
+- **Imaging** — generate temporary English image-prompt variants from the current post and metadata with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
 - **Assets** — upload and manage images and files per post; embed links directly in the editor
 - **Export** — copy or download post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
@@ -186,13 +186,11 @@ Built-in prompt text is owned by the server, and the Settings UI can restore the
 
 Imaging is transient. Generated prompts are shown in the tab and can be copied, but they are not written to post front matter, workspace config, or history.
 
-The endpoint expects the model to return JSON in this shape:
+Imaging uses the same structured AI output path as metadata generation. The server asks the provider for an exact schema with an `items` array containing the requested number of English prompts:
 
 ```json
 {"items":["prompt 1","prompt 2"]}
 ```
-
-The server is tolerant of a few nearby variants when parsing, but that keyed `items` object is the intended contract.
 
 ## Post workflow
 

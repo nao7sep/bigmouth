@@ -20,6 +20,7 @@ import type {
 
 let wsId = "";
 const METADATA_GENERATION_TIMEOUT_MS = 95_000;
+const IMAGING_GENERATION_TIMEOUT_MS = 130_000;
 
 export function setActiveWorkspace(id: string): void {
   wsId = id;
@@ -37,7 +38,18 @@ async function fetchWithTimeout(
   timeoutMessage: string
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const upstreamSignal = init.signal;
+  const abortFromUpstream = () => controller.abort();
+  if (upstreamSignal?.aborted) {
+    controller.abort();
+  } else {
+    upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+  }
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (err) {
@@ -45,11 +57,13 @@ async function fetchWithTimeout(
       (err instanceof DOMException && err.name === "AbortError") ||
       (err instanceof Error && err.name === "AbortError")
     ) {
+      if (!timedOut) throw err;
       throw new Error(timeoutMessage);
     }
     throw err;
   } finally {
     window.clearTimeout(timer);
+    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
   }
 }
 
@@ -432,12 +446,17 @@ export async function generateImaging(
   options: ImagingOptions,
   signal?: AbortSignal
 ): Promise<string[]> {
-  const res = await fetch(`${base()}/imaging`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, content, ...options }),
-    signal,
-  });
+  const res = await fetchWithTimeout(
+    `${base()}/imaging`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId, content, ...options }),
+      signal,
+    },
+    IMAGING_GENERATION_TIMEOUT_MS,
+    "Imaging generation timed out"
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(

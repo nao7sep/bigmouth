@@ -42,13 +42,14 @@ export class ClaudeProvider implements AiProvider {
     options: {
       timeoutMs?: number;
       maxRetries?: number;
+      maxTokens?: number;
       signal?: AbortSignal;
     } = {}
   ): Promise<unknown> {
     const message = await this.client.messages.parse(
       {
         model: this.model,
-        max_tokens: 2048,
+        max_tokens: options.maxTokens ?? 2048,
         messages: [{ role: "user", content: userContent }],
         ...(systemPrompt ? { system: systemPrompt } : {}),
         output_config: {

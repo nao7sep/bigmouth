@@ -18,6 +18,7 @@ export interface AiProvider {
     options?: {
       timeoutMs?: number;
       maxRetries?: number;
+      maxTokens?: number;
       signal?: AbortSignal;
     }
   ): Promise<unknown>;
