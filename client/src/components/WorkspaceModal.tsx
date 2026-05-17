@@ -8,6 +8,7 @@ import {
 import type { Workspace } from "../types";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModalShell } from "./ModalShell";
+import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 
 interface WorkspaceModalProps {
   dismissable: boolean;
@@ -36,6 +37,10 @@ export function WorkspaceModal({
   const [editName, setEditName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const renameComposing = useComposing();
+  const nameComposing = useComposing();
+  const locationComposing = useComposing();
 
   const isDirty = name.trim() !== "" || location.trim() !== "" || editingId !== null;
 
@@ -143,7 +148,10 @@ export function WorkspaceModal({
                       className="form-input"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
+                      onCompositionStart={renameComposing.handlers.onCompositionStart}
+                      onCompositionEnd={renameComposing.handlers.onCompositionEnd}
                       onKeyDown={(e) => {
+                        if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
                         if (e.key === "Enter") handleRename(ws.id);
                         if (e.key === "Escape") setEditingId(null);
                       }}
@@ -215,7 +223,10 @@ export function WorkspaceModal({
               setName(e.target.value);
             }}
             placeholder="Uses the folder name if available"
+            onCompositionStart={nameComposing.handlers.onCompositionStart}
+            onCompositionEnd={nameComposing.handlers.onCompositionEnd}
             onKeyDown={(e) => {
+              if (isComposingKeyboardEvent(nameComposing.composingRef, e)) return;
               if (e.key === "Enter") void handleSubmit();
             }}
             autoFocus={sorted.length === 0}
@@ -233,7 +244,10 @@ export function WorkspaceModal({
               setLocation(e.target.value);
             }}
             placeholder="Default location if blank"
+            onCompositionStart={locationComposing.handlers.onCompositionStart}
+            onCompositionEnd={locationComposing.handlers.onCompositionEnd}
             onKeyDown={(e) => {
+              if (isComposingKeyboardEvent(locationComposing.composingRef, e)) return;
               if (e.key === "Enter") void handleSubmit();
             }}
           />

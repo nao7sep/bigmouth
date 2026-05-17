@@ -17,6 +17,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Assets** — upload and manage images and files per post; embed links directly in the editor. Raster images preview inline; other files are served as downloads.
 - **Export** — copy or download post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
+- **IME composition support** — Japanese/Chinese/Korean input works correctly in all text fields
 - **Targets** — configure multiple publishing destinations with per-target metadata requirements
 - **Source linking** — link a post to a source post (e.g. a translation derived from an original)
 - **Navigation history** — back-navigate through linked posts
