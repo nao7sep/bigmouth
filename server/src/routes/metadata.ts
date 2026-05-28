@@ -6,7 +6,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { getPost } from "../services/postStore.js";
-import { getGenerationPrompts, getAiConfigsForServer } from "../services/configStore.js";
+import { getGenerationPrompts, getActiveAiConfig } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import {
   buildMetadataGenerationRequest,
@@ -54,16 +54,12 @@ function getGenerationContext(
     return null;
   }
 
+  const activeConfig = getActiveAiConfig(dataDir);
+  if (!activeConfig) {
+    res.status(503).json({ error: "No active AI configuration selected" });
+    return null;
+  }
   try {
-    const aiConfigs = getAiConfigsForServer(dataDir);
-    const activeConfig = aiConfigs.configs.find(
-      (config) => config.id === aiConfigs.activeId
-    );
-    if (!activeConfig) {
-      res.status(503).json({ error: "No active AI configuration selected" });
-      return null;
-    }
-
     return {
       post,
       postContent: content?.trim() ? content : post.content,

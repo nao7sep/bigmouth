@@ -10,6 +10,11 @@ export const DEFAULT_PORT = 3141;
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
 
+// Maximum size of a JSON request body. Sized well above any realistic
+// markdown draft (autosave PUTs the whole post body) and well under the
+// asset-upload limit, which has its own multer config.
+export const MAX_REQUEST_BODY_BYTES = 50 * 1024 * 1024;
+
 const defaultAiConfigId = nanoid();
 
 export const DEFAULT_AI_CONFIGS: AiConfigsData = {

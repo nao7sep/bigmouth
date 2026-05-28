@@ -5,6 +5,7 @@ import type {
   Settings,
   Target,
   AssetMeta,
+  AiConfig,
   AiConfigsData,
   GenerationPromptsData,
   ImagingOptions,
@@ -228,13 +229,74 @@ export async function fetchAiConfigs(): Promise<AiConfigsData> {
   return res.json();
 }
 
-export async function saveAiConfigs(data: AiConfigsData): Promise<AiConfigsData> {
+export async function createAiConfig(input: {
+  id: string;
+  name: string;
+  provider: AiConfig["provider"];
+  model: string;
+  apiKey?: string;
+}): Promise<AiConfigsData> {
   const res = await fetch(`${base()}/ai-configs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to create AI config: ${res.status}`
+    );
+  }
+  return res.json();
+}
+
+export async function updateAiConfig(
+  id: string,
+  patch: {
+    name?: string;
+    provider?: AiConfig["provider"];
+    model?: string;
+    /** Omit to preserve, "" to clear, non-empty to replace. */
+    apiKey?: string;
+  }
+): Promise<AiConfigsData> {
+  const res = await fetch(`${base()}/ai-configs/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`Failed to save AI configs: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to update AI config: ${res.status}`
+    );
+  }
+  return res.json();
+}
+
+export async function deleteAiConfig(id: string): Promise<AiConfigsData> {
+  const res = await fetch(`${base()}/ai-configs/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to delete AI config: ${res.status}`
+    );
+  }
+  return res.json();
+}
+
+export async function setActiveAiConfig(id: string): Promise<AiConfigsData> {
+  const res = await fetch(`${base()}/ai-configs/active`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ?? `Failed to set active AI config: ${res.status}`
+    );
+  }
   return res.json();
 }
 

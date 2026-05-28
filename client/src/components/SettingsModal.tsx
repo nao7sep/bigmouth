@@ -12,7 +12,10 @@ import {
   fetchAnalysisPromptDefaults,
   saveAnalysisPrompts,
   fetchAiConfigs,
-  saveAiConfigs,
+  createAiConfig,
+  updateAiConfig,
+  deleteAiConfig,
+  setActiveAiConfig,
   fetchGenerationPrompts,
   fetchGenerationPromptDefaults,
   saveGenerationPrompts,
@@ -129,6 +132,77 @@ export function SettingsModal({
 
   const canSave = !saving && isValid();
 
+  // Commit AI-config edits as a sequence of per-resource calls. Order:
+  //   1. Create new configs   (so their ids exist on the server)
+  //   2. Update existing ones (so the data is current before the active swap)
+  //   3. Set the active id    (the new active must exist; current active must
+  //                            differ from any config we are about to delete)
+  //   4. Delete removed ones  (server refuses to delete the active config)
+  //
+  // On any failure mid-sequence, resync `initialAiConfigs.current` from the
+  // server so a retry diffs against what's actually persisted rather than
+  // re-issuing the work already committed (POST would 400 with "already
+  // exists", etc.).
+  const commitAiConfigChanges = async (): Promise<AiConfigsData | null> => {
+    if (!aiConfigs) return null;
+    const initial = initialAiConfigs.current;
+    if (!initial) return aiConfigs;
+
+    const initialById = new Map(initial.configs.map((c) => [c.id, c]));
+    const currentIds = new Set(aiConfigs.configs.map((c) => c.id));
+
+    const added = aiConfigs.configs.filter((c) => !initialById.has(c.id));
+    const removedIds = initial.configs
+      .filter((c) => !currentIds.has(c.id))
+      .map((c) => c.id);
+
+    let latest: AiConfigsData = initial;
+
+    try {
+      for (const c of added) {
+        latest = await createAiConfig({
+          id: c.id,
+          name: c.name,
+          provider: c.provider,
+          model: c.model,
+          apiKey: c.apiKey.trim() ? c.apiKey : undefined,
+        });
+      }
+
+      for (const c of aiConfigs.configs) {
+        const prev = initialById.get(c.id);
+        if (!prev) continue; // newly added — handled above
+        const patch: Parameters<typeof updateAiConfig>[1] = {};
+        if (c.name !== prev.name) patch.name = c.name;
+        if (c.provider !== prev.provider) patch.provider = c.provider;
+        if (c.model !== prev.model) patch.model = c.model;
+        // The UI keeps the apiKey input empty unless the user typed a new key,
+        // so a non-empty value here always means "replace". There is no UI
+        // for explicit clearing today.
+        if (c.apiKey.trim()) patch.apiKey = c.apiKey;
+        if (Object.keys(patch).length === 0) continue;
+        latest = await updateAiConfig(c.id, patch);
+      }
+
+      if (aiConfigs.activeId !== initial.activeId) {
+        latest = await setActiveAiConfig(aiConfigs.activeId);
+      }
+
+      for (const id of removedIds) {
+        latest = await deleteAiConfig(id);
+      }
+
+      return latest;
+    } catch (err) {
+      try {
+        initialAiConfigs.current = await fetchAiConfigs();
+      } catch {
+        // Best-effort resync; fall through and surface the original error.
+      }
+      throw err;
+    }
+  };
+
   const handleSaveAll = async () => {
     if (!settings || !aiConfigs || !generationPrompts) return;
     setSaving(true);
@@ -143,7 +217,7 @@ export function SettingsModal({
 
       const [, savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
         saveSettings(settings),
-        saveAiConfigs(aiConfigs),
+        commitAiConfigChanges(),
         saveGenerationPrompts(generationPrompts),
         saveAnalysisPrompts(prompts),
       ]);
@@ -153,7 +227,10 @@ export function SettingsModal({
       }
       const savedTargets = await saveTargets(targetPayload(targets));
 
-      setAiConfigs(savedAiConfigs);
+      if (savedAiConfigs) {
+        setAiConfigs(savedAiConfigs);
+        initialAiConfigs.current = savedAiConfigs;
+      }
       setGenerationPrompts(savedGenPrompts);
       const editableSavedTargets = editableTargets(savedTargets);
       setTargets(editableSavedTargets);

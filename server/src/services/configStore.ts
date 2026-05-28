@@ -6,7 +6,15 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { Settings, Target, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "../shared/types.js";
+import type {
+  Settings,
+  Target,
+  AnalysisPrompt,
+  AiConfig,
+  AiConfigsData,
+  AiProvider,
+  GenerationPromptsData,
+} from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 
@@ -39,17 +47,26 @@ function readAiConfigsRaw(dataDir: string): AiConfigsData {
 }
 
 /**
- * Returns AI configs with API keys deobfuscated. For server-internal use only
- * (analysis, generation). NEVER send the result of this function to the client.
+ * Returns the active AI config with its API key deobfuscated, freshly
+ * constructed — never a mutated re-export of the parsed file. For
+ * server-internal use only (analysis, generation, imaging). NEVER send the
+ * result of this function to the client.
+ *
+ * Narrowing the return value to a single config means plaintext keys never
+ * exist as a collection: misuse can only ever leak the one config a route
+ * was already going to use.
  */
-export function getAiConfigsForServer(dataDir: string): AiConfigsData {
+export function getActiveAiConfig(dataDir: string): AiConfig | null {
   const data = readAiConfigsRaw(dataDir);
-  for (const config of data.configs ?? []) {
-    if (config.apiKey) {
-      config.apiKey = deobfuscate(config.apiKey);
-    }
-  }
-  return data;
+  const stored = (data.configs ?? []).find((c) => c.id === data.activeId);
+  if (!stored) return null;
+  return {
+    id: stored.id,
+    name: stored.name,
+    provider: stored.provider,
+    model: stored.model,
+    apiKey: stored.apiKey ? deobfuscate(stored.apiKey) : "",
+  };
 }
 
 /**
@@ -72,33 +89,108 @@ export function getAiConfigsForClient(dataDir: string): AiConfigsData {
   };
 }
 
-/**
- * Persists AI configs. When the client sends an empty API key with
- * hasApiKey=true, the previously stored key is preserved.
- */
-export function saveAiConfigs(dataDir: string, data: AiConfigsData): void {
-  const existing = readAiConfigsRaw(dataDir);
-  const existingById = new Map(existing.configs?.map((c) => [c.id, c]) ?? []);
+function writeAiConfigsRaw(dataDir: string, data: AiConfigsData): void {
+  fs.writeFileSync(
+    path.join(dataDir, "ai-configs.json"),
+    JSON.stringify(data, null, 2) + "\n"
+  );
+}
 
-  const toWrite: AiConfigsData = {
-    activeId: data.activeId,
-    configs: (data.configs ?? []).map((config) => {
-      const prev = existingById.get(config.id);
-      const apiKey = config.apiKey
-        ? obfuscate(config.apiKey)
-        : config.hasApiKey
-          ? (prev?.apiKey ?? "")
-          : "";
-      return {
-        id: config.id,
-        name: config.name,
-        provider: config.provider,
-        model: config.model,
-        apiKey,
-      };
-    }),
+export type CreateAiConfigInput = {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  model: string;
+  apiKey?: string;
+};
+
+/**
+ * Creates a new AI config with a caller-supplied id. Throws if the id is
+ * already in use. Returns the updated client view.
+ */
+export function createAiConfig(dataDir: string, input: CreateAiConfigInput): AiConfigsData {
+  const data = readAiConfigsRaw(dataDir);
+  if ((data.configs ?? []).some((c) => c.id === input.id)) {
+    throw new Error(`AI config with id "${input.id}" already exists`);
+  }
+  const stored: AiConfig = {
+    id: input.id,
+    name: input.name,
+    provider: input.provider,
+    model: input.model,
+    apiKey: input.apiKey && input.apiKey.length > 0 ? obfuscate(input.apiKey) : "",
   };
-  fs.writeFileSync(path.join(dataDir, "ai-configs.json"), JSON.stringify(toWrite, null, 2) + "\n");
+  data.configs = [...(data.configs ?? []), stored];
+  writeAiConfigsRaw(dataDir, data);
+  return getAiConfigsForClient(dataDir);
+}
+
+export type UpdateAiConfigPatch = {
+  name?: string;
+  provider?: AiProvider;
+  model?: string;
+  /**
+   * Key handling:
+   *   - field omitted from patch → existing key is preserved
+   *   - empty string ("")        → existing key is cleared
+   *   - non-empty string         → existing key is replaced (and obfuscated)
+   */
+  apiKey?: string;
+};
+
+/**
+ * Applies a partial update to a single AI config. Throws if the id does not
+ * exist. Returns the updated client view.
+ */
+export function updateAiConfig(
+  dataDir: string,
+  id: string,
+  patch: UpdateAiConfigPatch
+): AiConfigsData {
+  const data = readAiConfigsRaw(dataDir);
+  const config = (data.configs ?? []).find((c) => c.id === id);
+  if (!config) {
+    throw new Error(`AI config with id "${id}" not found`);
+  }
+  if (patch.name !== undefined) config.name = patch.name;
+  if (patch.provider !== undefined) config.provider = patch.provider;
+  if (patch.model !== undefined) config.model = patch.model;
+  if (patch.apiKey !== undefined) {
+    config.apiKey = patch.apiKey.length > 0 ? obfuscate(patch.apiKey) : "";
+  }
+  writeAiConfigsRaw(dataDir, data);
+  return getAiConfigsForClient(dataDir);
+}
+
+/**
+ * Removes a single AI config. Refuses to delete the currently active config —
+ * the caller must reassign `activeId` to a different config (or to "") first.
+ */
+export function deleteAiConfig(dataDir: string, id: string): AiConfigsData {
+  const data = readAiConfigsRaw(dataDir);
+  if (!(data.configs ?? []).some((c) => c.id === id)) {
+    throw new Error(`AI config with id "${id}" not found`);
+  }
+  if (data.activeId === id) {
+    throw new Error("Cannot delete the active AI config; set another active first");
+  }
+  data.configs = (data.configs ?? []).filter((c) => c.id !== id);
+  writeAiConfigsRaw(dataDir, data);
+  return getAiConfigsForClient(dataDir);
+}
+
+/**
+ * Sets the active AI config. Accepts an empty string to mean "no active config".
+ * Throws if a non-empty id does not refer to an existing config.
+ */
+export function setActiveAiConfig(dataDir: string, id: string): AiConfigsData {
+  const data = readAiConfigsRaw(dataDir);
+  if (id !== "" && !(data.configs ?? []).some((c) => c.id === id)) {
+    throw new Error(`AI config with id "${id}" not found`);
+  }
+  data.activeId = id;
+  writeAiConfigsRaw(dataDir, data);
+  return getAiConfigsForClient(dataDir);
 }
 
 // --- Targets ---

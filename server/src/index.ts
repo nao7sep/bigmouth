@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -11,7 +12,7 @@ import {
   formatLogValue,
   formatRequestShape,
 } from "./services/logger.js";
-import { DEFAULT_HOST, DEFAULT_PORT } from "./shared/defaults.js";
+import { DEFAULT_HOST, DEFAULT_PORT, MAX_REQUEST_BODY_BYTES } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
 import { workspacesRouter } from "./routes/workspaces.js";
 import { logsRouter } from "./routes/logs.js";
@@ -77,7 +78,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
 
 app.use((req, res, next) => {
   const requestId = `req-${nextRequestId++}`;
@@ -156,6 +157,15 @@ if (fs.existsSync(clientDist)) {
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // body-parser tags PayloadTooLargeError with `type === "entity.too.large"`.
+  // Surface it as 413 with a clear message instead of a generic 500 — autosave
+  // and other content-bearing routes can then show "request too large" rather
+  // than "internal server error".
+  if ((err as Error & { type?: string }).type === "entity.too.large") {
+    warn(`Request body too large: ${err.message}`);
+    res.status(413).json({ error: "Request body is larger than the server limit." });
+    return;
+  }
   logError(`Unhandled error: ${err.message}`);
   res.status(500).json({ error: "Internal server error" });
 });
@@ -168,10 +178,22 @@ process.on("uncaughtException", (err) => {
   logError(`Uncaught exception: ${err.stack ?? err.message}`);
 });
 
+// "Is this binding inaccessible from outside this machine?" — true for the
+// full 127.0.0.0/8 IPv4 loopback range, the IPv6 loopback ::1, and the
+// "localhost" alias. Anything else (0.0.0.0, ::, an interface IP) is treated
+// as LAN-exposed and triggers the startup warning.
+function isLoopbackHost(value: string): boolean {
+  if (value === "localhost") return true;
+  const kind = net.isIP(value);
+  if (kind === 4) return value.startsWith("127.");
+  if (kind === 6) return value === "::1";
+  return false;
+}
+
 app.listen(port, host, () => {
   info(`Server started on ${host}:${port}, ${appConfig.workspaces.length} workspace(s) configured`);
 
-  const isLoopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+  const isLoopback = isLoopbackHost(host);
   if (!isLoopback) {
     info(
       `Listening on a non-loopback address (${host}). The server is reachable from other devices on the same network. ` +

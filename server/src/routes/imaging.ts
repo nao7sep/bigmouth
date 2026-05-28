@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPost } from "../services/postStore.js";
-import { getAiConfigsForServer } from "../services/configStore.js";
+import { getActiveAiConfig } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { error as logError, formatLogValue, info as logInfo } from "../services/logger.js";
 import {
@@ -102,16 +102,14 @@ imagingRouter.post("/", async (req, res) => {
     frontMatter: post.frontMatter,
   });
 
-  let activeConfig: AiConfig;
+  const resolvedConfig = getActiveAiConfig(dataDir);
+  if (!resolvedConfig) {
+    res.status(503).json({ error: "No active AI configuration selected" });
+    return;
+  }
+  const activeConfig: AiConfig = resolvedConfig;
   let provider;
   try {
-    const aiConfigs = getAiConfigsForServer(dataDir);
-    const resolvedConfig = aiConfigs.configs.find((c) => c.id === aiConfigs.activeId);
-    if (!resolvedConfig) {
-      res.status(503).json({ error: "No active AI configuration selected" });
-      return;
-    }
-    activeConfig = resolvedConfig;
     provider = createProvider(activeConfig);
   } catch (err) {
     const details = describeAiError(err);

@@ -6,7 +6,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { getPost } from "../services/postStore.js";
-import { getAnalysisPrompts, getAiConfigsForServer } from "../services/configStore.js";
+import { getAnalysisPrompts, getActiveAiConfig } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../ai/promptTemplates.js";
 import { error as logError, formatLogValue, info as logInfo, warn as logWarn } from "../services/logger.js";
@@ -73,15 +73,12 @@ async function resolveAnalysisRequest(
     ? "inline-content"
     : "split-system-user";
 
+  const activeConfig = getActiveAiConfig(dataDir);
+  if (!activeConfig) {
+    res.status(503).json({ error: "No active AI configuration selected" });
+    return null;
+  }
   try {
-    const aiConfigs = getAiConfigsForServer(dataDir);
-    const activeConfig = aiConfigs.configs.find(
-      (c) => c.id === aiConfigs.activeId
-    );
-    if (!activeConfig) {
-      res.status(503).json({ error: "No active AI configuration selected" });
-      return null;
-    }
     return {
       postId,
       promptName,

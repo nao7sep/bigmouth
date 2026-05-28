@@ -159,6 +159,14 @@ New workspaces start with a default Claude config entry and an empty API key.
 
 When the Settings UI loads an existing AI configuration, the API key field stays empty. The plaintext key is never sent over HTTP. Instead, the UI indicates whether a key is already saved. Leave the field blank to keep the existing key, or type a new one to replace it.
 
+Each config is managed as its own resource. `POST /ai-configs` creates one, `PUT /ai-configs/:id` updates it, `DELETE /ai-configs/:id` removes it, and `PUT /ai-configs/active` sets which config the analysis and generation routes use. Field semantics for `PUT /ai-configs/:id` are explicit:
+
+- A field omitted from the body preserves the existing value.
+- `apiKey: ""` clears the stored key.
+- `apiKey: "..."` replaces the stored key.
+
+The server refuses to delete the currently active config — reassign `activeId` to another config first.
+
 ### Analysis prompts (`analysis-prompts.json`, per workspace)
 
 Named prompts for AI content review. Use `{content}` as a placeholder for the post body. This works well with XML-style sections such as:
@@ -227,7 +235,10 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `PUT /api/w/:wsId/targets` | Save targets |
 | `PUT /api/w/:wsId/targets/rename` | Rename a target and update posts using it |
 | `GET /api/w/:wsId/ai-configs` | Get AI configs |
-| `PUT /api/w/:wsId/ai-configs` | Save AI configs |
+| `POST /api/w/:wsId/ai-configs` | Create an AI config |
+| `PUT /api/w/:wsId/ai-configs/active` | Set the active AI config |
+| `PUT /api/w/:wsId/ai-configs/:id` | Update an AI config |
+| `DELETE /api/w/:wsId/ai-configs/:id` | Delete an AI config |
 | `GET /api/w/:wsId/analysis-prompts` | Get analysis prompts |
 | `GET /api/w/:wsId/analysis-prompts/defaults` | Get built-in analysis prompts |
 | `PUT /api/w/:wsId/analysis-prompts` | Save analysis prompts |
