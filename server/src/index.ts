@@ -52,8 +52,8 @@ let nextRequestId = 1;
 //   * Origin appears in app.json `allowedOrigins` → allow.
 //   * Anything else → 403.
 const DEV_ORIGINS = new Set<string>([
-  "http://127.0.0.1:5173",
-  "http://localhost:5173",
+  "http://127.0.0.1:5273",
+  "http://localhost:5273",
 ]);
 
 const configuredOrigins = new Set<string>(appConfig.allowedOrigins);

@@ -66,7 +66,7 @@ try {
 
     Write-Step "Stopping stale BigMouth listeners"
     Stop-Port 3141
-    Stop-Port 5173
+    Stop-Port 5273
 
     Write-Step "Installing root dependencies"
     Invoke-Native -FilePath "npm" -ArgumentList @("install")
@@ -91,7 +91,7 @@ try {
                 Start-Sleep -Seconds 1
             }
         }
-    } -ArgumentList "http://127.0.0.1:3141/api/health", "http://localhost:5173"
+    } -ArgumentList "http://127.0.0.1:3141/api/health", "http://localhost:5273"
 
     Write-Step "Starting server and client in development mode"
     Invoke-Native -FilePath "npm" -ArgumentList @("run", "dev") -AllowedExitCodes @(0, 130, -1073741510)

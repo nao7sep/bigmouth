@@ -43,8 +43,8 @@ open_browser_when_ready() {
   (
     for _ in {1..60}; do
       if curl -fsS "http://127.0.0.1:3141/api/health" >/dev/null 2>&1 &&
-        curl -fsS "http://localhost:5173" >/dev/null 2>&1; then
-        open "http://localhost:5173" >/dev/null 2>&1 || true
+        curl -fsS "http://localhost:5273" >/dev/null 2>&1; then
+        open "http://localhost:5273" >/dev/null 2>&1 || true
         exit 0
       fi
       sleep 1
@@ -63,7 +63,7 @@ cd "$REPO_DIR"
 
 log_step "Stopping stale BigMouth listeners"
 stop_port 3141
-stop_port 5173
+stop_port 5273
 
 log_step "Installing root dependencies"
 npm install
