@@ -4,10 +4,10 @@ import request from "supertest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../services/dataDir.js";
-import { saveTargets } from "../services/configStore.js";
-import { clearCache } from "../services/postStore.js";
-import { postsRouter } from "./posts.js";
+import { initializeWorkspaceData } from "../../src/services/dataDir.js";
+import { saveTargets } from "../../src/services/configStore.js";
+import { clearCache } from "../../src/services/postStore.js";
+import { postsRouter } from "../../src/../src/routes/posts.js";
 
 let dataDir: string;
 

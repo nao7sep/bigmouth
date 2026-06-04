@@ -3,7 +3,7 @@ import {
   usesContentPlaceholder,
   renderPromptTemplate,
   resolvePromptRequest,
-} from "./promptTemplates.js";
+} from "../../src/../src/ai/promptTemplates.js";
 
 describe("usesContentPlaceholder", () => {
   it("detects the {content} token", () => {

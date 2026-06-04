@@ -4,7 +4,7 @@ import {
   readyFilename,
   publishedFilename,
   statusSubdir,
-} from "./filenames.js";
+} from "../../src/../src/shared/filenames.js";
 
 const ts = new Date("2026-04-05T14:30:22Z");
 

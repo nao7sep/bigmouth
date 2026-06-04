@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describeAiError } from "./errorDetails.js";
+import { describeAiError } from "../../src/../src/ai/errorDetails.js";
 
 describe("describeAiError", () => {
   it("describes a plain Error by message", () => {

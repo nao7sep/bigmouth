@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { createProvider } from "./factory.js";
-import { ClaudeProvider } from "./claude.js";
-import type { AiConfig } from "../shared/types.js";
+import { createProvider } from "../../src/../src/ai/factory.js";
+import { ClaudeProvider } from "../../src/../src/ai/claude.js";
+import type { AiConfig } from "../../src/shared/types.js";
 
 function config(overrides: Partial<AiConfig> = {}): AiConfig {
   return {

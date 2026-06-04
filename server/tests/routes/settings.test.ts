@@ -4,8 +4,8 @@ import request from "supertest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../services/dataDir.js";
-import { settingsRouter } from "./settings.js";
+import { initializeWorkspaceData } from "../../src/services/dataDir.js";
+import { settingsRouter } from "../../src/../src/routes/settings.js";
 
 let dataDir: string;
 

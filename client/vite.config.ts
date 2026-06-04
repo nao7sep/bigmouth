@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     // jsdom because safeMarkdown's DOMPurify needs a DOM `window`.
     environment: "jsdom",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },
   server: {
     // Pinned to 5273 instead of Vite's default 5173 so the launcher's

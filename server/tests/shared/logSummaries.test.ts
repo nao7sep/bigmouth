@@ -6,8 +6,8 @@ import {
   safeGeneratedFieldSummary,
   safePromptListSummary,
   presentString,
-} from "./logSummaries.js";
-import type { AiConfig, Post, PostFrontMatter } from "./types.js";
+} from "../../src/../src/shared/logSummaries.js";
+import type { AiConfig, Post, PostFrontMatter } from "../../src/../src/shared/types.js";
 
 function frontMatter(overrides: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {

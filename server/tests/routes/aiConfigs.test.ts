@@ -4,8 +4,8 @@ import request from "supertest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../services/dataDir.js";
-import { aiConfigsRouter } from "./aiConfigs.js";
+import { initializeWorkspaceData } from "../../src/services/dataDir.js";
+import { aiConfigsRouter } from "../../src/../src/routes/aiConfigs.js";
 
 let dataDir: string;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatLogValue } from "./logger.js";
+import { formatLogValue } from "../../src/../src/services/logger.js";
 
 // formatLogValue returns a JSON string; parse it back to assert structure.
 function summarized(value: unknown): unknown {

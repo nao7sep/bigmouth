@@ -4,7 +4,7 @@ import {
   xWeightedCount,
   extractParagraphs,
   computeCounts,
-} from "./counts";
+} from "../../src/../src/util/counts";
 
 describe("graphemeCount", () => {
   it("counts ASCII characters", () => {

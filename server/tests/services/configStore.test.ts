@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "./dataDir.js";
+import { initializeWorkspaceData } from "../../src/../src/services/dataDir.js";
 import {
   getSettings,
   saveSettings,
@@ -12,7 +12,7 @@ import {
   setActiveAiConfig,
   getActiveAiConfig,
   getAiConfigsForClient,
-} from "./configStore.js";
+} from "../../src/../src/services/configStore.js";
 
 let dataDir: string;
 

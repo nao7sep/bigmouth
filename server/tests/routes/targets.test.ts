@@ -4,9 +4,9 @@ import request from "supertest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../services/dataDir.js";
-import { createPost, clearCache, getPost } from "../services/postStore.js";
-import { targetsRouter } from "./targets.js";
+import { initializeWorkspaceData } from "../../src/services/dataDir.js";
+import { createPost, clearCache, getPost } from "../../src/services/postStore.js";
+import { targetsRouter } from "../../src/../src/routes/targets.js";
 
 let dataDir: string;
 
