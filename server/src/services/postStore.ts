@@ -76,8 +76,12 @@ export function getPost(dataDir: string, id: string): Post | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const parsed = matter(raw);
 
+  // gray-matter keeps a global parse cache keyed by file content, so parsed.data
+  // is a shared reference. Callers (e.g. updatePost) mutate the returned front
+  // matter, which would otherwise corrupt the cached object for later reads of
+  // an identical file. Hand back an owned copy instead.
   return {
-    frontMatter: parsed.data as PostFrontMatter,
+    frontMatter: structuredClone(parsed.data) as PostFrontMatter,
     content: trimBlankLines(parsed.content),
     filePath,
   };
@@ -338,6 +342,8 @@ function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, u
     "publishedAtUtc",
   ] as const;
 
+  const orderedKeySet = new Set<string>(orderedKeys);
+
   const cleanFm: Record<string, unknown> = {};
   for (const key of orderedKeys) {
     const value = frontMatter[key];
@@ -352,7 +358,11 @@ function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, u
     delete cleanFm.metaDescriptionEn;
   }
 
+  // Preserve any unknown extra front matter keys. Known keys are already
+  // handled above (including the deliberate *En strip for en posts), so they
+  // must not be re-added here — otherwise stripped fields would reappear.
   for (const [key, value] of Object.entries(frontMatter)) {
+    if (orderedKeySet.has(key)) continue;
     if (!(key in cleanFm) && value !== undefined) {
       cleanFm[key] = value;
     }

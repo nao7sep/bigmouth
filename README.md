@@ -44,7 +44,22 @@ node server/dist/index.js
 
 The server starts on `http://localhost:3141` by default. Open that URL in your browser. On first visit you will see the workspace modal — create a workspace to get started.
 
-In production, the built client is served from the same origin as the API. In development, Vite (port 5173) proxies `/api/*` to the backend so requests are also same-origin from the browser's perspective. There is no CORS — see [Security model](#security-model).
+In production, the built client is served from the same origin as the API. In development, Vite (port 5273) proxies `/api/*` to the backend so requests are also same-origin from the browser's perspective. There is no CORS — see [Security model](#security-model).
+
+## Testing
+
+Tests run with [Vitest](https://vitest.dev/) in both packages.
+
+```sh
+# Run the full suite (server + client)
+npm test
+
+# Watch mode (run per package)
+npm run test:watch --prefix server
+npm run test:watch --prefix client
+```
+
+Server tests run in a Node environment; client tests run in jsdom. Coverage focuses on the logic-bearing modules — timestamp/filename formatting, markdown sanitization and counting, AI prompt assembly and response validation, the post and config stores (exercised against temporary data directories), and the HTTP routes.
 
 ## Data directory
 
@@ -303,7 +318,7 @@ BigMouth has no authentication — it is designed for a single user on their own
 - **Safer asset serving.** Raster image assets can render inline. Other uploaded file types are served as downloads with `nosniff` and a sandbox content policy, so uploaded HTML/SVG-like files are not treated as executable same-origin documents.
 - **Workspace data directories.** Pointing a workspace at a custom path creates the directory if it does not exist. If the path already exists, it must be either empty or a complete bigmouth workspace; non-empty unrelated or partial workspace folders are rejected rather than repaired.
 
-If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5173`, edit `DEV_ORIGINS` in `server/src/index.ts`.
+If you change the listening port via `app.json`, the loopback same-origin allowlist follows it automatically. To work with the dev frontend on a different port than `5273`, edit `DEV_ORIGINS` in `server/src/index.ts`.
 
 ## License
 

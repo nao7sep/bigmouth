@@ -1,8 +1,14 @@
-import { defineConfig } from "vite";
+/// <reference types="vitest/config" />
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // jsdom because safeMarkdown's DOMPurify needs a DOM `window`.
+    environment: "jsdom",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  },
   server: {
     // Pinned to 5273 instead of Vite's default 5173 so the launcher's
     // port-kill (scripts/run.command) only ever clears this app's port and
