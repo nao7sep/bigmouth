@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostFrontMatter, Target } from "../types";
+import type { Post, PostFrontMatter, PostMutationResult } from "../types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 
@@ -15,10 +15,9 @@ interface MetadataTabProps {
   workspaceId: string;
   postId: string;
   frontMatter: PostFrontMatter;
-  target: Target | null;
   content: string;
   extraFieldWatermark: string;
-  onPostUpdated: (post: Post) => void;
+  onPostUpdated: (result: PostMutationResult) => void;
   isActive?: boolean;
   readOnly?: boolean;
 }
@@ -33,7 +32,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       workspaceId,
       postId,
       frontMatter,
-      target,
       content,
       extraFieldWatermark,
       onPostUpdated,
@@ -42,7 +40,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     },
     ref
   ) {
-    const requiresMetadata = target?.requiresMetadata ?? false;
     const lang = frontMatter.language;
     const isNonEnglish = lang !== "en";
     const noContent = !content.trim();
@@ -79,6 +76,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     useEffect(() => {
       onPostUpdatedRef.current = onPostUpdated;
     }, [onPostUpdated]);
+
+    const readOnlyRef = useRef(readOnly);
+    useEffect(() => {
+      readOnlyRef.current = readOnly;
+    }, [readOnly]);
 
     const showGenError = useCallback((msg: string) => {
       setGenError(msg);
@@ -160,6 +162,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           clearTimeout(timer);
         }
         saveTimers.current = {};
+
+        // A locked (published) post rejects edits — drop pending writes instead
+        // of firing a doomed request on unmount.
+        if (readOnlyRef.current) return;
 
         for (const key of pendingKeys) {
           const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
@@ -246,37 +252,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const isGenerating = (key: string) => !!generating[key];
     const anyGeneratingField = Object.values(generating).some(Boolean);
     const generationLocked = generatingAll || anyGeneratingField;
-
-    if (!requiresMetadata) {
-      return (
-        <div className="metadata-tab">
-          {genError && (
-            <div className="metadata-error">
-              {genError}
-              <button className="metadata-error-dismiss" onClick={clearGenError}>
-                ×
-              </button>
-            </div>
-          )}
-          <MetaField
-            label="Slug"
-            value={fields.slug}
-            onChange={(v) => updateField("slug", v)}
-            onBlur={() => flushSave("slug", fields.slug, false)}
-            onCopy={() => copyToClipboard(fields.slug, "slug")}
-            copied={copiedKey === "slug"}
-            onGenerate={() => generate("slug")}
-            generating={isGenerating("slug")}
-            generateDisabled={readOnly || generationLocked || noContent}
-            readOnly={readOnly}
-            isActive={isActive}
-          />
-          {fields.slug && /[^a-z0-9-]/.test(fields.slug) && (
-            <p className="meta-field-hint">Slug contains characters that may not be URL-safe.</p>
-          )}
-        </div>
-      );
-    }
 
     const allFields: Array<{ key: string; isTags?: boolean }> = [{ key: "title" }];
     if (isNonEnglish) allFields.push({ key: "titleEn" });

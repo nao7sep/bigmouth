@@ -10,7 +10,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 
 - **Workspaces** — manage multiple isolated workspaces, each with its own posts, assets, settings, and AI configuration. Switch between workspaces without reloading. You can point a workspace at any directory, making it easy to version-control workspace data with Git.
 - **Markdown editor** with autosave, live post-list updates, and resizable panes
-- **Three-stage workflow**: Draft → Ready → Published
+- **Three-stage workflow**: Draft → Checked → Published
 - **Analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
 - **Imaging** — generate temporary English image-prompt variants from the current post and metadata with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
@@ -19,9 +19,9 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
 - **IME composition support** — Japanese/Chinese/Korean input works correctly in all text fields
 - **Targets** — configure multiple publishing destinations with per-target metadata requirements
-- **Source linking** — link a post to a source post (e.g. a translation derived from an original)
+- **Source linking** — link a post to a source post (e.g. a translation derived from an original). Deleting a source automatically unlinks the posts that referenced it, and you're told how many before confirming.
 - **Navigation history** — back-navigate through linked posts
-- **Fast local post index** — list refreshes stay cheap while Markdown files remain the source of truth
+- **Single-folder, diff-friendly storage** — every post is one Markdown file with a name that never changes, so edits and status changes show up as clean in-place diffs. A derived, version-controllable index (`posts/index.json`) keeps the published archive and search cheap while the Markdown files remain the source of truth.
 
 ## Requirements
 
@@ -74,9 +74,8 @@ All data is stored locally under `~/.bigmouth/`:
   workspaces/
     {workspace-id}/                ← default location for workspace data
       posts/
-        drafts/                    ← draft posts (.md files)
-        ready/                     ← ready-to-publish posts (.md files)
-        published/                 ← published posts (.md files)
+        {createdAtUtc}-{id}.md     ← every post lives here, regardless of status
+        index.json                 ← derived catalog of all posts (rebuildable)
       assets/
         {postId}/                  ← per-post uploaded files + meta.json
       settings.json
@@ -121,7 +120,18 @@ The central configuration file. Contains the server port, bind host, origin allo
 
 Each workspace has an explicit `dataDirectory` path. This can be any directory on disk — useful for Git version control of workspace data. Leaving the location blank uses the default `~/.bigmouth/workspaces/{workspace-id}` location. If the chosen folder already contains a complete bigmouth workspace, the app opens it; otherwise bigmouth creates a new workspace there. It refuses to initialize inside a non-empty folder that contains unrelated or partial workspace files.
 
-Each post is a Markdown file with YAML front matter. The filename encodes the slug (ready/published posts) or the post ID (drafts).
+### Posts and the index
+
+Each post is one Markdown file with YAML front matter, stored directly under `posts/` regardless of its status. The filename is `{createdAtUtc}-{id}.md` (e.g. `20260405-143022-utc-V1StGXR8_Z5jD.md`) and is **fixed for the post's entire lifetime** — computed once at creation and never recomputed. Because the name never changes, a status change or an edit rewrites the file in place and shows up as a clean in-place diff rather than a delete-plus-add. The creation-timestamp prefix keeps the directory, and your git history, in creation order.
+
+This is a deliberate trade-off, not an oversight: posts are reviewed and published in whatever order you choose, so the on-disk order (creation time) will not match publication order. The benefit is that diffs read in a stable, meaningful sequence and survive every status change.
+
+`posts/index.json` is a derived catalog — a fixed projection of every post's front matter (id, status, target, language, slug, title, tags, the lifecycle timestamps, and — for untitled posts — a short body excerpt used as a list label), excluding the body and the frequently-changing `updatedAtUtc`. The Markdown files are the source of truth; the index exists so the published archive and search stay cheap without reading thousands of files. It is:
+
+- **Maintained automatically.** Each post change updates the matching index row. A content-only autosave never rewrites the index, so editing does not churn it.
+- **Self-healing.** On load the app reconciles the index against the files on disk (a directory listing, no body reads) and repairs added or removed posts.
+- **Deterministic.** Rebuilding from the same set of Markdown files always produces a byte-identical `index.json` (entries sorted by creation time, then id). This makes it safe to commit alongside the Markdown so a git diff shows both in sync.
+- **Rebuildable.** Settings → General → **Rebuild index** regenerates it from the Markdown files. Use it after editing or merging post files outside the app.
 
 ### Logging
 
@@ -167,6 +177,8 @@ A target represents a publishing destination:
   }
 ]
 ```
+
+When `requiresMetadata` is `false`, the post's **Metadata tab is hidden entirely** — useful for short social posts (e.g. X/Twitter) that need no title, slug, tags, or SEO description. Metadata is always optional regardless of this flag; it never blocks a status change.
 
 ### AI configuration (per workspace)
 
@@ -219,12 +231,30 @@ Imaging uses the same structured AI output path as metadata generation. The serv
 ## Post workflow
 
 1. **Draft** — Create a post, pick a target and language. Write in Markdown. Content autosaves every 2 seconds.
-2. **Ready** — Mark ready when reviewed. A slug is required to advance from draft.
-3. **Published** — Mark as published after copying to your platform. The post moves to the published archive. Content, metadata, and assets remain editable for small corrections; `publishedAtUtc` changes only when the status changes to Published.
+2. **Checked** — Mark a post checked once you have reviewed it. Metadata (including the slug) is optional and never required to change status. This is the staging lane: keep a handful of checked posts, give them a final read, then copy-paste them out.
+3. **Published** — Mark as published after copying to your platform. **Published posts are locked** — their content, metadata, and assets are read-only, so the autosaving editor can never silently change a post you have already published.
 
-Posts can be moved backward (Published → Ready → Draft) at any time. Moving a published post backward clears `publishedAtUtc`; publishing it again sets a new publication timestamp.
+Posts can be moved backward at any time, and the move is the only way to edit a published post:
 
-While you edit, the left-hand post list updates the affected entry in place instead of reloading every section from scratch. The published archive still loads in pages via “Load more…”.
+- **Published → Checked** unlocks the post for editing and **preserves both timestamps**. This is the lane for fixing a typo without changing the publication record — edit, then move back to Published.
+- **Published → Draft** is for a real rewrite-and-repost. It **clears the checked and publication timestamps**; the post is treated as never published until you publish it again. The app asks for confirmation first.
+
+### Lifecycle timestamps
+
+Two timestamps track how far a post has advanced. Both are set the first time the post reaches a state and are cleared only when it drops back to draft:
+
+| Transition | `checkedAtUtc` | `publishedAtUtc` |
+|---|---|---|
+| → Checked (first time) | set | — |
+| Checked → Draft | cleared | — |
+| → Published (first time) | set | set |
+| Published → Checked | kept | **kept** |
+| Checked → Published again | kept | **kept** (not overwritten) |
+| Published → Draft | cleared | cleared |
+
+Because re-publishing only sets `publishedAtUtc` when it is absent, the round trip Published → Checked → Published (used to fix a typo) keeps the original publication time. Only a deliberate return to Draft discards it.
+
+While you edit, the left-hand post list updates the affected entry in place instead of reloading every section from scratch. Drafts and checked posts are ordered by creation time; the published archive is ordered by publication time and loads in pages via “Load more…”. Deleting the open post selects its neighbour in the same section, so you keep your place instead of dropping back to an empty pane.
 
 ## API routes
 
@@ -243,7 +273,9 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | `GET /api/w/:wsId/posts` | List posts |
 | `GET /api/w/:wsId/posts/:id` | Get a post |
 | `POST /api/w/:wsId/posts` | Create a post |
-| `PUT /api/w/:wsId/posts/:id` | Update a post |
+| `POST /api/w/:wsId/posts/index/rebuild` | Rebuild the post index from the Markdown files |
+| `PUT /api/w/:wsId/posts/:id` | Update a post (rejected with `409` while the post is published) |
+| `GET /api/w/:wsId/posts/:id/referrers` | List posts that link this one as their source |
 | `PUT /api/w/:wsId/posts/:id/status` | Change post status |
 | `DELETE /api/w/:wsId/posts/:id` | Delete a post |
 | `GET /api/w/:wsId/settings` | Get settings |

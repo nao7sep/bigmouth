@@ -8,7 +8,7 @@ export interface Workspace {
 
 // --- Post ---
 
-export type PostStatus = "draft" | "ready" | "published";
+export type PostStatus = "draft" | "checked" | "published";
 
 export interface PostFrontMatter {
   id: string;
@@ -18,6 +18,7 @@ export interface PostFrontMatter {
   sourceId?: string;
   title?: string;         // native language
   titleEn?: string;         // English supplement (omitted when language is "en")
+  excerpt?: string;         // body-derived preview in list summaries (untitled posts only)
   slug?: string;
   tags?: string[];        // native language
   metaDescription?: string; // native language
@@ -25,8 +26,8 @@ export interface PostFrontMatter {
   metaDescriptionEn?: string; // English supplement (omitted when language is "en")
   extra?: string;
   createdAtUtc: string;
-  updatedAtUtc: string;
-  readyAtUtc?: string;
+  updatedAtUtc?: string;    // present on full posts; omitted from list summaries
+  checkedAtUtc?: string;
   publishedAtUtc?: string;
   [key: string]: unknown;
 }
@@ -40,9 +41,18 @@ export interface Post {
   content: string;
 }
 
+/**
+ * The result of a post mutation (update / status change). Carries the full post
+ * for the editor plus the canonical list summary (the server-computed index
+ * projection, including the derived excerpt) for the optimistic list update.
+ */
+export interface PostMutationResult extends Post {
+  summary: PostFrontMatter;
+}
+
 export interface PostListResponse {
   drafts: PostSummary[];
-  ready: PostSummary[];
+  checked: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
   publishedOffset: number;

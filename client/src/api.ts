@@ -1,5 +1,6 @@
 import type {
   Post,
+  PostMutationResult,
   PostListResponse,
   AnalysisPrompt,
   Settings,
@@ -166,7 +167,7 @@ export async function updatePost(
     frontMatter?: { [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null };
   },
   workspaceId?: string
-): Promise<Post> {
+): Promise<PostMutationResult> {
   const res = await fetch(`${base(workspaceId)}/posts/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -181,9 +182,9 @@ export async function updatePost(
 
 export async function changePostStatus(
   id: string,
-  status: "draft" | "ready" | "published",
+  status: "draft" | "checked" | "published",
   workspaceId?: string
-): Promise<Post> {
+): Promise<PostMutationResult> {
   const res = await fetch(`${base(workspaceId)}/posts/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -199,6 +200,24 @@ export async function changePostStatus(
 export async function deletePost(id: string, workspaceId?: string): Promise<void> {
   const res = await fetch(`${base(workspaceId)}/posts/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
+}
+
+export async function fetchReferrers(
+  id: string,
+  workspaceId?: string
+): Promise<{ count: number; ids: string[] }> {
+  const res = await fetch(`${base(workspaceId)}/posts/${id}/referrers`);
+  if (!res.ok) throw new Error(`Failed to fetch referrers: ${res.status}`);
+  return res.json();
+}
+
+export async function rebuildPostIndex(): Promise<{ count: number }> {
+  const res = await fetch(`${base()}/posts/index/rebuild`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Failed to rebuild index: ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function fetchTargets(): Promise<Target[]> {

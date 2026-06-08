@@ -27,7 +27,7 @@ export function usePostPicker(
     setLoadingMore(false);
     fetchPosts(0, batchSize)
       .then((data) => {
-        const all = [...data.drafts, ...data.ready, ...data.published];
+        const all = [...data.drafts, ...data.checked, ...data.published];
         setAllPosts(excludeId ? all.filter((p) => p.frontMatter.id !== excludeId) : all);
         setPubOffset(data.published.length);
         setPubTotal(data.publishedTotal);
@@ -64,7 +64,7 @@ export function usePostPicker(
   const posts = lowerQuery
     ? allPosts.filter((p) => {
         const fm = p.frontMatter;
-        return [fm.id, fm.target, fm.language, fm.title ?? ""]
+        return [fm.id, fm.target, fm.language, fm.title ?? "", fm.titleEn ?? "", fm.excerpt ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(lowerQuery);

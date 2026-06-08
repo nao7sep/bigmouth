@@ -320,14 +320,40 @@ body {
   color: var(--bm-border-strong);
 }
 
-.toolbar-status {
-  padding: 2px 6px;
+.status-radios {
+  display: inline-flex;
   border: 1px solid var(--bm-border);
   border-radius: 4px;
+  overflow: hidden;
+}
+
+.status-radio {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
   font-size: 13px;
+  color: var(--bm-text-soft);
   background: var(--bm-surface-raised);
-  color: var(--bm-text);
   cursor: pointer;
+  user-select: none;
+}
+
+.status-radio + .status-radio {
+  border-left: 1px solid var(--bm-border);
+}
+
+/* Visually-hidden native input; the label is the control surface. */
+.status-radio input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.status-radio.active {
+  background: var(--bm-accent);
+  color: #fff;
 }
 
 .toolbar-dirty {
@@ -379,6 +405,14 @@ body {
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;
+}
+
+.toolbar-notice {
+  padding: 6px 16px;
+  background: var(--bm-border-subtle);
+  color: var(--bm-warning);
+  font-size: 13px;
+  border-bottom: 1px solid var(--bm-border-subtle);
 }
 
 .center-editor {

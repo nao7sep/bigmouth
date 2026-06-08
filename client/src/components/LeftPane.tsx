@@ -4,7 +4,7 @@ import { getPostTitle } from "../util/postTitle";
 
 interface LeftPaneProps {
   drafts: PostSummary[];
-  ready: PostSummary[];
+  checked: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
   selectedPostId: string | null;
@@ -21,7 +21,7 @@ interface LeftPaneProps {
 
 export function LeftPane({
   drafts,
-  ready,
+  checked,
   published,
   publishedTotal,
   selectedPostId,
@@ -36,7 +36,7 @@ export function LeftPane({
   workspaceName,
 }: LeftPaneProps) {
   const [draftsOpen, setDraftsOpen] = useState(true);
-  const [readyOpen, setReadyOpen] = useState(true);
+  const [checkedOpen, setCheckedOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -125,19 +125,19 @@ export function LeftPane({
           selectedPostId={selectedPostId}
           onSelectPost={onSelectPost}
           emptyText="No drafts"
-          timestampField="updatedAtUtc"
+          timestampField="createdAtUtc"
         />
 
         <Section
-          label="Ready"
-          count={ready.length}
-          open={readyOpen}
-          onToggle={() => setReadyOpen(!readyOpen)}
-          posts={ready}
+          label="Checked"
+          count={checked.length}
+          open={checkedOpen}
+          onToggle={() => setCheckedOpen(!checkedOpen)}
+          posts={checked}
           selectedPostId={selectedPostId}
           onSelectPost={onSelectPost}
-          emptyText="No ready posts"
-          timestampField="readyAtUtc"
+          emptyText="No checked posts"
+          timestampField="createdAtUtc"
         />
 
         <Section

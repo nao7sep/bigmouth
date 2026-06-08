@@ -17,12 +17,7 @@ afterEach(() => {
 describe("initializeWorkspaceData", () => {
   it("creates the posts and assets directory tree", () => {
     initializeWorkspaceData(dataDir);
-    for (const sub of [
-      "posts/drafts",
-      "posts/ready",
-      "posts/published",
-      "assets",
-    ]) {
+    for (const sub of ["posts", "assets"]) {
       expect(fs.existsSync(path.join(dataDir, sub))).toBe(true);
     }
   });

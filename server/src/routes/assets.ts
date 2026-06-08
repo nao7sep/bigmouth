@@ -167,6 +167,10 @@ assetsRouter.post("/:postId", (req, res, next) => {
     res.status(404).json({ error: "Post not found" });
     return;
   }
+  if (post.frontMatter.status === "published") {
+    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to change its assets." });
+    return;
+  }
 
   const filename = sanitizeFilename(req.file.originalname);
 
@@ -249,6 +253,10 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   const post = getPost(dataDir, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found" });
+    return;
+  }
+  if (post.frontMatter.status === "published") {
+    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to change its assets." });
     return;
   }
 

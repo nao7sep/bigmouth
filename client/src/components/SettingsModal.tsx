@@ -19,6 +19,7 @@ import {
   fetchGenerationPrompts,
   fetchGenerationPromptDefaults,
   saveGenerationPrompts,
+  rebuildPostIndex,
 } from "../api";
 import {
   GENERATION_PROMPT_KEYS,
@@ -436,6 +437,44 @@ function GeneralTab({
         />
       </div>
 
+      <div className="settings-subheading">Maintenance</div>
+      <RebuildIndexSection />
+    </div>
+  );
+}
+
+// --- Maintenance ---
+
+function RebuildIndexSection() {
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const rebuild = async () => {
+    setRunning(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const { count } = await rebuildPostIndex();
+      setMessage(`Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Index rebuild failed.");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="form-field">
+      <p className="settings-hint">
+        The post index (<code>posts/index.json</code>) is rebuilt automatically from the Markdown
+        files. Rebuild it by hand after editing or merging post files outside the app.
+      </p>
+      <button className="btn-toolbar" style={{ width: "auto" }} onClick={() => void rebuild()} disabled={running}>
+        {running ? "Rebuilding…" : "Rebuild index"}
+      </button>
+      {message && <p className="settings-hint">{message}</p>}
+      {error && <FieldError msg={error} />}
     </div>
   );
 }

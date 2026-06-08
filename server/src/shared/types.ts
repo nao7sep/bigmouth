@@ -1,6 +1,6 @@
 // --- Post ---
 
-export type PostStatus = "draft" | "ready" | "published";
+export type PostStatus = "draft" | "checked" | "published";
 
 /**
  * Front matter fields stored in each post's Markdown file.
@@ -17,16 +17,16 @@ export interface PostFrontMatter {
   sourceId?: string; // nanoid of another post this derives from
   title?: string; // native language
   titleEn?: string; // English supplement (omitted when language is "en")
-  slug?: string; // always English, required for ready status
+  slug?: string; // always English, required for checked/published status
   tags?: string[]; // native language
   metaDescription?: string; // native language
   tagsEn?: string[]; // English supplement (omitted when language is "en")
   metaDescriptionEn?: string; // English supplement (omitted when language is "en")
   extra?: string; // free-text KVP field
-  createdAtUtc: string; // ISO 8601
-  updatedAtUtc: string; // ISO 8601
-  readyAtUtc?: string; // set when status becomes ready, cleared on revert
-  publishedAtUtc?: string; // set when status becomes published, cleared on revert
+  createdAtUtc: string; // ISO 8601; never changes (encoded in the filename)
+  updatedAtUtc: string; // ISO 8601; bumped on every content/metadata edit
+  checkedAtUtc?: string; // set when status reaches checked; cleared only on return to draft
+  publishedAtUtc?: string; // set on first publish; preserved on edit; cleared only on return to draft
   [key: string]: unknown;
 }
 
@@ -37,10 +37,55 @@ export interface Post {
 }
 
 /**
- * Lightweight version of Post for list views — front matter only, no content.
+ * One row of the derived post index (posts/index.json). A fixed projection of a
+ * post's front matter — the catalog used for list views, id→file resolution,
+ * and search. Deliberately excludes updatedAtUtc (the one field that changes on
+ * every content save) so a content edit never churns the index, and excludes
+ * the body and the *En/metaDescription/extra fields, which the list does not need.
+ */
+export interface PostIndexEntry {
+  id: string;
+  fileName: string; // basename of the .md file, stable for the post's lifetime
+  status: PostStatus;
+  target: string;
+  language: string;
+  slug?: string;
+  title?: string;
+  titleEn?: string;
+  excerpt?: string; // body-derived preview; present only when title and titleEn are both absent
+  tags?: string[];
+  sourceId?: string;
+  createdAtUtc: string;
+  checkedAtUtc?: string;
+  publishedAtUtc?: string;
+}
+
+/**
+ * Lightweight version of Post for list views — the index projection, no content.
  */
 export interface PostSummary {
-  frontMatter: PostFrontMatter;
+  frontMatter: PostIndexEntry;
+}
+
+/**
+ * The subset of front matter a client may edit through `PUT /posts/:id`.
+ * Identity (id) and lifecycle fields (status, createdAtUtc, updatedAtUtc,
+ * checkedAtUtc, publishedAtUtc) are intentionally absent: identity never
+ * changes and lifecycle moves only through the status endpoint. A null value
+ * clears the field.
+ */
+export interface EditablePostMetadata {
+  target?: string | null;
+  language?: string | null;
+  title?: string | null;
+  titleEn?: string | null;
+  slug?: string | null;
+  tags?: string[] | null;
+  tagsEn?: string[] | null;
+  metaDescription?: string | null;
+  metaDescriptionEn?: string | null;
+  extra?: string | null;
+  sourceId?: string | null;
 }
 
 // --- Target ---

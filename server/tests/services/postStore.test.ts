@@ -10,7 +10,7 @@ import {
   changeStatus,
   deletePost,
   listDrafts,
-  listReady,
+  listChecked,
   listPublished,
   countPublished,
   clearCache,
@@ -28,15 +28,28 @@ afterEach(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
+function publishableDraft(): string {
+  // A slug is no longer required to advance status, so a bare draft is enough.
+  const created = createPost(dataDir, "blogger", "en");
+  return created.frontMatter.id;
+}
+
 describe("createPost", () => {
-  it("creates a draft on disk and in the index", () => {
+  it("creates a draft directly under posts/ and in the index", () => {
     const post = createPost(dataDir, "blogger", "en");
     expect(post.frontMatter.status).toBe("draft");
     expect(fs.existsSync(post.filePath)).toBe(true);
-    expect(path.dirname(post.filePath).endsWith(path.join("posts", "drafts"))).toBe(true);
+    expect(path.dirname(post.filePath)).toBe(path.join(dataDir, "posts"));
 
     const drafts = listDrafts(dataDir);
     expect(drafts.map((d) => d.frontMatter.id)).toContain(post.frontMatter.id);
+  });
+
+  it("names the file {createdAtUtc}-{id}.md", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    expect(path.basename(post.filePath)).toMatch(
+      new RegExp(`^\\d{8}-\\d{6}-utc-${post.frontMatter.id}\\.md$`)
+    );
   });
 
   it("round-trips through getPost by id", () => {
@@ -57,31 +70,37 @@ describe("createPost", () => {
 });
 
 describe("updatePost", () => {
-  it("updates content and metadata while preserving protected fields", () => {
+  it("updates content and metadata while preserving identity and lifecycle", () => {
     const created = createPost(dataDir, "blogger", "en");
-    const originalId = created.frontMatter.id;
-    const originalCreatedAt = created.frontMatter.createdAtUtc;
+    const id = created.frontMatter.id;
+    const createdAt = created.frontMatter.createdAtUtc;
 
-    const updated = updatePost(dataDir, originalId, {
+    const updated = updatePost(dataDir, id, {
       content: "New body text.",
-      frontMatter: { title: "A Title", status: "published" }, // status must be ignored
+      frontMatter: { title: "A Title" },
     });
 
     expect(updated?.content).toBe("New body text.");
     expect(updated?.frontMatter.title).toBe("A Title");
-    expect(updated?.frontMatter.id).toBe(originalId);
-    expect(updated?.frontMatter.createdAtUtc).toBe(originalCreatedAt);
-    // Protected: status cannot be changed through updatePost.
+    expect(updated?.frontMatter.id).toBe(id);
+    expect(updated?.frontMatter.createdAtUtc).toBe(createdAt);
     expect(updated?.frontMatter.status).toBe("draft");
+  });
+
+  it("never moves or renames the file on edit", () => {
+    const created = createPost(dataDir, "blogger", "en");
+    const updated = updatePost(dataDir, created.frontMatter.id, {
+      frontMatter: { title: "A Title", slug: "a-slug" },
+    });
+    expect(updated?.filePath).toBe(created.filePath);
+    expect(fs.existsSync(created.filePath)).toBe(true);
   });
 
   it("deletes a field when its update value is null", () => {
     const created = createPost(dataDir, "blogger", "en");
-    updatePost(dataDir, created.frontMatter.id, {
-      frontMatter: { title: "temp" },
-    });
+    updatePost(dataDir, created.frontMatter.id, { frontMatter: { title: "temp" } });
     const cleared = updatePost(dataDir, created.frontMatter.id, {
-      frontMatter: { title: null as unknown as string },
+      frontMatter: { title: null },
     });
     expect(cleared?.frontMatter.title).toBeUndefined();
   });
@@ -91,51 +110,68 @@ describe("updatePost", () => {
     updatePost(dataDir, created.frontMatter.id, {
       frontMatter: { titleEn: "English only supplement" },
     });
-    // Re-read from disk: canonicalization must have stripped titleEn.
     const reread = getPost(dataDir, created.frontMatter.id);
     expect(reread?.frontMatter.titleEn).toBeUndefined();
   });
 });
 
 describe("changeStatus", () => {
-  it("requires a slug to move a draft to ready", () => {
+  it("advances draft -> checked without requiring a slug", () => {
     const created = createPost(dataDir, "blogger", "en");
-    expect(() => changeStatus(dataDir, created.frontMatter.id, "ready")).toThrow(
-      /slug/i
-    );
+    const checked = changeStatus(dataDir, created.frontMatter.id, "checked");
+    expect(checked?.frontMatter.status).toBe("checked");
+    expect(checked?.frontMatter.checkedAtUtc).toBeTruthy();
+    expect(checked?.frontMatter.slug).toBeUndefined();
   });
 
-  it("promotes draft -> ready -> published, moving files and stamping timestamps", () => {
-    const created = createPost(dataDir, "blogger", "en");
-    const id = created.frontMatter.id;
-    updatePost(dataDir, id, { frontMatter: { slug: "my-post" } });
+  it("advances draft -> checked -> published without moving the file, stamping timestamps", () => {
+    const id = publishableDraft();
+    const filePath = getPost(dataDir, id)!.filePath;
 
-    const ready = changeStatus(dataDir, id, "ready");
-    expect(ready?.frontMatter.status).toBe("ready");
-    expect(ready?.frontMatter.readyAtUtc).toBeTruthy();
-    expect(path.basename(ready!.filePath)).toContain("my-post");
-    expect(listReady(dataDir).map((p) => p.frontMatter.id)).toContain(id);
+    const checked = changeStatus(dataDir, id, "checked");
+    expect(checked?.frontMatter.status).toBe("checked");
+    expect(checked?.frontMatter.checkedAtUtc).toBeTruthy();
+    expect(checked?.filePath).toBe(filePath);
+    expect(listChecked(dataDir).map((p) => p.frontMatter.id)).toContain(id);
     expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).not.toContain(id);
-    // The draft file must no longer exist.
-    expect(fs.existsSync(created.filePath)).toBe(false);
 
     const published = changeStatus(dataDir, id, "published");
     expect(published?.frontMatter.status).toBe("published");
     expect(published?.frontMatter.publishedAtUtc).toBeTruthy();
+    expect(published?.filePath).toBe(filePath);
     expect(countPublished(dataDir)).toBe(1);
     expect(listPublished(dataDir, 0, 50).map((p) => p.frontMatter.id)).toContain(id);
   });
 
-  it("clears ready/published timestamps when reverting to draft", () => {
-    const created = createPost(dataDir, "blogger", "en");
-    const id = created.frontMatter.id;
-    updatePost(dataDir, id, { frontMatter: { slug: "my-post" } });
+  it("clears checked/published timestamps when reverting to draft", () => {
+    const id = publishableDraft();
     changeStatus(dataDir, id, "published");
 
     const reverted = changeStatus(dataDir, id, "draft");
     expect(reverted?.frontMatter.status).toBe("draft");
-    expect(reverted?.frontMatter.readyAtUtc).toBeUndefined();
+    expect(reverted?.frontMatter.checkedAtUtc).toBeUndefined();
     expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
+  });
+
+  it("keeps both timestamps when moving published -> checked", () => {
+    const id = publishableDraft();
+    const published = changeStatus(dataDir, id, "published");
+    const publishedAt = published!.frontMatter.publishedAtUtc;
+    const checkedAt = published!.frontMatter.checkedAtUtc;
+
+    const checked = changeStatus(dataDir, id, "checked");
+    expect(checked?.frontMatter.status).toBe("checked");
+    expect(checked?.frontMatter.publishedAtUtc).toBe(publishedAt);
+    expect(checked?.frontMatter.checkedAtUtc).toBe(checkedAt);
+  });
+
+  it("preserves publishedAt across the published -> checked -> published typo round trip", () => {
+    const id = publishableDraft();
+    const publishedAt = changeStatus(dataDir, id, "published")!.frontMatter.publishedAtUtc;
+
+    changeStatus(dataDir, id, "checked");
+    const republished = changeStatus(dataDir, id, "published");
+    expect(republished?.frontMatter.publishedAtUtc).toBe(publishedAt);
   });
 });
 
@@ -153,15 +189,39 @@ describe("deletePost", () => {
   it("returns false for an unknown id", () => {
     expect(deletePost(dataDir, "nope")).toBe(false);
   });
+
+  it("clears sourceId on referrers when the source post is deleted", () => {
+    const source = createPost(dataDir, "blogger", "en");
+    const child = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    expect(getPost(dataDir, child.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
+
+    deletePost(dataDir, source.frontMatter.id);
+
+    const reread = getPost(dataDir, child.frontMatter.id);
+    expect(reread).not.toBeNull();
+    expect(reread?.frontMatter.sourceId).toBeUndefined();
+  });
 });
 
-describe("cache rebuild", () => {
+describe("listPublished", () => {
+  it("paginates by offset and limit", () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const created = createPost(dataDir, "blogger", "en");
+      updatePost(dataDir, created.frontMatter.id, { frontMatter: { slug: `slug-${i}` } });
+      changeStatus(dataDir, created.frontMatter.id, "published");
+      ids.push(created.frontMatter.id);
+    }
+    expect(countPublished(dataDir)).toBe(3);
+    expect(listPublished(dataDir, 0, 2)).toHaveLength(2);
+    expect(listPublished(dataDir, 2, 2)).toHaveLength(1);
+  });
+});
+
+describe("index recovery", () => {
   it("rediscovers posts from disk after the in-memory cache is cleared", () => {
     const created = createPost(dataDir, "blogger", "en");
     clearCache(dataDir);
-    // Forces a fresh index build from the filesystem.
-    expect(getPost(dataDir, created.frontMatter.id)?.frontMatter.id).toBe(
-      created.frontMatter.id
-    );
+    expect(getPost(dataDir, created.frontMatter.id)?.frontMatter.id).toBe(created.frontMatter.id);
   });
 });

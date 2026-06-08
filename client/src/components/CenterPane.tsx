@@ -6,8 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostStatus } from "../types";
-import { fetchPost, updatePost, changePostStatus, deletePost } from "../api";
+import type { Post, PostMutationResult, PostStatus } from "../types";
+import { fetchPost, updatePost, changePostStatus, deletePost, fetchReferrers } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
 import { ConfirmModal } from "./ConfirmModal";
@@ -17,7 +17,7 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 interface CenterPaneProps {
   workspaceId: string;
   postId: string;
-  onPostUpdated: (post: Post) => void;
+  onPostUpdated: (result: PostMutationResult) => void;
   onPostDeleted: () => void;
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
@@ -35,6 +35,12 @@ export interface CenterPaneHandle {
 }
 
 const AUTO_SAVE_DELAY = 2_000;
+
+const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
+  { value: "draft", label: "Draft" },
+  { value: "checked", label: "Checked" },
+  { value: "published", label: "Published" },
+];
 
 export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function CenterPane(
   {
@@ -62,6 +68,8 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [referrerCount, setReferrerCount] = useState(0);
+  const [draftRevertConfirmOpen, setDraftRevertConfirmOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef("");
   const savedContentRef = useRef("");
@@ -188,6 +196,9 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   }, []);
 
   const handleContentChange = (value: string) => {
+    // Published posts are locked; the editor is read-only, but guard the save
+    // path too so a stray change can never autosave into a locked post.
+    if (post?.frontMatter.status === "published") return;
     setContent(value);
     contentRef.current = value;
     notifyContentChange(value);
@@ -197,9 +208,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     timerRef.current = setTimeout(() => void save(), AUTO_SAVE_DELAY);
   };
 
-  const handleStatusChange = async (newStatus: PostStatus) => {
-    if (!post || post.frontMatter.status === newStatus) return;
-
+  const applyStatusChange = async (newStatus: PostStatus) => {
     try {
       setStatusError(null);
       const flushedContent = await flushPendingContent();
@@ -220,6 +229,30 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Status change failed");
     }
+  };
+
+  const handleStatusChange = (newStatus: PostStatus) => {
+    if (!post || post.frontMatter.status === newStatus) return;
+    // Moving to draft clears the checked and publication timestamps. Warn
+    // whenever a publication time would actually be lost — this also covers the
+    // published → checked → draft path, where the status is already "checked"
+    // but publishedAtUtc is still set. published → checked itself is
+    // non-destructive (both timestamps are kept) and needs no prompt.
+    if (newStatus === "draft" && post.frontMatter.publishedAtUtc) {
+      setDraftRevertConfirmOpen(true);
+      return;
+    }
+    void applyStatusChange(newStatus);
+  };
+
+  const openDeleteConfirm = async () => {
+    try {
+      const { count } = await fetchReferrers(postId, workspaceId);
+      setReferrerCount(count);
+    } catch {
+      setReferrerCount(0);
+    }
+    setDeleteConfirmOpen(true);
   };
 
   const handleDelete = async () => {
@@ -287,6 +320,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   }
 
   const fm = post.frontMatter;
+  const locked = fm.status === "published";
   const toolbarError = statusError ?? saveError;
 
   return (
@@ -301,15 +335,20 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         <span className="toolbar-sep">|</span>
         <span className="toolbar-label">{fm.language}</span>
         <span className="toolbar-sep">|</span>
-        <select
-          className="toolbar-status"
-          value={fm.status}
-          onChange={(e) => void handleStatusChange(e.target.value as PostStatus)}
-        >
-          <option value="draft">Draft</option>
-          <option value="ready">Ready</option>
-          <option value="published">Published</option>
-        </select>
+        <div className="status-radios" role="radiogroup" aria-label="Post status">
+          {STATUS_OPTIONS.map(({ value, label }) => (
+            <label key={value} className={`status-radio${fm.status === value ? " active" : ""}`}>
+              <input
+                type="radio"
+                name="post-status"
+                value={value}
+                checked={fm.status === value}
+                onChange={() => handleStatusChange(value)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
         <span className="toolbar-sep">|</span>
         {fm.sourceId ? (
           <>
@@ -320,15 +359,15 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
             >
               Source
             </span>
-            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
               Change
             </button>
-            <button className="btn-toolbar" onClick={() => void handleClearSource()}>
+            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked}>
               Unlink
             </button>
           </>
         ) : (
-          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)}>
+          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
             Link Source
           </button>
         )}
@@ -339,7 +378,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         <button className="btn-toolbar" onClick={onExport}>
           Export
         </button>
-        <button className="btn-toolbar btn-delete" onClick={() => setDeleteConfirmOpen(true)}>
+        <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()}>
           Delete
         </button>
       </div>
@@ -357,12 +396,19 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
           </button>
         </div>
       )}
+      {locked && (
+        <div className="toolbar-notice">
+          Published posts are locked. Switch to <strong>Checked</strong> to edit; switching to{" "}
+          <strong>Draft</strong> also clears the publication time.
+        </div>
+      )}
       <div className="center-editor">
         <MarkdownEditor
           ref={editorRef}
           content={content}
           onContentChange={handleContentChange}
           watermark={watermark}
+          readOnly={locked}
         />
       </div>
       <div className="center-counts">
@@ -383,11 +429,28 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
       )}
       {deleteConfirmOpen && (
         <ConfirmModal
-          message="Delete this post? This cannot be undone."
+          message={
+            referrerCount > 0
+              ? `Delete this post? This cannot be undone. ${referrerCount} other post${referrerCount === 1 ? "" : "s"} link${referrerCount === 1 ? "s" : ""} to it as their source and will be unlinked.`
+              : "Delete this post? This cannot be undone."
+          }
           confirmLabel="Delete"
           danger
           onConfirm={() => void handleDelete()}
           onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      )}
+      {draftRevertConfirmOpen && (
+        <ConfirmModal
+          title="Revert to draft?"
+          message="This clears the publication time and the checked time. The post will be treated as never published until you publish it again. Use this for a real rewrite and repost; to fix a small typo, switch to Checked instead."
+          confirmLabel="Revert to Draft"
+          danger
+          onConfirm={() => {
+            setDraftRevertConfirmOpen(false);
+            void applyStatusChange("draft");
+          }}
+          onCancel={() => setDraftRevertConfirmOpen(false)}
         />
       )}
     </div>

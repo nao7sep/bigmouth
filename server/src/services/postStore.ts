@@ -1,102 +1,120 @@
 /**
- * Post file I/O layer.
+ * Post store: the create/read/update/status/delete/list API over post files.
  *
- * Posts are stored in subdirectories by status:
- *   posts/drafts/      — summaries cached in memory per workspace
- *   posts/ready/       — summaries cached in memory per workspace
- *   posts/published/   — summaries cached in memory per workspace
- *
- * All public functions take a dataDir parameter (the workspace data directory).
+ * Posts live in a single `posts/` directory; each file's name is fixed for its
+ * lifetime, so a status change or edit rewrites the file in place rather than
+ * moving it. Every mutation writes the `.md` file (the source of truth) and
+ * then updates the derived index. Listing reads from the index alone — no post
+ * bodies are read to render a list, so the published archive stays cheap.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
 import { nanoid } from "nanoid";
 import type {
   Post,
   PostFrontMatter,
+  PostIndexEntry,
   PostSummary,
   PostStatus,
+  EditablePostMetadata,
 } from "../shared/types.js";
 import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
-import {
-  draftFilename,
-  readyFilename,
-  publishedFilename,
-  statusSubdir,
-} from "../shared/filenames.js";
-
-interface IndexedPost {
-  frontMatter: PostFrontMatter;
-  filePath: string;
-}
-
-interface SummaryIndex {
-  byId: Map<string, IndexedPost>;
-  drafts: string[];
-  ready: string[];
-  published: string[];
-}
-
-const summaryIndexes = new Map<string, SummaryIndex>();
+import { postFileName } from "../shared/filenames.js";
+import { readPost, writePost, projectIndexEntry } from "./postFile.js";
+import { applyStatusTransition } from "../shared/postLifecycle.js";
+import * as index from "./postIndex.js";
 
 export function clearCache(dataDir: string): void {
-  summaryIndexes.delete(dataDir);
+  index.clearCache(dataDir);
+}
+
+export function rebuildIndex(dataDir: string): number {
+  return index.rebuild(dataDir);
 }
 
 function postsDir(dataDir: string): string {
   return path.join(dataDir, "posts");
 }
 
+function filePathFor(dataDir: string, entry: PostIndexEntry): string {
+  return path.join(postsDir(dataDir), entry.fileName);
+}
+
 // --- List ---
 
 export function listDrafts(dataDir: string): PostSummary[] {
-  return listSummaries(dataDir, "draft");
+  return summaries(dataDir, "draft", byCreatedDesc);
 }
 
-export function listReady(dataDir: string): PostSummary[] {
-  return listSummaries(dataDir, "ready");
+export function listChecked(dataDir: string): PostSummary[] {
+  return summaries(dataDir, "checked", byCreatedDesc);
 }
 
 export function listPublished(dataDir: string, offset: number, limit: number): PostSummary[] {
-  return listSummaries(dataDir, "published").slice(offset, offset + limit);
+  return index
+    .listByStatus(dataDir, "published")
+    .sort(byPublishedDesc)
+    .slice(offset, offset + limit)
+    .map((entry) => ({ frontMatter: entry }));
 }
 
 export function countPublished(dataDir: string): number {
-  return summaryIndex(dataDir).published.length;
+  return index.countByStatus(dataDir, "published");
+}
+
+function summaries(
+  dataDir: string,
+  status: PostStatus,
+  compare: (a: PostIndexEntry, b: PostIndexEntry) => number
+): PostSummary[] {
+  return index
+    .listByStatus(dataDir, status)
+    .sort(compare)
+    .map((entry) => ({ frontMatter: entry }));
+}
+
+function byCreatedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
+  return compareDesc(a.createdAtUtc, b.createdAtUtc) || compareDesc(a.id, b.id);
+}
+
+function byPublishedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
+  return (
+    compareDesc(a.publishedAtUtc ?? "", b.publishedAtUtc ?? "") ||
+    compareDesc(a.createdAtUtc, b.createdAtUtc) ||
+    compareDesc(a.id, b.id)
+  );
+}
+
+function compareDesc(a: string, b: string): number {
+  if (a < b) return 1;
+  if (a > b) return -1;
+  return 0;
 }
 
 // --- Read ---
 
 export function getPost(dataDir: string, id: string): Post | null {
-  const filePath = findPostFile(dataDir, id);
-  if (!filePath) return null;
+  const entry = index.getEntry(dataDir, id);
+  if (!entry) return null;
 
-  const raw = fs.readFileSync(filePath, "utf-8");
-  const parsed = matter(raw);
-
-  // gray-matter keeps a global parse cache keyed by file content, so parsed.data
-  // is a shared reference. Callers (e.g. updatePost) mutate the returned front
-  // matter, which would otherwise corrupt the cached object for later reads of
-  // an identical file. Hand back an owned copy instead.
-  return {
-    frontMatter: structuredClone(parsed.data) as PostFrontMatter,
-    content: trimBlankLines(parsed.content),
-    filePath,
-  };
+  const filePath = filePathFor(dataDir, entry);
+  if (!fs.existsSync(filePath)) {
+    // The file vanished out of band; drop the stale entry and report not-found.
+    index.rebuild(dataDir);
+    return null;
+  }
+  return readPost(filePath);
 }
 
-function trimBlankLines(text: string): string {
-  const lines = text.split("\n");
-  let start = 0;
-  while (start < lines.length && lines[start].trim() === "") start++;
-  let end = lines.length - 1;
-  while (end >= start && lines[end].trim() === "") end--;
-  return start > end ? "" : lines.slice(start, end + 1).join("\n");
-}
+// --- Create ---
 
-export function createPost(dataDir: string, target: string, language: string, sourceId?: string): Post {
+export function createPost(
+  dataDir: string,
+  target: string,
+  language: string,
+  sourceId?: string
+): Post {
   const now = utcNow();
   const id = nanoid();
 
@@ -110,69 +128,43 @@ export function createPost(dataDir: string, target: string, language: string, so
     updatedAtUtc: formatForFrontMatter(now),
   };
 
-  const fileName = draftFilename(now, id);
-  const filePath = path.join(postsDir(dataDir), "drafts", fileName);
+  const fileName = postFileName(now, id);
+  const filePath = path.join(postsDir(dataDir), fileName);
 
-  writePostFile(filePath, frontMatter, "");
-  upsertSummary(dataDir, { frontMatter, content: "", filePath });
+  writePost(filePath, frontMatter, "");
+  index.upsertEntry(dataDir, projectIndexEntry(frontMatter, fileName, ""));
 
   return { frontMatter, content: "", filePath };
 }
 
-// --- Update ---
+// --- Update (content + editable metadata only) ---
 
 export function updatePost(
   dataDir: string,
   id: string,
-  updates: {
-    content?: string;
-    frontMatter?: Partial<PostFrontMatter>;
-  }
+  updates: { content?: string; frontMatter?: EditablePostMetadata }
 ): Post | null {
   const post = getPost(dataDir, id);
   if (!post) return null;
 
-  const protectedFrontMatter = {
-    id,
-    status: post.frontMatter.status,
-    createdAtUtc: post.frontMatter.createdAtUtc,
-    readyAtUtc: post.frontMatter.readyAtUtc,
-    publishedAtUtc: post.frontMatter.publishedAtUtc,
-  };
-
+  const fm = post.frontMatter;
   if (updates.frontMatter) {
     for (const [key, value] of Object.entries(updates.frontMatter)) {
       if (value === null) {
-        delete (post.frontMatter as Record<string, unknown>)[key];
-      } else {
-        (post.frontMatter as Record<string, unknown>)[key] = value;
+        delete fm[key];
+      } else if (value !== undefined) {
+        fm[key] = value;
       }
     }
   }
-  post.frontMatter.id = protectedFrontMatter.id;
-  post.frontMatter.status = protectedFrontMatter.status;
-  post.frontMatter.createdAtUtc = protectedFrontMatter.createdAtUtc;
-  post.frontMatter.readyAtUtc = protectedFrontMatter.readyAtUtc;
-  post.frontMatter.publishedAtUtc = protectedFrontMatter.publishedAtUtc;
-  post.frontMatter.updatedAtUtc = formatForFrontMatter(utcNow());
+  fm.updatedAtUtc = formatForFrontMatter(utcNow());
 
-  if (updates.content !== undefined) {
-    post.content = updates.content;
-  }
+  if (updates.content !== undefined) post.content = updates.content;
 
-  const newFilePath = path.join(
-    postsDir(dataDir),
-    statusSubdir(post.frontMatter.status),
-    buildFilename(post.frontMatter)
-  );
-  assertWritablePostPath(newFilePath, post.filePath);
-  writePostFile(newFilePath, post.frontMatter, post.content);
-  if (newFilePath !== post.filePath) {
-    fs.unlinkSync(post.filePath);
-    post.filePath = newFilePath;
-  }
+  // The filename is derived from immutable fields, so it never changes.
+  writePost(post.filePath, fm, post.content);
+  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
-  upsertSummary(dataDir, post);
   return post;
 }
 
@@ -182,62 +174,56 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
   const post = getPost(dataDir, id);
   if (!post) return null;
 
-  const oldStatus = post.frontMatter.status;
-  if (oldStatus === newStatus) return post;
+  const fm = post.frontMatter;
+  if (fm.status === newStatus) return post;
 
   const now = utcNow();
-  const oldFilePath = post.filePath;
+  applyStatusTransition(fm, newStatus, now);
+  fm.updatedAtUtc = formatForFrontMatter(now);
 
-  if (newStatus === "ready") {
-    if (!post.frontMatter.slug) {
-      throw new Error("Slug is required to move a post to ready status");
-    }
-    if (!post.frontMatter.readyAtUtc) {
-      post.frontMatter.readyAtUtc = formatForFrontMatter(now);
-    }
-    post.frontMatter.publishedAtUtc = undefined;
-  } else if (newStatus === "published") {
-    if (!post.frontMatter.slug) {
-      throw new Error("Slug is required to publish a post");
-    }
-    if (!post.frontMatter.readyAtUtc) {
-      post.frontMatter.readyAtUtc = formatForFrontMatter(now);
-    }
-    post.frontMatter.publishedAtUtc = formatForFrontMatter(now);
-  } else if (newStatus === "draft") {
-    post.frontMatter.readyAtUtc = undefined;
-    post.frontMatter.publishedAtUtc = undefined;
-  }
+  writePost(post.filePath, fm, post.content);
+  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
-  post.frontMatter.status = newStatus;
-  post.frontMatter.updatedAtUtc = formatForFrontMatter(now);
-
-  const newFileName = buildFilename(post.frontMatter);
-  const newFilePath = path.join(
-    postsDir(dataDir),
-    statusSubdir(newStatus),
-    newFileName
-  );
-
-  assertWritablePostPath(newFilePath, oldFilePath);
-  writePostFile(newFilePath, post.frontMatter, post.content);
-  if (newFilePath !== oldFilePath) {
-    fs.unlinkSync(oldFilePath);
-  }
-
-  post.filePath = newFilePath;
-  upsertSummary(dataDir, post);
   return post;
+}
+
+/**
+ * Returns the index projection (summary) for a post, or null if unknown. This
+ * is the single source of truth for a post's list representation — including
+ * the derived excerpt — so callers never reconstruct it.
+ */
+export function getPostSummary(dataDir: string, id: string): PostIndexEntry | null {
+  return index.getEntry(dataDir, id);
+}
+
+// --- Referrers (posts that link this one as their source) ---
+
+export function listReferrers(dataDir: string, id: string): string[] {
+  return index
+    .allEntries(dataDir)
+    .filter((entry) => entry.sourceId === id)
+    .map((entry) => entry.id);
+}
+
+export function postExists(dataDir: string, id: string): boolean {
+  return index.getEntry(dataDir, id) !== null;
 }
 
 // --- Delete ---
 
 export function deletePost(dataDir: string, id: string): boolean {
-  const filePath = findPostFile(dataDir, id);
-  if (!filePath) return false;
+  const entry = index.getEntry(dataDir, id);
+  if (!entry) return false;
 
-  fs.unlinkSync(filePath);
-  removeSummary(dataDir, id);
+  // Referential integrity: a post that links the deleted one as its source
+  // would otherwise dangle, so clear that link. This is a system operation, not
+  // a user edit, so it is exempt from the published lock and does not bump
+  // updatedAtUtc — mirroring renameTarget.
+  clearSourceReferences(dataDir, id);
+
+  const filePath = filePathFor(dataDir, entry);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  index.removeEntry(dataDir, id);
 
   const assetDir = path.join(dataDir, "assets", id);
   if (fs.existsSync(assetDir)) {
@@ -247,251 +233,30 @@ export function deletePost(dataDir: string, id: string): boolean {
   return true;
 }
 
+function clearSourceReferences(dataDir: string, sourceId: string): void {
+  for (const entry of index.allEntries(dataDir)) {
+    if (entry.sourceId !== sourceId) continue;
+    const filePath = filePathFor(dataDir, entry);
+    if (!fs.existsSync(filePath)) continue;
+    const post = readPost(filePath);
+    delete post.frontMatter.sourceId;
+    writePost(filePath, post.frontMatter, post.content);
+    index.upsertEntry(dataDir, projectIndexEntry(post.frontMatter, entry.fileName, post.content));
+  }
+}
+
 // --- Target rename ---
 
 export function renameTarget(dataDir: string, oldName: string, newName: string): number {
   let count = 0;
-  for (const sub of ["drafts", "ready", "published"]) {
-    const dir = path.join(postsDir(dataDir), sub);
-    if (!fs.existsSync(dir)) continue;
-
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = matter(raw);
-      const fm = parsed.data as PostFrontMatter;
-
-      if (fm.target === oldName) {
-        fm.target = newName;
-        writePostFile(filePath, fm, parsed.content);
-        count++;
-      }
-    }
+  for (const entry of index.allEntries(dataDir)) {
+    if (entry.target !== oldName) continue;
+    const filePath = filePathFor(dataDir, entry);
+    const post = readPost(filePath);
+    post.frontMatter.target = newName;
+    writePost(filePath, post.frontMatter, post.content);
+    index.upsertEntry(dataDir, projectIndexEntry(post.frontMatter, entry.fileName, post.content));
+    count++;
   }
-  if (count > 0) clearCache(dataDir);
   return count;
-}
-
-// --- Internal helpers ---
-
-function buildFilename(fm: PostFrontMatter): string {
-  if (fm.status === "draft") {
-    return draftFilename(new Date(fm.createdAtUtc), fm.id);
-  }
-  // Defense-in-depth: route-level validation should already have caught any
-  // path-traversing slug, but corrupted on-disk front matter could still
-  // reach this point during a status change. Refuse rather than write
-  // outside the posts directory.
-  const slug = fm.slug ?? "";
-  if (!slug || /[\/\\\0]/.test(slug) || slug.includes("..")) {
-    throw new Error("Invalid slug — contains path separators or traversal");
-  }
-  if (fm.status === "ready") {
-    return readyFilename(new Date(fm.readyAtUtc!), slug);
-  }
-  return publishedFilename(new Date(fm.publishedAtUtc!), slug);
-}
-
-function findPostFile(dataDir: string, id: string): string | null {
-  const indexed = summaryIndex(dataDir).byId.get(id);
-  if (indexed && fs.existsSync(indexed.filePath)) return indexed.filePath;
-  if (indexed) {
-    clearCache(dataDir);
-    return summaryIndex(dataDir).byId.get(id)?.filePath ?? null;
-  }
-  return null;
-}
-
-function writePostFile(
-  filePath: string,
-  frontMatter: PostFrontMatter,
-  content: string
-): void {
-  const cleanFm = canonicalizeFrontMatter(frontMatter);
-
-  const output = matter.stringify(trimBlankLines(content), cleanFm);
-  fs.writeFileSync(filePath, output);
-}
-
-function assertWritablePostPath(newFilePath: string, oldFilePath: string): void {
-  if (path.resolve(newFilePath) === path.resolve(oldFilePath)) return;
-  if (fs.existsSync(newFilePath)) {
-    throw new Error(`Post file already exists: ${path.basename(newFilePath)}`);
-  }
-}
-
-function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, unknown> {
-  const orderedKeys = [
-    "id",
-    "target",
-    "status",
-    "language",
-    "sourceId",
-    "title",
-    "titleEn",
-    "slug",
-    "tags",
-    "tagsEn",
-    "metaDescription",
-    "metaDescriptionEn",
-    "extra",
-    "createdAtUtc",
-    "updatedAtUtc",
-    "readyAtUtc",
-    "publishedAtUtc",
-  ] as const;
-
-  const orderedKeySet = new Set<string>(orderedKeys);
-
-  const cleanFm: Record<string, unknown> = {};
-  for (const key of orderedKeys) {
-    const value = frontMatter[key];
-    if (value !== undefined) {
-      cleanFm[key] = value;
-    }
-  }
-
-  if (frontMatter.language === "en") {
-    delete cleanFm.titleEn;
-    delete cleanFm.tagsEn;
-    delete cleanFm.metaDescriptionEn;
-  }
-
-  // Preserve any unknown extra front matter keys. Known keys are already
-  // handled above (including the deliberate *En strip for en posts), so they
-  // must not be re-added here — otherwise stripped fields would reappear.
-  for (const [key, value] of Object.entries(frontMatter)) {
-    if (orderedKeySet.has(key)) continue;
-    if (!(key in cleanFm) && value !== undefined) {
-      cleanFm[key] = value;
-    }
-  }
-
-  return cleanFm;
-}
-
-function summaryIndex(dataDir: string): SummaryIndex {
-  let index = summaryIndexes.get(dataDir);
-  if (!index) {
-    index = buildSummaryIndex(dataDir);
-    summaryIndexes.set(dataDir, index);
-  }
-  return index;
-}
-
-function buildSummaryIndex(dataDir: string): SummaryIndex {
-  const index: SummaryIndex = {
-    byId: new Map(),
-    drafts: [],
-    ready: [],
-    published: [],
-  };
-
-  loadStatusEntries(dataDir, "drafts", index);
-  loadStatusEntries(dataDir, "ready", index);
-  loadStatusEntries(dataDir, "published", index);
-
-  sortStatusIds(index, "draft");
-  sortStatusIds(index, "ready");
-  sortStatusIds(index, "published");
-
-  return index;
-}
-
-function loadStatusEntries(
-  dataDir: string,
-  subdir: "drafts" | "ready" | "published",
-  index: SummaryIndex
-): void {
-  const dir = path.join(postsDir(dataDir), subdir);
-  if (!fs.existsSync(dir)) return;
-
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
-  const ids = idsForSubdir(index, subdir);
-
-  for (const file of files) {
-    const filePath = path.join(dir, file);
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = matter(raw);
-    const frontMatter = parsed.data as PostFrontMatter;
-    if (!frontMatter.id) {
-      throw new Error(`Post file is missing required front matter id: ${filePath}`);
-    }
-    const existing = index.byId.get(frontMatter.id);
-    if (existing) {
-      throw new Error(
-        `Duplicate post id "${frontMatter.id}" in ${existing.filePath} and ${filePath}`
-      );
-    }
-    index.byId.set(frontMatter.id, { frontMatter, filePath });
-    ids.push(frontMatter.id);
-  }
-}
-
-function listSummaries(dataDir: string, status: PostStatus): PostSummary[] {
-  const index = summaryIndex(dataDir);
-  return idsForStatus(index, status)
-    .map((id) => index.byId.get(id))
-    .filter((entry): entry is IndexedPost => Boolean(entry))
-    .map((entry) => ({ frontMatter: entry.frontMatter }));
-}
-
-function upsertSummary(dataDir: string, post: Post): void {
-  const index = summaryIndex(dataDir);
-  const id = post.frontMatter.id;
-  removeIdFromLists(index, id);
-  index.byId.set(id, {
-    frontMatter: { ...post.frontMatter },
-    filePath: post.filePath,
-  });
-  idsForStatus(index, post.frontMatter.status).push(id);
-  sortStatusIds(index, post.frontMatter.status);
-}
-
-function removeSummary(dataDir: string, id: string): void {
-  const index = summaryIndex(dataDir);
-  removeIdFromLists(index, id);
-  index.byId.delete(id);
-}
-
-function removeIdFromLists(index: SummaryIndex, id: string): void {
-  index.drafts = index.drafts.filter((entryId) => entryId !== id);
-  index.ready = index.ready.filter((entryId) => entryId !== id);
-  index.published = index.published.filter((entryId) => entryId !== id);
-}
-
-function sortStatusIds(index: SummaryIndex, status: PostStatus): void {
-  idsForStatus(index, status).sort((a, b) => compareIndexedPosts(index, status, a, b));
-}
-
-function compareIndexedPosts(
-  index: SummaryIndex,
-  status: PostStatus,
-  aId: string,
-  bId: string
-): number {
-  const a = index.byId.get(aId);
-  const b = index.byId.get(bId);
-  if (!a || !b) return 0;
-
-  if (status === "published") {
-    return path.basename(b.filePath).localeCompare(path.basename(a.filePath));
-  }
-
-  const aTime = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
-  const bTime = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
-  return bTime.localeCompare(aTime);
-}
-
-function idsForStatus(index: SummaryIndex, status: PostStatus): string[] {
-  if (status === "draft") return index.drafts;
-  if (status === "ready") return index.ready;
-  return index.published;
-}
-
-function idsForSubdir(index: SummaryIndex, subdir: "drafts" | "ready" | "published"): string[] {
-  if (subdir === "drafts") return index.drafts;
-  if (subdir === "ready") return index.ready;
-  return index.published;
 }

@@ -1,10 +1,10 @@
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { AnalysisTab } from "./AnalysisTab";
 import { ImagingTab } from "./ImagingTab";
 import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
-import type { Post, PostFrontMatter, Target } from "../types";
+import type { PostFrontMatter, PostMutationResult, Target } from "../types";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
@@ -16,7 +16,7 @@ interface RightPaneProps {
   frontMatter: PostFrontMatter | null;
   target: Target | null;
   extraFieldWatermark: string;
-  onPostUpdated: (post: Post) => void;
+  onPostUpdated: (result: PostMutationResult) => void;
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
@@ -50,6 +50,18 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   ref
 ) {
   const metadataRef = useRef<MetadataTabHandle>(null);
+  const locked = frontMatter?.status === "published";
+
+  // The Metadata tab is only meaningful for targets that require metadata.
+  const showMetadata = target?.requiresMetadata ?? false;
+  const visibleTabs: RightTab[] = showMetadata
+    ? [...RIGHT_TABS]
+    : RIGHT_TABS.filter((t) => t !== "Metadata");
+  const effectiveTab = visibleTabs.includes(activeTab) ? activeTab : visibleTabs[0];
+
+  useEffect(() => {
+    if (effectiveTab !== activeTab) onTabChange(effectiveTab);
+  }, [effectiveTab, activeTab, onTabChange]);
 
   useImperativeHandle(
     ref,
@@ -62,10 +74,10 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   return (
     <div className="pane-right">
       <div className="right-tabs">
-        {RIGHT_TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
-            className={`right-tab${activeTab === tab ? " active" : ""}`}
+            className={`right-tab${effectiveTab === tab ? " active" : ""}`}
             onClick={() => onTabChange(tab)}
           >
             {tab}
@@ -73,7 +85,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
         ))}
       </div>
       <div className="right-content">
-        <div className={activeTab === "Analysis" ? "" : "tab-hidden"}>
+        <div className={effectiveTab === "Analysis" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
@@ -85,39 +97,41 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             />
           )}
         </div>
-        <div className={activeTab === "Imaging" ? "" : "tab-hidden"}>
+        <div className={effectiveTab === "Imaging" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
             <ImagingTab postId={postId} content={content} />
           )}
         </div>
-        <div className={activeTab === "Preview" ? "" : "tab-hidden"}>
+        <div className={effectiveTab === "Preview" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
             <PreviewTab workspaceId={workspaceId} content={content} postId={postId} />
           )}
         </div>
-        <div className={activeTab === "Metadata" ? "" : "tab-hidden"}>
-          {loading || !frontMatter ? (
-            <RightPanePlaceholder message="Loading metadata…" />
-          ) : (
-            <MetadataTab
-              ref={metadataRef}
-              key={postId}
-              workspaceId={workspaceId}
-              postId={postId}
-              frontMatter={frontMatter}
-              target={target}
-              content={content}
-              extraFieldWatermark={extraFieldWatermark}
-              onPostUpdated={onPostUpdated}
-              isActive={activeTab === "Metadata"}
-            />
-          )}
-        </div>
-        <div className={activeTab === "Assets" ? "" : "tab-hidden"}>
+        {showMetadata && (
+          <div className={effectiveTab === "Metadata" ? "" : "tab-hidden"}>
+            {loading || !frontMatter ? (
+              <RightPanePlaceholder message="Loading metadata…" />
+            ) : (
+              <MetadataTab
+                ref={metadataRef}
+                key={postId}
+                workspaceId={workspaceId}
+                postId={postId}
+                frontMatter={frontMatter}
+                content={content}
+                extraFieldWatermark={extraFieldWatermark}
+                onPostUpdated={onPostUpdated}
+                isActive={effectiveTab === "Metadata"}
+                readOnly={locked}
+              />
+            )}
+          </div>
+        )}
+        <div className={effectiveTab === "Assets" ? "" : "tab-hidden"}>
           {loading ? (
             <RightPanePlaceholder message="Loading assets…" />
           ) : (
@@ -127,6 +141,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
               postId={postId}
               onInsertAtCursor={onInsertAtCursor}
               maxUploadMb={maxUploadMb}
+              readOnly={locked}
             />
           )}
         </div>

@@ -72,10 +72,10 @@ Respond with:
 - Only high-impact issues, or say "None" if there are none
 
 ## Fast fixes
-- Concrete edits or decisions that would make the draft ready sooner
+- Concrete edits or decisions that would make the draft publishable sooner
 
 ## Publishability call
-- Ready / Nearly ready / Needs revision, with one sentence explaining why
+- Publish now / Almost there / Needs revision, with one sentence explaining why
 
 <content>
 {content}

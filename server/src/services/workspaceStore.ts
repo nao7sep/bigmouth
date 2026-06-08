@@ -157,13 +157,7 @@ function isWorkspaceDirectory(dir: string): boolean {
     "analysis-prompts.json",
     "generation-prompts.json",
   ];
-  const requiredDirs = [
-    "posts",
-    "posts/drafts",
-    "posts/ready",
-    "posts/published",
-    "assets",
-  ];
+  const requiredDirs = ["posts", "assets"];
 
   return (
     requiredFiles.every((entry) => fs.existsSync(path.join(dir, entry))) &&

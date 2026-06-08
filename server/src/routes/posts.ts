@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   listDrafts,
-  listReady,
+  listChecked,
   listPublished,
   countPublished,
   getPost,
@@ -9,26 +9,48 @@ import {
   updatePost,
   changeStatus,
   deletePost,
+  rebuildIndex,
+  postExists,
+  listReferrers,
+  getPostSummary,
 } from "../services/postStore.js";
 import { getSettings, getTargets } from "../services/configStore.js";
-import type { PostStatus } from "../shared/types.js";
+import type { PostStatus, EditablePostMetadata } from "../shared/types.js";
 import { presentString, safePostLogContext } from "../shared/logSummaries.js";
 import * as logger from "../services/logger.js";
 
 export const postsRouter = Router({ mergeParams: true });
 
-// Slug becomes part of the on-disk filename for ready/published posts, so it
-// must not contain path separators or any character that could escape the
-// posts directory. Allow only ASCII alphanumerics, hyphens, and underscores.
+// Slug must be safe for use in export filenames and URLs: ASCII alphanumerics,
+// hyphens, and underscores only.
 const SLUG_RE = /^[a-zA-Z0-9_-]+$/;
-const ORDINARY_UPDATE_RESERVED_FRONT_MATTER_KEYS = new Set([
+
+// Front matter fields a client may set through PUT /:id. Identity and lifecycle
+// fields are excluded — they move only through createPost and the status route.
+const EDITABLE_FRONT_MATTER_KEYS = [
+  "target",
+  "language",
+  "title",
+  "titleEn",
+  "slug",
+  "tags",
+  "tagsEn",
+  "metaDescription",
+  "metaDescriptionEn",
+  "extra",
+  "sourceId",
+] as const;
+
+const RESERVED_FRONT_MATTER_KEYS = new Set([
   "id",
   "status",
   "createdAtUtc",
   "updatedAtUtc",
-  "readyAtUtc",
+  "checkedAtUtc",
   "publishedAtUtc",
 ]);
+
+const STATUSES: PostStatus[] = ["draft", "checked", "published"];
 
 function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -41,21 +63,42 @@ postsRouter.get("/", (req, res) => {
   const limit = parseInt(req.query.limit as string) || getSettings(dataDir).publishedPostsPerLoad;
 
   const drafts = listDrafts(dataDir);
-  const ready = listReady(dataDir);
+  const checked = listChecked(dataDir);
   const published = listPublished(dataDir, publishedOffset, limit);
   const publishedTotal = countPublished(dataDir);
 
   logger.info(
-    `Posts listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, drafts=${drafts.length}, ready=${ready.length}, publishedReturned=${published.length}, publishedTotal=${publishedTotal}, publishedOffset=${publishedOffset}, limit=${limit}`
+    `Posts listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, drafts=${drafts.length}, checked=${checked.length}, publishedReturned=${published.length}, publishedTotal=${publishedTotal}, publishedOffset=${publishedOffset}, limit=${limit}`
   );
 
   res.json({
     drafts,
-    ready,
+    checked,
     published,
     publishedTotal,
     publishedOffset,
   });
+});
+
+// Rebuild the derived index from the Markdown files (the source of truth).
+// Declared before "/:id" so the static path is not captured as an id.
+postsRouter.post("/index/rebuild", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
+  let count: number;
+  try {
+    count = rebuildIndex(dataDir);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Index rebuild failed";
+    logger.error(
+      `Post index rebuild failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, message=${message}`
+    );
+    res.status(500).json({ error: message });
+    return;
+  }
+  logger.info(
+    `Post index rebuilt: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${count}`
+  );
+  res.json({ rebuilt: true, count });
 });
 
 postsRouter.get("/:id", (req, res) => {
@@ -77,6 +120,14 @@ postsRouter.get("/:id", (req, res) => {
     frontMatter: post.frontMatter,
     content: post.content,
   });
+});
+
+// Posts that link this one as their source. Used to warn before deleting (the
+// links are cleared on delete) and to surface the relationship in the UI.
+postsRouter.get("/:id/referrers", (req, res) => {
+  const dataDir = res.locals.dataDir as string;
+  const ids = listReferrers(dataDir, req.params.id);
+  res.json({ count: ids.length, ids });
 });
 
 postsRouter.post("/", (req, res) => {
@@ -123,7 +174,7 @@ postsRouter.post("/", (req, res) => {
     return;
   }
 
-  if (normalizedSourceId && !getPost(dataDir, normalizedSourceId)) {
+  if (normalizedSourceId && !postExists(dataDir, normalizedSourceId)) {
     res.status(400).json({ error: "Source post not found" });
     return;
   }
@@ -149,13 +200,24 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
+  // Published posts are locked. Editing happens only after moving back to Draft
+  // or Checked, so the autosaving editor can never silently mutate a published
+  // post.
+  if (existing.frontMatter.status === "published") {
+    logger.warn(
+      `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=published-locked`
+    );
+    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to edit it." });
+    return;
+  }
+
   if (frontMatter !== undefined && (!frontMatter || typeof frontMatter !== "object" || Array.isArray(frontMatter))) {
     res.status(400).json({ error: "frontMatter must be an object" });
     return;
   }
 
   const reservedKeys = Object.keys(frontMatter ?? {}).filter((key) =>
-    ORDINARY_UPDATE_RESERVED_FRONT_MATTER_KEYS.has(key)
+    RESERVED_FRONT_MATTER_KEYS.has(key)
   );
   if (reservedKeys.length > 0) {
     logger.warn(
@@ -167,7 +229,7 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
-  // Slug becomes part of the filename — reject anything that could traverse.
+  // Slug is part of export filenames and URLs — reject anything unsafe.
   if (frontMatter && Object.prototype.hasOwnProperty.call(frontMatter, "slug")) {
     const slug = frontMatter.slug;
     if (slug !== null && slug !== undefined && slug !== "") {
@@ -181,20 +243,23 @@ postsRouter.put("/:id", (req, res) => {
     }
   }
 
+  const edits = pickEditableFrontMatter(frontMatter);
+
+  // A source link must point at a real, different post (mirrors the create route).
+  if (typeof edits.sourceId === "string" && edits.sourceId) {
+    if (edits.sourceId === req.params.id) {
+      res.status(400).json({ error: "A post cannot be its own source" });
+      return;
+    }
+    if (!postExists(dataDir, edits.sourceId)) {
+      res.status(400).json({ error: "Source post not found" });
+      return;
+    }
+  }
+
   const oldSlug = presentString(existing.frontMatter.slug);
   const oldFilePath = existing.filePath;
-  const oldPublishedAtUtc = presentString(existing.frontMatter.publishedAtUtc);
-  let post;
-  try {
-    post = updatePost(dataDir, req.params.id, { content, frontMatter });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Post update failed";
-    logger.warn(
-      `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, message=${message}`
-    );
-    res.status(400).json({ error: message });
-    return;
-  }
+  const post = updatePost(dataDir, req.params.id, { content, frontMatter: edits });
   if (!post) {
     logger.warn(
       `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found-after-update`
@@ -203,24 +268,16 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
-  const frontMatterKeys = Object.keys(frontMatter ?? {});
   const newSlug = presentString(post.frontMatter.slug);
-  const newPublishedAtUtc = presentString(post.frontMatter.publishedAtUtc);
   const updateDetails = {
     contentUpdated: content !== undefined,
     contentLengthBefore: existing.content.length,
     contentLengthAfter: post.content.length,
-    frontMatterKeys,
+    frontMatterKeys: Object.keys(edits),
     slugBefore: oldSlug,
     slugAfter: newSlug,
     slugChanged: oldSlug !== newSlug,
     fileChanged: oldFilePath !== post.filePath,
-    publishedAtUtcBefore: oldPublishedAtUtc,
-    publishedAtUtcAfter: newPublishedAtUtc,
-    publishedAtUtcPreserved:
-      existing.frontMatter.status === "published"
-        ? oldPublishedAtUtc === newPublishedAtUtc
-        : null,
     before: safePostLogContext(existing),
     after: safePostLogContext(post),
   };
@@ -228,9 +285,12 @@ postsRouter.put("/:id", (req, res) => {
     `Post updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, details=${logger.formatLogValue(updateDetails)}`
   );
 
+  // Include the canonical list summary so the client's optimistic update uses
+  // the authoritative projection (with its derived excerpt) instead of rebuilding one.
   res.json({
     frontMatter: post.frontMatter,
     content: post.content,
+    summary: getPostSummary(dataDir, post.frontMatter.id),
   });
 });
 
@@ -238,7 +298,7 @@ postsRouter.put("/:id/status", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const { status } = req.body as { status: PostStatus };
 
-  if (!["draft", "ready", "published"].includes(status)) {
+  if (!STATUSES.includes(status)) {
     res.status(400).json({ error: "Invalid status" });
     return;
   }
@@ -265,8 +325,8 @@ postsRouter.put("/:id/status", (req, res) => {
       statusAfter: post.frontMatter.status,
       slug: presentString(post.frontMatter.slug),
       fileChanged: before.filePath !== post.filePath,
-      readyAtUtcBefore: presentString(before.frontMatter.readyAtUtc),
-      readyAtUtcAfter: presentString(post.frontMatter.readyAtUtc),
+      checkedAtUtcBefore: presentString(before.frontMatter.checkedAtUtc),
+      checkedAtUtcAfter: presentString(post.frontMatter.checkedAtUtc),
       publishedAtUtcBefore: presentString(before.frontMatter.publishedAtUtc),
       publishedAtUtcAfter: presentString(post.frontMatter.publishedAtUtc),
       before: safePostLogContext(before),
@@ -279,6 +339,7 @@ postsRouter.put("/:id/status", (req, res) => {
     res.json({
       frontMatter: post.frontMatter,
       content: post.content,
+      summary: getPostSummary(dataDir, post.frontMatter.id),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -305,3 +366,20 @@ postsRouter.delete("/:id", (req, res) => {
   );
   res.json({ deleted: true });
 });
+
+/**
+ * Copies only the editable front matter keys from a request body. Reserved keys
+ * are rejected earlier; unknown keys are ignored so a PUT can never invent
+ * front matter.
+ */
+function pickEditableFrontMatter(frontMatter: unknown): EditablePostMetadata {
+  const edits: EditablePostMetadata = {};
+  if (!frontMatter || typeof frontMatter !== "object") return edits;
+  const source = frontMatter as Record<string, unknown>;
+  for (const key of EDITABLE_FRONT_MATTER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      (edits as Record<string, unknown>)[key] = source[key];
+    }
+  }
+  return edits;
+}

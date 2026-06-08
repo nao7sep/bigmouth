@@ -1,6 +1,10 @@
 import type { PostFrontMatter } from "../types";
 
-/** Returns the best available display title for a post: title → titleEn → slug → id */
+/**
+ * Returns the best available display label for a post:
+ * title → titleEn → body excerpt → slug → id. The excerpt is only present in
+ * list summaries of untitled posts, so a real post body beats a bare id.
+ */
 export function getPostTitle(fm: PostFrontMatter): string {
-  return fm.title || fm.titleEn || fm.slug || fm.id;
+  return fm.title || fm.titleEn || fm.excerpt || fm.slug || fm.id;
 }

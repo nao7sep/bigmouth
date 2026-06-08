@@ -17,7 +17,8 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { Post, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
+import type { Post, PostMutationResult, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
+import { pickAdjacentPostId } from "./util/selection";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -50,7 +51,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     ref
   ) {
     const [drafts, setDrafts] = useState<PostSummary[]>([]);
-    const [ready, setReady] = useState<PostSummary[]>([]);
+    const [checked, setChecked] = useState<PostSummary[]>([]);
     const [published, setPublished] = useState<PostSummary[]>([]);
     const [publishedTotal, setPublishedTotal] = useState(0);
     const [publishedOffset, setPublishedOffset] = useState(0);
@@ -79,7 +80,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const selectedPostIdRef = useRef<string | null>(null);
     const currentPostRef = useRef<Post | null>(null);
     const draftsRef = useRef<PostSummary[]>([]);
-    const readyRef = useRef<PostSummary[]>([]);
+    const checkedRef = useRef<PostSummary[]>([]);
     const publishedRef = useRef<PostSummary[]>([]);
     const publishedTotalRef = useRef(0);
 
@@ -103,8 +104,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [drafts]);
 
     useEffect(() => {
-      readyRef.current = ready;
-    }, [ready]);
+      checkedRef.current = checked;
+    }, [checked]);
 
     useEffect(() => {
       publishedRef.current = published;
@@ -154,9 +155,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         const data = await fetchPosts(pubOffset, pubBatchSize);
         if (!sessionAliveRef.current) return;
         draftsRef.current = data.drafts;
-        readyRef.current = data.ready;
+        checkedRef.current = data.checked;
         setDrafts(data.drafts);
-        setReady(data.ready);
+        setChecked(data.checked);
         const nextPublished = append ? [...publishedRef.current, ...data.published] : data.published;
         publishedRef.current = nextPublished;
         setPublished(nextPublished);
@@ -267,71 +268,101 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     };
 
     const handlePostDeleted = useCallback(() => {
-      void selectPost(null, { skipFlush: true });
+      if (!sessionAliveRef.current) return;
+      const deletedId = selectedPostIdRef.current;
       setNavHistory([]);
+
+      // Delete always targets the open post, so it lives in exactly one loaded
+      // section. Drop it from that section and move the selection to its
+      // neighbour, keeping the user in place. (Drafts and checked are fully
+      // loaded; only a published post reached via a source link could be
+      // missing from the loaded page — fall back to a reload then.)
+      const removeFrom = (list: PostSummary[]) =>
+        list.filter((entry) => entry.frontMatter.id !== deletedId);
+
+      if (deletedId && draftsRef.current.some((p) => p.frontMatter.id === deletedId)) {
+        const nextId = pickAdjacentPostId(draftsRef.current, deletedId);
+        const next = removeFrom(draftsRef.current);
+        draftsRef.current = next;
+        setDrafts(next);
+        void selectPost(nextId, { skipFlush: true });
+        return;
+      }
+      if (deletedId && checkedRef.current.some((p) => p.frontMatter.id === deletedId)) {
+        const nextId = pickAdjacentPostId(checkedRef.current, deletedId);
+        const next = removeFrom(checkedRef.current);
+        checkedRef.current = next;
+        setChecked(next);
+        void selectPost(nextId, { skipFlush: true });
+        return;
+      }
+      if (deletedId && publishedRef.current.some((p) => p.frontMatter.id === deletedId)) {
+        const nextId = pickAdjacentPostId(publishedRef.current, deletedId);
+        const next = removeFrom(publishedRef.current);
+        publishedRef.current = next;
+        setPublished(next);
+        const nextTotal = Math.max(0, publishedTotalRef.current - 1);
+        publishedTotalRef.current = nextTotal;
+        setPublishedTotal(nextTotal);
+        setPublishedOffset(next.length);
+        void selectPost(nextId, { skipFlush: true });
+        return;
+      }
+
+      // Not in any loaded section (rare): clear and reload to resync.
+      void selectPost(null, { skipFlush: true });
       void loadPosts();
     }, [loadPosts, selectPost]);
 
-    const handlePostUpdated = useCallback((post: Post) => {
+    const handlePostUpdated = useCallback((result: PostMutationResult) => {
       if (!sessionAliveRef.current) return;
 
-      const summary = { frontMatter: post.frontMatter };
-      const id = post.frontMatter.id;
+      // The server returns the canonical list summary (including its derived
+      // excerpt); use it verbatim for the list and the full post for the editor.
+      const summary: PostSummary = { frontMatter: result.summary };
+      const status = result.frontMatter.status;
+      const id = result.frontMatter.id;
       const draftLoaded = draftsRef.current.some((entry) => entry.frontMatter.id === id);
-      const readyLoaded = readyRef.current.some((entry) => entry.frontMatter.id === id);
+      const checkedLoaded = checkedRef.current.some((entry) => entry.frontMatter.id === id);
       const publishedLoaded = publishedRef.current.some((entry) => entry.frontMatter.id === id);
       const previousStatus = draftLoaded
         ? "draft"
-        : readyLoaded
-          ? "ready"
+        : checkedLoaded
+          ? "checked"
           : publishedLoaded
             ? "published"
             : currentPostRef.current?.frontMatter.id === id
               ? currentPostRef.current.frontMatter.status
               : null;
 
-      const nextDrafts = nextSummariesForStatus(
-        draftsRef.current,
-        summary,
-        "draft",
-        post.frontMatter.status === "draft"
-      );
-      const nextReady = nextSummariesForStatus(
-        readyRef.current,
-        summary,
-        "ready",
-        post.frontMatter.status === "ready"
-      );
+      const nextDrafts = nextSummariesForStatus(draftsRef.current, summary, "draft", status === "draft");
+      const nextChecked = nextSummariesForStatus(checkedRef.current, summary, "checked", status === "checked");
       const nextPublished = nextSummariesForStatus(
         publishedRef.current,
         summary,
         "published",
-        post.frontMatter.status === "published" && (publishedLoaded || previousStatus !== "published")
+        status === "published" && (publishedLoaded || previousStatus !== "published")
       );
 
       let nextPublishedTotal = publishedTotalRef.current;
-      if (previousStatus === "published" && post.frontMatter.status !== "published") {
+      if (previousStatus === "published" && status !== "published") {
         nextPublishedTotal = Math.max(0, nextPublishedTotal - 1);
-      } else if (
-        previousStatus !== null &&
-        previousStatus !== "published" &&
-        post.frontMatter.status === "published"
-      ) {
+      } else if (previousStatus !== null && previousStatus !== "published" && status === "published") {
         nextPublishedTotal += 1;
       }
 
       draftsRef.current = nextDrafts;
-      readyRef.current = nextReady;
+      checkedRef.current = nextChecked;
       publishedRef.current = nextPublished;
       publishedTotalRef.current = nextPublishedTotal;
       setDrafts(nextDrafts);
-      setReady(nextReady);
+      setChecked(nextChecked);
       setPublished(nextPublished);
       setPublishedTotal(nextPublishedTotal);
       setPublishedOffset(nextPublished.length);
 
-      if (post.frontMatter.id === selectedPostIdRef.current) {
-        setCurrentPost(post);
+      if (id === selectedPostIdRef.current) {
+        setCurrentPost(result);
       }
     }, []);
 
@@ -382,7 +413,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       >
         <LeftPane
           drafts={drafts}
-          ready={ready}
+          checked={checked}
           published={published}
           publishedTotal={publishedTotal}
           selectedPostId={selectedPostId}
@@ -493,7 +524,7 @@ function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): n
     );
   }
 
-  const aTime = a.frontMatter.updatedAtUtc ?? a.frontMatter.createdAtUtc ?? "";
-  const bTime = b.frontMatter.updatedAtUtc ?? b.frontMatter.createdAtUtc ?? "";
-  return bTime.localeCompare(aTime);
+  // Drafts and checked posts are ordered newest-created first. The index
+  // summaries carry no updatedAtUtc, so creation time is the stable key.
+  return (b.frontMatter.createdAtUtc ?? "").localeCompare(a.frontMatter.createdAtUtc ?? "");
 }

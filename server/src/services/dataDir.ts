@@ -14,12 +14,7 @@ import type { Target } from "../shared/types.js";
  * Creates the workspace data directory and default files for a new workspace.
  */
 export function initializeWorkspaceData(dataDir: string): void {
-  for (const sub of [
-    "posts/drafts",
-    "posts/ready",
-    "posts/published",
-    "assets",
-  ]) {
+  for (const sub of ["posts", "assets"]) {
     fs.mkdirSync(path.join(dataDir, sub), { recursive: true });
   }
 

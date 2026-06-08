@@ -47,7 +47,7 @@ describe("safePostLogContext", () => {
     const post: Post = {
       frontMatter: frontMatter({ title: "Secret Title", slug: "my-slug" }),
       content: "This body text must never appear in logs.",
-      filePath: "/home/user/.bigmouth/workspaces/w1/posts/drafts/20260405-143022-utc-abc123.md",
+      filePath: "/home/user/.bigmouth/workspaces/w1/posts/20260405-143022-utc-abc123.md",
     };
     const ctx = safePostLogContext(post);
 
