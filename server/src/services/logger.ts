@@ -1,9 +1,21 @@
 /**
  * Logging module.
  *
- * Writes to both stdout and a log file at ~/.bigmouth/logs/.
- * One log file per server start, named yyyymmdd-hhmmss-utc.log.
- * Logs are shared across all workspaces (single server process).
+ * Writes one JSON object per line (JSON Lines) to a per-launch session file at
+ * ~/.bigmouth/logs/yyyymmdd-hhmmss-utc.log, and echoes each line to the console.
+ * Logs are shared across all workspaces (the app is a single server process).
+ *
+ * Contract (see conventions/20260610-030818-utc-logging-conventions.md):
+ *   - The logging call takes a STRUCTURED object, never a rendered string. Every
+ *     line carries the envelope { time, level, message } plus any extra fields.
+ *   - Four levels: debug / info / warn / error. `debug` is developer-only — it is
+ *     emitted only when BIGMOUTH_DEBUG=1 (set by the dev script), and stays off
+ *     in a released build.
+ *   - A mandatory, non-destructive redactor replaces the VALUE of any field whose
+ *     name matches a denied key (exact, case-insensitive). It never edits the
+ *     message, never scans string contents, and cannot drop fields or throw.
+ *   - Writes are synchronous, so the last lines before a crash reach disk; if the
+ *     file cannot be written the logger degrades to the console and never throws.
  */
 
 import fs from "node:fs";
@@ -11,30 +23,54 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { utcNow, formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 
-type LogLevel = "INFO" | "WARN" | "ERROR";
+export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogFields = Record<string, unknown>;
 
-let logStream: fs.WriteStream | null = null;
+// Field names whose values are replaced with the redaction marker. Matched by
+// exact, case-insensitive name (stored lower-cased) — never as a substring, so
+// `token` never matches `tokenCount` or `broken`. This app owns and extends this
+// set; there is no shared cross-app taxonomy.
+const DENIED_KEYS = new Set(["apikey", "authorization", "token", "password", "secret"]);
+const REDACTION_MARKER = "[redacted]";
+
+// Reserved envelope keys: a caller's field of the same name must never overwrite
+// the real envelope value.
+const ENVELOPE_KEYS = new Set(["time", "level", "message"]);
+
+let logFd: number | null = null;
 let currentLogFilePath: string | null = null;
-const REDACTED_KEYS = new Set([
-  "apiKey",
-  "authorization",
-  "token",
-  "password",
-  "secret",
-]);
+// Once a file write fails we keep going on the console alone, but only announce
+// the degradation once so a full disk does not spam stderr on every line.
+let fileWriteDegraded = false;
 
 /**
- * Initializes the logger by creating a log file in the given logs directory.
- * Must be called once at startup.
+ * Opens the per-launch session log file in the given logs directory. Must be
+ * called once at startup. If the file cannot be opened the logger stays on the
+ * console (best-effort) rather than failing the launch.
  */
 export function initLogger(logsDir: string): void {
   fs.mkdirSync(logsDir, { recursive: true });
 
-  const logFileName = `${formatForFilename(utcNow())}.log`;
-  const logFilePath = path.join(logsDir, logFileName);
-
+  const logFilePath = path.join(logsDir, `${formatForFilename(utcNow())}.log`);
   currentLogFilePath = logFilePath;
-  logStream = fs.createWriteStream(logFilePath, { flags: "a" });
+
+  try {
+    logFd = fs.openSync(logFilePath, "a");
+  } catch (err) {
+    logFd = null;
+    reportFileFailure(err);
+  }
+}
+
+/** Closes the session log file. Called on a clean shutdown. */
+export function closeLogger(): void {
+  if (logFd === null) return;
+  try {
+    fs.closeSync(logFd);
+  } catch {
+    // Best-effort: nothing useful to do if the log file fails to close on exit.
+  }
+  logFd = null;
 }
 
 export function getCurrentLogFilePath(): string | null {
@@ -76,97 +112,139 @@ export async function revealCurrentLogFile(): Promise<string> {
   return filePath;
 }
 
-function log(level: LogLevel, message: string): void {
-  const timestamp = formatUtcIso(utcNow());
-  const line = `${timestamp} [${level}] ${message}`;
-
-  console.log(line);
-
-  if (logStream) {
-    logStream.write(line + "\n");
-  }
+/**
+ * Non-destructive, pure, total, cycle-safe redactor. Replaces the value of any
+ * field whose name is a denied key (exact, case-insensitive) with the marker;
+ * recurses through plain objects and arrays; passes every other value through
+ * byte-identical. Never inspects string contents and never drops a field.
+ */
+export function redact(value: unknown): unknown {
+  return redactInner(value, new WeakSet());
 }
 
-function summarizeForLog(value: unknown, depth = 0): unknown {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const normalized = value.replace(/\s+/g, " ").trim();
-    if (normalized.length <= 160) return normalized;
-    return `${normalized.slice(0, 160)}… [${normalized.length} chars]`;
-  }
+function redactInner(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
 
   if (Array.isArray(value)) {
-    if (depth >= 2) return `[array(${value.length})]`;
-    const items = value.slice(0, 10).map((item) => summarizeForLog(item, depth + 1));
-    if (value.length > 10) {
-      items.push(`… [${value.length - 10} more]`);
-    }
-    return items;
+    return value.map((item) => redactInner(item, seen));
   }
 
-  if (typeof value === "object") {
-    if (depth >= 2) return "[object]";
-    const record = value as Record<string, unknown>;
-    const entries = Object.entries(record);
-    const summarized: Record<string, unknown> = {};
-    for (const [index, [key, entryValue]] of entries.entries()) {
-      if (index >= 20) {
-        summarized.__truncated = `${entries.length - 20} more keys`;
-        break;
-      }
-      summarized[key] = REDACTED_KEYS.has(key)
-        ? "[REDACTED]"
-        : summarizeForLog(entryValue, depth + 1);
-    }
-    return summarized;
-  }
+  // Only recurse into plain objects. Exotic objects (Date, etc.) are passed
+  // through so the serializer renders them faithfully instead of flattening
+  // them to `{}`.
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
 
-  return String(value);
+  const out: Record<string, unknown> = {};
+  for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = DENIED_KEYS.has(key.toLowerCase())
+      ? REDACTION_MARKER
+      : redactInner(entryValue, seen);
+  }
+  return out;
 }
 
-export function formatLogValue(value: unknown): string {
+/**
+ * Canonical error serialization for full fidelity: type, message, stack, and the
+ * recursive cause chain. Used everywhere an error is logged so the record is the
+ * same shape regardless of where the error surfaced. Non-Error throws are
+ * captured as best as their shape allows.
+ */
+export function serializeError(err: unknown): unknown {
+  return serializeErrorInner(err, new WeakSet());
+}
+
+function serializeErrorInner(err: unknown, seen: WeakSet<object>): unknown {
+  if (err instanceof Error) {
+    if (seen.has(err)) return "[circular]";
+    seen.add(err);
+    const out: Record<string, unknown> = {
+      name: err.name,
+      message: err.message,
+    };
+    if (err.stack) out.stack = err.stack;
+    if (err.cause !== undefined) out.cause = serializeErrorInner(err.cause, seen);
+    return out;
+  }
+  if (err !== null && typeof err === "object") {
+    // A non-Error object was thrown; surface its own fields (redaction still
+    // applies to the final record) rather than a useless "[object Object]".
+    return err;
+  }
+  return { message: String(err) };
+}
+
+function emit(level: LogLevel, message: string, fields?: LogFields): void {
+  const record: Record<string, unknown> = {
+    time: formatUtcIso(utcNow()),
+    level,
+    message,
+  };
+
+  if (fields) {
+    const redacted = redact(fields) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(redacted)) {
+      if (ENVELOPE_KEYS.has(key)) continue; // envelope always wins
+      record[key] = value;
+    }
+  }
+
+  let line: string;
   try {
-    return JSON.stringify(summarizeForLog(value));
+    line = JSON.stringify(record);
   } catch (err) {
-    return `[unserializable: ${err instanceof Error ? err.message : String(err)}]`;
+    // A field that cannot be serialized (e.g. a BigInt) must not lose the event.
+    line = JSON.stringify({
+      time: record.time,
+      level,
+      message,
+      logSerializationError: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Echo to the console (also the best-effort fallback when file writes fail):
+  // warnings and errors to stderr, everything else to stdout.
+  if (level === "warn" || level === "error") {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+
+  if (logFd !== null) {
+    try {
+      fs.writeSync(logFd, line + "\n");
+    } catch (err) {
+      reportFileFailure(err);
+    }
   }
 }
 
-export function formatRequestShape(value: unknown): string {
-  if (value === null || value === undefined) return "-";
-  if (Array.isArray(value)) return `array(${value.length})`;
-  if (typeof value === "object") {
-    const keys = Object.keys(value as Record<string, unknown>);
-    return keys.length > 0 ? keys.join(",") : "[empty-object]";
-  }
-  return typeof value;
+function reportFileFailure(err: unknown): void {
+  if (fileWriteDegraded) return; // announce once; the console still has every line
+  fileWriteDegraded = true;
+  const detail = err instanceof Error ? err.message : String(err);
+  console.error(`[logger] File logging degraded — continuing on console only: ${detail}`);
 }
 
-export function logBlock(level: LogLevel, title: string, content: string): void {
-  log(level, `${title} >>>`);
-  const lines = content.length > 0 ? content.split(/\r?\n/) : ["[empty]"];
-  for (const line of lines) {
-    log(level, `| ${line}`);
-  }
-  log(level, "<<<");
+/**
+ * Developer-only detail. Emitted only when BIGMOUTH_DEBUG=1; silent in a released
+ * build. The env var is read per call so it is trivially controllable in tests.
+ */
+export function debug(message: string, fields?: LogFields): void {
+  if (process.env.BIGMOUTH_DEBUG !== "1") return;
+  emit("debug", message, fields);
 }
 
-export function info(message: string): void {
-  log("INFO", message);
+export function info(message: string, fields?: LogFields): void {
+  emit("info", message, fields);
 }
 
-export function warn(message: string): void {
-  log("WARN", message);
+export function warn(message: string, fields?: LogFields): void {
+  emit("warn", message, fields);
 }
 
-export function error(message: string): void {
-  log("ERROR", message);
+export function error(message: string, fields?: LogFields): void {
+  emit("error", message, fields);
 }

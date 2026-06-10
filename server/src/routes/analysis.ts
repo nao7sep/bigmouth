@@ -9,7 +9,7 @@ import { getPost } from "../services/postStore.js";
 import { getAnalysisPrompts, getActiveAiConfig } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../ai/promptTemplates.js";
-import { error as logError, formatLogValue, info as logInfo, warn as logWarn } from "../services/logger.js";
+import { error as logError, info as logInfo, warn as logWarn } from "../services/logger.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 import {
   metadataKeys,
@@ -92,10 +92,12 @@ async function resolveAnalysisRequest(
       provider: createProvider(activeConfig),
     };
   } catch (err) {
-    const details = describeAiError(err);
-    logError(
-      `Analysis provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
-    );
+    logError("analysis provider init failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      ...describeAiError(err),
+    });
     res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
     return null;
   }
@@ -105,18 +107,34 @@ analysisRouter.post("/", async (req, res) => {
   const request = await resolveAnalysisRequest(req, res);
   if (!request) return;
 
-  logInfo(
-    `Analysis started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, contentSource=${request.contentSource}, contentLength=${request.postContent.length}, promptMode=${request.promptMode}, language=${request.post.frontMatter.language}, target=${request.post.frontMatter.target}, metadataKeys=${metadataKeys(request.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(request.aiConfig))}, post=${formatLogValue(safePostLogContext(request.post))}, systemLength=${request.systemPrompt.length}, userLength=${request.userContent.length}`
-  );
+  logInfo("analysis started", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: request.postId,
+    promptName: request.promptName,
+    contentSource: request.contentSource,
+    contentLength: request.postContent.length,
+    promptMode: request.promptMode,
+    language: request.post.frontMatter.language,
+    target: request.post.frontMatter.target,
+    metadataKeys: metadataKeys(request.post.frontMatter),
+    ai: safeAiConfigLogContext(request.aiConfig),
+    post: safePostLogContext(request.post),
+    systemLength: request.systemPrompt.length,
+    userLength: request.userContent.length,
+  });
 
   try {
     const result = await request.provider.generateText(
       request.systemPrompt,
       request.userContent
     );
-    logInfo(
-      `Analysis completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, resultLength=${result.length}`
-    );
+    logInfo("analysis completed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: request.postId,
+      resultLength: result.length,
+    });
     res.json({ result });
   } catch (err) {
     const details = logAiFailure(
@@ -148,9 +166,20 @@ analysisRouter.post("/stream", async (req, res) => {
 
   let clientClosed = false;
   let wroteChunk = false;
-  logInfo(
-    `Analysis stream started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, contentSource=${request.contentSource}, contentLength=${request.postContent.length}, promptMode=${request.promptMode}, language=${request.post.frontMatter.language}, target=${request.post.frontMatter.target}, metadataKeys=${metadataKeys(request.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(request.aiConfig))}, post=${formatLogValue(safePostLogContext(request.post))}`
-  );
+  logInfo("analysis stream started", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: request.postId,
+    promptName: request.promptName,
+    contentSource: request.contentSource,
+    contentLength: request.postContent.length,
+    promptMode: request.promptMode,
+    language: request.post.frontMatter.language,
+    target: request.post.frontMatter.target,
+    metadataKeys: metadataKeys(request.post.frontMatter),
+    ai: safeAiConfigLogContext(request.aiConfig),
+    post: safePostLogContext(request.post),
+  });
   const stream = request.provider.generateTextStream(
     request.systemPrompt,
     request.userContent,
@@ -169,9 +198,13 @@ analysisRouter.post("/stream", async (req, res) => {
     if (res.writableEnded) return;
     clientClosed = true;
     stream.abort();
-    logWarn(
-      `Analysis stream closed early: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, promptName=${request.promptName}, wroteChunk=${wroteChunk}`
-    );
+    logWarn("analysis stream closed early", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: request.postId,
+      promptName: request.promptName,
+      wroteChunk,
+    });
   };
   req.on("close", closeHandler);
 
@@ -183,9 +216,13 @@ analysisRouter.post("/stream", async (req, res) => {
       res.setHeader("Cache-Control", "no-cache");
       res.write(finalText);
     }
-    logInfo(
-      `Analysis stream completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${request.postId}, wroteChunk=${wroteChunk}, resultLength=${finalText.length}`
-    );
+    logInfo("analysis stream completed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: request.postId,
+      wroteChunk,
+      resultLength: finalText.length,
+    });
     res.end();
   } catch (err) {
     if (clientClosed) return;

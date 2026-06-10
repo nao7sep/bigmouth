@@ -16,7 +16,7 @@ import {
   normalizeMetadataFields,
   type MetadataField,
 } from "../ai/metadataGeneration.js";
-import { error as logError, formatLogValue, info as logInfo } from "../services/logger.js";
+import { error as logError, info as logInfo } from "../services/logger.js";
 import { describeAiError, logAiFailure } from "../ai/errorDetails.js";
 import {
   metadataKeys,
@@ -69,10 +69,12 @@ function getGenerationContext(
       provider: createProvider(activeConfig),
     };
   } catch (err) {
-    const details = describeAiError(err);
-    logError(
-      `Metadata generation provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
-    );
+    logError("metadata generation provider init failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      ...describeAiError(err),
+    });
     res.status(503).json({ error: err instanceof Error ? err.message : "AI provider error" });
     return null;
   }
@@ -140,18 +142,33 @@ metadataRouter.post("/generate", async (req, res) => {
   const context = getGenerationContext(res, postId, content);
   if (!context) return;
 
-  logInfo(
-    `Metadata generation started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, contentSource=${context.contentSource}, contentLength=${context.postContent.length}, language=${context.post.frontMatter.language}, target=${context.post.frontMatter.target}, existingMetadataKeys=${metadataKeys(context.post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(context.aiConfig))}`
-  );
+  logInfo("metadata generation started", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    fields: validFields,
+    mode: "structured",
+    contentSource: context.contentSource,
+    contentLength: context.postContent.length,
+    language: context.post.frontMatter.language,
+    target: context.post.frontMatter.target,
+    existingMetadataKeys: metadataKeys(context.post.frontMatter),
+    ai: safeAiConfigLogContext(context.aiConfig),
+  });
 
   try {
     const values = await generateMetadataFields(context, validFields);
     for (const field of validFields) {
       results[field] = { value: values[field] };
     }
-    logInfo(
-      `Metadata generation completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, fields=${validFields.join(",")}, mode=structured, resultSummary=${formatLogValue(safeGeneratedFieldSummary(values))}`
-    );
+    logInfo("metadata generation completed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      fields: validFields,
+      mode: "structured",
+      resultSummary: safeGeneratedFieldSummary(values),
+    });
   } catch (err) {
     const details = logAiFailure(
       {

@@ -70,7 +70,7 @@ All data is stored locally under `~/.bigmouth/`:
 ```
 ~/.bigmouth/
   app.json                         ← port and workspace registry
-  logs/                            ← server log files, one per server start (shared across workspaces)
+  logs/                            ← server log files (yyyymmdd-hhmmss-utc.log), one per server start, shared across workspaces
   workspaces/
     {workspace-id}/                ← default location for workspace data
       posts/
@@ -135,9 +135,13 @@ This is a deliberate trade-off, not an oversight: posts are reviewed and publish
 
 ### Logging
 
-Logs are written under `~/.bigmouth/logs/`, with one log file per server start. They are shared across workspaces because the app runs as a single local server process.
+Logs are written under `~/.bigmouth/logs/`, one file per server start named `yyyymmdd-hhmmss-utc.log` (the UTC launch time). They are shared across workspaces because the app runs as a single local server process, and they are never auto-deleted, rotated, or pruned — an old log may be exactly what's needed to debug a problem that surfaces much later.
 
-The server logs request start/finish, workspace resolution, major app actions, successes, failures, and unexpected process-level errors. Request logs record metadata such as routes and body/query keys, not full post content. Post updates log lifecycle-safe details such as status transitions, slug changes, timestamp preservation, and content lengths. Metadata and imaging generation logs include provider/model, requested fields or options, source lengths, metadata keys, and output summaries, not full drafts or generated prose. Failed AI requests log provider error details, and raw model output is only logged in code paths that receive unusable free-form output.
+Each line is **one JSON object** (JSON Lines), carrying a fixed envelope — `time` (UTC ISO-8601 with milliseconds), `level`, and `message` — plus event-specific fields. There are four levels: `error`, `warn`, and `info` are always written; `debug` is developer-only and emitted **only** from a development build (`npm run dev`) or when `BIGMOUTH_DEBUG=1` is set, never on an end-user machine. `warn`, `error`, and `debug` lines are flushed to disk immediately; if the log file can't be written the server degrades to the console rather than crashing.
+
+The server logs startup (version and effective config), shutdown (with the signal), every request at its start and result (method, path, status, duration, and response size — never request or response bodies), workspace resolution, the major app actions, and every warning and error individually with full fidelity (error type, message, stack, and cause chain). Global unhandled-exception and unhandled-rejection hooks log before the process exits. Post updates log lifecycle-safe details such as status transitions, slug changes, timestamp preservation, and content lengths. Metadata and imaging generation log provider/model, requested fields or options, source lengths, metadata keys, and output summaries — not full drafts or generated prose. When the provider returns unusable free-form output, that raw output is captured in a single `rawResponse` field (not a multi-line block).
+
+A mandatory, non-destructive redaction pass replaces the value of any field whose name matches a denied key (`apiKey`, `authorization`, `token`, `password`, `secret` — matched exactly and case-insensitively) with `"[redacted]"`. It never inspects message text or string contents; the primary defense remains logging summaries rather than whole objects.
 
 Use the hamburger menu → **Reveal Log** to open the current log file in your OS file manager.
 

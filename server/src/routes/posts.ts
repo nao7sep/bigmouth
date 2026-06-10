@@ -67,9 +67,16 @@ postsRouter.get("/", (req, res) => {
   const published = listPublished(dataDir, publishedOffset, limit);
   const publishedTotal = countPublished(dataDir);
 
-  logger.info(
-    `Posts listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, drafts=${drafts.length}, checked=${checked.length}, publishedReturned=${published.length}, publishedTotal=${publishedTotal}, publishedOffset=${publishedOffset}, limit=${limit}`
-  );
+  logger.info("posts listed", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    drafts: drafts.length,
+    checked: checked.length,
+    publishedReturned: published.length,
+    publishedTotal,
+    publishedOffset,
+    limit,
+  });
 
   res.json({
     drafts,
@@ -88,16 +95,20 @@ postsRouter.post("/index/rebuild", (req, res) => {
   try {
     count = rebuildIndex(dataDir);
   } catch (err) {
+    logger.error("post index rebuild failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      error: logger.serializeError(err),
+    });
     const message = err instanceof Error ? err.message : "Index rebuild failed";
-    logger.error(
-      `Post index rebuild failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, message=${message}`
-    );
     res.status(500).json({ error: message });
     return;
   }
-  logger.info(
-    `Post index rebuilt: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${count}`
-  );
+  logger.info("post index rebuilt", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    count,
+  });
   res.json({ rebuilt: true, count });
 });
 
@@ -105,16 +116,23 @@ postsRouter.get("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const post = getPost(dataDir, req.params.id);
   if (!post) {
-    logger.warn(
-      `Post lookup failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found`
-    );
+    logger.warn("post lookup failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      reason: "not-found",
+    });
     res.status(404).json({ error: "Post not found" });
     return;
   }
 
-  logger.info(
-    `Post loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, status=${post.frontMatter.status}, contentLength=${post.content.length}`
-  );
+  logger.info("post loaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: post.frontMatter.id,
+    status: post.frontMatter.status,
+    contentLength: post.content.length,
+  });
 
   res.json({
     frontMatter: post.frontMatter,
@@ -180,9 +198,14 @@ postsRouter.post("/", (req, res) => {
   }
 
   const post = createPost(dataDir, normalizedTarget, normalizedLanguage, normalizedSourceId);
-  logger.info(
-    `Post created: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${post.frontMatter.id}, target=${normalizedTarget}, language=${normalizedLanguage}, sourceId=${normalizedSourceId ?? "-"}`
-  );
+  logger.info("post created", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: post.frontMatter.id,
+    target: normalizedTarget,
+    language: normalizedLanguage,
+    sourceId: normalizedSourceId ?? null,
+  });
 
   res.status(201).json({
     frontMatter: post.frontMatter,
@@ -204,9 +227,12 @@ postsRouter.put("/:id", (req, res) => {
   // or Checked, so the autosaving editor can never silently mutate a published
   // post.
   if (existing.frontMatter.status === "published") {
-    logger.warn(
-      `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=published-locked`
-    );
+    logger.warn("post update rejected", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      reason: "published-locked",
+    });
     res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to edit it." });
     return;
   }
@@ -220,9 +246,13 @@ postsRouter.put("/:id", (req, res) => {
     RESERVED_FRONT_MATTER_KEYS.has(key)
   );
   if (reservedKeys.length > 0) {
-    logger.warn(
-      `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=reserved-front-matter, reservedKeys=${reservedKeys.join(",")}`
-    );
+    logger.warn("post update rejected", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      reason: "reserved-front-matter",
+      reservedKeys,
+    });
     res.status(400).json({
       error: `Reserved front matter fields cannot be updated here: ${reservedKeys.join(", ")}`,
     });
@@ -234,9 +264,12 @@ postsRouter.put("/:id", (req, res) => {
     const slug = frontMatter.slug;
     if (slug !== null && slug !== undefined && slug !== "") {
       if (!validateSlug(slug)) {
-        logger.warn(
-          `Post update rejected: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=invalid-slug`
-        );
+        logger.warn("post update rejected", {
+          requestId: res.locals.requestId ?? null,
+          workspace: res.locals.workspaceId ?? null,
+          postId: req.params.id,
+          reason: "invalid-slug",
+        });
         res.status(400).json({ error: "Invalid slug: only letters, digits, hyphens, and underscores are allowed" });
         return;
       }
@@ -261,9 +294,12 @@ postsRouter.put("/:id", (req, res) => {
   const oldFilePath = existing.filePath;
   const post = updatePost(dataDir, req.params.id, { content, frontMatter: edits });
   if (!post) {
-    logger.warn(
-      `Post update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found-after-update`
-    );
+    logger.warn("post update failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      reason: "not-found-after-update",
+    });
     res.status(404).json({ error: "Post not found" });
     return;
   }
@@ -281,9 +317,12 @@ postsRouter.put("/:id", (req, res) => {
     before: safePostLogContext(existing),
     after: safePostLogContext(post),
   };
-  logger.info(
-    `Post updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${post.frontMatter.id}, details=${logger.formatLogValue(updateDetails)}`
-  );
+  logger.info("post updated", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: post.frontMatter.id,
+    ...updateDetails,
+  });
 
   // Include the canonical list summary so the client's optimistic update uses
   // the authoritative projection (with its derived excerpt) instead of rebuilding one.
@@ -305,9 +344,13 @@ postsRouter.put("/:id/status", (req, res) => {
 
   const before = getPost(dataDir, req.params.id);
   if (!before) {
-    logger.warn(
-      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, requestedStatus=${status}, reason=not-found`
-    );
+    logger.warn("post status change failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      requestedStatus: status,
+      reason: "not-found",
+    });
     res.status(404).json({ error: "Post not found" });
     return;
   }
@@ -332,9 +375,12 @@ postsRouter.put("/:id/status", (req, res) => {
       before: safePostLogContext(before),
       after: safePostLogContext(post),
     };
-    logger.info(
-      `Post status changed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, details=${logger.formatLogValue(statusDetails)}`
-    );
+    logger.info("post status changed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      ...statusDetails,
+    });
 
     res.json({
       frontMatter: post.frontMatter,
@@ -342,10 +388,16 @@ postsRouter.put("/:id/status", (req, res) => {
       summary: getPostSummary(dataDir, post.frontMatter.id),
     });
   } catch (err) {
+    logger.error("post status change failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      statusBefore: before.frontMatter.status,
+      requestedStatus: status,
+      slug: presentString(before.frontMatter.slug),
+      error: logger.serializeError(err),
+    });
     const message = err instanceof Error ? err.message : "Unknown error";
-    logger.error(
-      `Post status change failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}, statusBefore=${before.frontMatter.status}, requestedStatus=${status}, slug=${presentString(before.frontMatter.slug)}, message=${message}`
-    );
     res.status(400).json({ error: message });
   }
 });
@@ -354,16 +406,21 @@ postsRouter.delete("/:id", (req, res) => {
   const dataDir = res.locals.dataDir as string;
   const deleted = deletePost(dataDir, req.params.id);
   if (!deleted) {
-    logger.warn(
-      `Post delete failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${req.params.id}, reason=not-found`
-    );
+    logger.warn("post delete failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId: req.params.id,
+      reason: "not-found",
+    });
     res.status(404).json({ error: "Post not found" });
     return;
   }
 
-  logger.info(
-    `Post deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${req.params.id}`
-  );
+  logger.info("post deleted", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId: req.params.id,
+  });
   res.json({ deleted: true });
 });
 

@@ -31,9 +31,11 @@ function validateTargets(body: unknown): { targets: Target[] } | { error: string
 targetsRouter.get("/", (_req, res) => {
   const dataDir = res.locals.dataDir as string;
   const targets = getTargets(dataDir);
-  logger.info(
-    `Targets loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${targets.length}`
-  );
+  logger.info("targets loaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    count: targets.length,
+  });
   res.json(targets);
 });
 
@@ -46,9 +48,11 @@ targetsRouter.put("/", (req, res) => {
   }
 
   const targets = saveTargets(dataDir, validated.targets);
-  logger.info(
-    `Targets saved: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${targets.length}`
-  );
+  logger.info("targets saved", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    count: targets.length,
+  });
   res.json(targets);
 });
 
@@ -85,9 +89,13 @@ targetsRouter.put("/rename", (req, res) => {
 
   const postsUpdated = renameTarget(dataDir, normalizedOldName, normalizedNewName);
 
-  logger.info(
-    `Target renamed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, "${normalizedOldName}" → "${normalizedNewName}", postsUpdated=${postsUpdated}`
-  );
+  logger.info("target renamed", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    oldName: normalizedOldName,
+    newName: normalizedNewName,
+    postsUpdated,
+  });
 
   res.json({ targets: savedTargets, postsUpdated });
 });

@@ -7,18 +7,21 @@ import * as logger from "../services/logger.js";
 export const analysisPromptsRouter = Router({ mergeParams: true });
 
 analysisPromptsRouter.get("/defaults", (_req, res) => {
-  logger.info(
-    `Analysis prompt defaults loaded: requestId=${res.locals.requestId ?? "-"}, count=${DEFAULT_ANALYSIS_PROMPTS.length}`
-  );
+  logger.info("analysis prompt defaults loaded", {
+    requestId: res.locals.requestId ?? null,
+    count: DEFAULT_ANALYSIS_PROMPTS.length,
+  });
   res.json(DEFAULT_ANALYSIS_PROMPTS);
 });
 
 analysisPromptsRouter.get("/", (_req, res) => {
   const dataDir = res.locals.dataDir as string;
   const prompts = getAnalysisPrompts(dataDir);
-  logger.info(
-    `Analysis prompts loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${prompts.length}`
-  );
+  logger.info("analysis prompts loaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    count: prompts.length,
+  });
   res.json(prompts);
 });
 
@@ -47,8 +50,10 @@ analysisPromptsRouter.put("/", (req, res) => {
   }
 
   const saved = saveAnalysisPrompts(dataDir, body as AnalysisPrompt[]);
-  logger.info(
-    `Analysis prompts saved: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${saved.length}`
-  );
+  logger.info("analysis prompts saved", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    count: saved.length,
+  });
   res.json(saved);
 });

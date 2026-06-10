@@ -29,9 +29,12 @@ function isAiProvider(value: unknown): value is AiProvider {
 aiConfigsRouter.get("/", (_req, res) => {
   const dataDir = res.locals.dataDir as string;
   const configs = getAiConfigsForClient(dataDir);
-  logger.info(
-    `AI configs loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, configCount=${configs.configs.length}, activeId=${configs.activeId}`
-  );
+  logger.info("ai configs loaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    configCount: configs.configs.length,
+    activeId: configs.activeId,
+  });
   res.json(configs);
 });
 
@@ -79,16 +82,20 @@ aiConfigsRouter.post("/", (req, res) => {
       model: body.model,
       apiKey: body.apiKey,
     });
-    logger.info(
-      `AI config created: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${body.id}`
-    );
+    logger.info("ai config created", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: body.id,
+    });
     res.status(201).json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create AI config";
-    logger.warn(
-      `AI config create failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${body.id}, message=${message}`
-    );
-    res.status(400).json({ error: message });
+    logger.warn("ai config create failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: body.id,
+      error: logger.serializeError(err),
+    });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to create AI config" });
   }
 });
 
@@ -112,16 +119,20 @@ aiConfigsRouter.put("/active", (req, res) => {
 
   try {
     const result = setActiveAiConfig(dataDir, body.id);
-    logger.info(
-      `AI active config set: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, activeId=${body.id || "-"}`
-    );
+    logger.info("ai active config set", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      activeId: body.id || null,
+    });
     res.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to set active AI config";
-    logger.warn(
-      `AI active config set failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${body.id}, message=${message}`
-    );
-    res.status(400).json({ error: message });
+    logger.warn("ai active config set failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: body.id,
+      error: logger.serializeError(err),
+    });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to set active AI config" });
   }
 });
 
@@ -180,17 +191,21 @@ aiConfigsRouter.put("/:id", (req, res) => {
 
   try {
     const result = updateAiConfig(dataDir, id, patch);
-    const changed = Object.keys(patch).join(",") || "-";
-    logger.info(
-      `AI config updated: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${id}, changed=${changed}`
-    );
+    logger.info("ai config updated", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: id,
+      changed: Object.keys(patch),
+    });
     res.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update AI config";
-    logger.warn(
-      `AI config update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${id}, message=${message}`
-    );
-    res.status(400).json({ error: message });
+    logger.warn("ai config update failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: id,
+      error: logger.serializeError(err),
+    });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update AI config" });
   }
 });
 
@@ -209,15 +224,19 @@ aiConfigsRouter.delete("/:id", (req, res) => {
 
   try {
     const result = deleteAiConfig(dataDir, id);
-    logger.info(
-      `AI config deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${id}`
-    );
+    logger.info("ai config deleted", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: id,
+    });
     res.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete AI config";
-    logger.warn(
-      `AI config delete failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, id=${id}, message=${message}`
-    );
-    res.status(400).json({ error: message });
+    logger.warn("ai config delete failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      configId: id,
+      error: logger.serializeError(err),
+    });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to delete AI config" });
   }
 });

@@ -8,9 +8,10 @@ export const settingsRouter = Router({ mergeParams: true });
 settingsRouter.get("/", (_req, res) => {
   const dataDir = res.locals.dataDir as string;
   const settings = getSettings(dataDir);
-  logger.info(
-    `Settings loaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}`
-  );
+  logger.info("settings loaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+  });
   res.json(settings);
 });
 
@@ -51,8 +52,11 @@ settingsRouter.put("/", (req, res) => {
   }
 
   const settings = saveSettings(dataDir, body as Settings);
-  logger.info(
-    `Settings saved: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, timezone=${settings.timezone}, supportedLanguages=${settings.supportedLanguages.length}`
-  );
+  logger.info("settings saved", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    timezone: settings.timezone,
+    supportedLanguages: settings.supportedLanguages.length,
+  });
   res.json(settings);
 });

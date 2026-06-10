@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getPost } from "../services/postStore.js";
 import { getActiveAiConfig } from "../services/configStore.js";
 import { createProvider } from "../ai/factory.js";
-import { error as logError, formatLogValue, info as logInfo } from "../services/logger.js";
+import { error as logError, info as logInfo } from "../services/logger.js";
 import {
   buildImagingSchema,
   buildImagingSystemPrompt,
@@ -112,17 +112,28 @@ imagingRouter.post("/", async (req, res) => {
   try {
     provider = createProvider(activeConfig);
   } catch (err) {
-    const details = describeAiError(err);
-    logError(
-      `Imaging provider init failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, ${details}`
-    );
+    logError("imaging provider init failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      ...describeAiError(err),
+    });
     res.status(503).json({ error: err instanceof Error ? err.message : "Request failed" });
     return;
   }
 
-  logInfo(
-    `Imaging started: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, options=${formatLogValue(options)}, mode=structured, contentLength=${postContent.length}, metadataKeys=${metadataKeys(post.frontMatter).join(",") || "-"}, ai=${formatLogValue(safeAiConfigLogContext(activeConfig))}, systemLength=${systemPrompt.length}, userLength=${userContent.length}`
-  );
+  logInfo("imaging started", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    options,
+    mode: "structured",
+    contentLength: postContent.length,
+    metadataKeys: metadataKeys(post.frontMatter),
+    ai: safeAiConfigLogContext(activeConfig),
+    systemLength: systemPrompt.length,
+    userLength: userContent.length,
+  });
 
   try {
     const raw = await provider.generateJson(
@@ -136,9 +147,14 @@ imagingRouter.post("/", async (req, res) => {
       }
     );
     const items = normalizeImagingOutput(raw, options.count);
-    logInfo(
-      `Imaging completed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, itemCount=${items.length}, mode=structured, promptSummary=${formatLogValue(safePromptListSummary(items))}`
-    );
+    logInfo("imaging completed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      itemCount: items.length,
+      mode: "structured",
+      promptSummary: safePromptListSummary(items),
+    });
     res.json({ items });
   } catch (err) {
     const details = logAiFailure(

@@ -3,14 +3,15 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
-import { initAppDir, getAppConfig, getLogsDir } from "./services/workspaceStore.js";
+import { initAppDir, getLogsDir } from "./services/workspaceStore.js";
 import {
   initLogger,
+  closeLogger,
   info,
   warn,
   error as logError,
-  formatLogValue,
-  formatRequestShape,
+  serializeError,
+  getCurrentLogFilePath,
 } from "./services/logger.js";
 import { DEFAULT_HOST, DEFAULT_PORT, MAX_REQUEST_BODY_BYTES } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
@@ -80,6 +81,16 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
 
+// Summarizes a request's query/body for logging by shape only — the field NAMES
+// for a plain object, a length for an array, a type tag otherwise. Never the
+// values, so a logged request can carry no secret.
+function bodyShape(value: unknown): string[] | string | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>);
+  return typeof value;
+}
+
 app.use((req, res, next) => {
   const requestId = `req-${nextRequestId++}`;
   const startedAt = Date.now();
@@ -87,28 +98,38 @@ app.use((req, res, next) => {
 
   res.locals.requestId = requestId;
 
-  info(
-    `Request started: id=${requestId}, method=${req.method}, path=${req.originalUrl}, ` +
-      `contentType=${req.headers["content-type"] ?? "-"}, origin=${req.headers.origin ?? "-"}, ` +
-      `queryKeys=${formatRequestShape(req.query)}, bodyKeys=${formatRequestShape(req.body)}`
-  );
+  info("request started", {
+    requestId,
+    method: req.method,
+    path: req.originalUrl,
+    contentType: req.headers["content-type"] ?? null,
+    origin: req.headers.origin ?? null,
+    queryKeys: bodyShape(req.query),
+    bodyKeys: bodyShape(req.body),
+  });
 
   res.on("finish", () => {
     finished = true;
-    const durationMs = Date.now() - startedAt;
-    info(
-      `Request finished: id=${requestId}, status=${res.statusCode}, durationMs=${durationMs}, ` +
-        `workspace=${res.locals.workspaceId ?? "-"}, responseBytes=${res.getHeader("content-length") ?? "-"}`
-    );
+    info("request finished", {
+      requestId,
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      bytes: res.getHeader("content-length") ?? null,
+      workspace: res.locals.workspaceId ?? null,
+    });
   });
 
   res.on("close", () => {
     if (finished) return;
-    const durationMs = Date.now() - startedAt;
-    warn(
-      `Request closed early: id=${requestId}, method=${req.method}, path=${req.originalUrl}, ` +
-        `durationMs=${durationMs}, workspace=${res.locals.workspaceId ?? "-"}`
-    );
+    warn("request closed early", {
+      requestId,
+      method: req.method,
+      path: req.originalUrl,
+      durationMs: Date.now() - startedAt,
+      workspace: res.locals.workspaceId ?? null,
+    });
   });
 
   next();
@@ -162,21 +183,41 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   // and other content-bearing routes can then show "request too large" rather
   // than "internal server error".
   if ((err as Error & { type?: string }).type === "entity.too.large") {
-    warn(`Request body too large: ${err.message}`);
+    warn("request body too large", {
+      requestId: res.locals.requestId ?? null,
+      limitBytes: MAX_REQUEST_BODY_BYTES,
+      error: serializeError(err),
+    });
     res.status(413).json({ error: "Request body is larger than the server limit." });
     return;
   }
-  logError(`Unhandled error: ${err.message}`);
+  logError("unhandled request error", {
+    requestId: res.locals.requestId ?? null,
+    error: serializeError(err),
+  });
   res.status(500).json({ error: "Internal server error" });
 });
 
 process.on("unhandledRejection", (reason) => {
-  logError(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  logError("unhandled promise rejection", { error: serializeError(reason) });
 });
 
 process.on("uncaughtException", (err) => {
-  logError(`Uncaught exception: ${err.stack ?? err.message}`);
+  // The process state is unknown after an uncaught exception: log it with full
+  // fidelity, flush by closing the file, then exit non-zero rather than limp on.
+  logError("uncaught exception", { error: serializeError(err) });
+  closeLogger();
+  process.exit(1);
 });
+
+// Clean-shutdown logging: record the signal, close the log file, then exit.
+function shutdown(signal: NodeJS.Signals): void {
+  info("server shutting down", { reason: "signal", signal });
+  closeLogger();
+  process.exit(0);
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 // "Is this binding inaccessible from outside this machine?" — true for the
 // full 127.0.0.0/8 IPv4 loopback range, the IPv6 loopback ::1, and the
@@ -191,19 +232,44 @@ function isLoopbackHost(value: string): boolean {
 }
 
 app.listen(port, host, () => {
-  info(`Server started on ${host}:${port}, ${appConfig.workspaces.length} workspace(s) configured`);
+  info("server started", {
+    version: readServerVersion(),
+    host,
+    port,
+    workspaceCount: appConfig.workspaces.length,
+    allowedOrigins: appConfig.allowedOrigins,
+    debug: process.env.BIGMOUTH_DEBUG === "1",
+    logFile: getCurrentLogFilePath(),
+  });
 
-  const isLoopback = isLoopbackHost(host);
-  if (!isLoopback) {
-    info(
-      `Listening on a non-loopback address (${host}). The server is reachable from other devices on the same network. ` +
-      `There is no authentication; rely on your network's firewall and on app.json "allowedOrigins" to control access.`
-    );
+  if (!isLoopbackHost(host)) {
+    warn("listening on a non-loopback address", {
+      host,
+      port,
+      allowedOriginsConfigured: configuredOrigins.size,
+      note:
+        "The server is reachable from other devices on the same network and has no authentication; " +
+        'rely on your firewall and on app.json "allowedOrigins" to control access.',
+    });
     if (configuredOrigins.size === 0) {
-      info(
-        `Note: no "allowedOrigins" are configured. Browsers reaching the server from a non-loopback hostname ` +
-        `(e.g. http://${host}:${port}) will be rejected by the Origin guard until you add that URL to "allowedOrigins" in app.json.`
-      );
+      warn("no allowedOrigins configured while exposed", {
+        host,
+        port,
+        note:
+          `Browsers reaching the server from a non-loopback hostname (e.g. http://${host}:${port}) will be ` +
+          'rejected by the Origin guard until that URL is added to "allowedOrigins" in app.json.',
+      });
     }
   }
 });
+
+/** Reads this server's version from package.json for the startup record. */
+function readServerVersion(): string {
+  try {
+    const pkgPath = path.resolve(__dirname, "../package.json");
+    const parsed = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: unknown };
+    return typeof parsed.version === "string" ? parsed.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}

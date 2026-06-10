@@ -14,7 +14,7 @@ import exifr from "exifr";
 import { imageSize } from "image-size";
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { getSettings } from "../services/configStore.js";
-import { error as logError, info as logInfo, warn as logWarn } from "../services/logger.js";
+import { error as logError, info as logInfo, warn as logWarn, serializeError } from "../services/logger.js";
 import { getPost } from "../services/postStore.js";
 import {
   listAssets,
@@ -71,16 +71,21 @@ assetsRouter.get("/:postId", (req, res) => {
   try {
     assets = listAssets(dataDir, postId);
   } catch (err) {
-    const message = assetStoreErrorMessage(err);
-    logError(
-      `Assets list failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, message=${message}`
-    );
-    res.status(500).json({ error: message });
+    logError("assets list failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      error: serializeError(err),
+    });
+    res.status(500).json({ error: assetStoreErrorMessage(err) });
     return;
   }
-  logInfo(
-    `Assets listed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, count=${assets.length}`
-  );
+  logInfo("assets listed", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    count: assets.length,
+  });
   res.json(assets);
 });
 
@@ -104,16 +109,23 @@ assetsRouter.get("/:postId/:filename/raw", (req, res) => {
   }
 
   if (!fs.existsSync(filePath)) {
-    logWarn(
-      `Asset raw lookup failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", reason=not-found`
-    );
+    logWarn("asset raw lookup failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      filename,
+      reason: "not-found",
+    });
     res.status(404).json({ error: "Asset not found" });
     return;
   }
 
-  logInfo(
-    `Asset raw served: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
-  );
+  logInfo("asset raw served", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    filename,
+  });
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Content-Security-Policy", "sandbox");
   const ext = path.extname(filename).slice(1).toLowerCase();
@@ -128,9 +140,13 @@ assetsRouter.get("/:postId/:filename/raw", (req, res) => {
   }
   const stream = fs.createReadStream(filePath);
   stream.on("error", (err) => {
-    logError(
-      `Failed to read asset "${filename}" for post "${postId}" at "${filePath}": ${err instanceof Error ? err.message : String(err)}`
-    );
+    logError("asset read failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      filename,
+      error: serializeError(err),
+    });
     if (!res.headersSent) {
       res.status(500).json({ error: "Failed to read asset" });
     } else {
@@ -210,16 +226,26 @@ assetsRouter.post("/:postId", (req, res, next) => {
   try {
     saveAssetFile(dataDir, postId, filename, req.file.buffer, meta);
   } catch (err) {
-    const message = assetStoreErrorMessage(err);
-    logError(
-      `Asset metadata save failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", message=${message}`
-    );
-    res.status(500).json({ error: message });
+    logError("asset metadata save failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      filename,
+      error: serializeError(err),
+    });
+    res.status(500).json({ error: assetStoreErrorMessage(err) });
     return;
   }
-  logInfo(
-    `Asset uploaded: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", size=${req.file.buffer.length}, width=${width ?? "-"}, height=${height ?? "-"}, hasMetadata=${hasMetadata ?? false}`
-  );
+  logInfo("asset uploaded", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    filename,
+    size: req.file.buffer.length,
+    width: width ?? null,
+    height: height ?? null,
+    hasMetadata: hasMetadata ?? false,
+  });
   res.status(201).json(meta);
 });
 
@@ -243,9 +269,13 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   }
 
   if (!fs.existsSync(filePath)) {
-    logWarn(
-      `Asset delete failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", reason=not-found`
-    );
+    logWarn("asset delete failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      filename,
+      reason: "not-found",
+    });
     res.status(404).json({ error: "Asset not found" });
     return;
   }
@@ -263,15 +293,21 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
   try {
     deleteAsset(dataDir, postId, filename);
   } catch (err) {
-    const message = assetStoreErrorMessage(err);
-    logError(
-      `Asset metadata update failed: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}", message=${message}`
-    );
-    res.status(500).json({ error: message });
+    logError("asset metadata update failed", {
+      requestId: res.locals.requestId ?? null,
+      workspace: res.locals.workspaceId ?? null,
+      postId,
+      filename,
+      error: serializeError(err),
+    });
+    res.status(500).json({ error: assetStoreErrorMessage(err) });
     return;
   }
-  logInfo(
-    `Asset deleted: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, postId=${postId}, filename="${filename}"`
-  );
+  logInfo("asset deleted", {
+    requestId: res.locals.requestId ?? null,
+    workspace: res.locals.workspaceId ?? null,
+    postId,
+    filename,
+  });
   res.status(204).send();
 });
