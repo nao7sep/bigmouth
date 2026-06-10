@@ -56,13 +56,19 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const [generatingAll, setGeneratingAll] = useState(false);
     const [genError, setGenError] = useState<string | null>(null);
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-    // Fields edited since their last successful save. Drives flushPendingChanges
-    // and retries: a field stays dirty until a save confirms it.
-    const dirtyRef = useRef<Set<string>>(new Set());
     const generationLockRef = useRef(false);
     const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
     const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
     const fieldsRef = useRef(fields);
+    // The value last confirmed saved on the server for each field, in the same
+    // raw string form as `fields` and seeded from the same front matter, so
+    // nothing starts dirty. A field is dirty exactly when its current value
+    // differs from this snapshot. Deriving dirtiness from one saved snapshot —
+    // rather than juggling a separate dirty set across every save path — is what
+    // keeps the debounce, blur, generation, and flush paths consistent: a value
+    // typed while a save is in flight simply differs from what we recorded and
+    // stays dirty, with no per-path guard to forget.
+    const savedRef = useRef<Record<string, string>>({ ...fields });
     const onPostUpdatedRef = useRef(onPostUpdated);
 
     useEffect(() => {
@@ -89,6 +95,20 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       }
     };
 
+    // A field is dirty when its current value differs from the last value we
+    // confirmed saved. Both refs hold raw strings, so the comparison is exact
+    // (no parse round-trip) and tag normalization never makes a field look
+    // perpetually unsaved.
+    const isDirty = useCallback(
+      (key: string) => (fieldsRef.current[key] ?? "") !== (savedRef.current[key] ?? ""),
+      []
+    );
+
+    const dirtyKeys = useCallback(
+      () => Object.keys(fieldsRef.current).filter((key) => isDirty(key)),
+      [isDirty]
+    );
+
     // Persists one field. `rawValue` is supplied only by generation, where the
     // generated value has not yet propagated into fieldsRef; all other callers
     // read the latest typed value from fieldsRef.
@@ -98,13 +118,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         const value = parseFieldValue(key, raw);
         try {
           const updated = await updatePost(postId, { frontMatter: { [key]: value } }, workspaceId);
-          // Clear the dirty flag only if the field hasn't been edited again while
-          // this save was in flight. Otherwise the newer value is still unsaved
-          // and must stay dirty so the next debounce or flush persists it —
-          // clearing here would let flush cancel that pending save and lose it.
-          if ((fieldsRef.current[key] ?? "") === raw) {
-            dirtyRef.current.delete(key);
-          }
+          // Record exactly what we persisted. Because dirtiness is derived from
+          // this snapshot, a value the user typed while the save was in flight
+          // still differs from `raw` and stays dirty — the newer value is never
+          // mistaken for saved, and the next debounce or flush picks it up.
+          savedRef.current[key] = raw;
           onPostUpdatedRef.current(updated);
           return true;
         } catch (err) {
@@ -122,13 +140,20 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
       for (const key of Object.keys(saveTimers.current)) clearTimer(key);
 
+      // Save every dirty field, then re-check: a field edited while one of these
+      // saves was in flight stays dirty and must also be persisted before we
+      // report success, because the caller unmounts this tab on a true result.
+      // Each successful save advances the saved snapshot, so this converges; a
+      // failed save stops the drain and surfaces as a false result.
       let ok = true;
-      for (const key of Array.from(dirtyRef.current)) {
-        const saved = await persistField(key);
-        if (!saved) ok = false;
+      for (let pending = dirtyKeys(); pending.length > 0; pending = dirtyKeys()) {
+        for (const key of pending) {
+          if (!(await persistField(key))) ok = false;
+        }
+        if (!ok) break;
       }
       return ok;
-    }, [persistField]);
+    }, [dirtyKeys, persistField]);
 
     useImperativeHandle(
       ref,
@@ -150,7 +175,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     const updateField = (key: string, value: string) => {
       if (readOnly) return;
-      dirtyRef.current.add(key);
       setFields((prev) => ({ ...prev, [key]: value }));
       clearTimer(key);
       saveTimers.current[key] = setTimeout(() => {
@@ -163,7 +187,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const flushField = (key: string) => {
       if (readOnly) return;
       clearTimer(key);
-      if (dirtyRef.current.has(key)) void persistField(key);
+      if (isDirty(key)) void persistField(key);
     };
 
     const runGeneration = useCallback(
@@ -177,7 +201,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           try {
             const value = await generateMetadataField(postId, key, content);
             clearTimer(key);
-            dirtyRef.current.add(key);
             setFields((prev) => ({ ...prev, [key]: value }));
             await persistField(key, value);
             return { key, ok: true as const };
@@ -249,7 +272,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           }
 
           if (savedKeys.length > 0) {
-            for (const key of savedKeys) dirtyRef.current.add(key);
+            // setFields makes the generated values current; until the batch save
+            // confirms, they differ from the saved snapshot and so read as dirty.
             setFields((prev) => ({ ...prev, ...generatedFields }));
             try {
               const updated = await updatePost(
@@ -257,7 +281,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
                 { frontMatter: frontMatterPatch },
                 workspaceId
               );
-              for (const key of savedKeys) dirtyRef.current.delete(key);
+              // Advance the saved snapshot to the generated values. A field the
+              // user edited while this save was in flight now differs and stays
+              // dirty, so the edit survives for the next save instead of being
+              // dropped. On failure the snapshot is untouched, so every generated
+              // field stays dirty and a later flush retries it.
+              for (const key of savedKeys) savedRef.current[key] = generatedFields[key];
               onPostUpdatedRef.current(updated);
             } catch (err) {
               showGenError(err instanceof Error ? err.message : "Failed to save generated metadata");
