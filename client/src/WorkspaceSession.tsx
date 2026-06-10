@@ -385,6 +385,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [navHistory, selectPost]);
 
     const handleLoadMorePublished = useCallback(() => {
+      setLoadError(null);
       loadPosts(publishedOffset, true).catch((err) => {
         if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");

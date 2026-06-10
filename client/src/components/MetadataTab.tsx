@@ -94,10 +94,17 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // read the latest typed value from fieldsRef.
     const persistField = useCallback(
       async (key: string, rawValue?: string): Promise<boolean> => {
-        const value = parseFieldValue(key, rawValue ?? fieldsRef.current[key] ?? "");
+        const raw = rawValue ?? fieldsRef.current[key] ?? "";
+        const value = parseFieldValue(key, raw);
         try {
           const updated = await updatePost(postId, { frontMatter: { [key]: value } }, workspaceId);
-          dirtyRef.current.delete(key);
+          // Clear the dirty flag only if the field hasn't been edited again while
+          // this save was in flight. Otherwise the newer value is still unsaved
+          // and must stay dirty so the next debounce or flush persists it —
+          // clearing here would let flush cancel that pending save and lose it.
+          if ((fieldsRef.current[key] ?? "") === raw) {
+            dirtyRef.current.delete(key);
+          }
           onPostUpdatedRef.current(updated);
           return true;
         } catch (err) {
