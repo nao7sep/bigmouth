@@ -24,9 +24,29 @@ analysisPromptsRouter.get("/", (_req, res) => {
 
 analysisPromptsRouter.put("/", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const prompts = req.body as AnalysisPrompt[];
-  saveAnalysisPrompts(dataDir, prompts);
-  const saved = getAnalysisPrompts(dataDir);
+  const body = req.body;
+
+  if (!Array.isArray(body)) {
+    res.status(400).json({ error: "analysis prompts must be an array" });
+    return;
+  }
+  for (const prompt of body) {
+    if (!prompt || typeof prompt !== "object") {
+      res.status(400).json({ error: "each prompt must be an object" });
+      return;
+    }
+    const p = prompt as Record<string, unknown>;
+    if (typeof p.name !== "string" || !p.name.trim()) {
+      res.status(400).json({ error: "each prompt needs a non-empty name" });
+      return;
+    }
+    if (typeof p.text !== "string") {
+      res.status(400).json({ error: "each prompt needs a text string" });
+      return;
+    }
+  }
+
+  const saved = saveAnalysisPrompts(dataDir, body as AnalysisPrompt[]);
   logger.info(
     `Analysis prompts saved: requestId=${res.locals.requestId ?? "-"}, workspace=${res.locals.workspaceId ?? "-"}, count=${saved.length}`
   );

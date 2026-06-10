@@ -79,6 +79,8 @@ export function SettingsModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Snapshot of server-loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
@@ -87,18 +89,45 @@ export function SettingsModal({
   const initialTargets = useRef<EditableTarget[]>([]);
   const initialPrompts = useRef<AnalysisPrompt[]>([]);
 
+  // Load every resource all-or-nothing: a partial failure must not seed empty
+  // state, because Save persists every field and would overwrite the missing
+  // ones on disk (e.g. an empty targets list). On failure nothing is seeded and
+  // the editor stays gated behind the load error.
   useEffect(() => {
-    fetchSettings().then((d) => { setSettings(d); initialSettings.current = d; }).catch(() => {});
-    fetchAiConfigs().then((d) => { setAiConfigs(d); initialAiConfigs.current = d; }).catch(() => {});
-    fetchGenerationPromptDefaults().then((d) => setGenerationPromptDefaults(d)).catch(() => {});
-    fetchGenerationPrompts().then((d) => { setGenerationPrompts(d); initialGenerationPrompts.current = d; }).catch(() => {});
-    fetchTargets().then((d) => {
-      const editable = editableTargets(d);
-      setTargets(editable);
-      initialTargets.current = editable;
-    }).catch(() => {});
-    fetchAnalysisPromptDefaults().then((d) => setAnalysisPromptDefaults(d)).catch(() => {});
-    fetchAnalysisPrompts().then((d) => { setPrompts(d); initialPrompts.current = d; }).catch(() => {});
+    let cancelled = false;
+    Promise.all([
+      fetchSettings(),
+      fetchAiConfigs(),
+      fetchGenerationPromptDefaults(),
+      fetchGenerationPrompts(),
+      fetchTargets(),
+      fetchAnalysisPromptDefaults(),
+      fetchAnalysisPrompts(),
+    ])
+      .then(([s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
+        if (cancelled) return;
+        setSettings(s);
+        initialSettings.current = s;
+        setAiConfigs(ai);
+        initialAiConfigs.current = ai;
+        setGenerationPromptDefaults(genDefaults);
+        setGenerationPrompts(gen);
+        initialGenerationPrompts.current = gen;
+        const editable = editableTargets(tgts);
+        setTargets(editable);
+        initialTargets.current = editable;
+        setAnalysisPromptDefaults(analysisDefaults);
+        setPrompts(analysisPrompts);
+        initialPrompts.current = analysisPrompts;
+        setLoaded(true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load settings.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const isDirty =
@@ -254,65 +283,77 @@ export function SettingsModal({
         width={560}
         maxHeight="85vh"
       >
+        {loadError ? (
+          <div className="modal-body">
+            <p className="settings-field-error">{loadError}</p>
+            <p>Close and reopen Settings to try again.</p>
+          </div>
+        ) : !loaded ? (
+          <div className="modal-body">
+            <p>Loading…</p>
+          </div>
+        ) : (
+          <>
+            <div className="settings-tabs">
+              {(["general", "targets", "providers", "analysis", "generation"] as Tab[]).map((t) => (
+                <button
+                  key={t}
+                  className={`settings-tab${tab === t ? " active" : ""}`}
+                  onClick={() => setTab(t)}
+                >
+                  {TAB_LABELS[t]}
+                </button>
+              ))}
+            </div>
 
-        <div className="settings-tabs">
-          {(["general", "targets", "providers", "analysis", "generation"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              className={`settings-tab${tab === t ? " active" : ""}`}
-              onClick={() => setTab(t)}
-            >
-              {TAB_LABELS[t]}
-            </button>
-          ))}
-        </div>
-
-        <div className="modal-body">
-          {tab === "general" && settings && (
-            <GeneralTab
-              settings={settings}
-              onChange={setSettings}
-            />
-          )}
-          {tab === "providers" && aiConfigs && (
-            <AiTab
-              aiConfigs={aiConfigs}
-              onChange={setAiConfigs}
-            />
-          )}
-          {tab === "targets" && (
-            <TargetsTab
-              targets={targets}
-              supportedLanguages={settings?.supportedLanguages ?? []}
-              onChange={setTargets}
-            />
-          )}
-          {tab === "analysis" && (
-            <AnalysisPromptsTab
-              prompts={prompts}
-              defaults={analysisPromptDefaults}
-              onChange={setPrompts}
-            />
-          )}
-          {tab === "generation" && generationPrompts && generationPromptDefaults && (
-            <GenerationTab
-              data={generationPrompts}
-              defaults={generationPromptDefaults}
-              onChange={setGenerationPrompts}
-            />
-          )}
-        </div>
-        {saveError && <p className="settings-field-error">{saveError}</p>}
-        <div className="modal-footer">
-          <button
-            className="btn-primary"
-            style={{ width: "auto" }}
-            onClick={handleSaveAll}
-            disabled={!canSave}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+            <div className="modal-body">
+              {tab === "general" && settings && (
+                <GeneralTab
+                  settings={settings}
+                  onChange={setSettings}
+                />
+              )}
+              {tab === "providers" && aiConfigs && (
+                <AiTab
+                  aiConfigs={aiConfigs}
+                  onChange={setAiConfigs}
+                />
+              )}
+              {tab === "targets" && (
+                <TargetsTab
+                  targets={targets}
+                  supportedLanguages={settings?.supportedLanguages ?? []}
+                  onChange={setTargets}
+                />
+              )}
+              {tab === "analysis" && (
+                <AnalysisPromptsTab
+                  prompts={prompts}
+                  defaults={analysisPromptDefaults}
+                  onChange={setPrompts}
+                />
+              )}
+              {tab === "generation" && generationPrompts && generationPromptDefaults && (
+                <GenerationTab
+                  data={generationPrompts}
+                  defaults={generationPromptDefaults}
+                  onChange={setGenerationPrompts}
+                />
+              )}
+            </div>
+            {saveError && <p className="settings-field-error">{saveError}</p>}
+            <div className="modal-footer">
+              <button
+                className="btn-primary"
+                style={{ width: "auto" }}
+                onClick={handleSaveAll}
+                disabled={!canSave}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </>
+        )}
       </ModalShell>
       {showDiscardConfirm && (
         <ConfirmModal

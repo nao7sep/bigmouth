@@ -26,6 +26,8 @@ export interface MetadataTabHandle {
   flushPendingChanges: () => Promise<boolean>;
 }
 
+const AUTOSAVE_DELAY_MS = 1_000;
+
 export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
   function MetadataTab(
     {
@@ -44,30 +46,24 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const isNonEnglish = lang !== "en";
     const noContent = !content.trim();
 
+    // `fields` is the single source of truth for the editable values while this
+    // tab is mounted. The component is keyed by postId (see RightPane), so it
+    // remounts for each post and seeds from front matter exactly once; it is
+    // also the only writer of these fields, so server echoes never need to be
+    // merged back in.
     const [fields, setFields] = useState(() => extractFields(frontMatter));
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
     const [generatingAll, setGeneratingAll] = useState(false);
     const [genError, setGenError] = useState<string | null>(null);
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-    const dirtyKeysRef = useRef<Set<string>>(new Set());
+    // Fields edited since their last successful save. Drives flushPendingChanges
+    // and retries: a field stays dirty until a save confirms it.
+    const dirtyRef = useRef<Set<string>>(new Set());
     const generationLockRef = useRef(false);
     const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
     const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
     const fieldsRef = useRef(fields);
     const onPostUpdatedRef = useRef(onPostUpdated);
-
-    useEffect(() => {
-      const nextFields = extractFields(frontMatter);
-      setFields((prev) => {
-        const merged = { ...nextFields };
-        for (const key of dirtyKeysRef.current) {
-          if (Object.prototype.hasOwnProperty.call(prev, key)) {
-            merged[key] = prev[key];
-          }
-        }
-        return merged;
-      });
-    }, [frontMatter]);
 
     useEffect(() => {
       fieldsRef.current = fields;
@@ -77,11 +73,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       onPostUpdatedRef.current = onPostUpdated;
     }, [onPostUpdated]);
 
-    const readOnlyRef = useRef(readOnly);
-    useEffect(() => {
-      readOnlyRef.current = readOnly;
-    }, [readOnly]);
-
     const showGenError = useCallback((msg: string) => {
       setGenError(msg);
     }, []);
@@ -90,28 +81,24 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       setGenError(null);
     }, []);
 
-    const clearDirtyKey = (key: string) => {
-      dirtyKeysRef.current.delete(key);
+    const clearTimer = (key: string) => {
+      const timer = saveTimers.current[key];
+      if (timer) {
+        clearTimeout(timer);
+        delete saveTimers.current[key];
+      }
     };
 
-    const markDirtyKey = (key: string) => {
-      dirtyKeysRef.current.add(key);
-    };
-
-    const saveField = useCallback(
-      async (key: string, value: string | string[], notify = true): Promise<boolean> => {
+    // Persists one field. `rawValue` is supplied only by generation, where the
+    // generated value has not yet propagated into fieldsRef; all other callers
+    // read the latest typed value from fieldsRef.
+    const persistField = useCallback(
+      async (key: string, rawValue?: string): Promise<boolean> => {
+        const value = parseFieldValue(key, rawValue ?? fieldsRef.current[key] ?? "");
         try {
-          const updated = await updatePost(
-            postId,
-            {
-              frontMatter: { [key]: value },
-            },
-            workspaceId
-          );
-          clearDirtyKey(key);
-          if (notify) {
-            onPostUpdatedRef.current(updated);
-          }
+          const updated = await updatePost(postId, { frontMatter: { [key]: value } }, workspaceId);
+          dirtyRef.current.delete(key);
+          onPostUpdatedRef.current(updated);
           return true;
         } catch (err) {
           showGenError(err instanceof Error ? err.message : `Failed to save ${key}`);
@@ -126,23 +113,15 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         await Promise.all(Array.from(generationPromisesRef.current));
       }
 
-      const pendingKeys = new Set<string>([
-        ...Object.keys(saveTimers.current),
-        ...dirtyKeysRef.current,
-      ]);
-      for (const key of Object.keys(saveTimers.current)) {
-        clearTimeout(saveTimers.current[key]);
-        delete saveTimers.current[key];
-      }
+      for (const key of Object.keys(saveTimers.current)) clearTimer(key);
 
       let ok = true;
-      for (const key of pendingKeys) {
-        const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
-        const saved = await saveField(key, value);
+      for (const key of Array.from(dirtyRef.current)) {
+        const saved = await persistField(key);
         if (!saved) ok = false;
       }
       return ok;
-    }, [saveField]);
+    }, [persistField]);
 
     useImperativeHandle(
       ref,
@@ -152,62 +131,36 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       [flushPendingChanges]
     );
 
+    // Drop pending debounce timers on unmount so a stray save never fires after
+    // the post is gone. Intentional teardowns (post switch, status change,
+    // workspace switch) are flushed explicitly via flushPendingChanges first; a
+    // delete deliberately discards unsaved edits.
     useEffect(() => {
       return () => {
-        const pendingKeys = new Set<string>([
-          ...Object.keys(saveTimers.current),
-          ...dirtyKeysRef.current,
-        ]);
-        for (const timer of Object.values(saveTimers.current)) {
-          clearTimeout(timer);
-        }
-        saveTimers.current = {};
-
-        // A locked (published) post rejects edits — drop pending writes instead
-        // of firing a doomed request on unmount.
-        if (readOnlyRef.current) return;
-
-        for (const key of pendingKeys) {
-          const value = parseFieldValue(key, fieldsRef.current[key] ?? "");
-          void updatePost(
-            postId,
-            {
-              frontMatter: { [key]: value },
-            },
-            workspaceId
-          )
-            .then((updated) => {
-              clearDirtyKey(key);
-              onPostUpdatedRef.current(updated);
-            })
-            .catch(() => {});
-        }
+        for (const key of Object.keys(saveTimers.current)) clearTimer(key);
       };
-    }, [postId, workspaceId]);
+    }, []);
 
-    const flushSave = (key: string, value: string, isTags: boolean) => {
+    const updateField = (key: string, value: string) => {
       if (readOnly) return;
-      if (saveTimers.current[key]) {
-        clearTimeout(saveTimers.current[key]);
-        delete saveTimers.current[key];
-      }
-      markDirtyKey(key);
-      void saveField(key, normalizeFieldValue(value, isTags));
-    };
-
-    const updateField = (key: string, value: string, isTags = false) => {
-      if (readOnly) return;
-      markDirtyKey(key);
+      dirtyRef.current.add(key);
       setFields((prev) => ({ ...prev, [key]: value }));
-      if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
+      clearTimer(key);
       saveTimers.current[key] = setTimeout(() => {
         delete saveTimers.current[key];
-        void saveField(key, normalizeFieldValue(value, isTags));
-      }, 1_000);
+        void persistField(key);
+      }, AUTOSAVE_DELAY_MS);
+    };
+
+    // Blur fast-forwards the debounce: save now instead of waiting out the timer.
+    const flushField = (key: string) => {
+      if (readOnly) return;
+      clearTimer(key);
+      if (dirtyRef.current.has(key)) void persistField(key);
     };
 
     const runGeneration = useCallback(
-      (key: string, isTags = false) => {
+      (key: string) => {
         const task = (async () => {
           if (generationLockRef.current) {
             return { key, ok: false as const, skipped: true as const };
@@ -216,13 +169,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           setGenerating((prev) => ({ ...prev, [key]: true }));
           try {
             const value = await generateMetadataField(postId, key, content);
-            if (saveTimers.current[key]) {
-              clearTimeout(saveTimers.current[key]);
-              delete saveTimers.current[key];
-            }
-            markDirtyKey(key);
+            clearTimer(key);
+            dirtyRef.current.add(key);
             setFields((prev) => ({ ...prev, [key]: value }));
-            await saveField(key, normalizeFieldValue(value, isTags));
+            await persistField(key, value);
             return { key, ok: true as const };
           } catch (err) {
             const message = err instanceof Error ? err.message : "Generation failed";
@@ -240,43 +190,37 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         });
         return task;
       },
-      [content, postId, saveField, showGenError]
+      [content, persistField, postId, showGenError]
     );
 
-    const generate = async (key: string, isTags = false) => {
+    const generate = async (key: string) => {
       if (readOnly || !content.trim() || generationLockRef.current) return;
       clearGenError();
-      await runGeneration(key, isTags);
+      await runGeneration(key);
     };
 
     const isGenerating = (key: string) => !!generating[key];
     const anyGeneratingField = Object.values(generating).some(Boolean);
     const generationLocked = generatingAll || anyGeneratingField;
 
-    const allFields: Array<{ key: string; isTags?: boolean }> = [{ key: "title" }];
-    if (isNonEnglish) allFields.push({ key: "titleEn" });
-    allFields.push({ key: "slug" });
-    if (isNonEnglish) allFields.push({ key: "tagsEn", isTags: true });
-    allFields.push({ key: "tags", isTags: true });
-    if (isNonEnglish) allFields.push({ key: "metaDescriptionEn" });
-    allFields.push({ key: "metaDescription" });
+    const allFieldKeys: string[] = ["title"];
+    if (isNonEnglish) allFieldKeys.push("titleEn");
+    allFieldKeys.push("slug");
+    if (isNonEnglish) allFieldKeys.push("tagsEn");
+    allFieldKeys.push("tags");
+    if (isNonEnglish) allFieldKeys.push("metaDescriptionEn");
+    allFieldKeys.push("metaDescription");
 
     const generateAll = async () => {
       if (readOnly || !content.trim() || generationLockRef.current) return;
       generationLockRef.current = true;
       clearGenError();
       const task = (async () => {
-        const fieldKeys = allFields.map((f) => f.key);
-        for (const key of fieldKeys) {
-          if (saveTimers.current[key]) {
-            clearTimeout(saveTimers.current[key]);
-            delete saveTimers.current[key];
-          }
-        }
+        for (const key of allFieldKeys) clearTimer(key);
 
         setGeneratingAll(true);
         try {
-          const results = await generateMetadataFields(postId, fieldKeys, content);
+          const results = await generateMetadataFields(postId, allFieldKeys, content);
           const generatedFields: Record<string, string> = {};
           const frontMatterPatch = {} as {
             [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
@@ -284,7 +228,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           const savedKeys: string[] = [];
           const failed: string[] = [];
 
-          for (const { key, isTags } of allFields) {
+          for (const key of allFieldKeys) {
             const result = results[key];
             if (!result || !("value" in result)) {
               failed.push(key);
@@ -293,12 +237,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
             generatedFields[key] = result.value;
             (frontMatterPatch as Record<string, string | string[]>)[key] =
-              normalizeFieldValue(result.value, !!isTags);
+              parseFieldValue(key, result.value);
             savedKeys.push(key);
           }
 
           if (savedKeys.length > 0) {
-            for (const key of savedKeys) markDirtyKey(key);
+            for (const key of savedKeys) dirtyRef.current.add(key);
             setFields((prev) => ({ ...prev, ...generatedFields }));
             try {
               const updated = await updatePost(
@@ -306,7 +250,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
                 { frontMatter: frontMatterPatch },
                 workspaceId
               );
-              for (const key of savedKeys) clearDirtyKey(key);
+              for (const key of savedKeys) dirtyRef.current.delete(key);
               onPostUpdatedRef.current(updated);
             } catch (err) {
               showGenError(err instanceof Error ? err.message : "Failed to save generated metadata");
@@ -360,7 +304,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           label="Title"
           value={fields.title}
           onChange={(v) => updateField("title", v)}
-          onBlur={() => flushSave("title", fields.title, false)}
+          onBlur={() => flushField("title")}
           onCopy={() => copyToClipboard(fields.title, "title")}
           copied={copiedKey === "title"}
           onGenerate={() => generate("title")}
@@ -374,7 +318,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             label="Title (English)"
             value={fields.titleEn ?? ""}
             onChange={(v) => updateField("titleEn", v)}
-            onBlur={() => flushSave("titleEn", fields.titleEn ?? "", false)}
+            onBlur={() => flushField("titleEn")}
             onCopy={() => copyToClipboard(fields.titleEn ?? "", "titleEn")}
             copied={copiedKey === "titleEn"}
             onGenerate={() => generate("titleEn")}
@@ -388,7 +332,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           label="Slug"
           value={fields.slug}
           onChange={(v) => updateField("slug", v)}
-          onBlur={() => flushSave("slug", fields.slug, false)}
+          onBlur={() => flushField("slug")}
           onCopy={() => copyToClipboard(fields.slug, "slug")}
           copied={copiedKey === "slug"}
           onGenerate={() => generate("slug")}
@@ -400,11 +344,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         <MetaField
           label="Tags"
           value={fields.tags}
-          onChange={(v) => updateField("tags", v, true)}
-          onBlur={() => flushSave("tags", fields.tags, true)}
+          onChange={(v) => updateField("tags", v)}
+          onBlur={() => flushField("tags")}
           onCopy={() => copyToClipboard(fields.tags, "tags")}
           copied={copiedKey === "tags"}
-          onGenerate={() => generate("tags", true)}
+          onGenerate={() => generate("tags")}
           generating={isGenerating("tags")}
           generateDisabled={readOnly || generationLocked || noContent}
           placeholder="tag1, tag2, tag3"
@@ -415,11 +359,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           <MetaField
             label="Tags (English)"
             value={fields.tagsEn ?? ""}
-            onChange={(v) => updateField("tagsEn", v, true)}
-            onBlur={() => flushSave("tagsEn", fields.tagsEn ?? "", true)}
+            onChange={(v) => updateField("tagsEn", v)}
+            onBlur={() => flushField("tagsEn")}
             onCopy={() => copyToClipboard(fields.tagsEn ?? "", "tagsEn")}
             copied={copiedKey === "tagsEn"}
-            onGenerate={() => generate("tagsEn", true)}
+            onGenerate={() => generate("tagsEn")}
             generating={isGenerating("tagsEn")}
             generateDisabled={readOnly || generationLocked || noContent}
             placeholder="tag1, tag2, tag3"
@@ -431,7 +375,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           label="Description"
           value={fields.metaDescription}
           onChange={(v) => updateField("metaDescription", v)}
-          onBlur={() => flushSave("metaDescription", fields.metaDescription, false)}
+          onBlur={() => flushField("metaDescription")}
           onCopy={() => copyToClipboard(fields.metaDescription, "metaDescription")}
           copied={copiedKey === "metaDescription"}
           onGenerate={() => generate("metaDescription")}
@@ -445,7 +389,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             label="Description (English)"
             value={fields.metaDescriptionEn ?? ""}
             onChange={(v) => updateField("metaDescriptionEn", v)}
-            onBlur={() => flushSave("metaDescriptionEn", fields.metaDescriptionEn ?? "", false)}
+            onBlur={() => flushField("metaDescriptionEn")}
             onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", "metaDescriptionEn")}
             copied={copiedKey === "metaDescriptionEn"}
             onGenerate={() => generate("metaDescriptionEn")}
@@ -459,7 +403,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           label="Extra"
           value={fields.extra}
           onChange={(v) => updateField("extra", v)}
-          onBlur={() => flushSave("extra", fields.extra, false)}
+          onBlur={() => flushField("extra")}
           onCopy={() => copyToClipboard(fields.extra, "extra")}
           copied={copiedKey === "extra"}
           placeholder={extraFieldWatermark}

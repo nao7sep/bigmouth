@@ -25,7 +25,7 @@ export function getSettings(dataDir: string): Settings {
   return JSON.parse(raw) as Settings;
 }
 
-export function saveSettings(dataDir: string, settings: Settings): void {
+export function saveSettings(dataDir: string, settings: Settings): Settings {
   const normalizedLanguages = [...new Set(settings.supportedLanguages)]
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   const normalized: Settings = {
@@ -37,6 +37,7 @@ export function saveSettings(dataDir: string, settings: Settings): void {
     extraFieldWatermark: settings.extraFieldWatermark,
   };
   fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify(normalized, null, 2) + "\n");
+  return normalized;
 }
 
 // --- AI Configs ---
@@ -200,13 +201,14 @@ export function getTargets(dataDir: string): Target[] {
   return JSON.parse(raw) as Target[];
 }
 
-export function saveTargets(dataDir: string, targets: Target[]): void {
+export function saveTargets(dataDir: string, targets: Target[]): Target[] {
   const normalized = targets.map((target) => ({
     name: target.name,
     defaultLanguage: target.defaultLanguage,
     requiresMetadata: target.requiresMetadata,
   }));
   fs.writeFileSync(path.join(dataDir, "targets.json"), JSON.stringify(normalized, null, 2) + "\n");
+  return normalized;
 }
 
 // --- Analysis Prompts ---
@@ -216,12 +218,13 @@ export function getAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
   return JSON.parse(raw) as AnalysisPrompt[];
 }
 
-export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): void {
+export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): AnalysisPrompt[] {
   const normalized = prompts.map((prompt) => ({
     name: prompt.name,
     text: prompt.text,
   }));
   fs.writeFileSync(path.join(dataDir, "analysis-prompts.json"), JSON.stringify(normalized, null, 2) + "\n");
+  return normalized;
 }
 
 // --- Generation Prompts ---
@@ -231,15 +234,20 @@ export function getGenerationPrompts(dataDir: string): GenerationPromptsData {
   return JSON.parse(raw) as GenerationPromptsData;
 }
 
-export function saveGenerationPrompts(dataDir: string, data: GenerationPromptsData): void {
+export function saveGenerationPrompts(
+  dataDir: string,
+  data: GenerationPromptsData
+): GenerationPromptsData {
   const prompts: Record<string, string> = {};
   for (const key of GENERATION_PROMPT_KEYS) {
     if (typeof data.prompts[key] === "string") {
       prompts[key] = data.prompts[key];
     }
   }
+  const normalized: GenerationPromptsData = { prompts };
   fs.writeFileSync(
     path.join(dataDir, "generation-prompts.json"),
-    JSON.stringify({ prompts }, null, 2) + "\n"
+    JSON.stringify(normalized, null, 2) + "\n"
   );
+  return normalized;
 }

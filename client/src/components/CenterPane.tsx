@@ -183,16 +183,14 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Drop the pending debounce timer on unmount so a stray autosave never fires
+  // after the post is gone. Intentional teardowns (post switch, status change,
+  // workspace switch) flush explicitly via flushPendingChanges first; a delete
+  // deliberately discards unsaved edits.
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (contentRef.current !== savedContentRef.current) {
-        void updatePost(postId, { content: contentRef.current }, workspaceId)
-          .then((updated) => onPostUpdatedRef.current(updated))
-          .catch(() => {});
-      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleContentChange = (value: string) => {

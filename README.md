@@ -59,9 +59,9 @@ npm run test:watch --prefix server
 npm run test:watch --prefix client
 ```
 
-Server tests run in a Node environment; client tests run in jsdom. Coverage focuses on the logic-bearing modules — timestamp/filename formatting, markdown sanitization and counting, AI prompt assembly and response validation, the post and config stores (exercised against temporary data directories), and the HTTP routes.
+Server tests run in a Node environment; client tests run in jsdom. Coverage focuses on the logic-bearing modules — timestamp/filename formatting, markdown sanitization and counting, AI prompt assembly and response validation, the post and config stores (exercised against temporary data directories), the HTTP routes, and the post-picker hook (load, pagination, de-duplication, and error surfacing).
 
-Each package keeps its tests in a `tests/` directory that mirrors `src/` (e.g. `server/tests/routes/`, `client/tests/util/`), rather than colocated next to the source.
+Each package keeps its tests in a `tests/` directory that mirrors `src/` (e.g. `server/tests/routes/`, `client/tests/util/`, `client/tests/hooks/`), rather than colocated next to the source.
 
 ## Data directory
 

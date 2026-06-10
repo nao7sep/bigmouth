@@ -9,6 +9,7 @@ export interface PostPickerState {
   loadMore: () => void;
   query: string;
   setQuery: (q: string) => void;
+  error: string | null;
 }
 
 export function usePostPicker(
@@ -20,11 +21,13 @@ export function usePostPicker(
   const [pubTotal, setPubTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     loadingMoreRef.current = false;
     setLoadingMore(false);
+    setError(null);
     fetchPosts(0, batchSize)
       .then((data) => {
         const all = [...data.drafts, ...data.checked, ...data.published];
@@ -32,7 +35,7 @@ export function usePostPicker(
         setPubOffset(data.published.length);
         setPubTotal(data.publishedTotal);
       })
-      .catch(() => {});
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load posts."));
   }, [batchSize, excludeId]);
 
   const loadMore = () => {
@@ -40,6 +43,7 @@ export function usePostPicker(
 
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    setError(null);
     const requestOffset = pubOffset;
 
     fetchPosts(requestOffset, batchSize)
@@ -53,7 +57,7 @@ export function usePostPicker(
         });
         setPubOffset((o) => Math.max(o, requestOffset + data.published.length));
       })
-      .catch(() => {})
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load more posts."))
       .finally(() => {
         loadingMoreRef.current = false;
         setLoadingMore(false);
@@ -73,5 +77,5 @@ export function usePostPicker(
 
   const hasMore = !lowerQuery && pubOffset < pubTotal;
 
-  return { posts, hasMore, loadingMore, loadMore, query, setQuery };
+  return { posts, hasMore, loadingMore, loadMore, query, setQuery, error };
 }

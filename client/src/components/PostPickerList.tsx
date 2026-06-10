@@ -15,6 +15,7 @@ export function PostPickerList({
   setQuery,
   onSelect,
   autoFocus,
+  error,
 }: PostPickerListProps) {
   return (
     <>
@@ -27,7 +28,7 @@ export function PostPickerList({
         autoFocus={autoFocus}
       />
       <div className="post-picker-list">
-        {posts.length === 0 ? (
+        {posts.length === 0 && !error ? (
           <p className="post-picker-empty">No posts found</p>
         ) : (
           posts.map((p) => {
@@ -46,6 +47,7 @@ export function PostPickerList({
             );
           })
         )}
+        {error && <p className="settings-field-error">{error}</p>}
         {hasMore && (
           <button
             className="btn-toolbar"

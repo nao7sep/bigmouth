@@ -73,6 +73,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [rightTab, setRightTab] = useState<RightTab>("Analysis");
     const [analysisTrigger, setAnalysisTrigger] = useState(0);
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
     const centerPaneRef = useRef<CenterPaneHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
@@ -176,42 +177,36 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
     }, []);
 
+    const loadConfig = useCallback(async () => {
+      const [nextTargets, settings] = await Promise.all([fetchTargets(), fetchSettings()]);
+      if (!sessionAliveRef.current) return;
+      setTargets(nextTargets);
+      applySettings(settings);
+    }, [applySettings]);
+
     useEffect(() => {
       let cancelled = false;
-      void loadPosts();
-      fetchTargets()
-        .then((nextTargets) => {
-          if (cancelled || !sessionAliveRef.current) return;
-          setTargets(nextTargets);
-        })
-        .catch(() => {});
-      fetchSettings()
-        .then((settings) => {
-          if (cancelled || !sessionAliveRef.current) return;
-          applySettings(settings);
-        })
-        .catch(() => {});
+      setLoadError(null);
+      // Surface load failures instead of swallowing them: a failed targets load
+      // would otherwise leave the New Post dialog silently empty.
+      Promise.all([loadPosts(), loadConfig()]).catch((err) => {
+        if (cancelled || !sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load this workspace.");
+      });
       return () => {
         cancelled = true;
       };
-    }, [applySettings, loadPosts]);
+    }, [loadConfig, loadPosts]);
 
     const reloadConfig = useCallback(() => {
       if (!sessionAliveRef.current) return;
-      fetchTargets()
-        .then((nextTargets) => {
-          if (!sessionAliveRef.current) return;
-          setTargets(nextTargets);
-        })
-        .catch(() => {});
-      fetchSettings()
-        .then((settings) => {
-          if (!sessionAliveRef.current) return;
-          applySettings(settings);
-        })
-        .catch(() => {});
+      setLoadError(null);
+      loadConfig().catch((err) => {
+        if (!sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to reload settings.");
+      });
       setAnalysisPromptsVersion((n) => n + 1);
-    }, [applySettings]);
+    }, [loadConfig]);
 
     useEffect(() => {
       if (suspended) return;
@@ -311,7 +306,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
       // Not in any loaded section (rare): clear and reload to resync.
       void selectPost(null, { skipFlush: true });
-      void loadPosts();
+      loadPosts().catch((err) => {
+        if (!sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to refresh posts.");
+      });
     }, [loadPosts, selectPost]);
 
     const handlePostUpdated = useCallback((result: PostMutationResult) => {
@@ -387,7 +385,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [navHistory, selectPost]);
 
     const handleLoadMorePublished = useCallback(() => {
-      void loadPosts(publishedOffset, true);
+      loadPosts(publishedOffset, true).catch((err) => {
+        if (!sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
+      });
     }, [loadPosts, publishedOffset]);
 
     const handleRevealCurrentLogFile = useCallback(async () => {
@@ -407,96 +408,109 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       currentPost?.frontMatter.id !== selectedPostId;
 
     return (
-      <div
-        className="app-layout"
-        style={{ "--bm-left": `${leftWidth}px`, "--bm-right": `${rightWidth}px` } as CSSProperties}
-      >
-        <LeftPane
-          drafts={drafts}
-          checked={checked}
-          published={published}
-          publishedTotal={publishedTotal}
-          selectedPostId={selectedPostId}
-          onSelectPost={(id) => {
-            void (async () => {
-              const switched = await selectPost(id);
-              if (switched) setNavHistory([]);
-            })();
-          }}
-          onNewPost={() => setNewPostOpen(true)}
-          onLoadMorePublished={handleLoadMorePublished}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-          onOpenAbout={() => setAboutOpen(true)}
-          onRevealCurrentLogFile={handleRevealCurrentLogFile}
-          onSwitchWorkspace={onSwitchWorkspace}
-          workspaceName={workspace.name}
-        />
-        <div className="pane-divider" onMouseDown={onStartLeftDrag} />
-        {selectedPostId ? (
-          <>
-            <CenterPane
-              ref={centerPaneRef}
-              key={selectedPostId}
-              workspaceId={workspace.id}
-              postId={selectedPostId}
-              onPostUpdated={handlePostUpdated}
-              onPostDeleted={handlePostDeleted}
-              onContentChange={setEditorContent}
-              onPostLoaded={setCurrentPost}
-              onExport={() => setExportOpen(true)}
-              onSelectPost={handleNavigateToPost}
-              onGoBack={navHistory.length > 0 ? handleGoBack : undefined}
-              onBeforeStatusChange={flushRightPaneChanges}
+      <div className="workspace-session">
+        {loadError && (
+          <div className="toolbar-error">
+            <span>{loadError}</span>
+            <button
+              className="toolbar-error-dismiss"
+              onClick={() => setLoadError(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <div
+          className="app-layout"
+          style={{ "--bm-left": `${leftWidth}px`, "--bm-right": `${rightWidth}px` } as CSSProperties}
+        >
+          <LeftPane
+            drafts={drafts}
+            checked={checked}
+            published={published}
+            publishedTotal={publishedTotal}
+            selectedPostId={selectedPostId}
+            onSelectPost={(id) => {
+              void (async () => {
+                const switched = await selectPost(id);
+                if (switched) setNavHistory([]);
+              })();
+            }}
+            onNewPost={() => setNewPostOpen(true)}
+            onLoadMorePublished={handleLoadMorePublished}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onOpenAbout={() => setAboutOpen(true)}
+            onRevealCurrentLogFile={handleRevealCurrentLogFile}
+            onSwitchWorkspace={onSwitchWorkspace}
+            workspaceName={workspace.name}
+          />
+          <div className="pane-divider" onMouseDown={onStartLeftDrag} />
+          {selectedPostId ? (
+            <>
+              <CenterPane
+                ref={centerPaneRef}
+                key={selectedPostId}
+                workspaceId={workspace.id}
+                postId={selectedPostId}
+                onPostUpdated={handlePostUpdated}
+                onPostDeleted={handlePostDeleted}
+                onContentChange={setEditorContent}
+                onPostLoaded={setCurrentPost}
+                onExport={() => setExportOpen(true)}
+                onSelectPost={handleNavigateToPost}
+                onGoBack={navHistory.length > 0 ? handleGoBack : undefined}
+                onBeforeStatusChange={flushRightPaneChanges}
+                pubBatchSize={pubBatchSize}
+                watermark={watermark}
+                editorRef={editorRef}
+              />
+              <div className="pane-divider" onMouseDown={onStartRightDrag} />
+              <RightPane
+                ref={rightPaneRef}
+                workspaceId={workspace.id}
+                content={editorContent}
+                postId={selectedPostId}
+                frontMatter={
+                  currentPost?.frontMatter.id === selectedPostId ? currentPost.frontMatter : null
+                }
+                target={currentTarget}
+                extraFieldWatermark={extraFieldWatermark}
+                onPostUpdated={handlePostUpdated}
+                activeTab={rightTab}
+                onTabChange={setRightTab}
+                analysisTrigger={analysisTrigger}
+                analysisPromptsVersion={analysisPromptsVersion}
+                onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
+                maxUploadMb={maxUploadMb}
+                loading={postLoading}
+              />
+            </>
+          ) : (
+            <div className="pane-empty">Select a post or create a new one</div>
+          )}
+          {settingsOpen && (
+            <SettingsModal onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />
+          )}
+          {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+          {newPostOpen && (
+            <NewPostModal
+              targets={targets}
+              supportedLanguages={supportedLanguages}
               pubBatchSize={pubBatchSize}
-              watermark={watermark}
-              editorRef={editorRef}
+              onClose={() => setNewPostOpen(false)}
+              onCreate={handleCreatePost}
             />
-            <div className="pane-divider" onMouseDown={onStartRightDrag} />
-            <RightPane
-              ref={rightPaneRef}
-              workspaceId={workspace.id}
+          )}
+          {exportOpen && selectedPostId && (
+            <ExportModal
               content={editorContent}
-              postId={selectedPostId}
-              frontMatter={
-                currentPost?.frontMatter.id === selectedPostId ? currentPost.frontMatter : null
-              }
-              target={currentTarget}
-              extraFieldWatermark={extraFieldWatermark}
-              onPostUpdated={handlePostUpdated}
-              activeTab={rightTab}
-              onTabChange={setRightTab}
-              analysisTrigger={analysisTrigger}
-              analysisPromptsVersion={analysisPromptsVersion}
-              onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
-              maxUploadMb={maxUploadMb}
-              loading={postLoading}
+              slug={currentPost?.frontMatter.slug ?? selectedPostId}
+              onClose={() => setExportOpen(false)}
             />
-          </>
-        ) : (
-          <div className="pane-empty">Select a post or create a new one</div>
-        )}
-        {settingsOpen && (
-          <SettingsModal onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />
-        )}
-        {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
-        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
-        {newPostOpen && (
-          <NewPostModal
-            targets={targets}
-            supportedLanguages={supportedLanguages}
-            pubBatchSize={pubBatchSize}
-            onClose={() => setNewPostOpen(false)}
-            onCreate={handleCreatePost}
-          />
-        )}
-        {exportOpen && selectedPostId && (
-          <ExportModal
-            content={editorContent}
-            slug={currentPost?.frontMatter.slug ?? selectedPostId}
-            onClose={() => setExportOpen(false)}
-          />
-        )}
+          )}
+        </div>
       </div>
     );
   }

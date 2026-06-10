@@ -48,10 +48,26 @@ describe("PUT /", () => {
       .send({ ...current, supportedLanguages: ["ja", "en", "ja", "es"] });
 
     expect(res.status).toBe(200);
+    // The response is the normalized value the save produced, not a re-read.
     expect(res.body.supportedLanguages).toEqual(["en", "es", "ja"]);
 
     // Persisted: a fresh GET reflects the normalized value.
     const reread = await request(app).get("/");
     expect(reread.body.supportedLanguages).toEqual(["en", "es", "ja"]);
+  });
+
+  it("rejects a malformed body with 400 and does not corrupt the stored settings", async () => {
+    const app = makeApp();
+    const current = (await request(app).get("/")).body;
+
+    const res = await request(app)
+      .put("/")
+      .send({ ...current, supportedLanguages: "en" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/supportedLanguages/i);
+
+    // The bad request left the persisted settings untouched.
+    const reread = await request(app).get("/");
+    expect(reread.body.supportedLanguages).toEqual(current.supportedLanguages);
   });
 });

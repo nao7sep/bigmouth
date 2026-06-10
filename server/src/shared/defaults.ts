@@ -10,6 +10,9 @@ export const DEFAULT_PORT = 3141;
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
 
+// Model used for a Claude AI config that has no explicit model set.
+export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+
 // Maximum size of a JSON request body. Sized well above any realistic
 // markdown draft (autosave PUTs the whole post body) and well under the
 // asset-upload limit, which has its own multer config.
@@ -24,7 +27,7 @@ export const DEFAULT_AI_CONFIGS: AiConfigsData = {
       id: defaultAiConfigId,
       name: "Default",
       provider: "claude",
-      model: "claude-sonnet-4-6",
+      model: DEFAULT_CLAUDE_MODEL,
       apiKey: "",
     },
   ],

@@ -6,6 +6,7 @@
 import type { AiConfig } from "../shared/types.js";
 import type { AiProvider } from "./provider.js";
 import { ClaudeProvider } from "./claude.js";
+import { DEFAULT_CLAUDE_MODEL } from "../shared/defaults.js";
 
 export function createProvider(config: AiConfig): AiProvider {
   if (!config.apiKey) {
@@ -13,7 +14,7 @@ export function createProvider(config: AiConfig): AiProvider {
   }
 
   if (config.provider === "claude") {
-    const model = config.model || "claude-sonnet-4-6";
+    const model = config.model || DEFAULT_CLAUDE_MODEL;
     return new ClaudeProvider(config.apiKey, model);
   }
 

@@ -21,6 +21,7 @@ export function AnalysisTab({
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptsError, setPromptsError] = useState<string | null>(null);
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -28,13 +29,16 @@ export function AnalysisTab({
   useEffect(() => {
     fetchAnalysisPrompts()
       .then((list) => {
+        setPromptsError(null);
         setPrompts(list);
         setSelectedPrompt((current) => {
           if (list.length === 0) return "";
           return list.some((p) => p.name === current) ? current : list[0].name;
         });
       })
-      .catch(() => {});
+      .catch((err) => {
+        setPromptsError(err instanceof Error ? err.message : "Failed to load analysis prompts.");
+      });
   }, [promptsVersion]);
 
   // Reset state and cancel any in-flight analysis when post changes
@@ -93,6 +97,9 @@ export function AnalysisTab({
   });
 
   if (prompts.length === 0 && !loading) {
+    if (promptsError) {
+      return <div className="panel-error">Couldn't load analysis prompts: {promptsError}</div>;
+    }
     return (
       <div className="panel-empty">
         No prompts configured. Add prompts in{" "}

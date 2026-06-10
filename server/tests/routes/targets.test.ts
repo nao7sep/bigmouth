@@ -45,6 +45,23 @@ describe("GET / and PUT /", () => {
 
     expect((await request(app).get("/")).body[0].name).toBe("blogger");
   });
+
+  it("rejects a malformed target with 400 and leaves stored targets untouched", async () => {
+    const app = makeApp();
+    await request(app)
+      .put("/")
+      .send([{ name: "blogger", defaultLanguage: "en", requiresMetadata: true }]);
+
+    const res = await request(app)
+      .put("/")
+      .send([{ name: "", defaultLanguage: "en", requiresMetadata: true }]);
+    expect(res.status).toBe(400);
+
+    // The earlier valid save is still intact.
+    const stored = (await request(app).get("/")).body;
+    expect(stored).toHaveLength(1);
+    expect(stored[0].name).toBe("blogger");
+  });
 });
 
 describe("PUT /rename", () => {
