@@ -9,8 +9,7 @@
  *   - The logging call takes a STRUCTURED object, never a rendered string. Every
  *     line carries the envelope { time, level, message } plus any extra fields.
  *   - Four levels: debug / info / warn / error. `debug` is developer-only — it is
- *     emitted only when BIGMOUTH_DEBUG=1 (set by the dev script), and stays off
- *     in a released build.
+ *     emitted only when explicitly enabled by BIGMOUTH_DEBUG=1 or --debug-logs.
  *   - A mandatory, non-destructive redactor replaces the VALUE of any field whose
  *     name matches a denied key (exact, case-insensitive). It never edits the
  *     message, never scans string contents, and cannot drop fields or throw.
@@ -25,6 +24,10 @@ import { utcNow, formatForFilename, formatUtcIso } from "../shared/timestamps.js
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
+
+const DEBUG_LOG_FLAG = "--debug-logs";
+
+type DebugLogEnv = Readonly<Record<string, string | undefined>>;
 
 // Field names whose values are replaced with the redaction marker. Matched by
 // exact, case-insensitive name (stored lower-cased) — never as a substring, so
@@ -228,12 +231,22 @@ function reportFileFailure(err: unknown): void {
   console.error(`[logger] File logging degraded — continuing on console only: ${detail}`);
 }
 
+export function isDebugLoggingEnabled({
+  env = process.env,
+  argv = process.argv,
+}: {
+  env?: DebugLogEnv;
+  argv?: readonly string[];
+} = {}): boolean {
+  return env.BIGMOUTH_DEBUG === "1" || argv.includes(DEBUG_LOG_FLAG);
+}
+
 /**
- * Developer-only detail. Emitted only when BIGMOUTH_DEBUG=1; silent in a released
- * build. The env var is read per call so it is trivially controllable in tests.
+ * Developer-only detail. Emitted only when debug logging is explicitly enabled.
+ * The switch is read per call so it remains trivially controllable in tests.
  */
 export function debug(message: string, fields?: LogFields): void {
-  if (process.env.BIGMOUTH_DEBUG !== "1") return;
+  if (!isDebugLoggingEnabled()) return;
   emit("debug", message, fields);
 }
 

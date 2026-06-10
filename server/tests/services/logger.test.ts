@@ -10,6 +10,7 @@ import {
   info,
   warn,
   error,
+  isDebugLoggingEnabled,
   redact,
   serializeError,
 } from "../../src/../src/services/logger.js";
@@ -83,7 +84,7 @@ describe("envelope", () => {
 });
 
 describe("debug gating", () => {
-  it("is silent unless BIGMOUTH_DEBUG=1", () => {
+  it("is silent unless debug logging is enabled", () => {
     debug("should not appear");
     info("marker");
     const lines = readLogLines();
@@ -97,6 +98,30 @@ describe("debug gating", () => {
     const [line] = readLogLines();
     expect(line.level).toBe("debug");
     expect(line.message).toBe("now visible");
+  });
+
+  it("emits when --debug-logs is present in process arguments", () => {
+    const originalArgv = process.argv;
+    try {
+      process.argv = [...originalArgv, "--debug-logs"];
+      debug("cli visible");
+    } finally {
+      process.argv = originalArgv;
+    }
+    const [line] = readLogLines();
+    expect(line.level).toBe("debug");
+    expect(line.message).toBe("cli visible");
+  });
+
+  it("enables debug logging only for explicit switches", () => {
+    expect(isDebugLoggingEnabled({ env: {}, argv: ["node", "index.js"] })).toBe(false);
+    expect(isDebugLoggingEnabled({ env: { BIGMOUTH_DEBUG: "1" }, argv: ["node", "index.js"] })).toBe(
+      true
+    );
+    expect(isDebugLoggingEnabled({ env: {}, argv: ["node", "index.js", "--debug-logs"] })).toBe(true);
+    expect(isDebugLoggingEnabled({ env: {}, argv: ["node", "index.js", "--debug-logs=false"] })).toBe(
+      false
+    );
   });
 });
 

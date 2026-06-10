@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "BIGMOUTH_DEBUG=1 tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts --debug-logs",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",

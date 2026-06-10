@@ -12,6 +12,7 @@ import {
   error as logError,
   serializeError,
   getCurrentLogFilePath,
+  isDebugLoggingEnabled,
 } from "./services/logger.js";
 import { DEFAULT_HOST, DEFAULT_PORT, MAX_REQUEST_BODY_BYTES } from "./shared/defaults.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
@@ -238,7 +239,7 @@ app.listen(port, host, () => {
     port,
     workspaceCount: appConfig.workspaces.length,
     allowedOrigins: appConfig.allowedOrigins,
-    debug: process.env.BIGMOUTH_DEBUG === "1",
+    debug: isDebugLoggingEnabled(),
     logFile: getCurrentLogFilePath(),
   });
 
