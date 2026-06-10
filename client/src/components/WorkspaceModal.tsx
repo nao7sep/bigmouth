@@ -42,7 +42,7 @@ export function WorkspaceModal({
   const nameComposing = useComposing();
   const locationComposing = useComposing();
 
-  const isDirty = name.trim() !== "" || location.trim() !== "" || editingId !== null;
+  const isDirty = name.trim() !== "" || location.trim() !== "";
 
   const clearForm = () => {
     setError(null);
@@ -51,6 +51,15 @@ export function WorkspaceModal({
   };
 
   const handleRequestClose = () => {
+    // An inline rename is a nested edit within the modal. Any close request
+    // (Escape, backdrop, close button) unwinds that edit first instead of
+    // closing the modal, keeping "cancel this edit" distinct from "leave the
+    // modal" — and giving Escape a single, well-defined path through this one
+    // guard rather than a competing handler on the input.
+    if (editingId !== null) {
+      setEditingId(null);
+      return;
+    }
     if (!dismissable) return;
     if (isDirty) {
       setShowDiscardConfirm(true);
@@ -152,7 +161,6 @@ export function WorkspaceModal({
                       onKeyDown={(e) => {
                         if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
                         if (e.key === "Enter") handleRename(ws.id);
-                        if (e.key === "Escape") setEditingId(null);
                       }}
                       autoFocus
                     />
@@ -287,7 +295,6 @@ export function WorkspaceModal({
           danger
           onConfirm={() => {
             setShowDiscardConfirm(false);
-            setEditingId(null);
             clearForm();
             onClose();
           }}
