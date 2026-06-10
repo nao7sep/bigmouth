@@ -3,7 +3,7 @@ import { applyStatusTransition, STATUS_ORDER } from "../../src/../src/shared/pos
 import type { PostFrontMatter, PostStatus } from "../../src/../src/shared/types.js";
 
 const NOW = new Date("2026-04-05T14:30:22Z");
-const STAMP = "2026-04-05T14:30:22Z";
+const STAMP = "2026-04-05T14:30:22.000Z";
 
 function fm(overrides: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {

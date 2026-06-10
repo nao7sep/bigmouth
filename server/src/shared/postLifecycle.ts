@@ -23,7 +23,7 @@
  */
 
 import type { PostStatus, PostFrontMatter } from "./types.js";
-import { formatForFrontMatter } from "./timestamps.js";
+import { formatUtcIso } from "./timestamps.js";
 
 export const STATUS_ORDER: Record<PostStatus, number> = {
   draft: 0,
@@ -41,7 +41,7 @@ export function applyStatusTransition(
   newStatus: PostStatus,
   now: Date
 ): void {
-  const stamp = formatForFrontMatter(now);
+  const stamp = formatUtcIso(now);
 
   if (newStatus === "draft") {
     fm.checkedAtUtc = undefined;

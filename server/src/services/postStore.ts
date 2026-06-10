@@ -19,7 +19,7 @@ import type {
   PostStatus,
   EditablePostMetadata,
 } from "../shared/types.js";
-import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
+import { utcNow, formatUtcIso, compareInstants } from "../shared/timestamps.js";
 import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry } from "./postFile.js";
 import { applyStatusTransition } from "../shared/postLifecycle.js";
@@ -75,13 +75,13 @@ function summaries(
 }
 
 function byCreatedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
-  return compareDesc(a.createdAtUtc, b.createdAtUtc) || compareDesc(a.id, b.id);
+  return compareInstants(b.createdAtUtc, a.createdAtUtc) || compareDesc(a.id, b.id);
 }
 
 function byPublishedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
   return (
-    compareDesc(a.publishedAtUtc ?? "", b.publishedAtUtc ?? "") ||
-    compareDesc(a.createdAtUtc, b.createdAtUtc) ||
+    compareInstants(b.publishedAtUtc ?? "", a.publishedAtUtc ?? "") ||
+    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
     compareDesc(a.id, b.id)
   );
 }
@@ -124,8 +124,8 @@ export function createPost(
     status: "draft",
     language,
     ...(sourceId ? { sourceId } : {}),
-    createdAtUtc: formatForFrontMatter(now),
-    updatedAtUtc: formatForFrontMatter(now),
+    createdAtUtc: formatUtcIso(now),
+    updatedAtUtc: formatUtcIso(now),
   };
 
   const fileName = postFileName(now, id);
@@ -157,7 +157,7 @@ export function updatePost(
       }
     }
   }
-  fm.updatedAtUtc = formatForFrontMatter(utcNow());
+  fm.updatedAtUtc = formatUtcIso(utcNow());
 
   if (updates.content !== undefined) post.content = updates.content;
 
@@ -179,7 +179,7 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
 
   const now = utcNow();
   applyStatusTransition(fm, newStatus, now);
-  fm.updatedAtUtc = formatForFrontMatter(now);
+  fm.updatedAtUtc = formatUtcIso(now);
 
   writePost(post.filePath, fm, post.content);
   index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));

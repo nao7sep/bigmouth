@@ -19,6 +19,7 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
 import type { Post, PostMutationResult, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
 import { pickAdjacentPostId } from "./util/selection";
+import { compareInstants } from "./util/timestamps";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -531,15 +532,13 @@ function nextSummariesForStatus(
 
 function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): number {
   if (status === "published") {
-    const aTime = a.frontMatter.publishedAtUtc ?? "";
-    const bTime = b.frontMatter.publishedAtUtc ?? "";
     return (
-      bTime.localeCompare(aTime) ||
+      compareInstants(b.frontMatter.publishedAtUtc ?? "", a.frontMatter.publishedAtUtc ?? "") ||
       (b.frontMatter.slug ?? "").localeCompare(a.frontMatter.slug ?? "")
     );
   }
 
   // Drafts and checked posts are ordered newest-created first. The index
   // summaries carry no updatedAtUtc, so creation time is the stable key.
-  return (b.frontMatter.createdAtUtc ?? "").localeCompare(a.frontMatter.createdAtUtc ?? "");
+  return compareInstants(b.frontMatter.createdAtUtc ?? "", a.frontMatter.createdAtUtc ?? "");
 }

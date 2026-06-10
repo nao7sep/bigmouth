@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PostSummary } from "../types";
 import { getPostTitle } from "../util/postTitle";
+import { formatLocalDateTime } from "../util/timestamps";
 
 interface LeftPaneProps {
   drafts: PostSummary[];
@@ -266,18 +267,8 @@ function PostItem({
       <div className="post-item-title">{displayName}</div>
       <div className="post-item-meta">
         {fm.target}
-        {ts && <> &middot; {formatShortDate(ts)}</>}
+        {ts && <> &middot; {formatLocalDateTime(ts)}</>}
       </div>
     </div>
   );
-}
-
-function formatShortDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { utcNow, formatForFilename, formatForFrontMatter } from "../shared/timestamps.js";
+import { utcNow, formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 
 type LogLevel = "INFO" | "WARN" | "ERROR";
 
@@ -77,7 +77,7 @@ export async function revealCurrentLogFile(): Promise<string> {
 }
 
 function log(level: LogLevel, message: string): void {
-  const timestamp = formatForFrontMatter(utcNow());
+  const timestamp = formatUtcIso(utcNow());
   const line = `${timestamp} [${level}] ${message}`;
 
   console.log(line);

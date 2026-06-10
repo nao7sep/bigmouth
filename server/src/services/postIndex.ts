@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry, writeFileAtomic } from "./postFile.js";
+import { compareInstants } from "../shared/timestamps.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
@@ -201,9 +202,9 @@ function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
 // --- Canonical serialization (byte-identical across rebuilds) ---
 
 /**
- * Serializes entries deterministically: sorted by (createdAtUtc, id) with plain
- * code-unit comparison, each entry written with a fixed key order and absent
- * optionals omitted, 2-space indent, trailing newline.
+ * Serializes entries deterministically: sorted by (createdAtUtc instant, id),
+ * each entry written with a fixed key order and absent optionals omitted,
+ * 2-space indent, trailing newline.
  */
 export function canonicalIndexJson(entries: PostIndexEntry[]): string {
   const sorted = [...entries].sort(compareEntries);
@@ -212,8 +213,8 @@ export function canonicalIndexJson(entries: PostIndexEntry[]): string {
 }
 
 function compareEntries(a: PostIndexEntry, b: PostIndexEntry): number {
-  if (a.createdAtUtc < b.createdAtUtc) return -1;
-  if (a.createdAtUtc > b.createdAtUtc) return 1;
+  const byInstant = compareInstants(a.createdAtUtc, b.createdAtUtc);
+  if (byInstant !== 0) return byInstant;
   if (a.id < b.id) return -1;
   if (a.id > b.id) return 1;
   return 0;

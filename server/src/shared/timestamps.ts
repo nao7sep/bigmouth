@@ -1,8 +1,9 @@
 /**
  * Timestamp utility module.
  *
- * All internal timestamps are UTC. Conversion is always one-way:
- * UTC -> configured display timezone. The app never converts local time to UTC.
+ * All internal timestamps are UTC and serialized in the canonical ISO 8601 form
+ * (exactly 3 fractional digits + Z). Conversion to local time happens only at
+ * the client display edge; the server never converts local time to UTC.
  */
 
 /**
@@ -30,42 +31,32 @@ export function formatForFilename(date: Date): string {
 }
 
 /**
- * Formats a UTC Date for display in the configured timezone.
+ * Serializes a UTC Date to the canonical internal/stored form: ISO 8601
+ * extended, always exactly 3 fractional digits and a Z suffix. Used for front
+ * matter, asset metadata, and log lines. `toISOString()` emits exactly this.
  *
- * Example: 2026-04-05T14:30:22Z in "Asia/Tokyo" -> "2026-04-05 23:30:22 GMT+9"
+ * Example: "2026-04-05T14:30:22.123Z"
  */
-export function formatForDisplay(date: Date, timezone: string): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZoneName: "short",
-  });
-
-  const parts = formatter.formatToParts(date);
-  const get = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find((p) => p.type === type)?.value ?? "";
-
-  const datePart = `${get("year")}-${get("month")}-${get("day")}`;
-  const timePart = `${get("hour")}:${get("minute")}:${get("second")}`;
-  const tz = get("timeZoneName");
-
-  return `${datePart} ${timePart} ${tz}`;
+export function formatUtcIso(date: Date): string {
+  return date.toISOString();
 }
 
 /**
- * Formats a UTC Date for storage in front matter.
- * Output: ISO 8601 UTC string.
- *
- * Example: "2026-04-05T14:30:22Z"
+ * Compares two UTC ISO timestamp strings by the instant they denote, ascending
+ * (earliest first). Parses rather than comparing code units, so it orders any
+ * valid form correctly regardless of fractional-digit count or `Z`/`+00:00`,
+ * and an absent/unparseable value sorts earliest. Use swapped args for
+ * descending (newest first).
  */
-export function formatForFrontMatter(date: Date): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+export function compareInstants(a: string, b: string): number {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+  if (Number.isNaN(ta)) return -1;
+  if (Number.isNaN(tb)) return 1;
+  if (ta < tb) return -1;
+  if (ta > tb) return 1;
+  return 0;
 }
 
 function pad2(n: number): string {

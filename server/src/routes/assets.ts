@@ -12,7 +12,7 @@ import { Router } from "express";
 import multer from "multer";
 import exifr from "exifr";
 import { imageSize } from "image-size";
-import { utcNow, formatForFrontMatter } from "../shared/timestamps.js";
+import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { getSettings } from "../services/configStore.js";
 import { error as logError, info as logInfo, warn as logWarn } from "../services/logger.js";
 import { getPost } from "../services/postStore.js";
@@ -204,7 +204,7 @@ assetsRouter.post("/:postId", (req, res, next) => {
     ...(width !== undefined && { width }),
     ...(height !== undefined && { height }),
     ...(hasMetadata && { hasMetadata }),
-    uploadedAt: formatForFrontMatter(utcNow()),
+    uploadedAt: formatUtcIso(utcNow()),
   };
 
   try {
