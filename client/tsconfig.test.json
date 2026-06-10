@@ -1,0 +1,10 @@
+{
+  // Type-checks the tests/ tree against the same production types. Tests run
+  // under Vitest (which does not type-check), so this config is what keeps test
+  // code from drifting. It is wired into the `typecheck` script, never emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

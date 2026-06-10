@@ -154,7 +154,6 @@ export function App() {
           startDrag(e, rightWidthRef, setRightWidth, STORAGE_RIGHT, -1, 320, 960)
         }
         onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
-        suspended={workspaceModalOpen}
       />
       {workspaceModalOpen && workspaceModal}
     </>

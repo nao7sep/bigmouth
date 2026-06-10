@@ -18,6 +18,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
 import type { Post, PostMutationResult, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
+import { useAnyModalOpen } from "./hooks/useModalStack";
 import { pickAdjacentPostId } from "./util/selection";
 import { compareInstants } from "./util/timestamps";
 
@@ -31,7 +32,6 @@ interface WorkspaceSessionProps {
   onStartLeftDrag: MouseEventHandler<HTMLDivElement>;
   onStartRightDrag: MouseEventHandler<HTMLDivElement>;
   onSwitchWorkspace: () => void;
-  suspended?: boolean;
 }
 
 export interface WorkspaceSessionHandle {
@@ -47,10 +47,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       onStartLeftDrag,
       onStartRightDrag,
       onSwitchWorkspace,
-      suspended = false,
     },
     ref
   ) {
+    const anyModalOpen = useAnyModalOpen();
     const [drafts, setDrafts] = useState<PostSummary[]>([]);
     const [checked, setChecked] = useState<PostSummary[]>([]);
     const [published, setPublished] = useState<PostSummary[]>([]);
@@ -210,7 +210,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [loadConfig]);
 
     useEffect(() => {
-      if (suspended) return;
+      // Any open modal/dialog owns the keyboard; global shortcuts must not
+      // mutate state behind it. The modal stack is the single source of truth
+      // here, so this also covers confirms opened deep in the pane tree, not
+      // just the top-level session modals.
+      if (anyModalOpen) return;
 
       const TAB_KEYS: Record<string, RightTab> = {
         "1": "Analysis",
@@ -253,7 +257,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
       window.addEventListener("keydown", handler);
       return () => window.removeEventListener("keydown", handler);
-    }, [suspended]);
+    }, [anyModalOpen]);
 
     const handleCreatePost = async (target: string, language: string, sourceId?: string) => {
       const post = await createPost(target, language, sourceId);
@@ -395,9 +399,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const handleRevealCurrentLogFile = useCallback(async () => {
       try {
+        setLoadError(null);
         await revealCurrentLogFile();
       } catch (err) {
-        window.alert(err instanceof Error ? err.message : "Failed to reveal current log file.");
+        if (!sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to reveal current log file.");
       }
     }, []);
 

@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts --debug-logs",
     "build": "tsc",
     "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },

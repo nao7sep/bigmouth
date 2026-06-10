@@ -138,9 +138,6 @@ export function SettingsModal({
     JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
 
   const handleRequestClose = () => {
-    // If the discard-confirm is already open, do nothing — its own Escape
-    // handler will close it.
-    if (showDiscardConfirm) return;
     if (!isDirty) { onClose(); return; }
     setShowDiscardConfirm(true);
   };

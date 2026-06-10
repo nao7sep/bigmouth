@@ -52,7 +52,6 @@ export function WorkspaceModal({
 
   const handleRequestClose = () => {
     if (!dismissable) return;
-    if (showDiscardConfirm) return;
     if (isDirty) {
       setShowDiscardConfirm(true);
     } else {

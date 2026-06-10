@@ -46,7 +46,6 @@ export function NewPostModal({
     sourceId !== "";
 
   const handleRequestClose = () => {
-    if (showDiscardConfirm) return;
     if (isDirty) {
       setShowDiscardConfirm(true);
     } else {

@@ -10,6 +10,7 @@
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix server && npm run build --prefix client",
+    "typecheck": "npm run typecheck --prefix server && npm run typecheck --prefix client",
     "test": "npm test --prefix server && npm test --prefix client"
   },
   "devDependencies": {

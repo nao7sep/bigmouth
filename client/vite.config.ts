@@ -8,6 +8,11 @@ export default defineConfig({
     // jsdom because safeMarkdown's DOMPurify needs a DOM `window`.
     environment: "jsdom",
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    // Pin a fixed, DST-free zone so local-time formatting is deterministic
+    // regardless of where the suite runs. Set here (Node-side test infra)
+    // rather than via `process.env` in a test, since the client is a browser
+    // package and intentionally carries no Node type definitions.
+    env: { TZ: "Asia/Tokyo" },
   },
   server: {
     // Pinned to 5273 instead of Vite's default 5173 so the launcher's

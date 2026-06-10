@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { compareInstants, formatLocalDateTime } from "../../src/util/timestamps";
 
-// Display formatting is local-time; pin a fixed, DST-free zone so the output is
-// deterministic regardless of where the suite runs.
-process.env.TZ = "Asia/Tokyo";
+// Display formatting is local-time. The suite runs under a fixed, DST-free zone
+// (Asia/Tokyo, +9) pinned in vite.config.ts so this output is deterministic.
 
 describe("compareInstants", () => {
   it("orders mixed-precision timestamps chronologically, not lexicographically", () => {
