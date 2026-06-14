@@ -77,7 +77,11 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
       <div className="export-actions">
         <button className="btn-export" onClick={handleCopy}>
-          {copiedKey === "copy" ? "✓ Copied" : "Copy"}
+          {copiedKey === "copy" ? (
+            "✓ Copied"
+          ) : (
+            "Copy"
+          )}
         </button>
         <button
           className="btn-primary"

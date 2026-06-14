@@ -237,7 +237,11 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
               onClick={() => copy(items.join("\n\n"), "all")}
               title="Copy all prompts"
             >
-              {copiedKey === "all" ? "✓ Copied" : "Copy All"}
+              {copiedKey === "all" ? (
+                "✓ Copied"
+              ) : (
+                "Copy All"
+              )}
             </button>
           </div>
           {items.map((item, index) => (
@@ -249,7 +253,11 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
                   onClick={() => copy(item, `prompt-${index}`)}
                   title="Copy prompt"
                 >
-                  {copiedKey === `prompt-${index}` ? "✓ Copied" : "Copy"}
+                  {copiedKey === `prompt-${index}` ? (
+                    "✓ Copied"
+                  ) : (
+                    "Copy"
+                  )}
                 </button>
               </div>
               <div className="image-prompt-text">{item}</div>

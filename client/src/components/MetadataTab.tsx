@@ -494,7 +494,11 @@ function MetaField({
             </button>
           )}
           <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
-            {copied ? "✓ Copied" : "Copy"}
+            {copied ? (
+              "✓ Copied"
+            ) : (
+              "Copy"
+            )}
           </button>
         </div>
       </div>

@@ -383,7 +383,11 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         )}
         <span style={{ flex: 1 }} />
         <button className="btn-toolbar" onClick={handleCopyContent}>
-          {copiedKey === "content" ? "✓ Copied" : "Copy"}
+          {copiedKey === "content" ? (
+            "✓ Copied"
+          ) : (
+            "Copy"
+          )}
         </button>
         <button className="btn-toolbar" onClick={onExport}>
           Export
