@@ -13,7 +13,7 @@ BigMouth is a single-user desktop-style web app (Node.js backend + React fronten
 - **Three-stage workflow**: Draft → Checked → Published
 - **Analysis** — run named prompts against post content to catch issues before publishing, with results appearing progressively in the analysis pane while the model responds
 - **AI metadata generation** — generate title, slug, tags, SEO description, and more with one click
-- **Imaging** — generate temporary English image-prompt variants from the current post and metadata with adjustable relation, tone, literalness, people, and style while preserving the draft's own implied setting
+- **Imaging** — generate temporary English image-prompt variants from the current post and metadata with adjustable relation, mood, literalness, people, and style while preserving the draft's own implied setting
 - **Assets** — upload and manage images and files per post; embed links directly in the editor. Raster images preview inline; other files are served as downloads.
 - **Export** — copy or download post content as HTML or plain text
 - **Multi-language support** — write in any language; generate English supplement fields for non-English posts
@@ -44,7 +44,7 @@ node server/dist/index.js
 
 The server starts on `http://localhost:3141` by default. Open that URL in your browser. On first visit you will see the workspace modal — create a workspace to get started.
 
-In production, the built client is served from the same origin as the API. In development, Vite (port 5273) proxies `/api/*` to the backend so requests are also same-origin from the browser's perspective. There is no CORS — see [Security model](#security-model).
+In production, the built client is served from the same origin as the API. In development, Vite (port 5273) proxies `/api/*` and `/assets/*` to the backend so requests are also same-origin from the browser's perspective. There is no CORS — see [Security model](#security-model).
 
 ## Testing
 
@@ -151,7 +151,7 @@ Workspaces provide complete isolation: each has its own posts, assets, settings,
 
 - On startup, the frontend shows a workspace modal if no workspace is selected (or the saved workspace no longer exists).
 - Switch workspaces at any time via the hamburger menu → "Workspaces".
-- The backend is stateless with respect to workspaces — every API request includes the workspace ID in the URL path (`/api/w/:wsId/...`), so two browser tabs can work on different workspaces simultaneously.
+- The backend is stateless with respect to workspaces — every API request carries the workspace ID in its request path (`/api/w/:wsId/...`), and each tab holds its own workspace id in memory, so two browser tabs can work on different workspaces simultaneously. (The browser address bar does not change; there is no client-side router.)
 - Open an existing complete workspace folder, or create a new workspace in the chosen folder.
 - **Deleting a workspace only removes it from the registry** (`app.json`). The data directory and all files inside it are left untouched on disk.
 
@@ -320,7 +320,7 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Cmd/Ctrl + 4 | Switch to Preview tab |
 | Cmd/Ctrl + 5 | Switch to Metadata tab |
 
-These Cmd/Ctrl shortcuts are global: they work from anywhere in the app (except while a dialog is open or a text field has focus), independent of where the keyboard cursor sits.
+These Cmd/Ctrl shortcuts are global: they work from anywhere in the app (except while a dialog is open, or while a text field has focus — though New Post (Cmd/Ctrl+N) still fires from a single-line field), independent of where the keyboard cursor sits.
 
 ### List, tab, menu, and radio navigation
 

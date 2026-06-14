@@ -34,16 +34,18 @@ function ensureAssetDir(dataDir: string, postId: string): string {
   return dir;
 }
 
+/**
+ * Lists a post's assets, reconciling the cached `meta.json` against the files
+ * actually on disk — the image files are the source of truth, `meta.json` is a
+ * derived cache (the same relationship the post index has with the `.md` files).
+ * Cached entries whose file is gone are dropped; files present without a cached
+ * entry are projected minimally (size + mtime, no dimensions). This is what makes
+ * the write paths below crash-safe without any backup/rollback machinery: an
+ * interrupted upload or delete heals to a consistent list on the next read, and
+ * a missing `meta.json` next to real files is recovered, never an error.
+ */
 export function listAssets(dataDir: string, postId: string): AssetMeta[] {
-  const dir = assetDir(dataDir, postId);
-  const metaPath = path.join(dir, META_FILENAME);
-  if (!fs.existsSync(metaPath)) {
-    if (fs.existsSync(dir) && fs.readdirSync(dir).some((entry) => entry !== META_FILENAME)) {
-      throw new Error(`Asset metadata missing for non-empty asset directory: ${dir}`);
-    }
-    return [];
-  }
-  return JSON.parse(fs.readFileSync(metaPath, "utf-8")) as AssetMeta[];
+  return reconcileAssets(assetDir(dataDir, postId));
 }
 
 export function saveAssetFile(
@@ -56,65 +58,89 @@ export function saveAssetFile(
   const dir = ensureAssetDir(dataDir, postId);
   const destPath = safeResolveUnder(dir, filename);
   const metaPath = path.join(dir, META_FILENAME);
-  const existing = listAssets(dataDir, postId).filter((a) => a.filename !== filename);
+  const existing = reconcileAssets(dir).filter((a) => a.filename !== filename);
+
+  // Install the file via temp+rename (atomic, and replaces any same-named file),
+  // then commit the metadata. If a crash lands between the two, the orphaned file
+  // is reconciled back into the list on the next read — no data is lost.
   const tempPath = path.join(dir, tempName(filename, "upload"));
-  const backupPath = fs.existsSync(destPath)
-    ? path.join(dir, tempName(filename, "backup"))
-    : null;
-
-  let newFileInstalled = false;
-  let oldFileBackedUp = false;
-
-  fs.writeFileSync(tempPath, buffer);
   try {
-    if (backupPath) {
-      fs.renameSync(destPath, backupPath);
-      oldFileBackedUp = true;
-    }
+    fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, destPath);
-    newFileInstalled = true;
-    writeAssetMeta(metaPath, [...existing, meta]);
-    if (backupPath && fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
   } catch (err) {
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    if (newFileInstalled && fs.existsSync(destPath)) fs.unlinkSync(destPath);
-    if (oldFileBackedUp && backupPath && fs.existsSync(backupPath)) {
-      fs.renameSync(backupPath, destPath);
-    }
     throw err;
   }
+  writeAssetMeta(metaPath, [...existing, meta]);
 }
 
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
   const dir = assetDir(dataDir, postId);
   const filePath = safeResolveUnder(dir, filename);
   const metaPath = path.join(dir, META_FILENAME);
-  const remaining = listAssets(dataDir, postId).filter((a) => a.filename !== filename);
-  const backupPath = fs.existsSync(filePath)
-    ? path.join(dir, tempName(filename, "delete"))
-    : null;
-  let fileBackedUp = false;
+  const remaining = reconcileAssets(dir).filter((a) => a.filename !== filename);
 
-  try {
-    if (backupPath) {
-      fs.renameSync(filePath, backupPath);
-      fileBackedUp = true;
-    }
+  // Remove the file (the durable data) first, then update the cache. A crash
+  // between the two heals on the next read: the now-missing file is reconciled
+  // out of the list.
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+  if (remaining.length === 0) {
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  } else {
     writeAssetMeta(metaPath, remaining);
-    if (backupPath && fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
-  } catch (err) {
-    if (fileBackedUp && backupPath && fs.existsSync(backupPath)) {
-      fs.renameSync(backupPath, filePath);
-    }
-    throw err;
   }
+}
 
-  if (remaining.length === 0 && fs.existsSync(metaPath)) {
-    fs.unlinkSync(metaPath);
+/**
+ * Merges the cached `meta.json` (if any) with the asset files on disk: keeps
+ * cached entries whose file still exists, in their stored order, then appends a
+ * projected entry for any asset file the cache doesn't know about (sorted by
+ * name for determinism). Dotfiles (temp files) and `meta.json` are ignored.
+ */
+function reconcileAssets(dir: string): AssetMeta[] {
+  if (!fs.existsSync(dir)) return [];
+
+  const onDisk = new Set(
+    fs.readdirSync(dir).filter((entry) => entry !== META_FILENAME && !entry.startsWith(".")),
+  );
+
+  const cached = readAssetMeta(path.join(dir, META_FILENAME));
+  const result: AssetMeta[] = [];
+  const accountedFor = new Set<string>();
+  for (const entry of cached) {
+    if (onDisk.has(entry.filename)) {
+      result.push(entry);
+      accountedFor.add(entry.filename);
+    }
   }
-  if (remaining.length === 0 && fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
-    fs.rmdirSync(dir);
+  for (const filename of [...onDisk].sort()) {
+    if (accountedFor.has(filename)) continue;
+    result.push(projectAssetFile(dir, filename));
   }
+  return result;
+}
+
+function readAssetMeta(metaPath: string): AssetMeta[] {
+  if (!fs.existsSync(metaPath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+    return Array.isArray(parsed) ? (parsed as AssetMeta[]) : [];
+  } catch {
+    // Corrupt cache — treat as absent and rebuild from the files on disk.
+    return [];
+  }
+}
+
+/** Minimal metadata for an asset file with no cached entry (size + mtime). */
+function projectAssetFile(dir: string, filename: string): AssetMeta {
+  const stat = fs.statSync(path.join(dir, filename));
+  return {
+    filename,
+    size: stat.size,
+    uploadedAt: stat.mtime.toISOString(),
+  };
 }
 
 /**

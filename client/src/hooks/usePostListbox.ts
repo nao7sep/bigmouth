@@ -79,12 +79,21 @@ export function usePostListbox({
   onActivate,
   pageSize,
   composingRef,
+  autoActivateFirst = false,
 }: {
   rows: readonly PostListRow[];
   selectedId: string | null;
   onActivate: (id: string) => void;
   pageSize: number;
   composingRef: RefObject<boolean>;
+  /**
+   * When nothing is active or selected, make the first row the resting cursor
+   * (and tab stop). Suits a picker, where there is no committed selection and
+   * the user expects Tab/arrow to land straight on a row. Off by default so a
+   * list with a real selection (the post list) leaves the cursor where the
+   * selection is, and an unselected one rests on the container.
+   */
+  autoActivateFirst?: boolean;
 }): UsePostListboxResult {
   const listboxRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLElement>());
@@ -96,7 +105,12 @@ export function usePostListbox({
   // The cursor index, resolved from the hook's own active id, falling back to
   // the committed selection so Tab into the list lands on the selected row.
   const activeIndex = currentCompositeIndex({ ids, activeId, selectedId });
-  const resolvedActiveId = activeIndex === -1 ? null : ids[activeIndex];
+  const resolvedActiveId =
+    activeIndex !== -1
+      ? ids[activeIndex]
+      : autoActivateFirst && ids.length > 0
+        ? ids[0]
+        : null;
 
   const focusRow = useCallback((id: string) => {
     rowRefs.current.get(id)?.focus();
@@ -263,8 +277,11 @@ export function usePostListbox({
     listboxProps: {
       role: "listbox",
       ref: listboxRef,
-      // An empty list is still reachable by Tab via the container itself.
-      tabIndex: ids.length === 0 ? 0 : undefined,
+      // The control must always have exactly one tab stop. When a row is the
+      // resting cursor it carries tabIndex 0; otherwise (an empty list, or a
+      // non-empty list with nothing active/selected) the container itself is the
+      // tab stop, and the first arrow press enters the rows.
+      tabIndex: resolvedActiveId == null ? 0 : undefined,
       onKeyDown,
     },
     getRowProps,

@@ -503,28 +503,67 @@ export async function runAnalysisStream(
     signal: options.signal,
   });
   if (!res.ok) {
-    const message = await res.text().catch(() => "");
+    // Pre-stream failure: a JSON {error} body, or plain text.
+    const raw = await res.text().catch(() => "");
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw) as { error?: unknown };
+      if (typeof parsed?.error === "string") message = parsed.error;
+    } catch {
+      // not JSON; keep the raw text
+    }
     throw new Error(message || `Analysis failed: ${res.status}`);
   }
   if (!res.body) {
-    const fallback = await res.text();
-    if (fallback) options.onChunk(fallback);
-    return;
+    throw new Error("Analysis stream is unavailable in this environment.");
   }
+
+  // The body is newline-delimited JSON frames (see the /analyze/stream route).
+  // A `done` frame marks normal completion and an `error` frame a mid-stream
+  // failure; if the stream ends with neither, the analysis was cut short and we
+  // must not present the partial text as complete.
+  let sawDone = false;
+  const handleFrame = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let frame: { type?: string; text?: string; message?: string };
+    try {
+      frame = JSON.parse(trimmed);
+    } catch {
+      return; // ignore a malformed line rather than corrupt the result
+    }
+    if (frame.type === "delta" && typeof frame.text === "string") {
+      options.onChunk(frame.text);
+    } else if (frame.type === "error") {
+      throw new Error(frame.message || "Analysis failed");
+    } else if (frame.type === "done") {
+      sawDone = true;
+    }
+  };
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const text = decoder.decode(value, { stream: true });
-      if (text) options.onChunk(text);
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        handleFrame(line);
+      }
     }
-    const finalChunk = decoder.decode();
-    if (finalChunk) options.onChunk(finalChunk);
+    buffer += decoder.decode();
+    if (buffer.trim()) handleFrame(buffer);
   } finally {
     reader.releaseLock();
+  }
+
+  if (!sawDone) {
+    throw new Error("Analysis ended unexpectedly before completing.");
   }
 }
 

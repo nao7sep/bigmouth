@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchWorkspaces,
   openOrCreateWorkspace,
@@ -9,6 +9,9 @@ import type { Workspace } from "../types";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
+import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
+
+const WORKSPACE_PAGE_SIZE = 10;
 
 interface WorkspaceModalProps {
   dismissable: boolean;
@@ -124,11 +127,39 @@ export function WorkspaceModal({
     }
   };
 
-  const sorted = [...workspaces].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+  const sorted = useMemo(
+    () =>
+      [...workspaces].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      ),
+    [workspaces]
   );
   const preferredWorkspaceId =
     sorted.find((ws) => ws.id === activeWorkspaceId)?.id ?? sorted[0]?.id ?? null;
+
+  // The workspace list is one listbox per the composite-control conventions:
+  // one tab stop, arrow navigation, type-ahead by name, Enter/click to open.
+  // The per-row Rename/Delete buttons are pointer-only (not tab stops); deleting
+  // recovers the cursor to a neighbour via the hook's removal recovery.
+  const listComposing = useComposing();
+  const rows: PostListRow[] = useMemo(
+    () => sorted.map((ws) => ({ id: ws.id, label: ws.name })),
+    [sorted]
+  );
+  const handleActivateWorkspace = useCallback(
+    (id: string) => {
+      const ws = sorted.find((w) => w.id === id);
+      if (ws) void onSelect(ws);
+    },
+    [sorted, onSelect]
+  );
+  const { listboxProps, getRowProps, activeId } = usePostListbox({
+    rows,
+    selectedId: preferredWorkspaceId,
+    onActivate: handleActivateWorkspace,
+    pageSize: WORKSPACE_PAGE_SIZE,
+    composingRef: listComposing.composingRef,
+  });
 
   return (
     <ModalShell
@@ -147,71 +178,87 @@ export function WorkspaceModal({
             No workspaces yet. Open or create one to get started.
           </p>
         ) : (
-          <div className="workspace-list">
-            {sorted.map((ws) => (
-              <div key={ws.id} className="workspace-item">
-                {editingId === ws.id ? (
-                  <div className="workspace-edit-row">
-                    <input
-                      className="form-input"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onCompositionStart={renameComposing.handlers.onCompositionStart}
-                      onCompositionEnd={renameComposing.handlers.onCompositionEnd}
-                      onKeyDown={(e) => {
-                        if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
-                        if (e.key === "Enter") handleRename(ws.id);
-                      }}
-                      autoFocus
-                    />
-                    <button className="btn-toolbar" onClick={() => setEditingId(null)}>
-                      Cancel
-                    </button>
-                    <button
-                      className="btn-primary"
-                      style={{ width: "auto", padding: "4px 10px", fontSize: 12 }}
-                      onClick={() => handleRename(ws.id)}
-                      disabled={!editName.trim()}
+          <div className="workspace-list" aria-label="Workspaces" {...listboxProps}>
+            {sorted.map((ws) => {
+              const editing = editingId === ws.id;
+              const rowProps = getRowProps(ws.id);
+              return (
+                <div
+                  key={ws.id}
+                  className={`workspace-item${ws.id === activeId ? " active" : ""}`}
+                  onCompositionStart={listComposing.handlers.onCompositionStart}
+                  onCompositionEnd={listComposing.handlers.onCompositionEnd}
+                  {...rowProps}
+                  // While renaming, the row is not an activation target — the
+                  // edit field owns it (see the inline-editing integration point).
+                  onClick={editing ? undefined : rowProps.onClick}
+                >
+                  {editing ? (
+                    <div
+                      className="workspace-edit-row"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="workspace-item-main"
-                      autoFocus={ws.id === preferredWorkspaceId}
-                      onClick={() => onSelect(ws)}
-                    >
-                      <div className="workspace-item-name">{ws.name}</div>
-                      <div className="workspace-item-dir">{ws.dataDirectory}</div>
-                    </button>
-                    <div className="workspace-item-actions">
-                      <button
-                        className="btn-toolbar"
-                        onClick={(e) => {
+                      <input
+                        className="form-input"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onCompositionStart={renameComposing.handlers.onCompositionStart}
+                        onCompositionEnd={renameComposing.handlers.onCompositionEnd}
+                        onKeyDown={(e) => {
+                          // Keep navigation keys out of the listbox while editing.
                           e.stopPropagation();
-                          setEditingId(ws.id);
-                          setEditName(ws.name);
+                          if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
+                          if (e.key === "Enter") handleRename(ws.id);
+                          if (e.key === "Escape") setEditingId(null);
                         }}
-                      >
-                        Rename
+                        autoFocus
+                      />
+                      <button className="btn-toolbar" onClick={() => setEditingId(null)}>
+                        Cancel
                       </button>
                       <button
-                        className="btn-toolbar btn-delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(ws);
-                        }}
+                        className="btn-primary"
+                        style={{ width: "auto", padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => handleRename(ws.id)}
+                        disabled={!editName.trim()}
                       >
-                        Delete
+                        Save
                       </button>
                     </div>
-                  </>
-                )}
-              </div>
-            ))}
+                  ) : (
+                    <>
+                      <div className="workspace-item-main">
+                        <div className="workspace-item-name">{ws.name}</div>
+                        <div className="workspace-item-dir">{ws.dataDirectory}</div>
+                      </div>
+                      <div className="workspace-item-actions">
+                        <button
+                          className="btn-toolbar"
+                          tabIndex={-1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingId(ws.id);
+                            setEditName(ws.name);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          className="btn-toolbar btn-delete"
+                          tabIndex={-1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(ws);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

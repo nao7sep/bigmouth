@@ -17,7 +17,7 @@ export interface PostFrontMatter {
   sourceId?: string; // nanoid of another post this derives from
   title?: string; // native language
   titleEn?: string; // English supplement (omitted when language is "en")
-  slug?: string; // always English, required for checked/published status
+  slug?: string; // always English; optional — never required to change status
   tags?: string[]; // native language
   metaDescription?: string; // native language
   tagsEn?: string[]; // English supplement (omitted when language is "en")

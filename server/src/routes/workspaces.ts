@@ -11,6 +11,7 @@ import {
   updateWorkspace,
   deleteWorkspace,
 } from "../services/workspaceStore.js";
+import { clearCache } from "../services/postStore.js";
 import * as logger from "../services/logger.js";
 
 export const workspacesRouter = Router();
@@ -123,6 +124,10 @@ workspacesRouter.put("/:id", (req, res) => {
  * Removes a workspace from the registry. Data files on disk are not deleted.
  */
 workspacesRouter.delete("/:id", (req, res) => {
+  // Capture the data directory before removal so the derived in-memory index can
+  // be evicted — otherwise re-opening the same folder later (the README promotes
+  // git-versioned workspace dirs) would serve a stale cached index.
+  const removed = getWorkspace(req.params.id);
   const deleted = deleteWorkspace(req.params.id);
   if (!deleted) {
     logger.warn("workspace delete failed", {
@@ -133,6 +138,8 @@ workspacesRouter.delete("/:id", (req, res) => {
     res.status(404).json({ error: "Workspace not found" });
     return;
   }
+
+  if (removed) clearCache(removed.dataDirectory);
 
   logger.info("workspace removed from registry", {
     requestId: res.locals.requestId ?? null,

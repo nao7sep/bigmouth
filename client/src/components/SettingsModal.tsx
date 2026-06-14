@@ -161,7 +161,9 @@ export function SettingsModal({
     return true;
   };
 
-  const canSave = !saving && isValid();
+  // Save requires both dirty and valid: re-persisting an unchanged form is a
+  // no-op that the convention asks us to disable.
+  const canSave = !saving && isDirty && isValid();
 
   const { tablistProps, getTabProps, getPanelProps } = useTablist<Tab>({
     tabs: TABS,

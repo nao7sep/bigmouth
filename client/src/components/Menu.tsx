@@ -7,6 +7,9 @@ import {
 } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
+import { typeAheadMatch } from "../util/compositeNav";
+
+const TYPE_AHEAD_RESET_MS = 700;
 
 // The app's in-app menu layer: a trigger plus a popup list of commands that
 // behaves like a real menu, realizing the composite-control contract for a menu:
@@ -50,6 +53,15 @@ export function Menu({ label, trigger, children }: MenuProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { composingRef, handlers } = useComposing();
+  // Type-ahead buffer with idle reset (same behaviour as the post listbox).
+  const queryRef = useRef("");
+  const queryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (queryTimerRef.current) clearTimeout(queryTimerRef.current);
+    },
+    [],
+  );
 
   const items = (): HTMLElement[] =>
     contentRef.current
@@ -107,11 +119,17 @@ export function Menu({ label, trigger, children }: MenuProps) {
       !e.altKey &&
       !isComposingKeyboardEvent(composingRef, e)
     ) {
-      // Type-ahead: jump to the next item whose label starts with the key,
-      // searching forward from the current item and wrapping once.
-      const ch = e.key.toLowerCase();
-      const order = [...all.slice(current + 1), ...all.slice(0, current + 1)];
-      order.find((el) => el.textContent?.trim().toLowerCase().startsWith(ch))?.focus();
+      // Type-ahead: accumulate the typed string and jump to the next item whose
+      // label starts with it, searching forward from the current item.
+      e.preventDefault();
+      queryRef.current += e.key;
+      if (queryTimerRef.current) clearTimeout(queryTimerRef.current);
+      queryTimerRef.current = setTimeout(() => {
+        queryRef.current = "";
+      }, TYPE_AHEAD_RESET_MS);
+      const labels = all.map((el) => el.textContent?.trim() ?? "");
+      const match = typeAheadMatch(labels, current, queryRef.current);
+      if (match !== -1) all[match]?.focus();
     }
   };
 

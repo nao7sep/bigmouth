@@ -15,6 +15,7 @@ import {
   isDebugLoggingEnabled,
 } from "./services/logger.js";
 import { DEFAULT_HOST, DEFAULT_PORT, MAX_REQUEST_BODY_BYTES } from "./shared/defaults.js";
+import { isAllowedOrigin } from "./shared/origin.js";
 import { resolveWorkspace } from "./middleware/workspaceResolver.js";
 import { workspacesRouter } from "./routes/workspaces.js";
 import { logsRouter } from "./routes/logs.js";
@@ -53,27 +54,12 @@ let nextRequestId = 1;
 //   * Origin matches the Vite dev server on loopback → allow.
 //   * Origin appears in app.json `allowedOrigins` → allow.
 //   * Anything else → 403.
-const DEV_ORIGINS = new Set<string>([
-  "http://127.0.0.1:5273",
-  "http://localhost:5273",
-]);
-
+// The policy itself lives in shared/origin.ts so it can be unit-tested.
 const configuredOrigins = new Set<string>(appConfig.allowedOrigins);
-
-function isAllowedOrigin(origin: string): boolean {
-  if (
-    origin === `http://127.0.0.1:${port}` ||
-    origin === `http://localhost:${port}`
-  ) {
-    return true;
-  }
-  if (DEV_ORIGINS.has(origin)) return true;
-  return configuredOrigins.has(origin);
-}
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && !isAllowedOrigin(origin)) {
+  if (origin && !isAllowedOrigin(origin, port, appConfig.allowedOrigins)) {
     res.status(403).json({ error: "Forbidden origin" });
     return;
   }
@@ -81,6 +67,15 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: MAX_REQUEST_BODY_BYTES }));
+
+// Normalize an absent or non-JSON request body to an empty object. Express 5
+// leaves `req.body` undefined when the content-type isn't application/json, so
+// routes that destructure it would throw a 500; an empty object lets each
+// route's own required-field validation return a clean 400 instead.
+app.use((req, _res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 
 // Summarizes a request's query/body for logging by shape only — the field NAMES
 // for a plain object, a length for an array, a type tag otherwise. Never the

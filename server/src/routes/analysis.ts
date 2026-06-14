@@ -164,8 +164,16 @@ analysisRouter.post("/stream", async (req, res) => {
   const request = await resolveAnalysisRequest(req, res);
   if (!request) return;
 
+  // The response is a stream of newline-delimited JSON frames:
+  //   {"type":"delta","text":"..."}   incremental output
+  //   {"type":"done"}                 the model completed normally
+  //   {"type":"error","message":"..."} the generation failed mid-stream
+  // The explicit `done`/`error` framing is what lets the client tell a complete
+  // analysis from one cut short — a raw text body cannot, because once bytes are
+  // sent the HTTP status is already 200 and a late failure looks like success.
   let clientClosed = false;
-  let wroteChunk = false;
+  let headerWritten = false;
+  let wroteDelta = false;
   logInfo("analysis stream started", {
     requestId: res.locals.requestId ?? null,
     workspace: res.locals.workspaceId ?? null,
@@ -180,17 +188,27 @@ analysisRouter.post("/stream", async (req, res) => {
     ai: safeAiConfigLogContext(request.aiConfig),
     post: safePostLogContext(request.post),
   });
+
+  type StreamFrame =
+    | { type: "delta"; text: string }
+    | { type: "done" }
+    | { type: "error"; message: string };
+  const writeFrame = (frame: StreamFrame): void => {
+    if (!headerWritten) {
+      res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache");
+      headerWritten = true;
+    }
+    res.write(JSON.stringify(frame) + "\n");
+  };
+
   const stream = request.provider.generateTextStream(
     request.systemPrompt,
     request.userContent,
     (delta) => {
-      if (clientClosed) return;
-      wroteChunk = true;
-      if (!res.headersSent) {
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.setHeader("Cache-Control", "no-cache");
-      }
-      res.write(delta);
+      if (clientClosed || delta.length === 0) return;
+      wroteDelta = true;
+      writeFrame({ type: "delta", text: delta });
     }
   );
 
@@ -203,7 +221,7 @@ analysisRouter.post("/stream", async (req, res) => {
       workspace: res.locals.workspaceId ?? null,
       postId: request.postId,
       promptName: request.promptName,
-      wroteChunk,
+      wroteDelta,
     });
   };
   req.on("close", closeHandler);
@@ -211,16 +229,15 @@ analysisRouter.post("/stream", async (req, res) => {
   try {
     const finalText = await stream.finished;
     if (clientClosed) return;
-    if (!wroteChunk) {
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache");
-      res.write(finalText);
-    }
+    // Robustness: if the provider produced text without emitting incremental
+    // events, send it as one delta before closing.
+    if (!wroteDelta && finalText) writeFrame({ type: "delta", text: finalText });
+    writeFrame({ type: "done" });
     logInfo("analysis stream completed", {
       requestId: res.locals.requestId ?? null,
       workspace: res.locals.workspaceId ?? null,
       postId: request.postId,
-      wroteChunk,
+      wroteDelta,
       resultLength: finalText.length,
     });
     res.end();
@@ -241,15 +258,20 @@ analysisRouter.post("/stream", async (req, res) => {
           target: request.post.frontMatter.target,
           metadataKeys: metadataKeys(request.post.frontMatter),
           ai: safeAiConfigLogContext(request.aiConfig),
-          wroteChunk,
+          wroteDelta,
         },
       },
       err
     );
-    if (!res.headersSent) {
-      res.status(502).type("text/plain").send(err instanceof Error ? err.message : details);
+    const message = err instanceof Error ? err.message : details;
+    if (!headerWritten) {
+      // Nothing sent yet: a plain HTTP error the client surfaces as a failure.
+      res.status(502).json({ error: message });
       return;
     }
+    // Bytes already streamed: tell the client explicitly so the partial text is
+    // never mistaken for a complete analysis.
+    writeFrame({ type: "error", message });
     res.end();
   } finally {
     req.off("close", closeHandler);

@@ -270,7 +270,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const handlePostDeleted = useCallback(() => {
       if (!sessionAliveRef.current) return;
       const deletedId = selectedPostIdRef.current;
-      setNavHistory([]);
+      // Drop only the deleted post from the back stack (it can't be navigated to
+      // anymore), keeping the rest so Back still works through the other posts.
+      setNavHistory((history) => history.filter((id) => id !== deletedId));
 
       // Delete always targets the open post, so it lives in exactly one loaded
       // section. Drop it from that section and move the selection to its

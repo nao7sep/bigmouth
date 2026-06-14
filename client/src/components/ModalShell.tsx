@@ -50,7 +50,12 @@ export function ModalShell({
       const first = surface.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
       (first ?? surface).focus();
     }
-    return () => previouslyFocused?.focus?.();
+    return () => {
+      // Only restore focus if the trigger still exists. The modal's own action
+      // can remove it from the DOM (e.g. New Post replaces the list it was
+      // opened from); focusing a detached node silently drops focus to <body>.
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
   }, []);
 
   // Trap Tab/Shift+Tab within this surface. The handler lives on the surface,

@@ -13,6 +13,7 @@ import { SourcePickerModal } from "./SourcePickerModal";
 import { ConfirmModal } from "./ConfirmModal";
 import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { useRadioGroup } from "../hooks/useRadioGroup";
 
 interface CenterPaneProps {
   workspaceId: string;
@@ -41,6 +42,8 @@ const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
   { value: "checked", label: "Checked" },
   { value: "published", label: "Published" },
 ];
+
+const STATUS_VALUES: PostStatus[] = STATUS_OPTIONS.map((o) => o.value);
 
 export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function CenterPane(
   {
@@ -243,6 +246,17 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     void applyStatusChange(newStatus);
   };
 
+  // Status switcher: a manual-activation radiogroup, so arrowing only moves the
+  // cursor and Space/Enter (or a click) commits — a status change flushes saves
+  // and hits the network, so it must not fire on focus move the way a native
+  // radio would. `value` falls back to "draft" only while no post is loaded (the
+  // group isn't rendered then).
+  const { radioGroupProps, getRadioProps } = useRadioGroup<PostStatus>({
+    values: STATUS_VALUES,
+    value: post?.frontMatter.status ?? "draft",
+    onCommit: handleStatusChange,
+  });
+
   const openDeleteConfirm = async () => {
     try {
       const { count } = await fetchReferrers(postId, workspaceId);
@@ -333,18 +347,16 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         <span className="toolbar-sep">|</span>
         <span className="toolbar-label">{fm.language}</span>
         <span className="toolbar-sep">|</span>
-        <div className="status-radios" role="radiogroup" aria-label="Post status">
+        <div className="status-radios" aria-label="Post status" {...radioGroupProps}>
           {STATUS_OPTIONS.map(({ value, label }) => (
-            <label key={value} className={`status-radio${fm.status === value ? " active" : ""}`}>
-              <input
-                type="radio"
-                name="post-status"
-                value={value}
-                checked={fm.status === value}
-                onChange={() => handleStatusChange(value)}
-              />
+            <button
+              key={value}
+              type="button"
+              className={`status-radio${fm.status === value ? " active" : ""}`}
+              {...getRadioProps(value)}
+            >
               {label}
-            </label>
+            </button>
           ))}
         </div>
         <span className="toolbar-sep">|</span>
