@@ -12,6 +12,10 @@ interface ModalShellProps {
   showClose?: boolean;
   autoFocusClose?: boolean;
   modalStyle?: CSSProperties;
+  // When a non-interruptible operation is running, disable every close path
+  // (backdrop, close button) and mark the surface busy. Escape is gated by the
+  // owner's close guard. Defaults to false.
+  closeDisabled?: boolean;
 }
 
 // Anything the browser will focus, in document order. Excludes explicitly
@@ -31,6 +35,7 @@ export function ModalShell({
   showClose = true,
   autoFocusClose = false,
   modalStyle,
+  closeDisabled = false,
 }: ModalShellProps) {
   useModalLayer(onClose);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -75,7 +80,7 @@ export function ModalShell({
   };
 
   return (
-    <div className="modal-backdrop" onClick={closeOnBackdrop ? onClose : undefined}>
+    <div className="modal-backdrop" onClick={closeOnBackdrop && !closeDisabled ? onClose : undefined}>
       <div
         ref={modalRef}
         className="modal"
@@ -85,6 +90,7 @@ export function ModalShell({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-busy={closeDisabled || undefined}
         tabIndex={-1}
       >
         <div className="modal-header">
@@ -93,6 +99,7 @@ export function ModalShell({
             <button
               className="modal-close"
               onClick={onClose}
+              disabled={closeDisabled}
               autoFocus={autoFocusClose}
               aria-label="Close"
             >

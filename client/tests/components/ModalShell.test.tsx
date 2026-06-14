@@ -113,6 +113,39 @@ describe("ModalShell focus restore", () => {
   });
 });
 
+describe("ModalShell closeDisabled", () => {
+  it("routes a backdrop click to onClose by default", () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <ModalShell title="X" onClose={onClose} showClose={false}>
+        body
+      </ModalShell>
+    );
+    fireEvent.click(container.querySelector(".modal-backdrop")!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes the backdrop inert when closeDisabled", () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <ModalShell title="X" onClose={onClose} showClose={false} closeDisabled>
+        body
+      </ModalShell>
+    );
+    fireEvent.click(container.querySelector(".modal-backdrop")!);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("disables the close button when closeDisabled", () => {
+    const { getByLabelText } = render(
+      <ModalShell title="X" onClose={() => {}} closeDisabled>
+        body
+      </ModalShell>
+    );
+    expect((getByLabelText("Close") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe("ModalShell unmount", () => {
   function Harness({ show }: { show: boolean }) {
     return show ? (

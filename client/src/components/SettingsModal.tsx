@@ -138,6 +138,7 @@ export function SettingsModal({
     JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
 
   const handleRequestClose = () => {
+    if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
     if (!isDirty) { onClose(); return; }
     setShowDiscardConfirm(true);
   };
@@ -279,6 +280,7 @@ export function SettingsModal({
         onClose={handleRequestClose}
         width={560}
         maxHeight="85vh"
+        closeDisabled={saving}
       >
         {loadError ? (
           <div className="modal-body">
@@ -358,6 +360,7 @@ export function SettingsModal({
           message="You have unsaved changes. Discard them and close?"
           confirmLabel="Discard"
           cancelLabel="Keep Editing"
+          danger
           onConfirm={onClose}
           onCancel={() => setShowDiscardConfirm(false)}
         />

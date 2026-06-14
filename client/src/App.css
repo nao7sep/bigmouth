@@ -913,8 +913,14 @@ body {
   padding: 0 4px;
 }
 
-.modal-close:hover {
+.modal-close:hover:not(:disabled) {
   color: var(--bm-text);
+}
+
+.modal-close:disabled {
+  cursor: default;
+  color: var(--bm-text-muted);
+  opacity: 0.5;
 }
 
 .modal-body {
