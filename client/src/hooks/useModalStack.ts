@@ -32,6 +32,11 @@ function notify() {
 
 function handleDocumentKeyDown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
+  // While an IME composition is in progress, Escape cancels the candidate and
+  // belongs to the IME, not the modal stack. (Mirrors isComposingKeyboardEvent;
+  // no composition ref exists at the document level, so the native isComposing
+  // flag plus the legacy keyCode === 229 fallback are the signal.)
+  if (event.isComposing || event.keyCode === 229) return;
   const topmost = layers[layers.length - 1];
   if (!topmost) return;
   event.preventDefault();

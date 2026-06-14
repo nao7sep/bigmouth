@@ -55,6 +55,24 @@ describe("modal stack — topmost-only Escape", () => {
     expect(onCloseFirst).toHaveBeenCalledTimes(1);
     expect(onCloseSecond).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores Escape while an IME composition is in progress", () => {
+    const onCloseFirst = vi.fn();
+    const onCloseSecond = vi.fn();
+    render(
+      <StackHarness showSecond onCloseFirst={onCloseFirst} onCloseSecond={onCloseSecond} />
+    );
+
+    // Escape during composition cancels the IME candidate, not the modal.
+    fireEvent.keyDown(document, { key: "Escape", isComposing: true });
+    expect(onCloseSecond).not.toHaveBeenCalled();
+    expect(onCloseFirst).not.toHaveBeenCalled();
+
+    // Once composition has ended, Escape closes the topmost layer again.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCloseSecond).toHaveBeenCalledTimes(1);
+    expect(onCloseFirst).not.toHaveBeenCalled();
+  });
 });
 
 describe("modal stack — shortcut suppression", () => {
