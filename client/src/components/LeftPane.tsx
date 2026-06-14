@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PostSummary } from "../types";
 import { getPostTitle } from "../util/postTitle";
 import { formatLocalDateTime } from "../util/timestamps";
+import { useComposing } from "../hooks/useComposing";
+import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
+import { flatPostListIds } from "../util/compositeNav";
+import { Menu, MenuItem } from "./Menu";
+
+// One viewport's worth of rows for PageUp/PageDown. The list scrolls but rows
+// are a fixed-ish height; a constant step is the conventional approximation.
+const PAGE_SIZE = 10;
 
 interface LeftPaneProps {
   drafts: PostSummary[];
@@ -18,6 +26,19 @@ interface LeftPaneProps {
   onRevealCurrentLogFile: () => Promise<void> | void;
   onSwitchWorkspace: () => void;
   workspaceName: string;
+}
+
+interface SectionDef {
+  key: string;
+  label: string;
+  posts: PostSummary[];
+  open: boolean;
+  toggle: () => void;
+  emptyText: string;
+  timestampField: string;
+  totalCount?: number;
+  /** Pointer-only "load more" affordance for this section, if applicable. */
+  onLoadMore?: () => void;
 }
 
 export function LeftPane({
@@ -39,20 +60,72 @@ export function LeftPane({
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [checkedOpen, setCheckedOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { composingRef, handlers } = useComposing();
 
-  // Close menu on outside click
+  const sections: SectionDef[] = [
+    {
+      key: "drafts",
+      label: "Drafts",
+      posts: drafts,
+      open: draftsOpen,
+      toggle: () => setDraftsOpen((v) => !v),
+      emptyText: "No drafts",
+      timestampField: "createdAtUtc",
+    },
+    {
+      key: "checked",
+      label: "Checked",
+      posts: checked,
+      open: checkedOpen,
+      toggle: () => setCheckedOpen((v) => !v),
+      emptyText: "No checked posts",
+      timestampField: "createdAtUtc",
+    },
+    {
+      key: "published",
+      label: "Published",
+      posts: published,
+      open: publishedOpen,
+      toggle: () => setPublishedOpen((v) => !v),
+      emptyText: "No published posts",
+      timestampField: "publishedAtUtc",
+      totalCount: publishedTotal,
+      onLoadMore:
+        published.length < publishedTotal ? onLoadMorePublished : undefined,
+    },
+  ];
+
+  // The three sections are ONE listbox: arrow navigation flows continuously
+  // across them over exactly the currently-rendered rows. Collapsed sections
+  // contribute no navigable rows.
+  const rows: PostListRow[] = useMemo(
+    () =>
+      flatPostListIds(
+        sections.map((s) => ({ open: s.open, items: s.posts })),
+      ).map((p) => ({ id: p.frontMatter.id, label: getPostTitle(p.frontMatter) })),
+    // sections is rebuilt each render from these inputs; depend on the inputs.
+    [drafts, checked, published, draftsOpen, checkedOpen, publishedOpen],
+  );
+
+  const { listboxProps, getRowProps, activeId } = usePostListbox({
+    rows,
+    selectedId: selectedPostId,
+    onActivate: onSelectPost,
+    pageSize: PAGE_SIZE,
+    composingRef,
+  });
+
+  // Auto-load more published posts as the cursor reaches the end of the loaded
+  // set — the conventions' "load more automatically at the end" for a control
+  // whose load-more affordance is not a tab stop. The pointer-only button below
+  // remains for discoverability.
+  const lastRowId = rows.length > 0 ? rows[rows.length - 1].id : null;
+  const canLoadMore = published.length < publishedTotal;
   useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
+    if (canLoadMore && activeId != null && activeId === lastRowId) {
+      onLoadMorePublished();
+    }
+  }, [activeId, lastRowId, canLoadMore, onLoadMorePublished]);
 
   return (
     <div className="pane-left">
@@ -63,99 +136,42 @@ export function LeftPane({
             <button className="btn-new-post-icon" title="New Post" onClick={onNewPost}>
               <span className="plus-icon"><span /><span /></span>
             </button>
-            <div className="hamburger-wrap" ref={menuRef}>
-              <button
-                className="btn-hamburger"
-                title="Menu"
-                onClick={() => setMenuOpen(!menuOpen)}
-              >
-                <span className="hamburger-icon">
-                  <span /><span /><span />
-                </span>
-              </button>
-              {menuOpen && (
-                <div className="hamburger-menu">
-                  <div className="hamburger-menu-workspace">{workspaceName}</div>
-                  <button
-                    className="hamburger-menu-item"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void onRevealCurrentLogFile();
-                    }}
-                  >
-                    Reveal Log
-                  </button>
-                  <button
-                    className="hamburger-menu-item"
-                    onClick={() => { setMenuOpen(false); onSwitchWorkspace(); }}
-                  >
-                    Workspaces
-                  </button>
-                  <button
-                    className="hamburger-menu-item"
-                    onClick={() => { setMenuOpen(false); onOpenSettings(); }}
-                  >
-                    Settings
-                  </button>
-                  <button
-                    className="hamburger-menu-item"
-                    onClick={() => { setMenuOpen(false); onOpenShortcuts(); }}
-                  >
-                    Keyboard Shortcuts
-                  </button>
-                  <button
-                    className="hamburger-menu-item"
-                    onClick={() => { setMenuOpen(false); onOpenAbout(); }}
-                  >
-                    About
-                  </button>
-                </div>
+            <Menu
+              label="Menu"
+              trigger={(props) => (
+                <button className="btn-hamburger" title="Menu" {...props}>
+                  <span className="hamburger-icon">
+                    <span /><span /><span />
+                  </span>
+                </button>
               )}
-            </div>
+            >
+              <div className="menu-label">{workspaceName}</div>
+              <MenuItem onSelect={() => void onRevealCurrentLogFile()}>Reveal Log</MenuItem>
+              <MenuItem onSelect={onSwitchWorkspace}>Workspaces</MenuItem>
+              <MenuItem onSelect={onOpenSettings}>Settings</MenuItem>
+              <MenuItem onSelect={onOpenShortcuts}>Keyboard Shortcuts</MenuItem>
+              <MenuItem onSelect={onOpenAbout}>About</MenuItem>
+            </Menu>
           </div>
         </h1>
       </div>
 
-      <div className="left-sections">
-        <Section
-          label="Drafts"
-          count={drafts.length}
-          open={draftsOpen}
-          onToggle={() => setDraftsOpen(!draftsOpen)}
-          posts={drafts}
-          selectedPostId={selectedPostId}
-          onSelectPost={onSelectPost}
-          emptyText="No drafts"
-          timestampField="createdAtUtc"
-        />
-
-        <Section
-          label="Checked"
-          count={checked.length}
-          open={checkedOpen}
-          onToggle={() => setCheckedOpen(!checkedOpen)}
-          posts={checked}
-          selectedPostId={selectedPostId}
-          onSelectPost={onSelectPost}
-          emptyText="No checked posts"
-          timestampField="createdAtUtc"
-        />
-
-        <Section
-          label="Published"
-          count={published.length}
-          totalCount={publishedTotal}
-          open={publishedOpen}
-          onToggle={() => setPublishedOpen(!publishedOpen)}
-          posts={published}
-          selectedPostId={selectedPostId}
-          onSelectPost={onSelectPost}
-          emptyText="No published posts"
-          timestampField="publishedAtUtc"
-          onLoadMore={
-            published.length < publishedTotal ? onLoadMorePublished : undefined
-          }
-        />
+      <div
+        className="left-sections"
+        aria-label="Posts"
+        {...listboxProps}
+      >
+        {sections.map((section) => (
+          <Section
+            key={section.key}
+            section={section}
+            selectedPostId={selectedPostId}
+            activeId={activeId}
+            getRowProps={getRowProps}
+            composing={handlers}
+          />
+        ))}
       </div>
     </div>
   );
@@ -163,41 +179,31 @@ export function LeftPane({
 
 // --- Section sub-component ---
 
-interface SectionProps {
-  label: string;
-  count: number;
-  totalCount?: number;
-  open: boolean;
-  onToggle: () => void;
-  posts: PostSummary[];
-  selectedPostId: string | null;
-  onSelectPost: (id: string) => void;
-  emptyText: string;
-  timestampField: string;
-  onLoadMore?: () => void;
-}
-
 function Section({
-  label,
-  count,
-  totalCount,
-  open,
-  onToggle,
-  posts,
+  section,
   selectedPostId,
-  onSelectPost,
-  emptyText,
-  timestampField,
-  onLoadMore,
-}: SectionProps) {
+  activeId,
+  getRowProps,
+  composing,
+}: {
+  section: SectionDef;
+  selectedPostId: string | null;
+  activeId: string | null;
+  getRowProps: ReturnType<typeof usePostListbox>["getRowProps"];
+  composing: ReturnType<typeof useComposing>["handlers"];
+}) {
+  const { label, posts, open, toggle, emptyText, timestampField, totalCount, onLoadMore } =
+    section;
   const displayCount =
-    totalCount !== undefined ? `${count}/${totalCount}` : String(count);
+    totalCount !== undefined ? `${posts.length}/${totalCount}` : String(posts.length);
 
   return (
     <>
-      <div className="section-header" onClick={onToggle}>
+      {/* Group header: a non-interactive label, not a tab stop. The collapse
+          toggle is pointer-only (click the header). */}
+      <div className="section-header" role="group" onClick={toggle}>
         <span>
-          {open ? "\u25BC" : "\u25B6"} {label}
+          {open ? "▼" : "▶"} {label}
         </span>
         <span className="section-count">{displayCount}</span>
       </div>
@@ -213,13 +219,19 @@ function Section({
                 key={p.frontMatter.id}
                 post={p}
                 selected={p.frontMatter.id === selectedPostId}
-                onClick={() => onSelectPost(p.frontMatter.id)}
+                active={p.frontMatter.id === activeId}
+                rowProps={getRowProps(p.frontMatter.id)}
+                composing={composing}
                 timestampField={timestampField}
               />
             ))
           )}
           {onLoadMore && (
             <button
+              // Pointer-only: not a tab stop, so it never breaks the listbox's
+              // single tab stop. Keyboard users reach more posts by arrowing to
+              // the end, which auto-loads.
+              tabIndex={-1}
               onClick={onLoadMore}
               style={{
                 width: "100%",
@@ -245,24 +257,28 @@ function Section({
 function PostItem({
   post,
   selected,
-  onClick,
+  active,
+  rowProps,
+  composing,
   timestampField,
 }: {
   post: PostSummary;
   selected: boolean;
-  onClick: () => void;
+  active: boolean;
+  rowProps: ReturnType<ReturnType<typeof usePostListbox>["getRowProps"]>;
+  composing: ReturnType<typeof useComposing>["handlers"];
   timestampField: string;
 }) {
   const fm = post.frontMatter;
   const displayName = getPostTitle(fm);
-  const ts = (fm as Record<string, unknown>)[timestampField] as
-    | string
-    | undefined;
+  const ts = (fm as Record<string, unknown>)[timestampField] as string | undefined;
 
   return (
     <div
-      className={`post-item${selected ? " selected" : ""}`}
-      onClick={onClick}
+      className={`post-item${selected ? " selected" : ""}${active ? " active" : ""}`}
+      onCompositionStart={composing.onCompositionStart}
+      onCompositionEnd={composing.onCompositionEnd}
+      {...rowProps}
     >
       <div className="post-item-title">{displayName}</div>
       <div className="post-item-meta">

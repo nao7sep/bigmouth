@@ -27,6 +27,7 @@ import {
 } from "../generationPromptDefaults";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModalShell } from "./ModalShell";
+import { useTablist } from "../hooks/useTablist";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -39,6 +40,8 @@ type EditableTarget = Target & {
   rowId: string;
   originalName?: string;
 };
+
+const TABS: Tab[] = ["general", "targets", "providers", "analysis", "generation"];
 
 const TAB_LABELS: Record<Tab, string> = {
   general: "General",
@@ -159,6 +162,13 @@ export function SettingsModal({
   };
 
   const canSave = !saving && isValid();
+
+  const { tablistProps, getTabProps, getPanelProps } = useTablist<Tab>({
+    tabs: TABS,
+    selected: tab,
+    onSelect: setTab,
+    idBase: "settings",
+  });
 
   // Commit AI-config edits as a sequence of per-resource calls. Order:
   //   1. Create new configs   (so their ids exist on the server)
@@ -293,19 +303,23 @@ export function SettingsModal({
           </div>
         ) : (
           <>
-            <div className="settings-tabs">
-              {(["general", "targets", "providers", "analysis", "generation"] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  className={`settings-tab${tab === t ? " active" : ""}`}
-                  onClick={() => setTab(t)}
-                >
-                  {TAB_LABELS[t]}
-                </button>
-              ))}
+            <div className="settings-tabs" aria-label="Settings sections" {...tablistProps}>
+              {TABS.map((t) => {
+                const { onClick, ...tabProps } = getTabProps(t);
+                return (
+                  <button
+                    key={t}
+                    className={`settings-tab${tab === t ? " active" : ""}`}
+                    onClick={onClick}
+                    {...tabProps}
+                  >
+                    {TAB_LABELS[t]}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="modal-body">
+            <div className="modal-body" {...getPanelProps(tab)}>
               {tab === "general" && settings && (
                 <GeneralTab
                   settings={settings}

@@ -4,6 +4,7 @@ import { ImagingTab } from "./ImagingTab";
 import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
+import { useTablist } from "../hooks/useTablist";
 import type { PostFrontMatter, PostMutationResult, Target } from "../types";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
@@ -63,6 +64,13 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
     if (effectiveTab !== activeTab) onTabChange(effectiveTab);
   }, [effectiveTab, activeTab, onTabChange]);
 
+  const { tablistProps, getTabProps, getPanelProps } = useTablist<RightTab>({
+    tabs: visibleTabs,
+    selected: effectiveTab,
+    onSelect: onTabChange,
+    idBase: "right",
+  });
+
   useImperativeHandle(
     ref,
     () => ({
@@ -73,19 +81,26 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
 
   return (
     <div className="pane-right">
-      <div className="right-tabs">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab}
-            className={`right-tab${effectiveTab === tab ? " active" : ""}`}
-            onClick={() => onTabChange(tab)}
-          >
-            {tab}
-          </button>
-        ))}
+      <div className="right-tabs" aria-label="Tools" {...tablistProps}>
+        {visibleTabs.map((tab) => {
+          const { onClick, ...tabProps } = getTabProps(tab);
+          return (
+            <button
+              key={tab}
+              className={`right-tab${effectiveTab === tab ? " active" : ""}`}
+              onClick={onClick}
+              {...tabProps}
+            >
+              {tab}
+            </button>
+          );
+        })}
       </div>
       <div className="right-content">
-        <div className={effectiveTab === "Analysis" ? "" : "tab-hidden"}>
+        <div
+          {...getPanelProps("Analysis")}
+          className={effectiveTab === "Analysis" ? "" : "tab-hidden"}
+        >
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
@@ -97,14 +112,20 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             />
           )}
         </div>
-        <div className={effectiveTab === "Imaging" ? "" : "tab-hidden"}>
+        <div
+          {...getPanelProps("Imaging")}
+          className={effectiveTab === "Imaging" ? "" : "tab-hidden"}
+        >
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
             <ImagingTab postId={postId} content={content} />
           )}
         </div>
-        <div className={effectiveTab === "Preview" ? "" : "tab-hidden"}>
+        <div
+          {...getPanelProps("Preview")}
+          className={effectiveTab === "Preview" ? "" : "tab-hidden"}
+        >
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
@@ -112,7 +133,10 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
           )}
         </div>
         {showMetadata && (
-          <div className={effectiveTab === "Metadata" ? "" : "tab-hidden"}>
+          <div
+            {...getPanelProps("Metadata")}
+            className={effectiveTab === "Metadata" ? "" : "tab-hidden"}
+          >
             {loading || !frontMatter ? (
               <RightPanePlaceholder message="Loading metadata…" />
             ) : (
@@ -131,7 +155,10 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             )}
           </div>
         )}
-        <div className={effectiveTab === "Assets" ? "" : "tab-hidden"}>
+        <div
+          {...getPanelProps("Assets")}
+          className={effectiveTab === "Assets" ? "" : "tab-hidden"}
+        >
           {loading ? (
             <RightPanePlaceholder message="Loading assets…" />
           ) : (

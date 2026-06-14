@@ -320,6 +320,17 @@ All workspace-scoped routes are prefixed with `/api/w/:wsId/`. Workspace managem
 | Cmd/Ctrl + 4 | Switch to Preview tab |
 | Cmd/Ctrl + 5 | Switch to Metadata tab |
 
+These Cmd/Ctrl shortcuts are global: they work from anywhere in the app (except while a dialog is open or a text field has focus), independent of where the keyboard cursor sits.
+
+### List, tab, menu, and radio navigation
+
+The post list, the tab bars, the hamburger menu, and the export format selector are each a single composite control: one Tab press enters it, the arrow keys move inside it, and one Tab press leaves it.
+
+- **Post list (left)** — the Drafts / Checked / Published sections are **one list with a single Tab stop**. The arrow keys flow continuously across all three sections (collapsed sections are skipped). Up/Down move by one, Home/End jump to the first/last post, PageUp/PageDown move by a screen, and **type-ahead** jumps to the next post whose title starts with what you type. Moving the cursor does **not** open a post — selecting a post can discard in-progress editor work, so opening is **manual**: press **Enter** (or Space) to open the post under the cursor. Collapse a section by clicking its header (pointer only); more published posts load automatically as the cursor reaches the end of the list.
+- **Right-pane tool tabs and Settings tabs** — one Tab stop per tab bar. **Left/Right** (and Home/End) move between tabs, and the panel switches **as soon as the tab is focused** (no Enter needed), because swapping the view is cheap. The global **Cmd/Ctrl + 1..5** shortcuts above still jump straight to a right-pane tab from anywhere.
+- **Hamburger menu** — the menu button is the single Tab stop. Opening moves focus into the menu; **Up/Down** (and Home/End) move between items, type-ahead jumps by label, **Enter/Space** runs the item and closes the menu, and **Esc** (or Tab, or an outside click) closes it and returns focus to the button.
+- **Export format** — a native radio group: arrow keys move between HTML and Plain Text, switching the preview as the choice is focused.
+
 ## LAN access
 
 By default bigmouth is loopback-only. To use one machine as the server and edit posts from another device on the same network (a laptop, an iPad, etc.), edit `~/.bigmouth/app.json` on the server machine:

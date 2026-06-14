@@ -14,6 +14,11 @@ interface ExportModalProps {
 
 type ExportFormat = "html" | "text";
 
+const EXPORT_FORMATS: { value: ExportFormat; label: string }[] = [
+  { value: "html", label: "HTML" },
+  { value: "text", label: "Plain Text" },
+];
+
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   const [format, setFormat] = useState<ExportFormat>("html");
   const { copiedKey, copy } = useCopyFeedback();
@@ -41,19 +46,25 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
   return (
     <ModalShell title="Export" onClose={onClose}>
-      <div className="export-format-tabs">
-        <button
-          className={`export-format-tab${format === "html" ? " active" : ""}`}
-          onClick={() => setFormat("html")}
-        >
-          HTML
-        </button>
-        <button
-          className={`export-format-tab${format === "text" ? " active" : ""}`}
-          onClick={() => setFormat("text")}
-        >
-          Plain Text
-        </button>
+      {/* Native radio group: one composite control, one tab stop, arrow
+          navigation and accessibility for free; activation follows focus
+          (native). Mirrors the CenterPane status radios. */}
+      <div className="export-format-radios" role="radiogroup" aria-label="Export format">
+        {EXPORT_FORMATS.map(({ value, label }) => (
+          <label
+            key={value}
+            className={`export-format-radio${format === value ? " active" : ""}`}
+          >
+            <input
+              type="radio"
+              name="export-format"
+              value={value}
+              checked={format === value}
+              onChange={() => setFormat(value)}
+            />
+            {label}
+          </label>
+        ))}
       </div>
 
       <pre className="export-preview">
