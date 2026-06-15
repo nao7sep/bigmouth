@@ -2,6 +2,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $scriptExitCode = 0
 
+# run-built: launch the EXISTING production build of bigmouth without
+# rebuilding, so it starts instantly. This is the daily-use launcher and the
+# one that surfaces production-only failures (strict CSP, same-origin serving).
+# It never installs or builds — if you changed source, run rebuild first. The
+# production server serves the built client from the same port (:3141), so the
+# browser opens at the SERVER port.
+
 function Set-Utf8Console {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [Console]::InputEncoding = $utf8NoBom
@@ -53,8 +60,6 @@ function Stop-Port {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
-$serverDir = Join-Path $repoDir "server"
-$clientDir = Join-Path $repoDir "client"
 $browserJob = $null
 
 try {
@@ -64,41 +69,45 @@ try {
 
     Set-Location $repoDir
 
+    # No build, no dependency install here: this launcher must start instantly. If
+    # there is no usable build yet, stop and point at rebuild rather than launching
+    # something stale or empty.
+    if (-not ((Test-Path "client/dist/index.html") -and (Test-Path "server/dist/index.js"))) {
+        throw "No production build found — run rebuild first."
+    }
+
+    $builtAt = (Get-Item "client/dist/index.html").LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+    Write-Step "Launching the existing production build (built: $builtAt)"
+    Write-Host "If you changed source since then, run rebuild instead."
+
     Write-Step "Stopping stale BigMouth listeners"
     Stop-Port 3141
-    Stop-Port 5273
 
-    Write-Step "Installing root dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
-
-    Write-Step "Installing server dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--prefix", $serverDir)
-
-    Write-Step "Installing client dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--prefix", $clientDir)
-
-    Write-Step "Waiting to open the browser when the server and client respond"
+    Write-Step "Waiting to open the browser when the production server responds"
     $browserJob = Start-Job -ScriptBlock {
-        param([string]$ServerUrl, [string]$ClientUrl)
+        param([string]$ServerUrl, [string]$OpenUrl)
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             try {
                 Invoke-WebRequest -Uri $ServerUrl -UseBasicParsing -TimeoutSec 2 | Out-Null
-                Invoke-WebRequest -Uri $ClientUrl -UseBasicParsing -TimeoutSec 2 | Out-Null
-                Start-Process $ClientUrl
+                Start-Process $OpenUrl
                 return
             }
             catch {
                 Start-Sleep -Seconds 1
             }
         }
-    } -ArgumentList "http://127.0.0.1:3141/api/health", "http://localhost:5273"
+    } -ArgumentList "http://127.0.0.1:3141/api/health", "http://localhost:3141"
 
-    Write-Step "Starting server and client in development mode"
-    Invoke-Native -FilePath "npm" -ArgumentList @("run", "dev") -AllowedExitCodes @(0, 130, -1073741510)
+    # The production server serves the built client from the same origin on :3141.
+    # NODE_ENV=production enables production behavior. The root has no `start`
+    # script, so the server's own start script is invoked via the prefix form.
+    Write-Step "Starting the production server (NODE_ENV=production)"
+    $env:NODE_ENV = "production"
+    Invoke-Native -FilePath "npm" -ArgumentList @("--prefix", "server", "run", "start") -AllowedExitCodes @(0, 130, -1073741510)
 }
 catch {
     Write-Host ""
-    Write-Host "bigmouth run failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "bigmouth run-built failed: $($_.Exception.Message)" -ForegroundColor Red
     $scriptExitCode = 1
 }
 finally {

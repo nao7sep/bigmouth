@@ -160,6 +160,52 @@ app.use("/api/w/:wsId/assets", assetsRouter);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(__dirname, "../../client/dist");
 if (fs.existsSync(clientDist)) {
+  // Production Content-Security-Policy for the served SPA document.
+  //
+  // The launcher conventions require the production server to emit a non-null,
+  // strict CSP on the document it serves (run-built/rebuild exist precisely to
+  // surface CSP violations the dev server hides). This is the document-level
+  // policy; it is unrelated to the per-file `sandbox` CSP that routes/assets.ts
+  // sets on raw uploaded files, which isolates those files in their own origin.
+  //
+  // The policy is as strict as the built client allows. Justification, by
+  // directive, from the source and the built output:
+  //   * script-src 'self' — the built index.html references only external
+  //     same-origin module scripts; there is no inline script, no eval / new
+  //     Function, and no WebAssembly instantiation (the only "WebAssembly"
+  //     reference is a CodeMirror language-mode name, not a wasm runtime).
+  //   * style-src 'self' 'unsafe-inline' — CodeMirror injects its editor theme
+  //     as runtime <style> elements (via style-mod) with no nonce, so a bare
+  //     'self' would break the editor's layout. Bundled CSS is same-origin.
+  //   * img-src 'self' data: — <img> sources resolve to the same-origin asset
+  //     endpoint; data: covers inline image URIs that sanitized markdown may
+  //     carry. No remote or blob: image sources exist.
+  //   * connect-src 'self' — every fetch targets a relative /api path; there is
+  //     no WebSocket, EventSource, or cross-origin request.
+  //   * default-src / font-src / media-src 'self' — no remote fonts and no
+  //     audio/video playback; everything else stays same-origin.
+  //   * object-src 'none', base-uri 'self', form-action 'self',
+  //     frame-ancestors 'none' — hardening; the app embeds no plugins, posts no
+  //     cross-origin forms, and must not be framed.
+  const CONTENT_SECURITY_POLICY = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "media-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+
+  app.use((_req, res, next) => {
+    res.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+    next();
+  });
+
   app.use(express.static(clientDist));
   // SPA fallback: any non-/api GET that didn't match a static file serves
   // index.html so client-side navigation works on hard reload.

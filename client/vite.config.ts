@@ -16,7 +16,7 @@ export default defineConfig({
   },
   server: {
     // Pinned to 5273 instead of Vite's default 5173 so the launcher's
-    // port-kill (scripts/run.command) only ever clears this app's port and
+    // port-kill (scripts/run-dev.command) only ever clears this app's port and
     // never some other local dev server squatting the shared 5173 default.
     port: 5273,
     proxy: {
