@@ -63,6 +63,26 @@ imagingRouter.post("/", async (req, res) => {
     return;
   }
 
+  // Reject out-of-set option values rather than silently coercing them to a default,
+  // so a caller never gets prompts generated under options it did not request.
+  const optionErrors: string[] = [];
+  if (count !== undefined && !IMAGING_COUNTS.includes(count as (typeof IMAGING_COUNTS)[number]))
+    optionErrors.push("count");
+  if (relation !== undefined && !IMAGING_RELATIONS.includes(relation as (typeof IMAGING_RELATIONS)[number]))
+    optionErrors.push("relation");
+  if (emotionalLens !== undefined && !IMAGING_MOODS.includes(emotionalLens as (typeof IMAGING_MOODS)[number]))
+    optionErrors.push("emotionalLens");
+  if (literalness !== undefined && !IMAGING_LITERALNESS.includes(literalness as (typeof IMAGING_LITERALNESS)[number]))
+    optionErrors.push("literalness");
+  if (people !== undefined && !IMAGING_PEOPLE.includes(people as (typeof IMAGING_PEOPLE)[number]))
+    optionErrors.push("people");
+  if (style !== undefined && !IMAGING_STYLES.includes(style as (typeof IMAGING_STYLES)[number]))
+    optionErrors.push("style");
+  if (optionErrors.length > 0) {
+    res.status(400).json({ error: `Invalid imaging option(s): ${optionErrors.join(", ")}` });
+    return;
+  }
+
   const options: ImagingOptions = {
     count:
       typeof count === "number" && IMAGING_COUNTS.includes(count as (typeof IMAGING_COUNTS)[number])
