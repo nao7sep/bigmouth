@@ -314,6 +314,7 @@ export function SettingsModal({
                     className={`settings-tab${tab === t ? " active" : ""}`}
                     onClick={onClick}
                     {...tabProps}
+                    autoFocus={t === tab}
                   >
                     {TAB_LABELS[t]}
                   </button>
@@ -428,7 +429,6 @@ function GeneralTab({
           className="form-input"
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
-          autoFocus
         />
         {timezoneError && <FieldError msg={timezoneError} />}
       </div>
@@ -585,7 +585,6 @@ function AiTab({
           onChange={(e) =>
             onChange({ ...aiConfigs, activeId: e.target.value })
           }
-          autoFocus
         >
           {aiConfigs.configs.map((c) => (
             <option key={c.id} value={c.id}>
@@ -723,7 +722,6 @@ function TargetsTab({
                 className="form-input"
                 value={t.name}
                 onChange={(e) => updateTarget(i, { name: e.target.value })}
-                autoFocus={i === 0}
               />
             {!t.name.trim() && <FieldError msg="Name is required." />}
             {t.name.trim() && duplicateNames.has(t.name.trim()) && <FieldError msg="This name is already used by another target." />}
@@ -771,7 +769,7 @@ function TargetsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget} autoFocus={targets.length === 0}>
+      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget}>
         + Add Target
       </button>
     </div>
@@ -822,7 +820,6 @@ function GenerationTab({
               value={current}
               onChange={(e) => updatePrompt(key, e.target.value)}
               style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
-              autoFocus={index === 0}
             />
           </div>
         );
@@ -878,7 +875,6 @@ function AnalysisPromptsTab({
                 className="form-input"
                 value={p.name}
                 onChange={(e) => updatePrompt(i, { name: e.target.value })}
-                autoFocus={i === 0}
               />
             {!p.name.trim() && <FieldError msg="Name is required." />}
           </div>
@@ -904,7 +900,7 @@ function AnalysisPromptsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addPrompt} autoFocus={prompts.length === 0}>
+      <button className="btn-toolbar" onClick={addPrompt}>
         + Add Prompt
       </button>
     </div>
