@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-The server starts on `http://localhost:3141`. Open it and create a workspace to begin.
+In dev, open the Vite UI at `http://localhost:5273` (the `npm run dev` flow serves the frontend there and proxies API calls to the backend on port 3141). Create a workspace to begin.
 
 ## License
 

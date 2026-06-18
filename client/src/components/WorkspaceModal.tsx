@@ -306,7 +306,7 @@ export function WorkspaceModal({
             }}
           />
           <p className="settings-hint">
-            Blank uses the default workspace folder. Missing folders are created; existing folders must be empty or already be a complete BigMouth workspace. `~/` works on macOS and Linux.
+            Blank uses the default workspace folder. Missing folders are created; existing folders must be empty or already be a complete BigMouth workspace. `~/` works on every platform.
           </p>
         </div>
         {error && <p className="settings-field-error">{error}</p>}

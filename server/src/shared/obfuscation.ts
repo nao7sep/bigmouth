@@ -1,5 +1,5 @@
 /**
- * Toy obfuscation for API keys stored in settings.json.
+ * Toy obfuscation for API keys stored in ai-configs.json.
  *
  * This is NOT encryption. It only makes keys not plainly visible when
  * someone glances at the file. If an attacker has filesystem access,
