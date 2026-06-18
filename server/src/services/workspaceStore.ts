@@ -27,15 +27,35 @@ let logsDir: string | null = null;
 let defaultWorkspacesDir: string | null = null;
 
 /**
+ * The single path-expansion pipeline for the app. Expands a leading ~ / ~/ / ~\
+ * to `base`, substitutes $VAR / %VAR% environment references (an unknown
+ * reference is left literal), and resolves the result to an absolute path
+ * against `base` — never against the working directory, so a relative value can
+ * never be interpreted relative to how the app happened to be launched.
+ *
+ * Both the BIGMOUTH_HOME storage root and every user-supplied workspace
+ * directory resolve through this one function, so the two cannot diverge in how
+ * they expand ~, $VAR, or %VAR%, and neither can fall through to process.cwd().
+ */
+function expandAndResolve(input: string, base: string): string {
+  let value = input.trim();
+  if (value === "~") {
+    value = base;
+  } else if (value.startsWith("~/") || value.startsWith("~\\")) {
+    value = path.join(base, value.slice(2));
+  }
+  value = value
+    .replace(/\$(\w+)/g, (match, name: string) => process.env[name] ?? match)
+    .replace(/%([^%]+)%/g, (match, name: string) => process.env[name] ?? match);
+  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(base, value);
+}
+
+/**
  * Resolves the single storage root: BIGMOUTH_HOME when set and non-empty,
  * otherwise ~/.bigmouth. The root is derived from the home-directory API and
  * never from the working directory or the running code's location, so the same
- * root is used however the app is launched.
- *
- * The override value is expanded (a leading ~/~/ and $VAR/%VAR% references) and
- * then made absolute against the home directory — never the working directory —
- * so an override can never reintroduce a cwd dependence. A relative override is
- * resolved against the home directory.
+ * root is used however the app is launched. The override is expanded and made
+ * absolute against the home directory by the shared pipeline above.
  */
 function resolveAppDir(): string {
   const home = os.homedir();
@@ -43,20 +63,7 @@ function resolveAppDir(): string {
   if (override === undefined || override.trim() === "") {
     return path.join(home, `.${APP_NAME}`);
   }
-
-  let value = override.trim();
-  // Expand a leading ~ / ~/ to the home directory.
-  if (value === "~") {
-    value = home;
-  } else if (value.startsWith("~/") || value.startsWith("~\\")) {
-    value = path.join(home, value.slice(2));
-  }
-  // Expand $VAR and %VAR% environment references.
-  value = value
-    .replace(/\$(\w+)/g, (match, name: string) => process.env[name] ?? match)
-    .replace(/%([^%]+)%/g, (match, name: string) => process.env[name] ?? match);
-  // A still-relative value resolves against the home directory, never cwd.
-  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(home, value);
+  return expandAndResolve(override, home);
 }
 
 let appConfig: AppConfig | null = null;
@@ -120,20 +127,14 @@ function parseAppConfig(raw: unknown): AppConfig {
 }
 
 /**
- * Expands shell-style home directory shorthands and resolves to an absolute path.
- *   ~/foo        → /home/user/foo   (Unix/Mac)
- *   ~\foo        → C:\Users\user\foo (Windows)
- *   %USERPROFILE%\foo → C:\Users\user\foo (Windows)
- *   %HOME%/foo   → /home/user/foo
+ * Expands and absolutizes a user-supplied workspace directory through the shared
+ * pipeline (see expandAndResolve): a leading ~ / ~/ / ~\, $VAR, and %VAR% are
+ * expanded, and a relative value resolves against the home directory — never the
+ * working directory, which on a double-clicked or service launch is unrelated to
+ * where the user meant the folder to be.
  */
 function expandPath(p: string): string {
-  // Expand leading ~ to the home directory
-  if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
-    p = os.homedir() + p.slice(1);
-  }
-  // Expand %VAR% style placeholders (common on Windows)
-  p = p.replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? `%${name}%`);
-  return path.resolve(p);
+  return expandAndResolve(p, os.homedir());
 }
 
 /**
