@@ -16,7 +16,22 @@ import type {
   GenerationPromptsData,
 } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
+
+// Per the storage-path-conventions' secrets rule, resolution prefers the
+// environment: a value present in the provider's designated environment
+// variable wins over the stored (obfuscated) key, so a user can supply a key
+// without persisting it. The env value is server-internal only and is never
+// written back to ai-configs.json or sent to the client.
+const API_KEY_ENV_VAR: Record<AiProvider, string> = {
+  claude: "ANTHROPIC_API_KEY",
+};
+
+function envApiKey(provider: AiProvider): string | null {
+  const value = process.env[API_KEY_ENV_VAR[provider]];
+  return value && value.trim() !== "" ? value.trim() : null;
+}
 
 // --- Settings ---
 
@@ -36,7 +51,7 @@ export function saveSettings(dataDir: string, settings: Settings): Settings {
     editorWatermark: settings.editorWatermark,
     extraFieldWatermark: settings.extraFieldWatermark,
   };
-  fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify(normalized, null, 2) + "\n");
+  writeFileAtomic(path.join(dataDir, "settings.json"), JSON.stringify(normalized, null, 2) + "\n");
   return normalized;
 }
 
@@ -61,12 +76,14 @@ export function getActiveAiConfig(dataDir: string): AiConfig | null {
   const data = readAiConfigsRaw(dataDir);
   const stored = (data.configs ?? []).find((c) => c.id === data.activeId);
   if (!stored) return null;
+  // Environment-first: an env key for this provider wins over the stored one.
+  const fromEnv = envApiKey(stored.provider);
   return {
     id: stored.id,
     name: stored.name,
     provider: stored.provider,
     model: stored.model,
-    apiKey: stored.apiKey ? deobfuscate(stored.apiKey) : "",
+    apiKey: fromEnv ?? (stored.apiKey ? deobfuscate(stored.apiKey) : ""),
   };
 }
 
@@ -91,7 +108,7 @@ export function getAiConfigsForClient(dataDir: string): AiConfigsData {
 }
 
 function writeAiConfigsRaw(dataDir: string, data: AiConfigsData): void {
-  fs.writeFileSync(
+  writeFileAtomic(
     path.join(dataDir, "ai-configs.json"),
     JSON.stringify(data, null, 2) + "\n"
   );
@@ -207,7 +224,7 @@ export function saveTargets(dataDir: string, targets: Target[]): Target[] {
     defaultLanguage: target.defaultLanguage,
     requiresMetadata: target.requiresMetadata,
   }));
-  fs.writeFileSync(path.join(dataDir, "targets.json"), JSON.stringify(normalized, null, 2) + "\n");
+  writeFileAtomic(path.join(dataDir, "targets.json"), JSON.stringify(normalized, null, 2) + "\n");
   return normalized;
 }
 
@@ -223,7 +240,7 @@ export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]):
     name: prompt.name,
     text: prompt.text,
   }));
-  fs.writeFileSync(path.join(dataDir, "analysis-prompts.json"), JSON.stringify(normalized, null, 2) + "\n");
+  writeFileAtomic(path.join(dataDir, "analysis-prompts.json"), JSON.stringify(normalized, null, 2) + "\n");
   return normalized;
 }
 
@@ -245,7 +262,7 @@ export function saveGenerationPrompts(
     }
   }
   const normalized: GenerationPromptsData = { prompts };
-  fs.writeFileSync(
+  writeFileAtomic(
     path.join(dataDir, "generation-prompts.json"),
     JSON.stringify(normalized, null, 2) + "\n"
   );

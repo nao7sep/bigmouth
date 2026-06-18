@@ -11,12 +11,53 @@ import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { DEFAULT_ALLOWED_ORIGINS, DEFAULT_HOST, DEFAULT_PORT } from "../shared/defaults.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 
-const APP_DIR = path.join(os.homedir(), ".bigmouth");
-const APP_JSON_PATH = path.join(APP_DIR, "app.json");
-const LOGS_DIR = path.join(APP_DIR, "logs");
-const DEFAULT_WORKSPACES_DIR = path.join(APP_DIR, "workspaces");
+const APP_NAME = "bigmouth";
+const HOME_ENV_VAR = "BIGMOUTH_HOME";
+
+// The single storage root and the paths derived from it. Resolved once, lazily,
+// in initAppDir() rather than frozen at import time — so a BIGMOUTH_HOME set
+// just before startup (e.g. by a test) is honored, and the resolver never
+// captures a half-set environment.
+let appDir: string | null = null;
+let appJsonPath: string | null = null;
+let logsDir: string | null = null;
+let defaultWorkspacesDir: string | null = null;
+
+/**
+ * Resolves the single storage root: BIGMOUTH_HOME when set and non-empty,
+ * otherwise ~/.bigmouth. The root is derived from the home-directory API and
+ * never from the working directory or the running code's location, so the same
+ * root is used however the app is launched.
+ *
+ * The override value is expanded (a leading ~/~/ and $VAR/%VAR% references) and
+ * then made absolute against the home directory — never the working directory —
+ * so an override can never reintroduce a cwd dependence. A relative override is
+ * resolved against the home directory.
+ */
+function resolveAppDir(): string {
+  const home = os.homedir();
+  const override = process.env[HOME_ENV_VAR];
+  if (override === undefined || override.trim() === "") {
+    return path.join(home, `.${APP_NAME}`);
+  }
+
+  let value = override.trim();
+  // Expand a leading ~ / ~/ to the home directory.
+  if (value === "~") {
+    value = home;
+  } else if (value.startsWith("~/") || value.startsWith("~\\")) {
+    value = path.join(home, value.slice(2));
+  }
+  // Expand $VAR and %VAR% environment references.
+  value = value
+    .replace(/\$(\w+)/g, (match, name: string) => process.env[name] ?? match)
+    .replace(/%([^%]+)%/g, (match, name: string) => process.env[name] ?? match);
+  // A still-relative value resolves against the home directory, never cwd.
+  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(home, value);
+}
 
 let appConfig: AppConfig | null = null;
 
@@ -100,11 +141,31 @@ function expandPath(p: string): string {
  * Must be called once at startup.
  */
 export function initAppDir(): AppConfig {
-  fs.mkdirSync(APP_DIR, { recursive: true });
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
+  // Resolve the root and its derived paths here (not at import) so BIGMOUTH_HOME
+  // is read at a defined startup point with the environment fully known.
+  appDir = resolveAppDir();
+  appJsonPath = path.join(appDir, "app.json");
+  logsDir = path.join(appDir, "logs");
+  defaultWorkspacesDir = path.join(appDir, "workspaces");
 
-  if (fs.existsSync(APP_JSON_PATH)) {
-    const raw = fs.readFileSync(APP_JSON_PATH, "utf-8");
+  // Create the root + standard subdirs on first use. If the root cannot be
+  // created or is not a usable directory, fail loudly — never silently fall
+  // back to the default.
+  try {
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.mkdirSync(logsDir, { recursive: true });
+    if (!fs.statSync(appDir).isDirectory()) {
+      throw new Error("not a directory");
+    }
+  } catch (cause) {
+    throw new Error(
+      `Cannot use the ${APP_NAME} storage root "${appDir}". Set ${HOME_ENV_VAR} to a writable directory.`,
+      { cause }
+    );
+  }
+
+  if (fs.existsSync(appJsonPath)) {
+    const raw = fs.readFileSync(appJsonPath, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
     appConfig = parseAppConfig(parsed);
   } else {
@@ -116,7 +177,8 @@ export function initAppDir(): AppConfig {
 }
 
 function writeAppConfig(): void {
-  fs.writeFileSync(APP_JSON_PATH, JSON.stringify(appConfig, null, 2) + "\n");
+  if (!appJsonPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
+  writeFileAtomic(appJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
 }
 
 function ensureLoaded(): AppConfig {
@@ -129,7 +191,8 @@ export function getAppConfig(): AppConfig {
 }
 
 export function getLogsDir(): string {
-  return LOGS_DIR;
+  if (!logsDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
+  return logsDir;
 }
 
 export function listWorkspaces(): Workspace[] {
@@ -224,7 +287,10 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
       }
     }
   } else {
-    dir = path.join(DEFAULT_WORKSPACES_DIR, id);
+    if (!defaultWorkspacesDir) {
+      throw new Error("workspaceStore not initialized — call initAppDir() first");
+    }
+    dir = path.join(defaultWorkspacesDir, id);
   }
 
   const workspace: Workspace = { id, name, dataDirectory: dir };

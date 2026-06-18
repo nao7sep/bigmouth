@@ -8,10 +8,10 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
 import matter from "gray-matter";
 import type { Post, PostFrontMatter, PostIndexEntry } from "../shared/types.js";
 import { minifyExcerpt } from "../shared/text.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 
 // Canonical front-matter key order written into every `.md` file. Keeping a
 // fixed order makes files stable across rewrites and easy to diff.
@@ -138,22 +138,3 @@ export function trimBlankLines(text: string): string {
   return start > end ? "" : lines.slice(start, end + 1).join("\n");
 }
 
-/**
- * Writes a file atomically: write a sibling temp file, then rename over the
- * target. A crash mid-write leaves either the old file or the new one, never a
- * truncated one.
- */
-export function writeFileAtomic(filePath: string, content: string): void {
-  const dir = path.dirname(filePath);
-  const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${nextTempCounter()}.tmp`);
-  fs.writeFileSync(tempPath, content);
-  fs.renameSync(tempPath, filePath);
-}
-
-// A per-process counter keeps concurrent atomic writes from colliding on the
-// temp filename without relying on Date.now()/Math.random().
-let tempCounter = 0;
-function nextTempCounter(): number {
-  tempCounter += 1;
-  return tempCounter;
-}

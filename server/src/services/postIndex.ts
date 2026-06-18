@@ -20,7 +20,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
-import { readPost, projectIndexEntry, writeFileAtomic } from "./postFile.js";
+import { readPost, projectIndexEntry } from "./postFile.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { compareInstants } from "../shared/timestamps.js";
 
 // One map per workspace data directory, keyed by post id.

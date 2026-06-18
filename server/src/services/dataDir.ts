@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_SETTINGS, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_AI_CONFIGS, DEFAULT_GENERATION_PROMPTS_DATA } from "../shared/defaults.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import type { Target } from "../shared/types.js";
 
 /**
@@ -46,5 +47,5 @@ export function initializeWorkspaceData(dataDir: string): void {
 }
 
 function writeWorkspaceFile(filePath: string, content: string): void {
-  fs.writeFileSync(filePath, content);
+  writeFileAtomic(filePath, content);
 }
