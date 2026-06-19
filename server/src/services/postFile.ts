@@ -10,8 +10,20 @@
 import fs from "node:fs";
 import matter from "gray-matter";
 import type { Post, PostFrontMatter, PostIndexEntry } from "../shared/types.js";
-import { minifyExcerpt } from "../shared/text.js";
+import { multiline, truncate } from "../shared/textCleanup.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+
+// Length, in graphemes, of a body-derived preview label for an untitled post.
+const EXCERPT_MAX_CHARS = 100;
+
+// Markdown bodies use two trailing spaces as a hard line break, so the body
+// normalization keeps line ends and only drops blank lines at the edges. This
+// matches the old behavior, which also dropped only leading and trailing blanks.
+const BODY_MULTILINE_OPTS = {
+  trimLineEnds: false,
+  dropEdgeBlankLines: true,
+  collapseBlankLines: false,
+} as const;
 
 // Canonical front-matter key order written into every `.md` file. Keeping a
 // fixed order makes files stable across rewrites and easy to diff.
@@ -47,7 +59,7 @@ const CANONICAL_KEY_SET = new Set<string>(CANONICAL_KEYS);
 export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; content: string } {
   const parsed = matter(raw);
   const frontMatter = structuredClone(parsed.data) as PostFrontMatter;
-  return { frontMatter, content: trimBlankLines(parsed.content) };
+  return { frontMatter, content: multiline(parsed.content, BODY_MULTILINE_OPTS) };
 }
 
 export function readPost(filePath: string): Post {
@@ -58,7 +70,7 @@ export function readPost(filePath: string): Post {
 
 export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
   const cleanFm = canonicalizeFrontMatter(frontMatter);
-  const output = matter.stringify(trimBlankLines(content), cleanFm);
+  const output = matter.stringify(multiline(content, BODY_MULTILINE_OPTS), cleanFm);
   writeFileAtomic(filePath, output);
 }
 
@@ -116,7 +128,7 @@ export function projectIndexEntry(
   if (frontMatter.title) entry.title = frontMatter.title;
   if (frontMatter.language !== "en" && frontMatter.titleEn) entry.titleEn = frontMatter.titleEn;
   if (!entry.title && !entry.titleEn) {
-    const excerpt = minifyExcerpt(body);
+    const excerpt = truncate(body, EXCERPT_MAX_CHARS).text;
     if (excerpt) entry.excerpt = excerpt;
   }
   if (Array.isArray(frontMatter.tags) && frontMatter.tags.length > 0) entry.tags = frontMatter.tags;
@@ -124,17 +136,5 @@ export function projectIndexEntry(
   if (frontMatter.checkedAtUtc) entry.checkedAtUtc = frontMatter.checkedAtUtc;
   if (frontMatter.publishedAtUtc) entry.publishedAtUtc = frontMatter.publishedAtUtc;
   return entry;
-}
-
-/**
- * Trims leading and trailing blank lines, preserving interior ones.
- */
-export function trimBlankLines(text: string): string {
-  const lines = text.split("\n");
-  let start = 0;
-  while (start < lines.length && lines[start].trim() === "") start++;
-  let end = lines.length - 1;
-  while (end >= start && lines[end].trim() === "") end--;
-  return start > end ? "" : lines.slice(start, end + 1).join("\n");
 }
 

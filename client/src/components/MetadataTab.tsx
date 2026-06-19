@@ -10,6 +10,7 @@ import {
 import type { Post, PostFrontMatter, PostMutationResult } from "../types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { singleLine } from "../util/textCleanup";
 
 interface MetadataTabProps {
   workspaceId: string;
@@ -584,14 +585,22 @@ function extractFields(fm: PostFrontMatter): Record<string, string> {
   return fields;
 }
 
-function normalizeFieldValue(value: string, isTags: boolean): string | string[] {
-  if (!isTags) return value;
-  return value
-    .split(/[,\u3001]/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
+// Scalar metadata fields that are stored as a single line. They are edited in
+// `<textarea>`s (which, unlike `<input>`, keep pasted newlines), so they get
+// single-line cleanup at commit time \u2014 never on a keystroke. `slug` is excluded
+// (server-validated, not normalized) and `extra` is excluded (free-text KVP).
+const SINGLE_LINE_FIELDS = new Set(["title", "titleEn", "metaDescription", "metaDescriptionEn"]);
 
+// Parses a raw textarea value into the form persisted in front matter, applying
+// commit-time cleanup. Called only from save paths (persistField, generateAll),
+// so cleanup runs on save, not while the user types.
 function parseFieldValue(key: string, value: string): string | string[] {
-  return normalizeFieldValue(value, key === "tags" || key === "tagsEn");
+  if (key === "tags" || key === "tagsEn") {
+    return value
+      .split(/[,\u3001]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  if (SINGLE_LINE_FIELDS.has(key)) return singleLine(value);
+  return value;
 }
