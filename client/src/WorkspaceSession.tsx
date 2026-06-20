@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, MouseEventHandler } from "react";
+import type { CSSProperties, MouseEventHandler, RefObject } from "react";
 import { fetchPosts, createPost, fetchTargets, fetchSettings, revealCurrentLogFile } from "./api";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
@@ -27,6 +27,9 @@ const DEFAULT_WATERMARK =
 
 interface WorkspaceSessionProps {
   workspace: Workspace;
+  // The pane row, surfaced to the parent so its splitter clamp can measure the
+  // live container width.
+  appLayoutRef: RefObject<HTMLDivElement | null>;
   leftWidth: number;
   rightWidth: number;
   onStartLeftDrag: MouseEventHandler<HTMLDivElement>;
@@ -42,6 +45,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
   function WorkspaceSession(
     {
       workspace,
+      appLayoutRef,
       leftWidth,
       rightWidth,
       onStartLeftDrag,
@@ -431,6 +435,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           </div>
         )}
         <div
+          ref={appLayoutRef}
           className="app-layout"
           style={{ "--bm-left": `${leftWidth}px`, "--bm-right": `${rightWidth}px` } as CSSProperties}
         >
