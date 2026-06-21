@@ -25,7 +25,15 @@ const STORAGE_WS = "bm-workspace-id";
 const LEFT_MAX = 720;
 const RIGHT_MAX = 960;
 
-function readStoredWidth(key: string, fallback: number, min: number, max: number) {
+// Each side pane stores an INTENT width in pixels: the width the user dragged
+// the pane to, independent of the current viewport. Intent is clamped only to
+// the pane's own configured bounds on read — never against the container — so a
+// narrow viewport at load time can't shrink the saved intent. The DISPLAYED
+// width is derived from this intent and the live container width (see
+// clampPaneWidth); only a drag updates the intent and persists it. A viewport
+// resize re-derives the display from the unchanged intent and persists nothing,
+// so widening the window restores the pane to its intended width.
+function readStoredIntent(key: string, fallback: number, min: number, max: number) {
   const v = localStorage.getItem(key);
   return v ? clamp(+v, min, max) : fallback;
 }
@@ -35,33 +43,71 @@ export function App() {
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
 
-  const [leftWidth, setLeftWidth] = useState(() =>
-    readStoredWidth(STORAGE_LEFT, 360, LEFT_MIN, LEFT_MAX)
+  // Intent widths (px): what the user dragged each side pane to. Loaded from
+  // storage clamped only to per-pane bounds — restoring keeps the persisted
+  // intent rather than overwriting it with a viewport-fitted value.
+  const [leftIntent, setLeftIntent] = useState(() =>
+    readStoredIntent(STORAGE_LEFT, 360, LEFT_MIN, LEFT_MAX)
   );
-  const [rightWidth, setRightWidth] = useState(() =>
-    readStoredWidth(STORAGE_RIGHT, 480, RIGHT_MIN, RIGHT_MAX)
+  const [rightIntent, setRightIntent] = useState(() =>
+    readStoredIntent(STORAGE_RIGHT, 480, RIGHT_MIN, RIGHT_MAX)
   );
-  const leftWidthRef = useRef(leftWidth);
-  const rightWidthRef = useRef(rightWidth);
+  // The measured pane-row width, used to derive the displayed pane widths from
+  // the intents. Tracked in state (updated by a ResizeObserver) so a viewport
+  // resize re-derives the display without ever touching the stored intent.
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const leftIntentRef = useRef(leftIntent);
+  const rightIntentRef = useRef(rightIntent);
   const sessionRef = useRef<WorkspaceSessionHandle>(null);
-  // The live pane-row element, so the splitter clamp measures the real container
-  // width rather than a guessed maximum.
+  // The live pane-row element, so the displayed-width clamp measures the real
+  // container width rather than a guessed maximum.
   const appLayoutRef = useRef<HTMLDivElement>(null);
-  leftWidthRef.current = leftWidth;
-  rightWidthRef.current = rightWidth;
+  leftIntentRef.current = leftIntent;
+  rightIntentRef.current = rightIntent;
 
-  // Restored widths are clamped against their per-pane bounds, but a window that
-  // shrank since the last save can leave a stored width that would now crush the
-  // center pane. Re-clamp both against the current container on mount.
+  // Displayed widths: the intent clamped against the live container so a widened
+  // pane never crushes the center pane. Until the container is measured (first
+  // paint) the intent is shown as-is; the observer corrects it immediately
+  // after, and below the summed minimum the row scrolls (overflow-x: auto).
+  // Display-only — these are never persisted.
+  const leftWidth =
+    containerWidth === null
+      ? leftIntent
+      : clampPaneWidth(
+          leftIntent,
+          LEFT_MIN,
+          LEFT_MAX,
+          containerWidth,
+          rightIntent + CENTER_MIN + 2 * DIVIDER
+        );
+  const rightWidth =
+    containerWidth === null
+      ? rightIntent
+      : clampPaneWidth(
+          rightIntent,
+          RIGHT_MIN,
+          RIGHT_MAX,
+          containerWidth,
+          leftIntent + CENTER_MIN + 2 * DIVIDER
+        );
+
+  // Measure the pane row and keep the measurement live. A viewport resize fires
+  // the observer, which only updates containerWidth — the intents are untouched,
+  // so the display re-derives and nothing is persisted. Re-attached whenever the
+  // session (and thus the .app-layout element) changes.
   useEffect(() => {
-    const container = appLayoutRef.current?.getBoundingClientRect().width;
-    if (!container) return;
-    setLeftWidth((w) =>
-      clampPaneWidth(w, LEFT_MIN, LEFT_MAX, container, rightWidthRef.current + CENTER_MIN + 2 * DIVIDER)
-    );
-    setRightWidth((w) =>
-      clampPaneWidth(w, RIGHT_MIN, RIGHT_MAX, container, leftWidthRef.current + CENTER_MIN + 2 * DIVIDER)
-    );
+    const el = appLayoutRef.current;
+    if (!el) {
+      setContainerWidth(null);
+      return;
+    }
+    setContainerWidth(el.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setContainerWidth(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [activeWorkspace]);
 
   useEffect(() => {
@@ -126,9 +172,8 @@ export function App() {
   const startDrag = useCallback(
     (
       e: ReactMouseEvent,
-      widthRef: MutableRefObject<number>,
-      otherWidthRef: MutableRefObject<number>,
-      setWidth: (width: number) => void,
+      intentRef: MutableRefObject<number>,
+      setIntent: (width: number) => void,
       storageKey: string,
       sign: 1 | -1,
       min: number,
@@ -136,22 +181,23 @@ export function App() {
     ) => {
       e.preventDefault();
       const startX = e.clientX;
-      const startW = widthRef.current;
+      const startW = intentRef.current;
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       const onMove = (ev: MouseEvent) => {
-        const container = appLayoutRef.current?.getBoundingClientRect().width ?? Infinity;
-        // The siblings this pane must not crush: the OTHER resizable pane, the
-        // center pane's minimum, and the two dividers between the three panes.
-        const siblingMins = otherWidthRef.current + CENTER_MIN + 2 * DIVIDER;
-        setWidth(
-          clampPaneWidth(startW + sign * (ev.clientX - startX), min, max, container, siblingMins)
-        );
+        // A drag sets the pane's INTENT, clamped only to its own configured
+        // bounds — not against the container. The displayed width is derived
+        // from this intent against the live container width (see leftWidth /
+        // rightWidth above), so dragging in a narrow viewport can still record a
+        // wide intent that reappears once the viewport grows.
+        setIntent(clamp(startW + sign * (ev.clientX - startX), min, max));
       };
       const onUp = () => {
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        localStorage.setItem(storageKey, String(widthRef.current));
+        // Only a drag persists, and it persists the INTENT (px). Resize and
+        // mount never reach here, so they never overwrite the stored value.
+        localStorage.setItem(storageKey, String(intentRef.current));
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       };
@@ -188,19 +234,10 @@ export function App() {
         leftWidth={leftWidth}
         rightWidth={rightWidth}
         onStartLeftDrag={(e) =>
-          startDrag(e, leftWidthRef, rightWidthRef, setLeftWidth, STORAGE_LEFT, 1, LEFT_MIN, LEFT_MAX)
+          startDrag(e, leftIntentRef, setLeftIntent, STORAGE_LEFT, 1, LEFT_MIN, LEFT_MAX)
         }
         onStartRightDrag={(e) =>
-          startDrag(
-            e,
-            rightWidthRef,
-            leftWidthRef,
-            setRightWidth,
-            STORAGE_RIGHT,
-            -1,
-            RIGHT_MIN,
-            RIGHT_MAX
-          )
+          startDrag(e, rightIntentRef, setRightIntent, STORAGE_RIGHT, -1, RIGHT_MIN, RIGHT_MAX)
         }
         onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
       />
