@@ -17,10 +17,10 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { Post, PostMutationResult, PostStatus, PostSummary, Settings, Target, Workspace } from "./types";
+import type { Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "./types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { pickAdjacentPostId } from "./util/selection";
-import { compareInstants } from "./util/timestamps";
+import { applyPostMutationToBuckets } from "./util/postBuckets";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -60,6 +60,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [published, setPublished] = useState<PostSummary[]>([]);
     const [publishedTotal, setPublishedTotal] = useState(0);
     const [publishedOffset, setPublishedOffset] = useState(0);
+    const [expired, setExpired] = useState<PostSummary[]>([]);
+    const [expiredTotal, setExpiredTotal] = useState(0);
+    const [expiredOffset, setExpiredOffset] = useState(0);
     const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
     const [navHistory, setNavHistory] = useState<string[]>([]);
     const [targets, setTargets] = useState<Target[]>([]);
@@ -89,6 +92,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const checkedRef = useRef<PostSummary[]>([]);
     const publishedRef = useRef<PostSummary[]>([]);
     const publishedTotalRef = useRef(0);
+    const expiredRef = useRef<PostSummary[]>([]);
+    const expiredTotalRef = useRef(0);
 
     useEffect(() => {
       sessionAliveRef.current = true;
@@ -120,6 +125,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     useEffect(() => {
       publishedTotalRef.current = publishedTotal;
     }, [publishedTotal]);
+
+    useEffect(() => {
+      expiredRef.current = expired;
+    }, [expired]);
+
+    useEffect(() => {
+      expiredTotalRef.current = expiredTotal;
+    }, [expiredTotal]);
 
     const flushRightPaneChanges = useCallback(
       async () => (await rightPaneRef.current?.flushPendingChanges()) ?? true,
@@ -155,21 +168,51 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       [flushPendingChanges]
     );
 
+    // Published and Expired are independently paginated archives. One fetch
+    // returns a page of each, so `append` names which archive is growing: on a
+    // "load more" we append that archive's page and leave the other archive's
+    // pagination untouched (its first page in the same response is ignored).
+    // Drafts and checked are fully loaded, so they are always replaced.
     const loadPosts = useCallback(
-      async (pubOffset = 0, append = false) => {
+      async (opts?: {
+        publishedOffset?: number;
+        expiredOffset?: number;
+        append?: "published" | "expired";
+      }) => {
         if (!sessionAliveRef.current) return;
-        const data = await fetchPosts(pubOffset, pubBatchSize);
+        const pubOffset = opts?.publishedOffset ?? 0;
+        const expOffset = opts?.expiredOffset ?? 0;
+        const data = await fetchPosts(pubOffset, pubBatchSize, expOffset);
         if (!sessionAliveRef.current) return;
+
         draftsRef.current = data.drafts;
         checkedRef.current = data.checked;
         setDrafts(data.drafts);
         setChecked(data.checked);
-        const nextPublished = append ? [...publishedRef.current, ...data.published] : data.published;
-        publishedRef.current = nextPublished;
-        setPublished(nextPublished);
-        publishedTotalRef.current = data.publishedTotal;
-        setPublishedTotal(data.publishedTotal);
-        setPublishedOffset(pubOffset + data.published.length);
+
+        if (opts?.append !== "expired") {
+          const nextPublished =
+            opts?.append === "published"
+              ? [...publishedRef.current, ...data.published]
+              : data.published;
+          publishedRef.current = nextPublished;
+          setPublished(nextPublished);
+          publishedTotalRef.current = data.publishedTotal;
+          setPublishedTotal(data.publishedTotal);
+          setPublishedOffset(pubOffset + data.published.length);
+        }
+
+        if (opts?.append !== "published") {
+          const nextExpired =
+            opts?.append === "expired"
+              ? [...expiredRef.current, ...data.expired]
+              : data.expired;
+          expiredRef.current = nextExpired;
+          setExpired(nextExpired);
+          expiredTotalRef.current = data.expiredTotal;
+          setExpiredTotal(data.expiredTotal);
+          setExpiredOffset(expOffset + data.expired.length);
+        }
       },
       [pubBatchSize]
     );
@@ -314,6 +357,18 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         void selectPost(nextId, { skipFlush: true });
         return;
       }
+      if (deletedId && expiredRef.current.some((p) => p.frontMatter.id === deletedId)) {
+        const nextId = pickAdjacentPostId(expiredRef.current, deletedId);
+        const next = removeFrom(expiredRef.current);
+        expiredRef.current = next;
+        setExpired(next);
+        const nextTotal = Math.max(0, expiredTotalRef.current - 1);
+        expiredTotalRef.current = nextTotal;
+        setExpiredTotal(nextTotal);
+        setExpiredOffset(next.length);
+        void selectPost(nextId, { skipFlush: true });
+        return;
+      }
 
       // Not in any loaded section (rare): clear and reload to resync.
       void selectPost(null, { skipFlush: true });
@@ -329,46 +384,42 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // The server returns the canonical list summary (including its derived
       // excerpt); use it verbatim for the list and the full post for the editor.
       const summary: PostSummary = { frontMatter: result.summary };
-      const status = result.frontMatter.status;
       const id = result.frontMatter.id;
-      const draftLoaded = draftsRef.current.some((entry) => entry.frontMatter.id === id);
-      const checkedLoaded = checkedRef.current.some((entry) => entry.frontMatter.id === id);
-      const publishedLoaded = publishedRef.current.some((entry) => entry.frontMatter.id === id);
-      const previousStatus = draftLoaded
-        ? "draft"
-        : checkedLoaded
-          ? "checked"
-          : publishedLoaded
-            ? "published"
-            : currentPostRef.current?.frontMatter.id === id
-              ? currentPostRef.current.frontMatter.status
-              : null;
+      // The open post is the only fallback for a post that isn't in any loaded
+      // list (it was reached via a source link, so its bucket is off the page).
+      const openPostStatus =
+        currentPostRef.current?.frontMatter.id === id
+          ? currentPostRef.current.frontMatter.status
+          : null;
 
-      const nextDrafts = nextSummariesForStatus(draftsRef.current, summary, "draft", status === "draft");
-      const nextChecked = nextSummariesForStatus(checkedRef.current, summary, "checked", status === "checked");
-      const nextPublished = nextSummariesForStatus(
-        publishedRef.current,
+      const next = applyPostMutationToBuckets(
+        {
+          drafts: draftsRef.current,
+          checked: checkedRef.current,
+          published: publishedRef.current,
+          publishedTotal: publishedTotalRef.current,
+          expired: expiredRef.current,
+          expiredTotal: expiredTotalRef.current,
+        },
         summary,
-        "published",
-        status === "published" && (publishedLoaded || previousStatus !== "published")
+        result.frontMatter.status,
+        openPostStatus
       );
 
-      let nextPublishedTotal = publishedTotalRef.current;
-      if (previousStatus === "published" && status !== "published") {
-        nextPublishedTotal = Math.max(0, nextPublishedTotal - 1);
-      } else if (previousStatus !== null && previousStatus !== "published" && status === "published") {
-        nextPublishedTotal += 1;
-      }
-
-      draftsRef.current = nextDrafts;
-      checkedRef.current = nextChecked;
-      publishedRef.current = nextPublished;
-      publishedTotalRef.current = nextPublishedTotal;
-      setDrafts(nextDrafts);
-      setChecked(nextChecked);
-      setPublished(nextPublished);
-      setPublishedTotal(nextPublishedTotal);
-      setPublishedOffset(nextPublished.length);
+      draftsRef.current = next.drafts;
+      checkedRef.current = next.checked;
+      publishedRef.current = next.published;
+      publishedTotalRef.current = next.publishedTotal;
+      expiredRef.current = next.expired;
+      expiredTotalRef.current = next.expiredTotal;
+      setDrafts(next.drafts);
+      setChecked(next.checked);
+      setPublished(next.published);
+      setPublishedTotal(next.publishedTotal);
+      setPublishedOffset(next.published.length);
+      setExpired(next.expired);
+      setExpiredTotal(next.expiredTotal);
+      setExpiredOffset(next.expired.length);
 
       if (id === selectedPostIdRef.current) {
         setCurrentPost(result);
@@ -397,11 +448,19 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const handleLoadMorePublished = useCallback(() => {
       setLoadError(null);
-      loadPosts(publishedOffset, true).catch((err) => {
+      loadPosts({ publishedOffset, append: "published" }).catch((err) => {
         if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
       });
     }, [loadPosts, publishedOffset]);
+
+    const handleLoadMoreExpired = useCallback(() => {
+      setLoadError(null);
+      loadPosts({ expiredOffset, append: "expired" }).catch((err) => {
+        if (!sessionAliveRef.current) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
+      });
+    }, [loadPosts, expiredOffset]);
 
     const handleRevealCurrentLogFile = useCallback(async () => {
       try {
@@ -444,6 +503,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             checked={checked}
             published={published}
             publishedTotal={publishedTotal}
+            expired={expired}
+            expiredTotal={expiredTotal}
             selectedPostId={selectedPostId}
             onSelectPost={(id) => {
               void (async () => {
@@ -453,6 +514,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             }}
             onNewPost={() => setNewPostOpen(true)}
             onLoadMorePublished={handleLoadMorePublished}
+            onLoadMoreExpired={handleLoadMoreExpired}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenAbout={() => setAboutOpen(true)}
@@ -530,28 +592,3 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     );
   }
 );
-
-function nextSummariesForStatus(
-  current: PostSummary[],
-  summary: PostSummary,
-  status: PostStatus,
-  include: boolean
-): PostSummary[] {
-  const filtered = current.filter((entry) => entry.frontMatter.id !== summary.frontMatter.id);
-  if (!include) return filtered;
-
-  return [...filtered, summary].sort((a, b) => compareSummaries(status, a, b));
-}
-
-function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): number {
-  if (status === "published") {
-    return (
-      compareInstants(b.frontMatter.publishedAtUtc ?? "", a.frontMatter.publishedAtUtc ?? "") ||
-      (b.frontMatter.slug ?? "").localeCompare(a.frontMatter.slug ?? "")
-    );
-  }
-
-  // Drafts and checked posts are ordered newest-created first. The index
-  // summaries carry no updatedAtUtc, so creation time is the stable key.
-  return compareInstants(b.frontMatter.createdAtUtc ?? "", a.frontMatter.createdAtUtc ?? "");
-}

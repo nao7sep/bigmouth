@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeWorkspaceData } from "../../src/../src/services/dataDir.js";
-import { createPost, updatePost, getPost, listDrafts, clearCache, rebuildIndex } from "../../src/../src/services/postStore.js";
+import { createPost, updatePost, getPost, listDrafts, changeStatus, clearCache, rebuildIndex } from "../../src/../src/services/postStore.js";
 import { canonicalIndexJson } from "../../src/../src/services/postIndex.js";
 import type { PostIndexEntry } from "../../src/../src/shared/types.js";
 
@@ -53,7 +53,22 @@ describe("canonicalIndexJson", () => {
     const json = canonicalIndexJson([entry({ id: "a" })]);
     expect(json.endsWith("\n")).toBe(true);
     expect(json).not.toContain("publishedAtUtc");
+    expect(json).not.toContain("expiredAtUtc");
     expect(json).not.toContain("slug");
+  });
+
+  it("emits expiredAtUtc after publishedAtUtc when present", () => {
+    const json = canonicalIndexJson([
+      entry({
+        id: "a",
+        status: "expired",
+        checkedAtUtc: "2026-01-02T00:00:00Z",
+        publishedAtUtc: "2026-01-03T00:00:00Z",
+        expiredAtUtc: "2026-01-04T00:00:00Z",
+      }),
+    ]);
+    expect(json).toContain("expiredAtUtc");
+    expect(json.indexOf("publishedAtUtc")).toBeLessThan(json.indexOf("expiredAtUtc"));
   });
 });
 
@@ -124,6 +139,15 @@ describe("excerpt", () => {
     updatePost(dataDir, created.frontMatter.id, { content: "Rewritten opening." });
     expect(indexBytes()).not.toBe(before);
     expect(indexBytes()).toContain("Rewritten opening.");
+  });
+});
+
+describe("expired projection", () => {
+  it("writes expiredAtUtc into the index when a post is expired", () => {
+    const created = createPost(dataDir, "blogger", "en");
+    changeStatus(dataDir, created.frontMatter.id, "expired");
+    expect(indexBytes()).toContain('"status": "expired"');
+    expect(indexBytes()).toContain("expiredAtUtc");
   });
 });
 

@@ -45,6 +45,7 @@ const CANONICAL_KEYS = [
   "updatedAtUtc",
   "checkedAtUtc",
   "publishedAtUtc",
+  "expiredAtUtc",
 ] as const;
 
 const CANONICAL_KEY_SET = new Set<string>(CANONICAL_KEYS);
@@ -135,6 +136,7 @@ export function projectIndexEntry(
   if (frontMatter.sourceId) entry.sourceId = frontMatter.sourceId;
   if (frontMatter.checkedAtUtc) entry.checkedAtUtc = frontMatter.checkedAtUtc;
   if (frontMatter.publishedAtUtc) entry.publishedAtUtc = frontMatter.publishedAtUtc;
+  if (frontMatter.expiredAtUtc) entry.expiredAtUtc = frontMatter.expiredAtUtc;
   return entry;
 }
 

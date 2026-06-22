@@ -65,7 +65,36 @@ describe("GET /", () => {
       checked: [],
       published: [],
       publishedTotal: 0,
+      expired: [],
+      expiredTotal: 0,
     });
+  });
+
+  it("clamps a negative offset to the first page instead of slicing from the end", async () => {
+    const app = makeApp();
+    const id = await createDraft(app);
+    await request(app).put(`/${id}/status`).send({ status: "expired" });
+
+    const res = await request(app).get("/?expiredOffset=-5&publishedOffset=-5");
+    expect(res.status).toBe(200);
+    expect(res.body.expiredOffset).toBe(0);
+    expect(res.body.publishedOffset).toBe(0);
+    expect(res.body.expired.map((p: { frontMatter: { id: string } }) => p.frontMatter.id)).toContain(id);
+  });
+
+  it("returns an expired post in the expired list with its total/offset", async () => {
+    const app = makeApp();
+    const id = await createDraft(app);
+    const moved = await request(app).put(`/${id}/status`).send({ status: "expired" });
+    expect(moved.status).toBe(200);
+    expect(moved.body.frontMatter.status).toBe("expired");
+    expect(moved.body.frontMatter.expiredAtUtc).toBeTruthy();
+
+    const list = await request(app).get("/");
+    expect(list.body.expiredTotal).toBe(1);
+    expect(list.body.expiredOffset).toBe(0);
+    expect(list.body.expired.map((p: { frontMatter: { id: string } }) => p.frontMatter.id)).toContain(id);
+    expect(list.body.published).toHaveLength(0);
   });
 });
 
@@ -266,6 +295,16 @@ describe("published lock", () => {
     const del = await request(app).delete(`/${id}`);
     expect(del.status).toBe(200);
     expect(del.body.deleted).toBe(true);
+  });
+
+  it("rejects content edits to an expired post with 409", async () => {
+    const app = makeApp();
+    const id = await createDraft(app);
+    await request(app).put(`/${id}/status`).send({ status: "expired" });
+
+    const res = await request(app).put(`/${id}`).send({ content: "Sneaky edit." });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/expired posts are locked/i);
   });
 });
 

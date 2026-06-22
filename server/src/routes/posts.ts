@@ -4,6 +4,8 @@ import {
   listChecked,
   listPublished,
   countPublished,
+  listExpired,
+  countExpired,
   getPost,
   createPost,
   updatePost,
@@ -48,9 +50,10 @@ const RESERVED_FRONT_MATTER_KEYS = new Set([
   "updatedAtUtc",
   "checkedAtUtc",
   "publishedAtUtc",
+  "expiredAtUtc",
 ]);
 
-const STATUSES: PostStatus[] = ["draft", "checked", "published"];
+const STATUSES: PostStatus[] = ["draft", "checked", "published", "expired"];
 
 function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -59,13 +62,19 @@ function validateSlug(value: unknown): string | null {
 
 postsRouter.get("/", (req, res) => {
   const dataDir = res.locals.dataDir as string;
-  const publishedOffset = parseInt(req.query.publishedOffset as string) || 0;
+  // Clamp to >= 0: a negative offset would otherwise slice from the end of the
+  // list (JS Array.slice semantics), returning the wrong page and drifting the
+  // client's pagination cursor.
+  const publishedOffset = Math.max(0, parseInt(req.query.publishedOffset as string) || 0);
+  const expiredOffset = Math.max(0, parseInt(req.query.expiredOffset as string) || 0);
   const limit = parseInt(req.query.limit as string) || getSettings(dataDir).publishedPostsPerLoad;
 
   const drafts = listDrafts(dataDir);
   const checked = listChecked(dataDir);
   const published = listPublished(dataDir, publishedOffset, limit);
   const publishedTotal = countPublished(dataDir);
+  const expired = listExpired(dataDir, expiredOffset, limit);
+  const expiredTotal = countExpired(dataDir);
 
   logger.info("posts listed", {
     requestId: res.locals.requestId ?? null,
@@ -75,6 +84,9 @@ postsRouter.get("/", (req, res) => {
     publishedReturned: published.length,
     publishedTotal,
     publishedOffset,
+    expiredReturned: expired.length,
+    expiredTotal,
+    expiredOffset,
     limit,
   });
 
@@ -84,6 +96,9 @@ postsRouter.get("/", (req, res) => {
     published,
     publishedTotal,
     publishedOffset,
+    expired,
+    expiredTotal,
+    expiredOffset,
   });
 });
 
@@ -223,17 +238,19 @@ postsRouter.put("/:id", (req, res) => {
     return;
   }
 
-  // Published posts are locked. Editing happens only after moving back to Draft
-  // or Checked, so the autosaving editor can never silently mutate a published
-  // post.
-  if (existing.frontMatter.status === "published") {
+  // Published and expired posts are locked. Editing happens only after moving
+  // back to Draft or Checked, so the autosaving editor can never silently mutate
+  // a locked post.
+  if (existing.frontMatter.status === "published" || existing.frontMatter.status === "expired") {
     logger.warn("post update rejected", {
       requestId: res.locals.requestId ?? null,
       workspace: res.locals.workspaceId ?? null,
       postId: req.params.id,
-      reason: "published-locked",
+      reason: `${existing.frontMatter.status}-locked`,
     });
-    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to edit it." });
+    res.status(409).json({
+      error: `${existing.frontMatter.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Checked or Draft to edit it.`,
+    });
     return;
   }
 

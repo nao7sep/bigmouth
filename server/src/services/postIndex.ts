@@ -238,6 +238,7 @@ function canonicalEntryObject(entry: PostIndexEntry): Record<string, unknown> {
   out.createdAtUtc = entry.createdAtUtc;
   if (entry.checkedAtUtc !== undefined) out.checkedAtUtc = entry.checkedAtUtc;
   if (entry.publishedAtUtc !== undefined) out.publishedAtUtc = entry.publishedAtUtc;
+  if (entry.expiredAtUtc !== undefined) out.expiredAtUtc = entry.expiredAtUtc;
   return out;
 }
 

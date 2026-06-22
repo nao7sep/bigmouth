@@ -8,7 +8,7 @@ export interface Workspace {
 
 // --- Post ---
 
-export type PostStatus = "draft" | "checked" | "published";
+export type PostStatus = "draft" | "checked" | "published" | "expired";
 
 export interface PostFrontMatter {
   id: string;
@@ -29,6 +29,7 @@ export interface PostFrontMatter {
   updatedAtUtc?: string;    // present on full posts; omitted from list summaries
   checkedAtUtc?: string;
   publishedAtUtc?: string;
+  expiredAtUtc?: string;
   [key: string]: unknown;
 }
 
@@ -56,6 +57,9 @@ export interface PostListResponse {
   published: PostSummary[];
   publishedTotal: number;
   publishedOffset: number;
+  expired: PostSummary[];
+  expiredTotal: number;
+  expiredOffset: number;
 }
 
 export interface Target {

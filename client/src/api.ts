@@ -1,5 +1,6 @@
 import type {
   Post,
+  PostStatus,
   PostMutationResult,
   PostListResponse,
   AnalysisPrompt,
@@ -129,10 +130,12 @@ export async function revealCurrentLogFile(): Promise<string> {
 
 export async function fetchPosts(
   publishedOffset = 0,
-  limit = 50
+  limit = 50,
+  expiredOffset = 0
 ): Promise<PostListResponse> {
   const params = new URLSearchParams({
     publishedOffset: String(publishedOffset),
+    expiredOffset: String(expiredOffset),
     limit: String(limit),
   });
   const res = await fetch(`${base()}/posts?${params}`);
@@ -182,7 +185,7 @@ export async function updatePost(
 
 export async function changePostStatus(
   id: string,
-  status: "draft" | "checked" | "published",
+  status: PostStatus,
   workspaceId?: string
 ): Promise<PostMutationResult> {
   const res = await fetch(`${base(workspaceId)}/posts/${id}/status`, {

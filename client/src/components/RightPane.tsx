@@ -51,7 +51,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   ref
 ) {
   const metadataRef = useRef<MetadataTabHandle>(null);
-  const locked = frontMatter?.status === "published";
+  const locked = frontMatter?.status === "published" || frontMatter?.status === "expired";
 
   // The Metadata tab is only meaningful for targets that require metadata.
   const showMetadata = target?.requiresMetadata ?? false;

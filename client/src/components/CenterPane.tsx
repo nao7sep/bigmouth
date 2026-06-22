@@ -41,9 +41,16 @@ const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "checked", label: "Checked" },
   { value: "published", label: "Published" },
+  { value: "expired", label: "Expired" },
 ];
 
 const STATUS_VALUES: PostStatus[] = STATUS_OPTIONS.map((o) => o.value);
+
+// Published and expired posts are read-only; the editor locks until the post is
+// moved back to Draft or Checked.
+function isLockedStatus(status: PostStatus): boolean {
+  return status === "published" || status === "expired";
+}
 
 export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function CenterPane(
   {
@@ -197,9 +204,9 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   }, []);
 
   const handleContentChange = (value: string) => {
-    // Published posts are locked; the editor is read-only, but guard the save
-    // path too so a stray change can never autosave into a locked post.
-    if (post?.frontMatter.status === "published") return;
+    // Published and expired posts are locked; the editor is read-only, but guard
+    // the save path too so a stray change can never autosave into a locked post.
+    if (post && isLockedStatus(post.frontMatter.status)) return;
     setContent(value);
     contentRef.current = value;
     notifyContentChange(value);
@@ -234,12 +241,12 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
 
   const handleStatusChange = (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
-    // Moving to draft clears the checked and publication timestamps. Warn
-    // whenever a publication time would actually be lost — this also covers the
-    // published → checked → draft path, where the status is already "checked"
-    // but publishedAtUtc is still set. published → checked itself is
-    // non-destructive (both timestamps are kept) and needs no prompt.
-    if (newStatus === "draft" && post.frontMatter.publishedAtUtc) {
+    // Moving to draft clears the checked, publication, and expiry timestamps.
+    // Warn whenever a publication or expiry time would actually be lost — this
+    // also covers the published → checked → draft path, where the status is
+    // already "checked" but publishedAtUtc is still set. published → checked
+    // itself is non-destructive (timestamps are kept) and needs no prompt.
+    if (newStatus === "draft" && (post.frontMatter.publishedAtUtc || post.frontMatter.expiredAtUtc)) {
       setDraftRevertConfirmOpen(true);
       return;
     }
@@ -332,7 +339,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   }
 
   const fm = post.frontMatter;
-  const locked = fm.status === "published";
+  const locked = isLockedStatus(fm.status);
   const toolbarError = statusError ?? saveError;
 
   return (
@@ -412,8 +419,17 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
       )}
       {locked && (
         <div className="toolbar-notice">
-          Published posts are locked. Switch to <strong>Checked</strong> to edit; switching to{" "}
-          <strong>Draft</strong> also clears the publication time.
+          {fm.status === "published" ? (
+            <>
+              Published posts are locked. Switch to <strong>Checked</strong> to edit; switching to{" "}
+              <strong>Draft</strong> also clears the checked and publication times.
+            </>
+          ) : (
+            <>
+              Expired posts are locked. Switch to <strong>Checked</strong> to edit, or{" "}
+              <strong>Draft</strong> to clear the lifecycle times and start over.
+            </>
+          )}
         </div>
       )}
       <div className="center-editor">
@@ -457,7 +473,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
       {draftRevertConfirmOpen && (
         <ConfirmModal
           title="Revert to draft?"
-          message="This clears the publication time and the checked time. The post will be treated as never published until you publish it again. Use this for a real rewrite and repost; to fix a small typo, switch to Checked instead."
+          message="This clears the checked, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Checked instead."
           confirmLabel="Revert to Draft"
           danger
           onConfirm={() => {

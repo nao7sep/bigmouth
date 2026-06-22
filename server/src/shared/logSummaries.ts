@@ -25,6 +25,7 @@ export function safePostLogContext(post: Post): Record<string, unknown> {
     fileName: path.basename(post.filePath),
     checkedAtUtc: presentString(fm.checkedAtUtc),
     publishedAtUtc: presentString(fm.publishedAtUtc),
+    expiredAtUtc: presentString(fm.expiredAtUtc),
   };
 }
 

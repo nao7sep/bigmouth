@@ -63,6 +63,18 @@ export function countPublished(dataDir: string): number {
   return index.countByStatus(dataDir, "published");
 }
 
+export function listExpired(dataDir: string, offset: number, limit: number): PostSummary[] {
+  return index
+    .listByStatus(dataDir, "expired")
+    .sort(byExpiredDesc)
+    .slice(offset, offset + limit)
+    .map((entry) => ({ frontMatter: entry }));
+}
+
+export function countExpired(dataDir: string): number {
+  return index.countByStatus(dataDir, "expired");
+}
+
 function summaries(
   dataDir: string,
   status: PostStatus,
@@ -81,6 +93,14 @@ function byCreatedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
 function byPublishedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
   return (
     compareInstants(b.publishedAtUtc ?? "", a.publishedAtUtc ?? "") ||
+    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
+    compareDesc(a.id, b.id)
+  );
+}
+
+function byExpiredDesc(a: PostIndexEntry, b: PostIndexEntry): number {
+  return (
+    compareInstants(b.expiredAtUtc ?? "", a.expiredAtUtc ?? "") ||
     compareInstants(b.createdAtUtc, a.createdAtUtc) ||
     compareDesc(a.id, b.id)
   );

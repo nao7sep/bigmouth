@@ -16,10 +16,13 @@ interface LeftPaneProps {
   checked: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
+  expired: PostSummary[];
+  expiredTotal: number;
   selectedPostId: string | null;
   onSelectPost: (id: string) => void;
   onNewPost: () => void;
   onLoadMorePublished: () => void;
+  onLoadMoreExpired: () => void;
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenAbout: () => void;
@@ -46,10 +49,13 @@ export function LeftPane({
   checked,
   published,
   publishedTotal,
+  expired,
+  expiredTotal,
   selectedPostId,
   onSelectPost,
   onNewPost,
   onLoadMorePublished,
+  onLoadMoreExpired,
   onOpenSettings,
   onOpenShortcuts,
   onOpenAbout,
@@ -60,6 +66,7 @@ export function LeftPane({
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [checkedOpen, setCheckedOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
+  const [expiredOpen, setExpiredOpen] = useState(false);
   const { composingRef, handlers } = useComposing();
 
   const sections: SectionDef[] = [
@@ -93,9 +100,20 @@ export function LeftPane({
       onLoadMore:
         published.length < publishedTotal ? onLoadMorePublished : undefined,
     },
+    {
+      key: "expired",
+      label: "Expired",
+      posts: expired,
+      open: expiredOpen,
+      toggle: () => setExpiredOpen((v) => !v),
+      emptyText: "No expired posts",
+      timestampField: "expiredAtUtc",
+      totalCount: expiredTotal,
+      onLoadMore: expired.length < expiredTotal ? onLoadMoreExpired : undefined,
+    },
   ];
 
-  // The three sections are ONE listbox: arrow navigation flows continuously
+  // The four sections are ONE listbox: arrow navigation flows continuously
   // across them over exactly the currently-rendered rows. Collapsed sections
   // contribute no navigable rows.
   const rows: PostListRow[] = useMemo(
@@ -104,7 +122,7 @@ export function LeftPane({
         sections.map((s) => ({ open: s.open, items: s.posts })),
       ).map((p) => ({ id: p.frontMatter.id, label: getPostTitle(p.frontMatter) })),
     // sections is rebuilt each render from these inputs; depend on the inputs.
-    [drafts, checked, published, draftsOpen, checkedOpen, publishedOpen],
+    [drafts, checked, published, expired, draftsOpen, checkedOpen, publishedOpen, expiredOpen],
   );
 
   const { listboxProps, getRowProps, activeId } = usePostListbox({
@@ -115,17 +133,31 @@ export function LeftPane({
     composingRef,
   });
 
-  // Auto-load more published posts as the cursor reaches the end of the loaded
-  // set — the conventions' "load more automatically at the end" for a control
-  // whose load-more affordance is not a tab stop. The pointer-only button below
-  // remains for discoverability.
-  const lastRowId = rows.length > 0 ? rows[rows.length - 1].id : null;
-  const canLoadMore = published.length < publishedTotal;
+  // Auto-load more of a paginated archive as the cursor reaches the end of that
+  // archive's loaded set — the conventions' "load more automatically at the end"
+  // for a control whose load-more affordance is not a tab stop. Published and
+  // Expired each trigger on their own last loaded row (Expired is no longer the
+  // global tail, so a single global-last check would never reach Published). The
+  // pointer-only buttons below remain for discoverability.
+  const lastLoadedId = (posts: PostSummary[], open: boolean) =>
+    open && posts.length > 0 ? posts[posts.length - 1].frontMatter.id : null;
+  const lastPublishedId = lastLoadedId(published, publishedOpen);
+  const lastExpiredId = lastLoadedId(expired, expiredOpen);
+  const canLoadMorePublished = published.length < publishedTotal;
+  const canLoadMoreExpired = expired.length < expiredTotal;
   useEffect(() => {
-    if (canLoadMore && activeId != null && activeId === lastRowId) {
-      onLoadMorePublished();
-    }
-  }, [activeId, lastRowId, canLoadMore, onLoadMorePublished]);
+    if (activeId == null) return;
+    if (canLoadMorePublished && activeId === lastPublishedId) onLoadMorePublished();
+    if (canLoadMoreExpired && activeId === lastExpiredId) onLoadMoreExpired();
+  }, [
+    activeId,
+    lastPublishedId,
+    lastExpiredId,
+    canLoadMorePublished,
+    canLoadMoreExpired,
+    onLoadMorePublished,
+    onLoadMoreExpired,
+  ]);
 
   return (
     <div className="pane-left">

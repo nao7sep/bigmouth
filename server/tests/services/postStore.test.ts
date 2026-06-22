@@ -13,6 +13,8 @@ import {
   listChecked,
   listPublished,
   countPublished,
+  listExpired,
+  countExpired,
   clearCache,
 } from "../../src/../src/services/postStore.js";
 
@@ -173,6 +175,35 @@ describe("changeStatus", () => {
     const republished = changeStatus(dataDir, id, "published");
     expect(republished?.frontMatter.publishedAtUtc).toBe(publishedAt);
   });
+
+  it("moves published -> expired, keeping prior timestamps and stamping expiredAt", () => {
+    const id = publishableDraft();
+    const published = changeStatus(dataDir, id, "published");
+    const publishedAt = published!.frontMatter.publishedAtUtc;
+    const checkedAt = published!.frontMatter.checkedAtUtc;
+
+    const expired = changeStatus(dataDir, id, "expired");
+    expect(expired?.frontMatter.status).toBe("expired");
+    expect(expired?.frontMatter.expiredAtUtc).toBeTruthy();
+    expect(expired?.frontMatter.publishedAtUtc).toBe(publishedAt);
+    expect(expired?.frontMatter.checkedAtUtc).toBe(checkedAt);
+
+    expect(countExpired(dataDir)).toBe(1);
+    expect(countPublished(dataDir)).toBe(0);
+    expect(listExpired(dataDir, 0, 50).map((p) => p.frontMatter.id)).toContain(id);
+    expect(listPublished(dataDir, 0, 50).map((p) => p.frontMatter.id)).not.toContain(id);
+  });
+
+  it("clears all three timestamps when reverting expired -> draft", () => {
+    const id = publishableDraft();
+    changeStatus(dataDir, id, "expired");
+
+    const reverted = changeStatus(dataDir, id, "draft");
+    expect(reverted?.frontMatter.status).toBe("draft");
+    expect(reverted?.frontMatter.checkedAtUtc).toBeUndefined();
+    expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
+    expect(reverted?.frontMatter.expiredAtUtc).toBeUndefined();
+  });
 });
 
 describe("deletePost", () => {
@@ -215,6 +246,18 @@ describe("listPublished", () => {
     expect(countPublished(dataDir)).toBe(3);
     expect(listPublished(dataDir, 0, 2)).toHaveLength(2);
     expect(listPublished(dataDir, 2, 2)).toHaveLength(1);
+  });
+});
+
+describe("listExpired", () => {
+  it("paginates by offset and limit", () => {
+    for (let i = 0; i < 3; i++) {
+      const created = createPost(dataDir, "blogger", "en");
+      changeStatus(dataDir, created.frontMatter.id, "expired");
+    }
+    expect(countExpired(dataDir)).toBe(3);
+    expect(listExpired(dataDir, 0, 2)).toHaveLength(2);
+    expect(listExpired(dataDir, 2, 2)).toHaveLength(1);
   });
 });
 

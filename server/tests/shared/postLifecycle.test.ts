@@ -25,9 +25,10 @@ function transition(from: Partial<PostFrontMatter>, to: PostStatus): PostFrontMa
 }
 
 describe("STATUS_ORDER", () => {
-  it("orders draft < checked < published", () => {
+  it("orders draft < checked < published < expired", () => {
     expect(STATUS_ORDER.draft).toBeLessThan(STATUS_ORDER.checked);
     expect(STATUS_ORDER.checked).toBeLessThan(STATUS_ORDER.published);
+    expect(STATUS_ORDER.published).toBeLessThan(STATUS_ORDER.expired);
   });
 });
 
@@ -85,5 +86,45 @@ describe("applyStatusTransition", () => {
       "published"
     );
     expect(post.publishedAtUtc).toBe(original);
+  });
+
+  it("published -> expired keeps checkedAt/publishedAt and sets expiredAt", () => {
+    const chk = "2026-02-01T00:00:00Z";
+    const pub = "2026-02-02T00:00:00Z";
+    const post = transition(
+      { status: "published", checkedAtUtc: chk, publishedAtUtc: pub },
+      "expired"
+    );
+    expect(post.status).toBe("expired");
+    expect(post.checkedAtUtc).toBe(chk);
+    expect(post.publishedAtUtc).toBe(pub);
+    expect(post.expiredAtUtc).toBe(STAMP);
+  });
+
+  it("draft -> expired backfills all three timestamps", () => {
+    const post = transition({ status: "draft" }, "expired");
+    expect(post.checkedAtUtc).toBe(STAMP);
+    expect(post.publishedAtUtc).toBe(STAMP);
+    expect(post.expiredAtUtc).toBe(STAMP);
+  });
+
+  it("expired -> published preserves an existing expiredAt (set-if-absent)", () => {
+    const exp = "2026-03-03T00:00:00Z";
+    const post = transition(
+      { status: "expired", checkedAtUtc: exp, publishedAtUtc: exp, expiredAtUtc: exp },
+      "published"
+    );
+    expect(post.status).toBe("published");
+    expect(post.expiredAtUtc).toBe(exp);
+  });
+
+  it("expired -> draft clears all three timestamps", () => {
+    const post = transition(
+      { status: "expired", checkedAtUtc: STAMP, publishedAtUtc: STAMP, expiredAtUtc: STAMP },
+      "draft"
+    );
+    expect(post.checkedAtUtc).toBeUndefined();
+    expect(post.publishedAtUtc).toBeUndefined();
+    expect(post.expiredAtUtc).toBeUndefined();
   });
 });

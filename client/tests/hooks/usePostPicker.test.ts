@@ -35,6 +35,9 @@ function page(opts: {
   published?: PostSummary[];
   publishedTotal?: number;
   publishedOffset?: number;
+  expired?: PostSummary[];
+  expiredTotal?: number;
+  expiredOffset?: number;
 }) {
   return {
     drafts: opts.drafts ?? [],
@@ -42,6 +45,9 @@ function page(opts: {
     published: opts.published ?? [],
     publishedTotal: opts.publishedTotal ?? (opts.published?.length ?? 0),
     publishedOffset: opts.publishedOffset ?? 0,
+    expired: opts.expired ?? [],
+    expiredTotal: opts.expiredTotal ?? (opts.expired?.length ?? 0),
+    expiredOffset: opts.expiredOffset ?? 0,
   };
 }
 
@@ -54,22 +60,48 @@ afterEach(() => {
 });
 
 describe("usePostPicker", () => {
-  it("combines drafts, checked, and published on initial load", async () => {
+  it("combines drafts, checked, published, and expired on initial load", async () => {
     mockFetchPosts.mockResolvedValueOnce(
       page({
         drafts: [summary("d1")],
         checked: [summary("c1")],
         published: [summary("p1")],
         publishedTotal: 1,
+        expired: [summary("e1", { status: "expired" })],
+        expiredTotal: 1,
       })
     );
 
     const { result } = renderHook(() => usePostPicker(50));
 
-    await waitFor(() => expect(result.current.posts).toHaveLength(3));
-    expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["d1", "c1", "p1"]);
+    await waitFor(() => expect(result.current.posts).toHaveLength(4));
+    expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["d1", "c1", "p1", "e1"]);
     expect(result.current.error).toBeNull();
     expect(result.current.hasMore).toBe(false);
+  });
+
+  it("loads more when only the expired archive has further pages", async () => {
+    mockFetchPosts.mockResolvedValueOnce(
+      page({ expired: [summary("e1", { status: "expired" })], expiredTotal: 2 })
+    );
+
+    const { result } = renderHook(() => usePostPicker(1));
+    await waitFor(() => expect(result.current.posts).toHaveLength(1));
+    expect(result.current.hasMore).toBe(true);
+
+    mockFetchPosts.mockResolvedValueOnce(
+      page({
+        expired: [summary("e2", { status: "expired" })],
+        expiredTotal: 2,
+        expiredOffset: 1,
+      })
+    );
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.posts).toHaveLength(2));
+    expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["e1", "e2"]);
+    // The second fetch must request the expired archive from its current offset.
+    expect(mockFetchPosts).toHaveBeenLastCalledWith(0, 1, 1);
   });
 
   it("excludes the current post id", async () => {

@@ -1,11 +1,11 @@
 # BigMouth
 
-BigMouth is a local-first writing preflight tool for composing and reviewing blog posts and social-media content before you publish. You write in Markdown, run AI-powered quality and safety checks, generate metadata (title, slug, tags, SEO description), and export when ready — all on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to your platform of choice). It's a single-user desktop-style web app (Node.js backend + React frontend) for writers who want a deliberate Draft → Checked → Published lane and a Claude-backed review before anything goes out.
+BigMouth is a local-first writing preflight tool for composing and reviewing blog posts and social-media content before you publish. You write in Markdown, run AI-powered quality and safety checks, generate metadata (title, slug, tags, SEO description), and export when ready — all on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to your platform of choice). It's a single-user desktop-style web app (Node.js backend + React frontend) for writers who want a deliberate Draft → Checked → Published → Expired lane and a Claude-backed review before anything goes out.
 
 ## Features
 
 - **Workspaces** — multiple isolated workspaces (posts, assets, settings, AI config), each pointable at any directory for easy git versioning
-- **Markdown editor** with autosave and a three-stage Draft → Checked → Published workflow; published posts are locked
+- **Markdown editor** with autosave and a Draft → Checked → Published → Expired workflow; published and expired posts are locked (move back to Draft or Checked to edit)
 - **AI analysis** — run named prompts against a draft to catch issues before publishing, streamed as the model responds
 - **AI metadata & imaging** — generate title/slug/tags/SEO description, and temporary English image-prompt variants
 - **Assets** — per-post image and file uploads, embedded directly in the editor
