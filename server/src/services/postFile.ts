@@ -43,7 +43,7 @@ const CANONICAL_KEYS = [
   "extra",
   "createdAtUtc",
   "updatedAtUtc",
-  "checkedAtUtc",
+  "readyAtUtc",
   "publishedAtUtc",
   "expiredAtUtc",
 ] as const;
@@ -134,7 +134,7 @@ export function projectIndexEntry(
   }
   if (Array.isArray(frontMatter.tags) && frontMatter.tags.length > 0) entry.tags = frontMatter.tags;
   if (frontMatter.sourceId) entry.sourceId = frontMatter.sourceId;
-  if (frontMatter.checkedAtUtc) entry.checkedAtUtc = frontMatter.checkedAtUtc;
+  if (frontMatter.readyAtUtc) entry.readyAtUtc = frontMatter.readyAtUtc;
   if (frontMatter.publishedAtUtc) entry.publishedAtUtc = frontMatter.publishedAtUtc;
   if (frontMatter.expiredAtUtc) entry.expiredAtUtc = frontMatter.expiredAtUtc;
   return entry;

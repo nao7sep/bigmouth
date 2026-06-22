@@ -4,7 +4,7 @@ import { compareInstants } from "./timestamps";
 /** The four post-list buckets plus the two paginated-archive totals. */
 export interface PostBuckets {
   drafts: PostSummary[];
-  checked: PostSummary[];
+  ready: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
   expired: PostSummary[];
@@ -33,13 +33,13 @@ export function applyPostMutationToBuckets(
 ): PostBuckets {
   const id = summary.frontMatter.id;
   const draftLoaded = prev.drafts.some((entry) => entry.frontMatter.id === id);
-  const checkedLoaded = prev.checked.some((entry) => entry.frontMatter.id === id);
+  const readyLoaded = prev.ready.some((entry) => entry.frontMatter.id === id);
   const publishedLoaded = prev.published.some((entry) => entry.frontMatter.id === id);
   const expiredLoaded = prev.expired.some((entry) => entry.frontMatter.id === id);
   const previousStatus: PostStatus | null = draftLoaded
     ? "draft"
-    : checkedLoaded
-      ? "checked"
+    : readyLoaded
+      ? "ready"
       : publishedLoaded
         ? "published"
         : expiredLoaded
@@ -47,7 +47,7 @@ export function applyPostMutationToBuckets(
           : openPostStatus;
 
   const drafts = nextSummariesForStatus(prev.drafts, summary, "draft", status === "draft");
-  const checked = nextSummariesForStatus(prev.checked, summary, "checked", status === "checked");
+  const ready = nextSummariesForStatus(prev.ready, summary, "ready", status === "ready");
   // For a paginated archive, only fold the post into the loaded page when it is
   // already there or arriving from elsewhere — a re-save of an archived post not
   // on the current page belongs deeper in the archive, not the top.
@@ -78,7 +78,7 @@ export function applyPostMutationToBuckets(
     expiredTotal += 1;
   }
 
-  return { drafts, checked, published, publishedTotal, expired, expiredTotal };
+  return { drafts, ready, published, publishedTotal, expired, expiredTotal };
 }
 
 /**
@@ -112,7 +112,7 @@ export function compareSummaries(status: PostStatus, a: PostSummary, b: PostSumm
     );
   }
 
-  // Drafts and checked posts are ordered newest-created first. The index
+  // Drafts and ready posts are ordered newest-created first. The index
   // summaries carry no updatedAtUtc, so creation time is the stable key.
   return compareInstants(b.frontMatter.createdAtUtc ?? "", a.frontMatter.createdAtUtc ?? "");
 }

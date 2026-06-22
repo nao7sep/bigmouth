@@ -56,7 +56,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
   ) {
     const anyModalOpen = useAnyModalOpen();
     const [drafts, setDrafts] = useState<PostSummary[]>([]);
-    const [checked, setChecked] = useState<PostSummary[]>([]);
+    const [ready, setReady] = useState<PostSummary[]>([]);
     const [published, setPublished] = useState<PostSummary[]>([]);
     const [publishedTotal, setPublishedTotal] = useState(0);
     const [publishedOffset, setPublishedOffset] = useState(0);
@@ -89,7 +89,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const selectedPostIdRef = useRef<string | null>(null);
     const currentPostRef = useRef<Post | null>(null);
     const draftsRef = useRef<PostSummary[]>([]);
-    const checkedRef = useRef<PostSummary[]>([]);
+    const readyRef = useRef<PostSummary[]>([]);
     const publishedRef = useRef<PostSummary[]>([]);
     const publishedTotalRef = useRef(0);
     const expiredRef = useRef<PostSummary[]>([]);
@@ -115,8 +115,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [drafts]);
 
     useEffect(() => {
-      checkedRef.current = checked;
-    }, [checked]);
+      readyRef.current = ready;
+    }, [ready]);
 
     useEffect(() => {
       publishedRef.current = published;
@@ -172,7 +172,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // returns a page of each, so `append` names which archive is growing: on a
     // "load more" we append that archive's page and leave the other archive's
     // pagination untouched (its first page in the same response is ignored).
-    // Drafts and checked are fully loaded, so they are always replaced.
+    // Drafts and ready are fully loaded, so they are always replaced.
     const loadPosts = useCallback(
       async (opts?: {
         publishedOffset?: number;
@@ -186,9 +186,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         if (!sessionAliveRef.current) return;
 
         draftsRef.current = data.drafts;
-        checkedRef.current = data.checked;
+        readyRef.current = data.ready;
         setDrafts(data.drafts);
-        setChecked(data.checked);
+        setReady(data.ready);
 
         if (opts?.append !== "expired") {
           const nextPublished =
@@ -323,7 +323,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
       // Delete always targets the open post, so it lives in exactly one loaded
       // section. Drop it from that section and move the selection to its
-      // neighbour, keeping the user in place. (Drafts and checked are fully
+      // neighbour, keeping the user in place. (Drafts and ready are fully
       // loaded; only a published post reached via a source link could be
       // missing from the loaded page — fall back to a reload then.)
       const removeFrom = (list: PostSummary[]) =>
@@ -337,11 +337,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         void selectPost(nextId, { skipFlush: true });
         return;
       }
-      if (deletedId && checkedRef.current.some((p) => p.frontMatter.id === deletedId)) {
-        const nextId = pickAdjacentPostId(checkedRef.current, deletedId);
-        const next = removeFrom(checkedRef.current);
-        checkedRef.current = next;
-        setChecked(next);
+      if (deletedId && readyRef.current.some((p) => p.frontMatter.id === deletedId)) {
+        const nextId = pickAdjacentPostId(readyRef.current, deletedId);
+        const next = removeFrom(readyRef.current);
+        readyRef.current = next;
+        setReady(next);
         void selectPost(nextId, { skipFlush: true });
         return;
       }
@@ -395,7 +395,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       const next = applyPostMutationToBuckets(
         {
           drafts: draftsRef.current,
-          checked: checkedRef.current,
+          ready: readyRef.current,
           published: publishedRef.current,
           publishedTotal: publishedTotalRef.current,
           expired: expiredRef.current,
@@ -407,13 +407,13 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       );
 
       draftsRef.current = next.drafts;
-      checkedRef.current = next.checked;
+      readyRef.current = next.ready;
       publishedRef.current = next.published;
       publishedTotalRef.current = next.publishedTotal;
       expiredRef.current = next.expired;
       expiredTotalRef.current = next.expiredTotal;
       setDrafts(next.drafts);
-      setChecked(next.checked);
+      setReady(next.ready);
       setPublished(next.published);
       setPublishedTotal(next.publishedTotal);
       setPublishedOffset(next.published.length);
@@ -500,7 +500,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         >
           <LeftPane
             drafts={drafts}
-            checked={checked}
+            ready={ready}
             published={published}
             publishedTotal={publishedTotal}
             expired={expired}

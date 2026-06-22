@@ -184,7 +184,7 @@ assetsRouter.post("/:postId", (req, res, next) => {
     return;
   }
   if (post.frontMatter.status === "published") {
-    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to change its assets." });
+    res.status(409).json({ error: "Published posts are locked. Move the post back to Ready or Draft to change its assets." });
     return;
   }
 
@@ -286,7 +286,7 @@ assetsRouter.delete("/:postId/:filename", (req, res) => {
     return;
   }
   if (post.frontMatter.status === "published") {
-    res.status(409).json({ error: "Published posts are locked. Move the post back to Checked or Draft to change its assets." });
+    res.status(409).json({ error: "Published posts are locked. Move the post back to Ready or Draft to change its assets." });
     return;
   }
 

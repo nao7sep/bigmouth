@@ -62,7 +62,7 @@ describe("GET /", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       drafts: [],
-      checked: [],
+      ready: [],
       published: [],
       publishedTotal: 0,
       expired: [],
@@ -274,12 +274,12 @@ describe("published lock", () => {
     expect(res.body.error).toMatch(/locked/i);
   });
 
-  it("allows editing again after moving back to checked", async () => {
+  it("allows editing again after moving back to ready", async () => {
     const app = makeApp();
     const id = await createDraft(app);
     await publish(app, id);
 
-    const back = await request(app).put(`/${id}/status`).send({ status: "checked" });
+    const back = await request(app).put(`/${id}/status`).send({ status: "ready" });
     expect(back.status).toBe(200);
 
     const res = await request(app).put(`/${id}`).send({ content: "Now editable." });
@@ -316,14 +316,14 @@ describe("PUT /:id/status", () => {
     expect(res.status).toBe(400);
   });
 
-  it("promotes a draft to checked without requiring a slug", async () => {
+  it("promotes a draft to ready without requiring a slug", async () => {
     const app = makeApp();
     const id = await createDraft(app);
 
-    const res = await request(app).put(`/${id}/status`).send({ status: "checked" });
+    const res = await request(app).put(`/${id}/status`).send({ status: "ready" });
     expect(res.status).toBe(200);
-    expect(res.body.frontMatter.status).toBe("checked");
-    expect(res.body.frontMatter.checkedAtUtc).toBeTruthy();
+    expect(res.body.frontMatter.status).toBe("ready");
+    expect(res.body.frontMatter.readyAtUtc).toBeTruthy();
     expect(res.body.frontMatter.slug).toBeUndefined();
   });
 });
@@ -363,8 +363,8 @@ describe("mutation response summary", () => {
   it("returns a summary on status change", async () => {
     const app = makeApp();
     const id = await createDraft(app);
-    const res = await request(app).put(`/${id}/status`).send({ status: "checked" });
-    expect(res.body.summary?.status).toBe("checked");
+    const res = await request(app).put(`/${id}/status`).send({ status: "ready" });
+    expect(res.body.summary?.status).toBe("ready");
   });
 });
 

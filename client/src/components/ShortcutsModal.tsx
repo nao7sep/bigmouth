@@ -19,7 +19,7 @@ const NAV_HINTS: { title: string; body: string }[] = [
   {
     title: "Post list",
     body:
-      "Drafts, Checked, Published, and Expired are one list with a single Tab stop. Arrows flow across all sections; Home/End and PageUp/PageDown jump; type a title to jump to it. Moving the cursor does not open a post — press Enter (or Space) to open the one under the cursor. Click a section header to collapse it.",
+      "Drafts, Ready, Published, and Expired are one list with a single Tab stop. Arrows flow across all sections; Home/End and PageUp/PageDown jump; type a title to jump to it. Moving the cursor does not open a post — press Enter (or Space) to open the one under the cursor. Click a section header to collapse it.",
   },
   {
     title: "Tool & Settings tabs",

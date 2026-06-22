@@ -13,7 +13,7 @@ const PAGE_SIZE = 10;
 
 interface LeftPaneProps {
   drafts: PostSummary[];
-  checked: PostSummary[];
+  ready: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
   expired: PostSummary[];
@@ -46,7 +46,7 @@ interface SectionDef {
 
 export function LeftPane({
   drafts,
-  checked,
+  ready,
   published,
   publishedTotal,
   expired,
@@ -64,7 +64,7 @@ export function LeftPane({
   workspaceName,
 }: LeftPaneProps) {
   const [draftsOpen, setDraftsOpen] = useState(true);
-  const [checkedOpen, setCheckedOpen] = useState(true);
+  const [readyOpen, setReadyOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
   const [expiredOpen, setExpiredOpen] = useState(false);
   const { composingRef, handlers } = useComposing();
@@ -80,12 +80,12 @@ export function LeftPane({
       timestampField: "createdAtUtc",
     },
     {
-      key: "checked",
-      label: "Checked",
-      posts: checked,
-      open: checkedOpen,
-      toggle: () => setCheckedOpen((v) => !v),
-      emptyText: "No checked posts",
+      key: "ready",
+      label: "Ready",
+      posts: ready,
+      open: readyOpen,
+      toggle: () => setReadyOpen((v) => !v),
+      emptyText: "No ready posts",
       timestampField: "createdAtUtc",
     },
     {
@@ -122,7 +122,7 @@ export function LeftPane({
         sections.map((s) => ({ open: s.open, items: s.posts })),
       ).map((p) => ({ id: p.frontMatter.id, label: getPostTitle(p.frontMatter) })),
     // sections is rebuilt each render from these inputs; depend on the inputs.
-    [drafts, checked, published, expired, draftsOpen, checkedOpen, publishedOpen, expiredOpen],
+    [drafts, ready, published, expired, draftsOpen, readyOpen, publishedOpen, expiredOpen],
   );
 
   const { listboxProps, getRowProps, activeId } = usePostListbox({

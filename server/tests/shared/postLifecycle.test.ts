@@ -25,85 +25,85 @@ function transition(from: Partial<PostFrontMatter>, to: PostStatus): PostFrontMa
 }
 
 describe("STATUS_ORDER", () => {
-  it("orders draft < checked < published < expired", () => {
-    expect(STATUS_ORDER.draft).toBeLessThan(STATUS_ORDER.checked);
-    expect(STATUS_ORDER.checked).toBeLessThan(STATUS_ORDER.published);
+  it("orders draft < ready < published < expired", () => {
+    expect(STATUS_ORDER.draft).toBeLessThan(STATUS_ORDER.ready);
+    expect(STATUS_ORDER.ready).toBeLessThan(STATUS_ORDER.published);
     expect(STATUS_ORDER.published).toBeLessThan(STATUS_ORDER.expired);
   });
 });
 
 describe("applyStatusTransition", () => {
-  it("draft -> checked sets checkedAt only", () => {
-    const post = transition({ status: "draft" }, "checked");
-    expect(post.status).toBe("checked");
-    expect(post.checkedAtUtc).toBe(STAMP);
+  it("draft -> ready sets readyAt only", () => {
+    const post = transition({ status: "draft" }, "ready");
+    expect(post.status).toBe("ready");
+    expect(post.readyAtUtc).toBe(STAMP);
     expect(post.publishedAtUtc).toBeUndefined();
   });
 
-  it("checked -> draft clears checkedAt", () => {
-    const post = transition({ status: "checked", checkedAtUtc: STAMP }, "draft");
-    expect(post.checkedAtUtc).toBeUndefined();
+  it("ready -> draft clears readyAt", () => {
+    const post = transition({ status: "ready", readyAtUtc: STAMP }, "draft");
+    expect(post.readyAtUtc).toBeUndefined();
   });
 
   it("draft -> published sets both timestamps", () => {
     const post = transition({ status: "draft" }, "published");
-    expect(post.checkedAtUtc).toBe(STAMP);
+    expect(post.readyAtUtc).toBe(STAMP);
     expect(post.publishedAtUtc).toBe(STAMP);
   });
 
-  it("checked -> published preserves an existing checkedAt and sets publishedAt", () => {
+  it("ready -> published preserves an existing readyAt and sets publishedAt", () => {
     const earlier = "2026-02-02T00:00:00Z";
-    const post = transition({ status: "checked", checkedAtUtc: earlier }, "published");
-    expect(post.checkedAtUtc).toBe(earlier);
+    const post = transition({ status: "ready", readyAtUtc: earlier }, "published");
+    expect(post.readyAtUtc).toBe(earlier);
     expect(post.publishedAtUtc).toBe(STAMP);
   });
 
-  it("published -> checked keeps both timestamps", () => {
+  it("published -> ready keeps both timestamps", () => {
     const pub = "2026-02-02T00:00:00Z";
     const chk = "2026-02-01T00:00:00Z";
     const post = transition(
-      { status: "published", checkedAtUtc: chk, publishedAtUtc: pub },
-      "checked"
+      { status: "published", readyAtUtc: chk, publishedAtUtc: pub },
+      "ready"
     );
-    expect(post.status).toBe("checked");
-    expect(post.checkedAtUtc).toBe(chk);
+    expect(post.status).toBe("ready");
+    expect(post.readyAtUtc).toBe(chk);
     expect(post.publishedAtUtc).toBe(pub);
   });
 
   it("published -> draft clears both timestamps", () => {
     const post = transition(
-      { status: "published", checkedAtUtc: STAMP, publishedAtUtc: STAMP },
+      { status: "published", readyAtUtc: STAMP, publishedAtUtc: STAMP },
       "draft"
     );
-    expect(post.checkedAtUtc).toBeUndefined();
+    expect(post.readyAtUtc).toBeUndefined();
     expect(post.publishedAtUtc).toBeUndefined();
   });
 
   it("re-publishing preserves an existing publishedAt (set-if-absent)", () => {
     const original = "2026-02-02T00:00:00Z";
     const post = transition(
-      { status: "checked", checkedAtUtc: original, publishedAtUtc: original },
+      { status: "ready", readyAtUtc: original, publishedAtUtc: original },
       "published"
     );
     expect(post.publishedAtUtc).toBe(original);
   });
 
-  it("published -> expired keeps checkedAt/publishedAt and sets expiredAt", () => {
+  it("published -> expired keeps readyAt/publishedAt and sets expiredAt", () => {
     const chk = "2026-02-01T00:00:00Z";
     const pub = "2026-02-02T00:00:00Z";
     const post = transition(
-      { status: "published", checkedAtUtc: chk, publishedAtUtc: pub },
+      { status: "published", readyAtUtc: chk, publishedAtUtc: pub },
       "expired"
     );
     expect(post.status).toBe("expired");
-    expect(post.checkedAtUtc).toBe(chk);
+    expect(post.readyAtUtc).toBe(chk);
     expect(post.publishedAtUtc).toBe(pub);
     expect(post.expiredAtUtc).toBe(STAMP);
   });
 
   it("draft -> expired backfills all three timestamps", () => {
     const post = transition({ status: "draft" }, "expired");
-    expect(post.checkedAtUtc).toBe(STAMP);
+    expect(post.readyAtUtc).toBe(STAMP);
     expect(post.publishedAtUtc).toBe(STAMP);
     expect(post.expiredAtUtc).toBe(STAMP);
   });
@@ -111,7 +111,7 @@ describe("applyStatusTransition", () => {
   it("expired -> published preserves an existing expiredAt (set-if-absent)", () => {
     const exp = "2026-03-03T00:00:00Z";
     const post = transition(
-      { status: "expired", checkedAtUtc: exp, publishedAtUtc: exp, expiredAtUtc: exp },
+      { status: "expired", readyAtUtc: exp, publishedAtUtc: exp, expiredAtUtc: exp },
       "published"
     );
     expect(post.status).toBe("published");
@@ -120,10 +120,10 @@ describe("applyStatusTransition", () => {
 
   it("expired -> draft clears all three timestamps", () => {
     const post = transition(
-      { status: "expired", checkedAtUtc: STAMP, publishedAtUtc: STAMP, expiredAtUtc: STAMP },
+      { status: "expired", readyAtUtc: STAMP, publishedAtUtc: STAMP, expiredAtUtc: STAMP },
       "draft"
     );
-    expect(post.checkedAtUtc).toBeUndefined();
+    expect(post.readyAtUtc).toBeUndefined();
     expect(post.publishedAtUtc).toBeUndefined();
     expect(post.expiredAtUtc).toBeUndefined();
   });

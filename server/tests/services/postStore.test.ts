@@ -10,7 +10,7 @@ import {
   changeStatus,
   deletePost,
   listDrafts,
-  listChecked,
+  listReady,
   listPublished,
   countPublished,
   listExpired,
@@ -118,23 +118,23 @@ describe("updatePost", () => {
 });
 
 describe("changeStatus", () => {
-  it("advances draft -> checked without requiring a slug", () => {
+  it("advances draft -> ready without requiring a slug", () => {
     const created = createPost(dataDir, "blogger", "en");
-    const checked = changeStatus(dataDir, created.frontMatter.id, "checked");
-    expect(checked?.frontMatter.status).toBe("checked");
-    expect(checked?.frontMatter.checkedAtUtc).toBeTruthy();
-    expect(checked?.frontMatter.slug).toBeUndefined();
+    const ready = changeStatus(dataDir, created.frontMatter.id, "ready");
+    expect(ready?.frontMatter.status).toBe("ready");
+    expect(ready?.frontMatter.readyAtUtc).toBeTruthy();
+    expect(ready?.frontMatter.slug).toBeUndefined();
   });
 
-  it("advances draft -> checked -> published without moving the file, stamping timestamps", () => {
+  it("advances draft -> ready -> published without moving the file, stamping timestamps", () => {
     const id = publishableDraft();
     const filePath = getPost(dataDir, id)!.filePath;
 
-    const checked = changeStatus(dataDir, id, "checked");
-    expect(checked?.frontMatter.status).toBe("checked");
-    expect(checked?.frontMatter.checkedAtUtc).toBeTruthy();
-    expect(checked?.filePath).toBe(filePath);
-    expect(listChecked(dataDir).map((p) => p.frontMatter.id)).toContain(id);
+    const ready = changeStatus(dataDir, id, "ready");
+    expect(ready?.frontMatter.status).toBe("ready");
+    expect(ready?.frontMatter.readyAtUtc).toBeTruthy();
+    expect(ready?.filePath).toBe(filePath);
+    expect(listReady(dataDir).map((p) => p.frontMatter.id)).toContain(id);
     expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).not.toContain(id);
 
     const published = changeStatus(dataDir, id, "published");
@@ -145,33 +145,33 @@ describe("changeStatus", () => {
     expect(listPublished(dataDir, 0, 50).map((p) => p.frontMatter.id)).toContain(id);
   });
 
-  it("clears checked/published timestamps when reverting to draft", () => {
+  it("clears ready/published timestamps when reverting to draft", () => {
     const id = publishableDraft();
     changeStatus(dataDir, id, "published");
 
     const reverted = changeStatus(dataDir, id, "draft");
     expect(reverted?.frontMatter.status).toBe("draft");
-    expect(reverted?.frontMatter.checkedAtUtc).toBeUndefined();
+    expect(reverted?.frontMatter.readyAtUtc).toBeUndefined();
     expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
   });
 
-  it("keeps both timestamps when moving published -> checked", () => {
+  it("keeps both timestamps when moving published -> ready", () => {
     const id = publishableDraft();
     const published = changeStatus(dataDir, id, "published");
     const publishedAt = published!.frontMatter.publishedAtUtc;
-    const checkedAt = published!.frontMatter.checkedAtUtc;
+    const readyAt = published!.frontMatter.readyAtUtc;
 
-    const checked = changeStatus(dataDir, id, "checked");
-    expect(checked?.frontMatter.status).toBe("checked");
-    expect(checked?.frontMatter.publishedAtUtc).toBe(publishedAt);
-    expect(checked?.frontMatter.checkedAtUtc).toBe(checkedAt);
+    const ready = changeStatus(dataDir, id, "ready");
+    expect(ready?.frontMatter.status).toBe("ready");
+    expect(ready?.frontMatter.publishedAtUtc).toBe(publishedAt);
+    expect(ready?.frontMatter.readyAtUtc).toBe(readyAt);
   });
 
-  it("preserves publishedAt across the published -> checked -> published typo round trip", () => {
+  it("preserves publishedAt across the published -> ready -> published typo round trip", () => {
     const id = publishableDraft();
     const publishedAt = changeStatus(dataDir, id, "published")!.frontMatter.publishedAtUtc;
 
-    changeStatus(dataDir, id, "checked");
+    changeStatus(dataDir, id, "ready");
     const republished = changeStatus(dataDir, id, "published");
     expect(republished?.frontMatter.publishedAtUtc).toBe(publishedAt);
   });
@@ -180,13 +180,13 @@ describe("changeStatus", () => {
     const id = publishableDraft();
     const published = changeStatus(dataDir, id, "published");
     const publishedAt = published!.frontMatter.publishedAtUtc;
-    const checkedAt = published!.frontMatter.checkedAtUtc;
+    const readyAt = published!.frontMatter.readyAtUtc;
 
     const expired = changeStatus(dataDir, id, "expired");
     expect(expired?.frontMatter.status).toBe("expired");
     expect(expired?.frontMatter.expiredAtUtc).toBeTruthy();
     expect(expired?.frontMatter.publishedAtUtc).toBe(publishedAt);
-    expect(expired?.frontMatter.checkedAtUtc).toBe(checkedAt);
+    expect(expired?.frontMatter.readyAtUtc).toBe(readyAt);
 
     expect(countExpired(dataDir)).toBe(1);
     expect(countPublished(dataDir)).toBe(0);
@@ -200,7 +200,7 @@ describe("changeStatus", () => {
 
     const reverted = changeStatus(dataDir, id, "draft");
     expect(reverted?.frontMatter.status).toBe("draft");
-    expect(reverted?.frontMatter.checkedAtUtc).toBeUndefined();
+    expect(reverted?.frontMatter.readyAtUtc).toBeUndefined();
     expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
     expect(reverted?.frontMatter.expiredAtUtc).toBeUndefined();
   });

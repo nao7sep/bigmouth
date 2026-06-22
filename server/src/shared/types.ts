@@ -1,6 +1,6 @@
 // --- Post ---
 
-export type PostStatus = "draft" | "checked" | "published" | "expired";
+export type PostStatus = "draft" | "ready" | "published" | "expired";
 
 /**
  * Front matter fields stored in each post's Markdown file.
@@ -25,7 +25,7 @@ export interface PostFrontMatter {
   extra?: string; // free-text KVP field
   createdAtUtc: string; // ISO 8601; never changes (encoded in the filename)
   updatedAtUtc: string; // ISO 8601; bumped on every content/metadata edit
-  checkedAtUtc?: string; // set when status reaches checked; cleared only on return to draft
+  readyAtUtc?: string; // set when status reaches ready; cleared only on return to draft
   publishedAtUtc?: string; // set on first publish; preserved on edit; cleared only on return to draft
   expiredAtUtc?: string; // set when status reaches expired; cleared only on return to draft
   [key: string]: unknown;
@@ -57,7 +57,7 @@ export interface PostIndexEntry {
   tags?: string[];
   sourceId?: string;
   createdAtUtc: string;
-  checkedAtUtc?: string;
+  readyAtUtc?: string;
   publishedAtUtc?: string;
   expiredAtUtc?: string;
 }
@@ -72,7 +72,7 @@ export interface PostSummary {
 /**
  * The subset of front matter a client may edit through `PUT /posts/:id`.
  * Identity (id) and lifecycle fields (status, createdAtUtc, updatedAtUtc,
- * checkedAtUtc, publishedAtUtc, expiredAtUtc) are intentionally absent: identity
+ * readyAtUtc, publishedAtUtc, expiredAtUtc) are intentionally absent: identity
  * never changes and lifecycle moves only through the status endpoint. A null
  * value clears the field.
  */

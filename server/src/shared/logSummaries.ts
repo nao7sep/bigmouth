@@ -23,7 +23,7 @@ export function safePostLogContext(post: Post): Record<string, unknown> {
     metadataKeys: metadataKeys(fm),
     contentLength: post.content.length,
     fileName: path.basename(post.filePath),
-    checkedAtUtc: presentString(fm.checkedAtUtc),
+    readyAtUtc: presentString(fm.readyAtUtc),
     publishedAtUtc: presentString(fm.publishedAtUtc),
     expiredAtUtc: presentString(fm.expiredAtUtc),
   };

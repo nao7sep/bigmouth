@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   listDrafts,
-  listChecked,
+  listReady,
   listPublished,
   countPublished,
   listExpired,
@@ -48,12 +48,12 @@ const RESERVED_FRONT_MATTER_KEYS = new Set([
   "status",
   "createdAtUtc",
   "updatedAtUtc",
-  "checkedAtUtc",
+  "readyAtUtc",
   "publishedAtUtc",
   "expiredAtUtc",
 ]);
 
-const STATUSES: PostStatus[] = ["draft", "checked", "published", "expired"];
+const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
 
 function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -70,7 +70,7 @@ postsRouter.get("/", (req, res) => {
   const limit = parseInt(req.query.limit as string) || getSettings(dataDir).publishedPostsPerLoad;
 
   const drafts = listDrafts(dataDir);
-  const checked = listChecked(dataDir);
+  const ready = listReady(dataDir);
   const published = listPublished(dataDir, publishedOffset, limit);
   const publishedTotal = countPublished(dataDir);
   const expired = listExpired(dataDir, expiredOffset, limit);
@@ -80,7 +80,7 @@ postsRouter.get("/", (req, res) => {
     requestId: res.locals.requestId ?? null,
     workspace: res.locals.workspaceId ?? null,
     drafts: drafts.length,
-    checked: checked.length,
+    ready: ready.length,
     publishedReturned: published.length,
     publishedTotal,
     publishedOffset,
@@ -92,7 +92,7 @@ postsRouter.get("/", (req, res) => {
 
   res.json({
     drafts,
-    checked,
+    ready,
     published,
     publishedTotal,
     publishedOffset,
@@ -239,7 +239,7 @@ postsRouter.put("/:id", (req, res) => {
   }
 
   // Published and expired posts are locked. Editing happens only after moving
-  // back to Draft or Checked, so the autosaving editor can never silently mutate
+  // back to Draft or Ready, so the autosaving editor can never silently mutate
   // a locked post.
   if (existing.frontMatter.status === "published" || existing.frontMatter.status === "expired") {
     logger.warn("post update rejected", {
@@ -249,7 +249,7 @@ postsRouter.put("/:id", (req, res) => {
       reason: `${existing.frontMatter.status}-locked`,
     });
     res.status(409).json({
-      error: `${existing.frontMatter.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Checked or Draft to edit it.`,
+      error: `${existing.frontMatter.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Ready or Draft to edit it.`,
     });
     return;
   }
@@ -385,8 +385,8 @@ postsRouter.put("/:id/status", (req, res) => {
       statusAfter: post.frontMatter.status,
       slug: presentString(post.frontMatter.slug),
       fileChanged: before.filePath !== post.filePath,
-      checkedAtUtcBefore: presentString(before.frontMatter.checkedAtUtc),
-      checkedAtUtcAfter: presentString(post.frontMatter.checkedAtUtc),
+      readyAtUtcBefore: presentString(before.frontMatter.readyAtUtc),
+      readyAtUtcAfter: presentString(post.frontMatter.readyAtUtc),
       publishedAtUtcBefore: presentString(before.frontMatter.publishedAtUtc),
       publishedAtUtcAfter: presentString(post.frontMatter.publishedAtUtc),
       before: safePostLogContext(before),

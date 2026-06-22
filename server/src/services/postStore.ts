@@ -47,8 +47,8 @@ export function listDrafts(dataDir: string): PostSummary[] {
   return summaries(dataDir, "draft", byCreatedDesc);
 }
 
-export function listChecked(dataDir: string): PostSummary[] {
-  return summaries(dataDir, "checked", byCreatedDesc);
+export function listReady(dataDir: string): PostSummary[] {
+  return summaries(dataDir, "ready", byCreatedDesc);
 }
 
 export function listPublished(dataDir: string, offset: number, limit: number): PostSummary[] {

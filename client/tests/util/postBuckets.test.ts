@@ -22,7 +22,7 @@ function summary(
 function buckets(overrides: Partial<PostBuckets> = {}): PostBuckets {
   return {
     drafts: [],
-    checked: [],
+    ready: [],
     published: [],
     publishedTotal: 0,
     expired: [],
@@ -34,24 +34,24 @@ function buckets(overrides: Partial<PostBuckets> = {}): PostBuckets {
 const ids = (list: PostSummary[]) => list.map((p) => p.frontMatter.id);
 
 describe("applyPostMutationToBuckets", () => {
-  it("moves a post draft -> checked without touching totals", () => {
+  it("moves a post draft -> ready without touching totals", () => {
     const prev = buckets({ drafts: [summary("a", "draft")] });
-    const next = applyPostMutationToBuckets(prev, summary("a", "checked"), "checked", null);
+    const next = applyPostMutationToBuckets(prev, summary("a", "ready"), "ready", null);
     expect(ids(next.drafts)).toEqual([]);
-    expect(ids(next.checked)).toEqual(["a"]);
+    expect(ids(next.ready)).toEqual(["a"]);
     expect(next.publishedTotal).toBe(0);
     expect(next.expiredTotal).toBe(0);
   });
 
-  it("moves checked -> published and increments publishedTotal", () => {
-    const prev = buckets({ checked: [summary("a", "checked")] });
+  it("moves ready -> published and increments publishedTotal", () => {
+    const prev = buckets({ ready: [summary("a", "ready")] });
     const next = applyPostMutationToBuckets(
       prev,
       summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" }),
       "published",
       null
     );
-    expect(ids(next.checked)).toEqual([]);
+    expect(ids(next.ready)).toEqual([]);
     expect(ids(next.published)).toEqual(["a"]);
     expect(next.publishedTotal).toBe(1);
     expect(next.expiredTotal).toBe(0);
@@ -157,11 +157,11 @@ describe("applyPostMutationToBuckets", () => {
 
   it("decrements the archive total for an off-page post leaving that archive", () => {
     // A published post reached via a source link (not on the loaded page) moved
-    // back to checked: the total must still drop by one even though no visible
+    // back to ready: the total must still drop by one even though no visible
     // row is removed.
     const prev = buckets({ publishedTotal: 3 });
-    const next = applyPostMutationToBuckets(prev, summary("deep", "checked"), "checked", "published");
-    expect(ids(next.checked)).toEqual(["deep"]);
+    const next = applyPostMutationToBuckets(prev, summary("deep", "ready"), "ready", "published");
+    expect(ids(next.ready)).toEqual(["deep"]);
     expect(next.publishedTotal).toBe(2);
   });
 

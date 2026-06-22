@@ -39,7 +39,7 @@ const AUTO_SAVE_DELAY = 2_000;
 
 const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
-  { value: "checked", label: "Checked" },
+  { value: "ready", label: "Ready" },
   { value: "published", label: "Published" },
   { value: "expired", label: "Expired" },
 ];
@@ -47,7 +47,7 @@ const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
 const STATUS_VALUES: PostStatus[] = STATUS_OPTIONS.map((o) => o.value);
 
 // Published and expired posts are read-only; the editor locks until the post is
-// moved back to Draft or Checked.
+// moved back to Draft or Ready.
 function isLockedStatus(status: PostStatus): boolean {
   return status === "published" || status === "expired";
 }
@@ -241,10 +241,10 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
 
   const handleStatusChange = (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
-    // Moving to draft clears the checked, publication, and expiry timestamps.
+    // Moving to draft clears the ready, publication, and expiry timestamps.
     // Warn whenever a publication or expiry time would actually be lost — this
-    // also covers the published → checked → draft path, where the status is
-    // already "checked" but publishedAtUtc is still set. published → checked
+    // also covers the published → ready → draft path, where the status is
+    // already "ready" but publishedAtUtc is still set. published → ready
     // itself is non-destructive (timestamps are kept) and needs no prompt.
     if (newStatus === "draft" && (post.frontMatter.publishedAtUtc || post.frontMatter.expiredAtUtc)) {
       setDraftRevertConfirmOpen(true);
@@ -421,12 +421,12 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         <div className="toolbar-notice">
           {fm.status === "published" ? (
             <>
-              Published posts are locked. Switch to <strong>Checked</strong> to edit; switching to{" "}
-              <strong>Draft</strong> also clears the checked and publication times.
+              Published posts are locked. Switch to <strong>Ready</strong> to edit; switching to{" "}
+              <strong>Draft</strong> also clears the ready and publication times.
             </>
           ) : (
             <>
-              Expired posts are locked. Switch to <strong>Checked</strong> to edit, or{" "}
+              Expired posts are locked. Switch to <strong>Ready</strong> to edit, or{" "}
               <strong>Draft</strong> to clear the lifecycle times and start over.
             </>
           )}
@@ -473,7 +473,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
       {draftRevertConfirmOpen && (
         <ConfirmModal
           title="Revert to draft?"
-          message="This clears the checked, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Checked instead."
+          message="This clears the ready, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Ready instead."
           confirmLabel="Revert to Draft"
           danger
           onConfirm={() => {

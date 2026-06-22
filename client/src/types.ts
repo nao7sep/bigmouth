@@ -8,7 +8,7 @@ export interface Workspace {
 
 // --- Post ---
 
-export type PostStatus = "draft" | "checked" | "published" | "expired";
+export type PostStatus = "draft" | "ready" | "published" | "expired";
 
 export interface PostFrontMatter {
   id: string;
@@ -27,7 +27,7 @@ export interface PostFrontMatter {
   extra?: string;
   createdAtUtc: string;
   updatedAtUtc?: string;    // present on full posts; omitted from list summaries
-  checkedAtUtc?: string;
+  readyAtUtc?: string;
   publishedAtUtc?: string;
   expiredAtUtc?: string;
   [key: string]: unknown;
@@ -53,7 +53,7 @@ export interface PostMutationResult extends Post {
 
 export interface PostListResponse {
   drafts: PostSummary[];
-  checked: PostSummary[];
+  ready: PostSummary[];
   published: PostSummary[];
   publishedTotal: number;
   publishedOffset: number;

@@ -32,7 +32,7 @@ export function usePostPicker(
     setError(null);
     fetchPosts(0, batchSize, 0)
       .then((data) => {
-        const all = [...data.drafts, ...data.checked, ...data.published, ...data.expired];
+        const all = [...data.drafts, ...data.ready, ...data.published, ...data.expired];
         setAllPosts(excludeId ? all.filter((p) => p.frontMatter.id !== excludeId) : all);
         setPubOffset(data.published.length);
         setPubTotal(data.publishedTotal);

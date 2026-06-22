@@ -31,7 +31,7 @@ function summary(
 
 function page(opts: {
   drafts?: PostSummary[];
-  checked?: PostSummary[];
+  ready?: PostSummary[];
   published?: PostSummary[];
   publishedTotal?: number;
   publishedOffset?: number;
@@ -41,7 +41,7 @@ function page(opts: {
 }) {
   return {
     drafts: opts.drafts ?? [],
-    checked: opts.checked ?? [],
+    ready: opts.ready ?? [],
     published: opts.published ?? [],
     publishedTotal: opts.publishedTotal ?? (opts.published?.length ?? 0),
     publishedOffset: opts.publishedOffset ?? 0,
@@ -60,11 +60,11 @@ afterEach(() => {
 });
 
 describe("usePostPicker", () => {
-  it("combines drafts, checked, published, and expired on initial load", async () => {
+  it("combines drafts, ready, published, and expired on initial load", async () => {
     mockFetchPosts.mockResolvedValueOnce(
       page({
         drafts: [summary("d1")],
-        checked: [summary("c1")],
+        ready: [summary("c1")],
         published: [summary("p1")],
         publishedTotal: 1,
         expired: [summary("e1", { status: "expired" })],

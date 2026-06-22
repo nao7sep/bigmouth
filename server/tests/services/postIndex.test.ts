@@ -62,7 +62,7 @@ describe("canonicalIndexJson", () => {
       entry({
         id: "a",
         status: "expired",
-        checkedAtUtc: "2026-01-02T00:00:00Z",
+        readyAtUtc: "2026-01-02T00:00:00Z",
         publishedAtUtc: "2026-01-03T00:00:00Z",
         expiredAtUtc: "2026-01-04T00:00:00Z",
       }),
