@@ -19,6 +19,7 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
 import type { Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "./types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
+import { isComposingEvent } from "./hooks/useComposing";
 import { pickAdjacentPostId } from "./util/selection";
 import { applyPostMutationToBuckets } from "./util/postBuckets";
 
@@ -274,6 +275,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       const handler = (e: KeyboardEvent) => {
         const mod = e.metaKey || e.ctrlKey;
         if (!mod) return;
+
+        // While an IME candidate is pending, the chord belongs to the composition — even Cmd+N,
+        // which otherwise fires inside an input, stands down until it commits (text-input-ime).
+        if (isComposingEvent(e)) return;
 
         const tag = (e.target as HTMLElement).tagName;
         if (tag === "TEXTAREA" || tag === "SELECT") return;

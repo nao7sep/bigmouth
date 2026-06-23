@@ -54,11 +54,11 @@ export function useComposing(): UseComposingReturn {
   return { composingRef, handlers: { onCompositionStart, onCompositionEnd } };
 }
 
-export function isComposingKeyboardEvent(
-  composingRef: React.RefObject<boolean>,
-  e: React.KeyboardEvent | KeyboardEvent,
-): boolean {
-  if (composingRef.current) return true;
+// Event-level composition signals, with no per-input ref. Use this where there is no single
+// composing input to track — notably the app-wide shortcut dispatcher, where the chord's own
+// keydown carries isComposing (verified in WebKit and Blink). Sharing it with the ref-based guard
+// below keeps the global dispatcher and the per-input fields detecting composition identically.
+export function isComposingEvent(e: React.KeyboardEvent | KeyboardEvent): boolean {
   const nativeEvent = "nativeEvent" in e ? e.nativeEvent : e;
   if (nativeEvent.isComposing) return true;
 
@@ -71,7 +71,14 @@ export function isComposingKeyboardEvent(
   // this is also safe: reading a missing property in JavaScript yields
   // undefined rather than throwing, so no try/catch is needed.
   const legacyKeyCode = (nativeEvent as { keyCode?: number }).keyCode;
-  if (legacyKeyCode === 229) return true;
+  return legacyKeyCode === 229;
+}
 
-  return false;
+export function isComposingKeyboardEvent(
+  composingRef: React.RefObject<boolean>,
+  e: React.KeyboardEvent | KeyboardEvent,
+): boolean {
+  // The per-input ref covers the WebKit case where compositionend fires before the final keydown
+  // (see header); isComposingEvent covers the live event-level signals.
+  return composingRef.current || isComposingEvent(e);
 }
