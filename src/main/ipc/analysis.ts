@@ -14,6 +14,12 @@ import { resolveWorkspace } from "./context.js";
 // message can cancel the matching generation.
 const activeStreams = new Map<string, { abort: () => void }>();
 
+// Request ids aborted before their stream registered — the abort message can race
+// ahead of the start handler (the renderer aborts while the start invoke is still
+// in flight). The start handler checks this so the provider call is never made for
+// an already-cancelled request, rather than leaking an uncancelled stream.
+const abortedBeforeStart = new Set<string>();
+
 function resolveAnalysisRequest(
   wsId: string,
   dir: string,
@@ -92,6 +98,13 @@ export function registerAnalysisHandlers(): void {
   // this, so no early frame is missed. Validation throws (rejecting the invoke);
   // otherwise the stream is started and frames are pushed async on the channel.
   ipcMain.handle(CHANNELS.analysisStreamStart, (event, requestId: string, params: AnalysisStreamParams) => {
+    // The abort message may have raced ahead of this handler — if so, don't start
+    // the generation at all. (This handler runs synchronously through to
+    // activeStreams.set, so once it begins no abort can interleave before the
+    // stream is registered; the only gap is an abort that arrives first.)
+    if (abortedBeforeStart.delete(requestId)) {
+      return;
+    }
     const dir = resolveWorkspace(params.wsId).dataDirectory;
     const request = resolveAnalysisRequest(params.wsId, dir, params);
     const channel = analysisStreamChannel(requestId);
@@ -169,6 +182,10 @@ export function registerAnalysisHandlers(): void {
     if (active) {
       active.abort();
       activeStreams.delete(requestId);
+      return;
     }
+    // The abort raced ahead of the start handler; record it so start skips the
+    // provider call rather than leaving an uncancelled stream running.
+    abortedBeforeStart.add(requestId);
   });
 }

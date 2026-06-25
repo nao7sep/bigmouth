@@ -22,7 +22,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.2",
+    "@anthropic-ai/sdk": "^0.106.0",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "^6.6.0",
