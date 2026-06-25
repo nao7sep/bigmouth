@@ -30,7 +30,8 @@ export function registerImagingHandlers(): void {
   ipcMain.handle(
     CHANNELS.generateImaging,
     async (_event, wsId: string, postId: string, content: string, options: ImagingOptions) => {
-      const dir = resolveWorkspace(wsId).dataDirectory;
+      const ws = resolveWorkspace(wsId);
+      const dir = ws.dataDirectory;
       if (!postId) throw new Error("postId is required");
       const post = getPost(dir, postId);
       if (!post) throw new Error("Post not found");
@@ -55,7 +56,7 @@ export function registerImagingHandlers(): void {
         frontMatter: post.frontMatter,
       });
 
-      const activeConfig = getActiveAiConfig(dir);
+      const activeConfig = getActiveAiConfig(ws);
       if (!activeConfig) throw new Error("No active AI configuration selected");
       let provider;
       try {

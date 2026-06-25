@@ -24,7 +24,8 @@ export function registerMetadataHandlers(): void {
   ipcMain.handle(
     CHANNELS.generateMetadata,
     async (_event, wsId: string, postId: string, fields: string[], content: string) => {
-      const dir = resolveWorkspace(wsId).dataDirectory;
+      const ws = resolveWorkspace(wsId);
+      const dir = ws.dataDirectory;
       if (!postId || !Array.isArray(fields) || fields.length === 0) {
         throw new Error("postId and fields[] are required");
       }
@@ -38,7 +39,7 @@ export function registerMetadataHandlers(): void {
 
       const post = getPost(dir, postId);
       if (!post) throw new Error("Post not found");
-      const activeConfig = getActiveAiConfig(dir);
+      const activeConfig = getActiveAiConfig(ws);
       if (!activeConfig) throw new Error("No active AI configuration selected");
       let provider;
       try {

@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS, analysisStreamChannel, type AnalysisStreamFrame, type AnalysisStreamParams } from "@shared/ipc";
+import type { Workspace } from "@shared/types";
 import { getPost } from "../core/services/postStore.js";
 import { getAnalysisPrompts, getActiveAiConfig } from "../core/services/configStore.js";
 import { createProvider } from "../core/ai/factory.js";
@@ -18,10 +19,10 @@ import { resolveWorkspace } from "./context.js";
 const activeStreams = new Map<string, { abort: () => void }>();
 
 function resolveAnalysisRequest(
-  wsId: string,
-  dir: string,
+  ws: Workspace,
   params: { postId?: string; promptName?: string; content?: string },
 ) {
+  const dir = ws.dataDirectory;
   const { postId, promptName, content } = params;
   if (!postId || !promptName) throw new Error("postId and promptName are required");
 
@@ -36,14 +37,14 @@ function resolveAnalysisRequest(
   const { systemPrompt, userContent } = resolvePromptRequest(prompt.text, { content: postContent });
   const promptMode = usesContentPlaceholder(prompt.text) ? "inline-content" : "split-system-user";
 
-  const aiConfig = getActiveAiConfig(dir);
+  const aiConfig = getActiveAiConfig(ws);
   if (!aiConfig) throw new Error("No active AI configuration selected");
 
   let provider;
   try {
     provider = createProvider(aiConfig);
   } catch (err) {
-    logError("analysis provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
+    logError("analysis provider init failed", { workspace: ws.id, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("AI provider error");
   }
 
@@ -55,8 +56,8 @@ export function registerAnalysisHandlers(): void {
   // this, so no early frame is missed. Validation throws (rejecting the invoke);
   // otherwise the stream is started and frames are pushed async on the channel.
   ipcMain.handle(CHANNELS.analysisStreamStart, (event, requestId: string, params: AnalysisStreamParams) => {
-    const dir = resolveWorkspace(params.wsId).dataDirectory;
-    const request = resolveAnalysisRequest(params.wsId, dir, params);
+    const ws = resolveWorkspace(params.wsId);
+    const request = resolveAnalysisRequest(ws, params);
     const channel = analysisStreamChannel(requestId);
     const send = (frame: AnalysisStreamFrame): void => {
       if (!event.sender.isDestroyed()) event.sender.send(channel, frame);

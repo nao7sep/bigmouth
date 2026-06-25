@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { initializeWorkspaceData } from "./dataDir.js";
+import { clearWorkspaceKeys } from "./apiKeys.js";
 
 const APP_NAME = "bigmouth";
 const HOME_ENV_VAR = "BIGMOUTH_HOME";
@@ -371,5 +372,9 @@ export function deleteWorkspace(id: string): boolean {
 
   config.workspaces.splice(index, 1);
   writeAppConfig();
+  // Drop the workspace's stored API keys too — they live in the shared secrets
+  // file keyed by workspace id, so deregistering a workspace must take its keys
+  // with it rather than leave them orphaned forever.
+  clearWorkspaceKeys(getApiKeysPath(), id);
   return true;
 }

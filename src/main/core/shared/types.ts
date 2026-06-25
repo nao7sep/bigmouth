@@ -120,16 +120,17 @@ export interface AiConfig {
   name: string;      // user-defined label (e.g., "Claude Sonnet")
   provider: AiProvider;
   apiKey: string;    // resolved in memory (env or the secrets file); empty in the renderer-facing view, never persisted in the workspace
-  hasApiKey?: boolean; // renderer-facing flag: true when a key is resolvable (env or stored)
+  hasApiKey?: boolean;   // renderer-facing flag: a key is stored for THIS config (env-independent)
+  usingEnvKey?: boolean; // renderer-facing flag: the provider's env var is set, so it overrides any stored key
   model: string;     // e.g., "claude-sonnet-4-6"
 }
 
 /**
  * The persisted shape of an AI config in the workspace's `ai-configs.json`. The
  * API key is deliberately absent — it lives in the storage-root secrets file
- * (`~/.bigmouth/api-keys.json`), keyed by this config's id, so a git-versioned
- * workspace never carries a secret (storage-path-conventions). The id is the
- * link between the committed config and the local, never-committed key.
+ * (`~/.bigmouth/api-keys.json`), keyed by (workspace id, config id), so a
+ * git-versioned workspace never carries a secret (storage-path-conventions). The
+ * config id is the link between the committed config and the local key.
  */
 export interface StoredAiConfig {
   id: string;

@@ -174,6 +174,75 @@ describe("applyPostMutationToBuckets", () => {
     expect(next.publishedTotal).toBe(0);
   });
 
+  it("breaks a published-time tie by slug, descending", () => {
+    // Same publishedAtUtc, so the slug localeCompare tiebreaker decides order. The
+    // sort is descending, so "zeta" precedes "alpha".
+    const sameTime = "2026-02-01T00:00:00.000Z";
+    const prev = buckets({
+      published: [summary("a", "published", { publishedAtUtc: sameTime, slug: "alpha" })],
+      publishedTotal: 1,
+      ready: [summary("z", "ready")],
+    });
+    const next = applyPostMutationToBuckets(
+      prev,
+      summary("z", "published", { publishedAtUtc: sameTime, slug: "zeta" }),
+      "published",
+      null
+    );
+    expect(ids(next.published)).toEqual(["z", "a"]);
+  });
+
+  it("breaks an expired-time tie by slug, descending", () => {
+    const sameTime = "2026-03-01T00:00:00.000Z";
+    const prev = buckets({
+      expired: [summary("a", "expired", { expiredAtUtc: sameTime, slug: "alpha" })],
+      expiredTotal: 1,
+      ready: [summary("z", "ready")],
+    });
+    const next = applyPostMutationToBuckets(
+      prev,
+      summary("z", "expired", { expiredAtUtc: sameTime, slug: "zeta" }),
+      "expired",
+      null
+    );
+    expect(ids(next.expired)).toEqual(["z", "a"]);
+  });
+
+  it("tolerates published posts with no publishedAtUtc or slug when sorting", () => {
+    // Both the time and the slug are absent on both rows, so every coalescing
+    // fallback fires; the comparator must still return a stable (equal) ordering
+    // rather than throwing.
+    const noTime = (id: string) =>
+      summary(id, "published", { publishedAtUtc: undefined, slug: undefined });
+    const prev = buckets({ published: [noTime("a")], publishedTotal: 1, ready: [noTime("b")] });
+    const next = applyPostMutationToBuckets(prev, noTime("b"), "published", null);
+    expect(ids(next.published).sort()).toEqual(["a", "b"]);
+  });
+
+  it("tolerates expired posts with no expiredAtUtc or slug when sorting", () => {
+    const noTime = (id: string) =>
+      summary(id, "expired", { expiredAtUtc: undefined, slug: undefined });
+    const prev = buckets({ expired: [noTime("a")], expiredTotal: 1, ready: [noTime("b")] });
+    const next = applyPostMutationToBuckets(prev, noTime("b"), "expired", null);
+    expect(ids(next.expired).sort()).toEqual(["a", "b"]);
+  });
+
+  it("orders drafts newest-created first when inserting into a populated list", () => {
+    // The default (drafts/ready) comparator keys on createdAtUtc; inserting a
+    // newer-created post must land it ahead of an older existing one.
+    const prev = buckets({
+      drafts: [summary("old", "draft", { createdAtUtc: "2026-01-01T00:00:00.000Z" })],
+      ready: [summary("z", "ready")],
+    });
+    const next = applyPostMutationToBuckets(
+      prev,
+      summary("z", "draft", { createdAtUtc: "2026-05-01T00:00:00.000Z" }),
+      "draft",
+      null
+    );
+    expect(ids(next.drafts)).toEqual(["z", "old"]);
+  });
+
   it("inserts into the expired archive in newest-expired-first order", () => {
     const prev = buckets({
       drafts: [summary("new", "draft")],

@@ -636,9 +636,11 @@ function AiTab({
               type="password"
               value={c.apiKey}
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
-              placeholder={c.hasApiKey ? "Leave blank to keep the current key" : "Optional"}
+              placeholder={c.hasApiKey ? "Leave blank to keep current key" : "Optional"}
             />
-            {c.apiKey.trim() && <p className="settings-hint">Saved when you click Save.</p>}
+            {c.usingEnvKey && (
+              <p className="settings-hint">Using ANTHROPIC_API_KEY; it overrides any stored key.</p>
+            )}
           </div>
           <button
             className="btn-toolbar btn-delete"

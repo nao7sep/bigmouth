@@ -1,6 +1,11 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import { describe, expect, it } from "vitest";
-import { isComposingEvent, isComposingKeyboardEvent } from "@renderer/hooks/useComposing";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook, act, cleanup } from "@testing-library/react";
+import {
+  isComposingEvent,
+  isComposingKeyboardEvent,
+  useComposing,
+} from "@renderer/hooks/useComposing";
 
 const ref = (value: boolean): RefObject<boolean> => ({ current: value });
 
@@ -49,5 +54,68 @@ describe("isComposingEvent", () => {
 
   it("is false for a plain command chord with no composition in progress", () => {
     expect(isComposingEvent(keyEvent({ key: "n", metaKey: true, isComposing: false, keyCode: 0 }))).toBe(false);
+  });
+});
+
+// The ref-tracking hook: compositionstart sets the flag, compositionend defers the
+// clear by one animation frame (the WebKit ordering quirk documented in the source),
+// and a fresh compositionstart cancels a pending clear. Fake timers stand in for the
+// requestAnimationFrame the hook schedules its deferred clear through.
+describe("useComposing", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("starts not composing", () => {
+    const { result } = renderHook(() => useComposing());
+    expect(result.current.composingRef.current).toBe(false);
+  });
+
+  it("sets the ref immediately on compositionstart", () => {
+    const { result } = renderHook(() => useComposing());
+    act(() => result.current.handlers.onCompositionStart());
+    expect(result.current.composingRef.current).toBe(true);
+  });
+
+  it("keeps the ref set until the next animation frame after compositionend", () => {
+    const { result } = renderHook(() => useComposing());
+    act(() => result.current.handlers.onCompositionStart());
+    act(() => result.current.handlers.onCompositionEnd());
+
+    // The clear is deferred so a keydown firing in the same tick still sees the
+    // composition (the WebKit-before-keydown case); the flag is still set here.
+    expect(result.current.composingRef.current).toBe(true);
+
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(result.current.composingRef.current).toBe(false);
+  });
+
+  it("cancels a pending clear when composition restarts before the frame fires", () => {
+    const { result } = renderHook(() => useComposing());
+    act(() => result.current.handlers.onCompositionStart());
+    act(() => result.current.handlers.onCompositionEnd());
+
+    // A new composition starts before the deferred clear runs: it must cancel the
+    // pending frame so the still-true flag is not clobbered to false afterwards.
+    act(() => result.current.handlers.onCompositionStart());
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(result.current.composingRef.current).toBe(true);
+  });
+
+  it("ignores a redundant compositionstart with no pending clear", () => {
+    // Two starts in a row exercise the rafIdRef === null branch on the second call.
+    const { result } = renderHook(() => useComposing());
+    act(() => result.current.handlers.onCompositionStart());
+    act(() => result.current.handlers.onCompositionStart());
+    expect(result.current.composingRef.current).toBe(true);
   });
 });

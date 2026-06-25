@@ -11,10 +11,10 @@ export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 
 /**
  * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
- * module constant) so every workspace gets a UNIQUE default config id: the secret
- * store (`~/.bigmouth/api-keys.json`) keys by config id, so two workspaces created
- * in the same session must not share one, or setting/clearing a key in one would
- * affect the other.
+ * module constant) so every workspace gets a fresh default config id rather than
+ * one frozen at import and shared by all — ids are unique by nature. (The secret
+ * store keys by (workspace id, config id), so a shared id no longer collides; this
+ * just keeps the ids honestly distinct.)
  */
 export function makeDefaultAiConfigs(): StoredAiConfigsData {
   const id = nanoid();

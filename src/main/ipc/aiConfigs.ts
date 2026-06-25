@@ -22,14 +22,14 @@ function isAiProvider(value: unknown): value is AiProvider {
 
 export function registerAiConfigHandlers(): void {
   ipcMain.handle(CHANNELS.listAiConfigs, (_event, wsId: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const configs = getAiConfigsForClient(dir);
+    const ws = resolveWorkspace(wsId);
+    const configs = getAiConfigsForClient(ws);
     info("ai configs loaded", { workspace: wsId, configCount: configs.configs.length, activeId: configs.activeId });
     return configs;
   });
 
   ipcMain.handle(CHANNELS.createAiConfig, (_event, wsId: string, input: AiConfigInput) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+    const ws = resolveWorkspace(wsId);
     if (typeof input?.id !== "string" || !ID_RE.test(input.id)) {
       throw new Error("id is required and must match [A-Za-z0-9_-]+");
     }
@@ -38,7 +38,7 @@ export function registerAiConfigHandlers(): void {
     if (typeof input.model !== "string") throw new Error("model must be a string");
     if (input.apiKey !== undefined && typeof input.apiKey !== "string") throw new Error("apiKey must be a string");
     try {
-      const result = createAiConfig(dir, {
+      const result = createAiConfig(ws, {
         id: input.id,
         name: input.name,
         provider: input.provider,
@@ -54,11 +54,11 @@ export function registerAiConfigHandlers(): void {
   });
 
   ipcMain.handle(CHANNELS.setActiveAiConfig, (_event, wsId: string, id: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+    const ws = resolveWorkspace(wsId);
     if (typeof id !== "string") throw new Error("id must be a string");
     if (id !== "" && !ID_RE.test(id)) throw new Error("id is malformed");
     try {
-      const result = setActiveAiConfig(dir, id);
+      const result = setActiveAiConfig(ws, id);
       info("ai active config set", { workspace: wsId, activeId: id || null });
       return result;
     } catch (err) {
@@ -69,7 +69,7 @@ export function registerAiConfigHandlers(): void {
 
   // Partial update: a field omitted is preserved; apiKey "" clears, non-empty replaces.
   ipcMain.handle(CHANNELS.updateAiConfig, (_event, wsId: string, id: string, body: AiConfigPatch) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+    const ws = resolveWorkspace(wsId);
     if (!ID_RE.test(id)) throw new Error("id is malformed");
     const patch: UpdateAiConfigPatch = {};
     if (body?.name !== undefined) {
@@ -89,7 +89,7 @@ export function registerAiConfigHandlers(): void {
       patch.apiKey = body.apiKey;
     }
     try {
-      const result = updateAiConfig(dir, id, patch);
+      const result = updateAiConfig(ws, id, patch);
       info("ai config updated", { workspace: wsId, configId: id, changed: Object.keys(patch) });
       return result;
     } catch (err) {
@@ -99,10 +99,10 @@ export function registerAiConfigHandlers(): void {
   });
 
   ipcMain.handle(CHANNELS.deleteAiConfig, (_event, wsId: string, id: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+    const ws = resolveWorkspace(wsId);
     if (!ID_RE.test(id)) throw new Error("id is malformed");
     try {
-      const result = deleteAiConfig(dir, id);
+      const result = deleteAiConfig(ws, id);
       info("ai config deleted", { workspace: wsId, configId: id });
       return result;
     } catch (err) {

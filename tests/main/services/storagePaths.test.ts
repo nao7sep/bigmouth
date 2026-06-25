@@ -1,9 +1,7 @@
-// Proves the single storage-root resolution in workspaceStore.ts and the
-// environment-first secret resolution in configStore.ts:
+// Proves the single storage-root resolution in workspaceStore.ts:
 //   - BIGMOUTH_HOME set   → the whole ~/.bigmouth root relocates under it
 //   - BIGMOUTH_HOME unset → the root defaults to <home>/.bigmouth
 //   - a relative BIGMOUTH_HOME resolves against the home directory, never the cwd
-//   - an env API key wins over the stored (obfuscated) one
 // Relocation is driven through the BIGMOUTH_HOME environment variable — the one
 // supported relocation seam — never a private setter.
 
@@ -12,28 +10,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initAppDir, getLogsDir, createWorkspace } from "@main/core/services/workspaceStore.js";
-import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import {
-  createAiConfig,
-  setActiveAiConfig,
-  getActiveAiConfig,
-} from "@main/core/services/configStore.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
-const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
 
 beforeEach(() => {
   delete process.env.BIGMOUTH_HOME;
-  delete process.env.ANTHROPIC_API_KEY;
   delete process.env.BIGMOUTH_TEST_BASE;
 });
 
 afterEach(() => {
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
   else process.env.BIGMOUTH_HOME = SAVED_HOME;
-  if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   if (SAVED_TEST_BASE === undefined) delete process.env.BIGMOUTH_TEST_BASE;
   else process.env.BIGMOUTH_TEST_BASE = SAVED_TEST_BASE;
 });
@@ -145,55 +133,5 @@ describe("workspace paths are cwd-independent", () => {
       fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(path.join(os.homedir(), rel), { recursive: true, force: true });
     }
-  });
-});
-
-describe("secret resolution (environment-first)", () => {
-  let dataDir: string;
-  let root: string;
-
-  beforeEach(() => {
-    // The key now lives in the storage-root secrets file (api-keys.json), so the
-    // root must be initialized; the workspace holds only non-secret config.
-    root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-secrets-home-"));
-    process.env.BIGMOUTH_HOME = root;
-    initAppDir();
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-secrets-"));
-    initializeWorkspaceData(dataDir);
-  });
-
-  afterEach(() => {
-    fs.rmSync(dataDir, { recursive: true, force: true });
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  it("prefers an env API key over the stored obfuscated one", () => {
-    createAiConfig(dataDir, {
-      id: "c1",
-      name: "Test",
-      provider: "claude",
-      model: "claude-test",
-      apiKey: "sk-ant-stored",
-    });
-    setActiveAiConfig(dataDir, "c1");
-
-    process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
-    expect(getActiveAiConfig(dataDir)?.apiKey).toBe("sk-ant-from-env");
-
-    delete process.env.ANTHROPIC_API_KEY;
-    expect(getActiveAiConfig(dataDir)?.apiKey).toBe("sk-ant-stored");
-  });
-
-  it("uses the env API key even when no key is stored", () => {
-    createAiConfig(dataDir, {
-      id: "c1",
-      name: "Test",
-      provider: "claude",
-      model: "claude-test",
-    });
-    setActiveAiConfig(dataDir, "c1");
-
-    process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
-    expect(getActiveAiConfig(dataDir)?.apiKey).toBe("sk-ant-from-env");
   });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Workspace } from "@shared/types";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir, getApiKeysPath } from "@main/core/services/workspaceStore.js";
 import {
@@ -17,8 +18,15 @@ import {
 
 let dataDir: string;
 let homeDir: string;
+let ws: Workspace;
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
+
+// A workspace for an already-initialized data directory under the current home.
+function workspaceAt(id: string, dir: string): Workspace {
+  initializeWorkspaceData(dir);
+  return { id, name: id, dataDirectory: dir };
+}
 
 beforeEach(() => {
   // A fresh storage root per test gives the secrets file (api-keys.json) a real,
@@ -29,7 +37,7 @@ beforeEach(() => {
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore-"));
-  initializeWorkspaceData(dataDir);
+  ws = workspaceAt("ws-1", dataDir);
 });
 
 afterEach(() => {
@@ -61,7 +69,7 @@ describe("settings", () => {
 
 describe("AI config API key handling", () => {
   it("keeps the key out of the workspace file and in the storage-root secrets file", () => {
-    createAiConfig(dataDir, {
+    createAiConfig(ws, {
       id: "c1",
       name: "Claude",
       provider: "claude",
@@ -74,94 +82,135 @@ describe("AI config API key handling", () => {
     expect(onDisk).not.toContain("sk-ant-secret");
     expect(onDisk).not.toContain("apiKey");
 
-    // The key lives in the secrets file under the storage root, obfuscated (not plaintext).
+    // The key lives in the secrets file, keyed by (workspace id, config id), obfuscated.
     const secrets = fs.readFileSync(getApiKeysPath(), "utf-8");
     expect(secrets).not.toContain("sk-ant-secret");
-    expect(JSON.parse(secrets).keys.c1).toBeTruthy();
+    expect(JSON.parse(secrets).workspaces[ws.id].c1).toBeTruthy();
 
     // Client view carries no key, only the hasApiKey flag.
-    const created = getAiConfigsForClient(dataDir).configs.find((c) => c.id === "c1");
+    const created = getAiConfigsForClient(ws).configs.find((c) => c.id === "c1");
     expect(created?.apiKey).toBe("");
     expect(created?.hasApiKey).toBe(true);
+    expect(created?.usingEnvKey).toBe(false);
   });
 
   it("getActiveAiConfig returns the deobfuscated key for the active config", () => {
-    createAiConfig(dataDir, {
+    createAiConfig(ws, {
       id: "c1",
       name: "Claude",
       provider: "claude",
       model: "claude-opus-4-8",
       apiKey: "sk-ant-secret",
     });
-    setActiveAiConfig(dataDir, "c1");
+    setActiveAiConfig(ws, "c1");
 
-    const active = getActiveAiConfig(dataDir);
-    expect(active?.apiKey).toBe("sk-ant-secret");
+    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-secret");
   });
 
   it("preserves the key when apiKey is omitted from an update", () => {
-    createAiConfig(dataDir, {
-      id: "c1",
-      name: "Claude",
-      provider: "claude",
-      model: "claude-opus-4-8",
-      apiKey: "sk-ant-secret",
-    });
-    setActiveAiConfig(dataDir, "c1");
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "claude", model: "m", apiKey: "sk-ant-secret" });
+    setActiveAiConfig(ws, "c1");
 
-    updateAiConfig(dataDir, "c1", { name: "Renamed" });
-    expect(getActiveAiConfig(dataDir)?.apiKey).toBe("sk-ant-secret");
-    const renamed = getAiConfigsForClient(dataDir).configs.find((c) => c.id === "c1");
-    expect(renamed?.name).toBe("Renamed");
+    updateAiConfig(ws, "c1", { name: "Renamed" });
+    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-secret");
+    expect(getAiConfigsForClient(ws).configs.find((c) => c.id === "c1")?.name).toBe("Renamed");
   });
 
-  it("clears the key when apiKey is an empty string", () => {
-    createAiConfig(dataDir, {
-      id: "c1",
-      name: "Claude",
-      provider: "claude",
-      model: "claude-opus-4-8",
-      apiKey: "sk-ant-secret",
-    });
-    setActiveAiConfig(dataDir, "c1");
+  it("clears the key when apiKey is blank", () => {
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "claude", model: "m", apiKey: "sk-ant-secret" });
+    setActiveAiConfig(ws, "c1");
 
-    updateAiConfig(dataDir, "c1", { apiKey: "" });
-    expect(getActiveAiConfig(dataDir)?.apiKey).toBe("");
-    expect(getAiConfigsForClient(dataDir).configs[0].hasApiKey).toBe(false);
+    updateAiConfig(ws, "c1", { apiKey: "" });
+    expect(getActiveAiConfig(ws)?.apiKey).toBe("");
+    expect(getAiConfigsForClient(ws).configs[0].hasApiKey).toBe(false);
+  });
+
+  it("a key-only update does not rewrite the git-versioned ai-configs.json", () => {
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "claude", model: "m", apiKey: "old" });
+    setActiveAiConfig(ws, "c1");
+    const configPath = path.join(dataDir, "ai-configs.json");
+    const before = fs.readFileSync(configPath, "utf-8");
+
+    updateAiConfig(ws, "c1", { apiKey: "new-key" });
+
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before); // workspace file untouched
+    expect(getActiveAiConfig(ws)?.apiKey).toBe("new-key"); // but the key did change
+  });
+
+  it("deleteAiConfig also removes the stored key", () => {
+    createAiConfig(ws, { id: "c1", name: "A", provider: "claude", model: "m" });
+    createAiConfig(ws, { id: "c2", name: "B", provider: "claude", model: "m", apiKey: "sk-c2" });
+    setActiveAiConfig(ws, "c1");
+
+    deleteAiConfig(ws, "c2");
+    const secrets = JSON.parse(fs.readFileSync(getApiKeysPath(), "utf-8"));
+    expect(secrets.workspaces[ws.id]?.c2).toBeUndefined();
+  });
+
+  it("hasApiKey is stored-only while usingEnvKey reflects the environment", () => {
+    createAiConfig(ws, { id: "c1", name: "A", provider: "claude", model: "m" }); // no stored key
+    setActiveAiConfig(ws, "c1");
+    process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
+
+    const view = getAiConfigsForClient(ws).configs[0];
+    expect(view.hasApiKey).toBe(false); // nothing stored for this config
+    expect(view.usingEnvKey).toBe(true); // env overrides
+    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-from-env"); // resolution still env-first
+  });
+
+  it("keeps keys independent for two workspaces that share a config id", () => {
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore2-"));
+    try {
+      const ws2 = workspaceAt("ws-2", otherDir);
+      createAiConfig(ws, { id: "shared", name: "A", provider: "claude", model: "m", apiKey: "key-ws1" });
+      createAiConfig(ws2, { id: "shared", name: "B", provider: "claude", model: "m", apiKey: "key-ws2" });
+      setActiveAiConfig(ws, "shared");
+      setActiveAiConfig(ws2, "shared");
+
+      expect(getActiveAiConfig(ws)?.apiKey).toBe("key-ws1");
+      expect(getActiveAiConfig(ws2)?.apiKey).toBe("key-ws2");
+    } finally {
+      fs.rmSync(otherDir, { recursive: true, force: true });
+    }
   });
 });
 
 describe("AI config lifecycle guards", () => {
   it("refuses to delete the active config", () => {
-    createAiConfig(dataDir, {
-      id: "c1",
-      name: "Claude",
-      provider: "claude",
-      model: "claude-opus-4-8",
-    });
-    setActiveAiConfig(dataDir, "c1");
-    expect(() => deleteAiConfig(dataDir, "c1")).toThrow(/active/i);
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "claude", model: "m" });
+    setActiveAiConfig(ws, "c1");
+    expect(() => deleteAiConfig(ws, "c1")).toThrow(/active/i);
   });
 
   it("deletes a non-active config", () => {
-    createAiConfig(dataDir, { id: "c1", name: "A", provider: "claude", model: "m" });
-    createAiConfig(dataDir, { id: "c2", name: "B", provider: "claude", model: "m" });
-    setActiveAiConfig(dataDir, "c1");
+    createAiConfig(ws, { id: "c1", name: "A", provider: "claude", model: "m" });
+    createAiConfig(ws, { id: "c2", name: "B", provider: "claude", model: "m" });
+    setActiveAiConfig(ws, "c1");
 
-    const result = deleteAiConfig(dataDir, "c2");
-    const ids = result.configs.map((c) => c.id);
+    const ids = deleteAiConfig(ws, "c2").configs.map((c) => c.id);
     expect(ids).toContain("c1");
     expect(ids).not.toContain("c2");
   });
 
   it("rejects a duplicate config id", () => {
-    createAiConfig(dataDir, { id: "c1", name: "A", provider: "claude", model: "m" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "claude", model: "m" });
     expect(() =>
-      createAiConfig(dataDir, { id: "c1", name: "Dup", provider: "claude", model: "m" })
+      createAiConfig(ws, { id: "c1", name: "Dup", provider: "claude", model: "m" }),
     ).toThrow(/already exists/i);
   });
 
   it("rejects activating a config that does not exist", () => {
-    expect(() => setActiveAiConfig(dataDir, "ghost")).toThrow(/not found/i);
+    expect(() => setActiveAiConfig(ws, "ghost")).toThrow(/not found/i);
+  });
+
+  it("rejects updating a config that does not exist", () => {
+    expect(() => updateAiConfig(ws, "ghost", { name: "x" })).toThrow(/not found/i);
+  });
+
+  it("accepts an empty active id to mean no active config", () => {
+    createAiConfig(ws, { id: "c1", name: "A", provider: "claude", model: "m" });
+    setActiveAiConfig(ws, "c1");
+    expect(setActiveAiConfig(ws, "").activeId).toBe("");
+    expect(getActiveAiConfig(ws)).toBeNull(); // no active config resolves to null
   });
 });

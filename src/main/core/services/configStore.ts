@@ -16,6 +16,7 @@ import type {
   StoredAiConfig,
   StoredAiConfigsData,
   GenerationPromptsData,
+  Workspace,
 } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
@@ -89,8 +90,8 @@ function writeAiConfigsRaw(dataDir: string, data: StoredAiConfigsData): void {
  * exist as a collection: misuse can only ever leak the one config a route
  * was already going to use.
  */
-export function getActiveAiConfig(dataDir: string): AiConfig | null {
-  const data = readAiConfigsRaw(dataDir);
+export function getActiveAiConfig(workspace: Workspace): AiConfig | null {
+  const data = readAiConfigsRaw(workspace.dataDirectory);
   const stored = (data.configs ?? []).find((c) => c.id === data.activeId);
   if (!stored) return null;
   return {
@@ -98,18 +99,19 @@ export function getActiveAiConfig(dataDir: string): AiConfig | null {
     name: stored.name,
     provider: stored.provider,
     model: stored.model,
-    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), stored.id, stored.provider) ?? "",
+    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, stored.id, stored.provider) ?? "",
   };
 }
 
 /**
- * Returns AI configs with empty API key fields plus a boolean indicating whether
- * a key is resolvable (from the environment or the secrets file). The key value
+ * Returns AI configs for the renderer: empty key fields, a per-config `hasApiKey`
+ * (a key is stored for THIS config) and `usingEnvKey` (the provider's env var is
+ * set and overrides any stored key). The secrets file is read once. The key value
  * never crosses the IPC bridge.
  */
-export function getAiConfigsForClient(dataDir: string): AiConfigsData {
-  const data = readAiConfigsRaw(dataDir);
-  const keysPath = getApiKeysPath();
+export function getAiConfigsForClient(workspace: Workspace): AiConfigsData {
+  const data = readAiConfigsRaw(workspace.dataDirectory);
+  const storedIds = apiKeys.readStoredConfigIds(getApiKeysPath(), workspace.id);
   return {
     activeId: data.activeId,
     configs: (data.configs ?? []).map((config) => ({
@@ -117,7 +119,8 @@ export function getAiConfigsForClient(dataDir: string): AiConfigsData {
       name: config.name,
       provider: config.provider,
       apiKey: "",
-      hasApiKey: apiKeys.hasApiKey(keysPath, config.id, config.provider),
+      hasApiKey: storedIds.has(config.id),
+      usingEnvKey: apiKeys.hasEnvApiKey(config.provider),
       model: config.model,
     })),
   };
@@ -136,8 +139,8 @@ export type CreateAiConfigInput = {
  * already in use. Any supplied key goes to the secrets file, not the workspace.
  * Returns the renderer-facing config view.
  */
-export function createAiConfig(dataDir: string, input: CreateAiConfigInput): AiConfigsData {
-  const data = readAiConfigsRaw(dataDir);
+export function createAiConfig(workspace: Workspace, input: CreateAiConfigInput): AiConfigsData {
+  const data = readAiConfigsRaw(workspace.dataDirectory);
   if ((data.configs ?? []).some((c) => c.id === input.id)) {
     throw new Error(`AI config with id "${input.id}" already exists`);
   }
@@ -148,11 +151,15 @@ export function createAiConfig(dataDir: string, input: CreateAiConfigInput): AiC
     model: input.model,
   };
   data.configs = [...(data.configs ?? []), stored];
-  writeAiConfigsRaw(dataDir, data);
-  if (input.apiKey !== undefined && input.apiKey.length > 0) {
-    apiKeys.writeApiKey(getApiKeysPath(), input.id, input.apiKey);
+  // Config first, then key: the key is only meaningful once its config exists, so
+  // a failed key write at worst leaves a keyless config the user can re-key. (The
+  // workspace file and the secrets file are separate; they cannot be made atomic
+  // without machinery, so ordering bounds the blast radius instead.)
+  writeAiConfigsRaw(workspace.dataDirectory, data);
+  if (input.apiKey !== undefined) {
+    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, input.id, input.apiKey);
   }
-  return getAiConfigsForClient(dataDir);
+  return getAiConfigsForClient(workspace);
 }
 
 export type UpdateAiConfigPatch = {
@@ -162,8 +169,8 @@ export type UpdateAiConfigPatch = {
   /**
    * Key handling (the key lives in the secrets file, not the workspace):
    *   - field omitted from patch → existing key is preserved
-   *   - empty string ("")        → existing key is cleared
-   *   - non-empty string         → existing key is replaced
+   *   - blank string             → existing key is cleared
+   *   - non-blank string         → existing key is replaced
    */
   apiKey?: string;
 };
@@ -173,33 +180,38 @@ export type UpdateAiConfigPatch = {
  * exist. Returns the renderer-facing config view.
  */
 export function updateAiConfig(
-  dataDir: string,
+  workspace: Workspace,
   id: string,
   patch: UpdateAiConfigPatch
 ): AiConfigsData {
-  const data = readAiConfigsRaw(dataDir);
+  const data = readAiConfigsRaw(workspace.dataDirectory);
   const config = (data.configs ?? []).find((c) => c.id === id);
   if (!config) {
     throw new Error(`AI config with id "${id}" not found`);
   }
+  const metadataChanged =
+    patch.name !== undefined || patch.provider !== undefined || patch.model !== undefined;
   if (patch.name !== undefined) config.name = patch.name;
   if (patch.provider !== undefined) config.provider = patch.provider;
   if (patch.model !== undefined) config.model = patch.model;
-  writeAiConfigsRaw(dataDir, data);
+  // Key to the secrets file first, so a failure there leaves the workspace file
+  // untouched. Rewrite the workspace file only when a non-secret field changed —
+  // a key-only edit must not dirty the git-versioned ai-configs.json.
   if (patch.apiKey !== undefined) {
-    // "" clears the stored key; a non-empty value replaces it; an omitted field
-    // (handled above) leaves it untouched.
-    apiKeys.writeApiKey(getApiKeysPath(), id, patch.apiKey);
+    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, id, patch.apiKey);
   }
-  return getAiConfigsForClient(dataDir);
+  if (metadataChanged) {
+    writeAiConfigsRaw(workspace.dataDirectory, data);
+  }
+  return getAiConfigsForClient(workspace);
 }
 
 /**
  * Removes a single AI config and its stored key. Refuses to delete the currently
  * active config — the caller must reassign `activeId` (or set it to "") first.
  */
-export function deleteAiConfig(dataDir: string, id: string): AiConfigsData {
-  const data = readAiConfigsRaw(dataDir);
+export function deleteAiConfig(workspace: Workspace, id: string): AiConfigsData {
+  const data = readAiConfigsRaw(workspace.dataDirectory);
   if (!(data.configs ?? []).some((c) => c.id === id)) {
     throw new Error(`AI config with id "${id}" not found`);
   }
@@ -207,23 +219,23 @@ export function deleteAiConfig(dataDir: string, id: string): AiConfigsData {
     throw new Error("Cannot delete the active AI config; set another active first");
   }
   data.configs = (data.configs ?? []).filter((c) => c.id !== id);
-  writeAiConfigsRaw(dataDir, data);
-  apiKeys.clearApiKey(getApiKeysPath(), id);
-  return getAiConfigsForClient(dataDir);
+  writeAiConfigsRaw(workspace.dataDirectory, data);
+  apiKeys.clearApiKey(getApiKeysPath(), workspace.id, id);
+  return getAiConfigsForClient(workspace);
 }
 
 /**
  * Sets the active AI config. Accepts an empty string to mean "no active config".
  * Throws if a non-empty id does not refer to an existing config.
  */
-export function setActiveAiConfig(dataDir: string, id: string): AiConfigsData {
-  const data = readAiConfigsRaw(dataDir);
+export function setActiveAiConfig(workspace: Workspace, id: string): AiConfigsData {
+  const data = readAiConfigsRaw(workspace.dataDirectory);
   if (id !== "" && !(data.configs ?? []).some((c) => c.id === id)) {
     throw new Error(`AI config with id "${id}" not found`);
   }
   data.activeId = id;
-  writeAiConfigsRaw(dataDir, data);
-  return getAiConfigsForClient(dataDir);
+  writeAiConfigsRaw(workspace.dataDirectory, data);
+  return getAiConfigsForClient(workspace);
 }
 
 // --- Targets ---

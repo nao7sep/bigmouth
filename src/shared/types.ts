@@ -125,7 +125,8 @@ export interface AiConfig {
   name: string;
   provider: AiProvider;
   apiKey: string; // empty in responses to the renderer; the stored key never crosses the bridge
-  hasApiKey?: boolean; // true when a key is already stored
+  hasApiKey?: boolean; // a key is stored for THIS config (env-independent)
+  usingEnvKey?: boolean; // the provider's env var is set, so it overrides any stored key
   model: string;
 }
 

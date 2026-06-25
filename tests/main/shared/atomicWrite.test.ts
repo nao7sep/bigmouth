@@ -41,4 +41,12 @@ describe("writeFileAtomic", () => {
     // The replacement must be atomic, leaving exactly the target and nothing else.
     expect(fs.readdirSync(dir)).toEqual(["data.json"]);
   });
+
+  it.runIf(process.platform !== "win32")("creates the file at the requested mode", () => {
+    // The mode is applied at creation, so the content never exists at a looser
+    // default for even an instant (used for the 0600 secrets file).
+    const target = path.join(dir, "secret.json");
+    writeFileAtomic(target, "s3cr3t", 0o600);
+    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+  });
 });

@@ -10,11 +10,12 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { MetadataTab, type MetadataTabHandle } from "@renderer/components/MetadataTab";
-import { updatePost, generateMetadataFields } from "@renderer/api";
+import { updatePost, generateMetadataField, generateMetadataFields } from "@renderer/api";
 import type { PostFrontMatter, PostMutationResult } from "@shared/types";
 
 const AUTOSAVE_DELAY_MS = 1_000;
 const mockUpdatePost = vi.mocked(updatePost);
+const mockGenerateMetadataField = vi.mocked(generateMetadataField);
 const mockGenerateMetadataFields = vi.mocked(generateMetadataFields);
 
 function frontMatter(): PostFrontMatter {
@@ -59,7 +60,14 @@ async function settleSaves(resolvers: Array<() => void>, pending: Promise<unknow
   }
 }
 
-function renderTab() {
+function renderTab(
+  overrides: Partial<{
+    frontMatter: PostFrontMatter;
+    content: string;
+    readOnly: boolean;
+    extraFieldWatermark: string;
+  }> = {}
+) {
   const ref = createRef<MetadataTabHandle>();
   const onPostUpdated = vi.fn();
   const { container } = render(
@@ -67,26 +75,43 @@ function renderTab() {
       ref={ref}
       workspaceId="w1"
       postId="p1"
-      frontMatter={frontMatter()}
-      content="some body text"
-      extraFieldWatermark=""
+      frontMatter={overrides.frontMatter ?? frontMatter()}
+      content={overrides.content ?? "some body text"}
+      extraFieldWatermark={overrides.extraFieldWatermark ?? ""}
       onPostUpdated={onPostUpdated}
+      readOnly={overrides.readOnly}
     />
   );
   // The Title field is the first textarea rendered.
   const titleInput = container.querySelectorAll("textarea")[0] as HTMLTextAreaElement;
-  return { ref, container, titleInput };
+  return { ref, container, titleInput, onPostUpdated };
 }
+
+// The Copy buttons go through useCopyFeedback → navigator.clipboard.
+let clipboardWrite: ReturnType<typeof vi.fn>;
+let originalClipboard: PropertyDescriptor | undefined;
 
 beforeEach(() => {
   vi.useFakeTimers();
   mockUpdatePost.mockReset();
+  mockGenerateMetadataField.mockReset();
   mockGenerateMetadataFields.mockReset();
+  clipboardWrite = vi.fn().mockResolvedValue(undefined);
+  originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboardWrite },
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  if (originalClipboard) {
+    Object.defineProperty(navigator, "clipboard", originalClipboard);
+  } else {
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  }
 });
 
 describe("MetadataTab autosave", () => {
@@ -206,5 +231,239 @@ describe("MetadataTab autosave", () => {
     expect(flushed).toBe(true);
     expect(mockUpdatePost).toHaveBeenCalledTimes(2);
     expect(mockUpdatePost.mock.calls.at(-1)?.[1]).toEqual({ frontMatter: { title: "B" } });
+  });
+
+  it("blur fast-forwards the debounce and saves immediately", async () => {
+    mockUpdatePost.mockResolvedValue(result());
+    const { titleInput } = renderTab();
+
+    fireEvent.change(titleInput, { target: { value: "Blurred" } });
+    await act(async () => {
+      // No timer advance — blur should persist before the debounce elapses.
+      fireEvent.blur(titleInput);
+    });
+    expect(mockUpdatePost).toHaveBeenCalledWith("p1", { frontMatter: { title: "Blurred" } }, "w1");
+  });
+
+  it("blur does not save a field that is unchanged", async () => {
+    mockUpdatePost.mockResolvedValue(result());
+    const { titleInput } = renderTab();
+    await act(async () => {
+      fireEvent.blur(titleInput);
+    });
+    expect(mockUpdatePost).not.toHaveBeenCalled();
+  });
+
+  it("normalizes tags into an array on save", async () => {
+    mockUpdatePost.mockResolvedValue(result());
+    const { container } = renderTab();
+    // Field order (en): Title, Slug, Tags, Description, Extra.
+    const tagsInput = container.querySelectorAll("textarea")[2] as HTMLTextAreaElement;
+    fireEvent.change(tagsInput, { target: { value: "a, b ,, c" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(mockUpdatePost).toHaveBeenCalledWith("p1", { frontMatter: { tags: ["a", "b", "c"] } }, "w1");
+  });
+
+  it("surfaces a save failure in the error banner", async () => {
+    mockUpdatePost.mockRejectedValue(new Error("save died"));
+    const { container, titleInput } = renderTab();
+    fireEvent.change(titleInput, { target: { value: "X" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(container.querySelector(".metadata-error")?.textContent).toContain("save died");
+  });
+});
+
+// The first .meta-field-generate button belongs to Title.
+function titleGenerate(container: HTMLElement): HTMLButtonElement {
+  return container.querySelector(".meta-field-generate") as HTMLButtonElement;
+}
+
+describe("MetadataTab single-field generation", () => {
+  it("generates a field, writes the value, and persists it", async () => {
+    mockGenerateMetadataField.mockResolvedValue("AI Title");
+    mockUpdatePost.mockResolvedValue(result());
+    const { container, titleInput } = renderTab();
+
+    await act(async () => {
+      fireEvent.click(titleGenerate(container));
+    });
+
+    expect(mockGenerateMetadataField).toHaveBeenCalledWith("p1", "title", "some body text");
+    expect(titleInput.value).toBe("AI Title");
+    expect(mockUpdatePost).toHaveBeenCalledWith("p1", { frontMatter: { title: "AI Title" } }, "w1");
+  });
+
+  it("shows the field's generating label while in flight", async () => {
+    let release!: (value: string) => void;
+    mockGenerateMetadataField.mockImplementation(
+      () => new Promise<string>((resolve) => (release = resolve))
+    );
+    mockUpdatePost.mockResolvedValue(result());
+    const { container } = renderTab();
+    const btn = titleGenerate(container);
+
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn.textContent).toBe("Generating…");
+    expect(btn.disabled).toBe(true);
+
+    await act(async () => {
+      release("done");
+    });
+    expect(btn.textContent).toBe("Generate");
+  });
+
+  it("surfaces a generation failure and does not save", async () => {
+    mockGenerateMetadataField.mockRejectedValue(new Error("gen failed"));
+    const { container } = renderTab();
+    await act(async () => {
+      fireEvent.click(titleGenerate(container));
+    });
+    expect(container.querySelector(".metadata-error")?.textContent).toContain("gen failed");
+    expect(mockUpdatePost).not.toHaveBeenCalled();
+  });
+
+  it("disables Generate when content is empty", () => {
+    const { container } = renderTab({ content: "   " });
+    expect(titleGenerate(container).disabled).toBe(true);
+  });
+});
+
+describe("MetadataTab Generate All", () => {
+  it("disables Generate All when content is empty", () => {
+    const { container } = renderTab({ content: "" });
+    const btn = container.querySelector(".btn-generate-all") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it("reports fields the batch could not generate", async () => {
+    mockUpdatePost.mockResolvedValue(result());
+    // title + slug succeed; tags + metaDescription come back as errors.
+    mockGenerateMetadataFields.mockResolvedValue({
+      title: { value: "T" },
+      slug: { value: "S" },
+      tags: { error: "no tags" },
+      metaDescription: { error: "no desc" },
+    });
+    const { container } = renderTab();
+    await act(async () => {
+      fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
+    });
+    // The successful fields were saved in a single batch update...
+    expect(mockUpdatePost).toHaveBeenCalledWith(
+      "p1",
+      { frontMatter: { title: "T", slug: "S" } },
+      "w1"
+    );
+    // ...and the failures are surfaced.
+    expect(container.querySelector(".metadata-error")?.textContent).toContain(
+      "Failed to generate: tags, metaDescription"
+    );
+  });
+
+  it("surfaces a failure when the batch save itself fails", async () => {
+    mockGenerateMetadataFields.mockResolvedValue({
+      title: { value: "T" },
+      slug: { value: "S" },
+      tags: { value: "x, y" },
+      metaDescription: { value: "D" },
+    });
+    mockUpdatePost.mockRejectedValue(new Error("batch save died"));
+    const { container } = renderTab();
+    await act(async () => {
+      fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
+    });
+    expect(container.querySelector(".metadata-error")?.textContent).toContain("batch save died");
+  });
+
+  it("surfaces a failure when the whole batch generation rejects", async () => {
+    mockGenerateMetadataFields.mockRejectedValue(new Error("provider down"));
+    const { container } = renderTab();
+    await act(async () => {
+      fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
+    });
+    expect(container.querySelector(".metadata-error")?.textContent).toContain("provider down");
+  });
+});
+
+describe("MetadataTab non-English fields", () => {
+  function jaFrontMatter(): PostFrontMatter {
+    return { ...frontMatter(), language: "ja", titleEn: "Seed En" };
+  }
+
+  it("renders the English companion fields and seeds them from front matter", () => {
+    const { container } = renderTab({ frontMatter: jaFrontMatter() });
+    // 8 fields: Title, Title(En), Slug, Tags, Tags(En), Description, Description(En), Extra.
+    const textareas = container.querySelectorAll("textarea");
+    expect(textareas).toHaveLength(8);
+    expect((textareas[1] as HTMLTextAreaElement).value).toBe("Seed En");
+  });
+
+  it("autosaves an edit to the Title (English) companion field", async () => {
+    mockUpdatePost.mockResolvedValue(result());
+    const { container } = renderTab({ frontMatter: jaFrontMatter() });
+    const titleEn = container.querySelectorAll("textarea")[1] as HTMLTextAreaElement;
+    fireEvent.change(titleEn, { target: { value: "New En" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(mockUpdatePost).toHaveBeenCalledWith("p1", { frontMatter: { titleEn: "New En" } }, "w1");
+  });
+});
+
+describe("MetadataTab read-only", () => {
+  it("shows the read-only hint and ignores edits", async () => {
+    const { container, titleInput, getByText } = renderReadOnly();
+    expect(getByText("Metadata is read-only.")).toBeTruthy();
+
+    fireEvent.change(titleInput, { target: { value: "nope" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(mockUpdatePost).not.toHaveBeenCalled();
+    // Generate All and the per-field Generate are disabled.
+    expect((container.querySelector(".btn-generate-all") as HTMLButtonElement).disabled).toBe(true);
+    expect(titleGenerate(container).disabled).toBe(true);
+  });
+
+  function renderReadOnly() {
+    const utils = renderTab({ readOnly: true });
+    const getByText = (text: string) => {
+      const el = Array.from(utils.container.querySelectorAll("*")).find(
+        (n) => n.textContent === text
+      );
+      if (!el) throw new Error(`text not found: ${text}`);
+      return el;
+    };
+    return { ...utils, getByText };
+  }
+});
+
+describe("MetadataTab copy and error dismiss", () => {
+  it("copies the Title value to the clipboard and flips the label", async () => {
+    const { container, titleInput } = renderTab();
+    fireEvent.change(titleInput, { target: { value: "Copy me" } });
+    const copyBtn = container.querySelector(".meta-field-copy") as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
+    expect(clipboardWrite).toHaveBeenCalledWith("Copy me");
+    expect(copyBtn.textContent).toBe("✓ Copied");
+  });
+
+  it("dismisses the generation error banner", async () => {
+    mockGenerateMetadataField.mockRejectedValue(new Error("boom"));
+    const { container } = renderTab();
+    await act(async () => {
+      fireEvent.click(titleGenerate(container));
+    });
+    expect(container.querySelector(".metadata-error")).toBeTruthy();
+    fireEvent.click(container.querySelector(".metadata-error-dismiss") as HTMLButtonElement);
+    expect(container.querySelector(".metadata-error")).toBeNull();
   });
 });

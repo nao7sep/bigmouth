@@ -18,6 +18,17 @@ describe("compareInstants", () => {
     expect(compareInstants("", "2026-04-05T14:30:22.000Z")).toBeLessThan(0);
     expect(compareInstants("", "")).toBe(0);
   });
+
+  it("sorts the second value earliest when only it is unparseable", () => {
+    // Mirror of the absent-first case for the right-hand operand, exercising the
+    // `Number.isNaN(tb)` branch.
+    expect(compareInstants("2026-04-05T14:30:22.000Z", "")).toBeGreaterThan(0);
+  });
+
+  it("orders a strictly later instant after an earlier one", () => {
+    // The `ta > tb` branch: the earlier-first contract means later sorts after.
+    expect(compareInstants("2026-04-05T14:30:23Z", "2026-04-05T14:30:22Z")).toBeGreaterThan(0);
+  });
 });
 
 describe("formatLocalDateTime", () => {

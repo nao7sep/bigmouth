@@ -8,9 +8,10 @@
  * The rename is atomic only when the temp file is on the same filesystem as the
  * target, hence the same-directory temp.
  *
- * An optional `mode` is applied to the temp file before the rename, so the final
- * file carries those exact permissions from the moment it exists (no window at a
- * looser default) — used for the `0600` secrets file.
+ * An optional `mode` is applied at creation — the temp file is opened with those
+ * permissions, so the secret content never touches disk at a looser default for
+ * even an instant (a chmod after the write would leave exactly that window). Used
+ * for the `0600` secrets file; the umask only clears bits, so `0600` stays `0600`.
  */
 
 import fs from "node:fs";
@@ -19,8 +20,7 @@ import path from "node:path";
 export function writeFileAtomic(filePath: string, content: string, mode?: number): void {
   const dir = path.dirname(filePath);
   const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${nextTempCounter()}.tmp`);
-  fs.writeFileSync(tempPath, content);
-  if (mode !== undefined) fs.chmodSync(tempPath, mode);
+  fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
   fs.renameSync(tempPath, filePath);
 }
 
