@@ -809,7 +809,7 @@ function GenerationTab({
         </button>
       </div>
 
-      {GENERATION_PROMPT_KEYS.map((key, index) => {
+      {GENERATION_PROMPT_KEYS.map((key) => {
         const current = data.prompts?.[key] ?? "";
         return (
           <div key={key} className="form-field">

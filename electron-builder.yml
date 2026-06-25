@@ -1,0 +1,21 @@
+appId: io.github.nao7sep.bigmouth
+productName: BigMouth
+
+directories:
+  output: dist
+  buildResources: build
+
+# Ship the built app bundle (electron-vite's out/). Production dependencies and
+# package.json are included automatically; source and tests are not.
+files:
+  - out/**
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+
+win:
+  target:
+    - nsis
