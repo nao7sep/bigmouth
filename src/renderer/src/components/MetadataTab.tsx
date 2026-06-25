@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostFrontMatter, PostMutationResult } from "../types";
+import type { Post, PostFrontMatter, PostMutationResult } from "@shared/types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { singleLine } from "../util/textCleanup";

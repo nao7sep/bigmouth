@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "../types";
-import { AI_PROVIDERS } from "../types";
+import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
+import { AI_PROVIDERS } from "@shared/types";
 import {
   fetchSettings,
   saveSettings,

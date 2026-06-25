@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PostSummary } from "../types";
+import type { PostSummary } from "@shared/types";
 import { getPostTitle } from "../util/postTitle";
 import { formatLocalDateTime } from "../util/timestamps";
 import { useComposing } from "../hooks/useComposing";

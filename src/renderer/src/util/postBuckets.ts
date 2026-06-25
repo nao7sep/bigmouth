@@ -1,4 +1,4 @@
-import type { PostStatus, PostSummary } from "../types";
+import type { PostStatus, PostSummary } from "@shared/types";
 import { compareInstants } from "./timestamps";
 
 /** The four post-list buckets plus the two paginated-archive totals. */

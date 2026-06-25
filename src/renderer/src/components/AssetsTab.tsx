@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
-import type { AssetMeta } from "../types";
+import type { AssetMeta } from "@shared/types";
 import { ConfirmModal } from "./ConfirmModal";
 
 interface AssetsTabProps {

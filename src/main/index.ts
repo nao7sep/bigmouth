@@ -12,8 +12,12 @@ import {
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
+import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 
 app.setName("BigMouth");
+
+// Must run before the app is ready: declares the raw-asset scheme privileged.
+registerAssetScheme();
 
 let shuttingDown = false;
 
@@ -31,6 +35,7 @@ function bootstrap(): void {
     logFile: getCurrentLogFilePath(),
   });
 
+  handleAssetProtocol();
   registerIpcHandlers();
   createMainWindow();
 

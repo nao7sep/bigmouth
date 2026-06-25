@@ -5,7 +5,7 @@ import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
-import type { PostFrontMatter, PostMutationResult, Target } from "../types";
+import type { PostFrontMatter, PostMutationResult, Target } from "@shared/types";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];

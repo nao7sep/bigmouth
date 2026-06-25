@@ -5,7 +5,7 @@ import {
   updateWorkspace,
   deleteWorkspace,
 } from "../api";
-import type { Workspace } from "../types";
+import type { Workspace } from "@shared/types";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";

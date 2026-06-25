@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchPosts } from "../api";
-import type { PostSummary } from "../types";
+import type { PostSummary } from "@shared/types";
 
 export interface PostPickerState {
   posts: PostSummary[];

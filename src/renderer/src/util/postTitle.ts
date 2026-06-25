@@ -1,4 +1,4 @@
-import type { PostFrontMatter } from "../types";
+import type { PostFrontMatter } from "@shared/types";
 
 /**
  * Returns the best available display label for a post:

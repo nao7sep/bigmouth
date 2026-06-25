@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostMutationResult, PostStatus } from "../types";
+import type { Post, PostMutationResult, PostStatus } from "@shared/types";
 import { fetchPost, updatePost, changePostStatus, deletePost, fetchReferrers } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";

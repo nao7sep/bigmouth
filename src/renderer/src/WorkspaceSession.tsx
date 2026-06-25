@@ -17,7 +17,7 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "./types";
+import type { Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "@shared/types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
 import { pickAdjacentPostId } from "./util/selection";

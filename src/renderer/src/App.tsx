@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
 import { fetchWorkspaces, setActiveWorkspace } from "./api";
-import type { Workspace } from "./types";
+import type { Workspace } from "@shared/types";
 import {
   CENTER_MIN,
   DIVIDER,

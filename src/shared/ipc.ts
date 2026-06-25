@@ -90,6 +90,20 @@ export function analysisStreamChannel(requestId: string): string {
   return `analysis:stream:${requestId}`;
 }
 
+// --- Raw asset serving (custom protocol, replacing the old HTTP /raw endpoint) ---
+
+/** The privileged scheme main registers to stream raw asset files to <img> etc. */
+export const ASSET_SCHEME = "bigmouth-asset";
+
+/**
+ * Builds the URL for an asset file under the custom protocol. The workspace,
+ * post, and file are URL-encoded path segments under a fixed `asset` host (the
+ * host is lowercased by URL parsing, so the case-sensitive ids stay in the path).
+ */
+export function assetUrl(wsId: string, postId: string, filename: string): string {
+  return `${ASSET_SCHEME}://asset/${encodeURIComponent(wsId)}/${encodeURIComponent(postId)}/${encodeURIComponent(filename)}`;
+}
+
 // --- Method payload/result helpers ---
 
 /** Raw bytes for an asset upload — the renderer reads the picked `File` to an

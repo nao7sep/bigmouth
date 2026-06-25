@@ -3,7 +3,7 @@ import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModalShell } from "./ModalShell";
-import type { Target } from "../types";
+import type { Target } from "@shared/types";
 
 interface NewPostModalProps {
   targets: Target[];

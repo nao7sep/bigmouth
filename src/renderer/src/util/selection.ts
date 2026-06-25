@@ -1,4 +1,4 @@
-import type { PostSummary } from "../types";
+import type { PostSummary } from "@shared/types";
 
 /**
  * Picks the post that should take the selection after the post with `id` is

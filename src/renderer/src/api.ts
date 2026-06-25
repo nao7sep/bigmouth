@@ -17,262 +17,149 @@ import type {
   ImagingLiteralness,
   ImagingPeople,
   ImagingStyle,
-} from "./types";
+} from "@shared/types";
+import {
+  assetUrl as buildAssetUrl,
+  type AiConfigInput,
+  type AiConfigPatch,
+  type MetadataGenerationResults,
+  type PostUpdate,
+} from "@shared/ipc";
 
-// --- Workspace context ---
+// The renderer's single data seam. Every call forwards to the preload bridge
+// (`window.bigmouth`) over IPC — there is no HTTP. The active workspace id is
+// tracked here and threaded into each workspace-scoped call, exactly where the
+// old REST routes carried it in the path.
+const bridge = window.bigmouth;
 
 let wsId = "";
-const METADATA_GENERATION_TIMEOUT_MS = 95_000;
-const IMAGING_GENERATION_TIMEOUT_MS = 130_000;
 
 export function setActiveWorkspace(id: string): void {
   wsId = id;
 }
 
-function base(workspaceId = wsId): string {
+function requireWs(workspaceId = wsId): string {
   if (!workspaceId) throw new Error("No active workspace set");
-  return `/api/w/${workspaceId}`;
+  return workspaceId;
 }
 
-async function fetchWithTimeout(
-  input: RequestInfo | URL,
-  init: RequestInit,
-  timeoutMs: number,
-  timeoutMessage: string
-): Promise<Response> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const upstreamSignal = init.signal;
-  const abortFromUpstream = () => controller.abort();
-  if (upstreamSignal?.aborted) {
-    controller.abort();
-  } else {
-    upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
-  }
-  const timer = window.setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } catch (err) {
-    if (
-      (err instanceof DOMException && err.name === "AbortError") ||
-      (err instanceof Error && err.name === "AbortError")
-    ) {
-      if (!timedOut) throw err;
-      throw new Error(timeoutMessage);
-    }
-    throw err;
-  } finally {
-    window.clearTimeout(timer);
-    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
-  }
+// --- Workspace management (no workspace context) ---
+
+export function fetchWorkspaces(): Promise<Workspace[]> {
+  return bridge.listWorkspaces();
 }
 
-// --- Workspace management (no workspace prefix) ---
-
-export async function fetchWorkspaces(): Promise<Workspace[]> {
-  const res = await fetch("/api/workspaces");
-  if (!res.ok) throw new Error(`Failed to fetch workspaces: ${res.status}`);
-  return res.json();
+export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Promise<Workspace> {
+  return bridge.openOrCreateWorkspace(name, dataDirectory);
 }
 
-export async function openOrCreateWorkspace(
-  name?: string,
-  dataDirectory?: string
-): Promise<Workspace> {
-  const res = await fetch("/api/workspaces/open-or-create", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, dataDirectory }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to open or create workspace: ${res.status}`
-    );
-  }
-  return res.json();
-}
-
-export async function updateWorkspace(
+export function updateWorkspace(
   id: string,
-  updates: { name?: string; dataDirectory?: string }
+  updates: { name?: string; dataDirectory?: string },
 ): Promise<Workspace> {
-  const res = await fetch(`/api/workspaces/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(updates),
-  });
-  if (!res.ok) throw new Error(`Failed to update workspace: ${res.status}`);
-  return res.json();
+  return bridge.updateWorkspace(id, updates);
 }
 
-export async function deleteWorkspace(id: string): Promise<void> {
-  const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Failed to delete workspace: ${res.status}`);
+export function deleteWorkspace(id: string): Promise<void> {
+  return bridge.deleteWorkspace(id);
 }
 
-export async function revealCurrentLogFile(): Promise<string> {
-  const res = await fetch("/api/logs/current/reveal", { method: "POST" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to reveal current log file: ${res.status}`
-    );
-  }
-  const data = (await res.json()) as { path: string };
-  return data.path;
+export function revealCurrentLogFile(): Promise<string> {
+  return bridge.revealCurrentLogFile();
 }
 
-// --- Workspace-scoped API ---
+// --- Posts ---
 
-export async function fetchPosts(
-  publishedOffset = 0,
-  limit = 50,
-  expiredOffset = 0
-): Promise<PostListResponse> {
-  const params = new URLSearchParams({
-    publishedOffset: String(publishedOffset),
-    expiredOffset: String(expiredOffset),
-    limit: String(limit),
-  });
-  const res = await fetch(`${base()}/posts?${params}`);
-  if (!res.ok) throw new Error(`Failed to fetch posts: ${res.status}`);
-  return res.json();
+export function fetchPosts(publishedOffset = 0, limit = 50, expiredOffset = 0): Promise<PostListResponse> {
+  return bridge.listPosts(requireWs(), publishedOffset, limit, expiredOffset);
 }
 
-export async function fetchPost(id: string, workspaceId?: string): Promise<Post> {
-  const res = await fetch(`${base(workspaceId)}/posts/${id}`);
-  if (!res.ok) throw new Error(`Failed to fetch post: ${res.status}`);
-  return res.json();
+export function fetchPost(id: string, workspaceId?: string): Promise<Post> {
+  return bridge.getPost(requireWs(workspaceId), id);
 }
 
-export async function createPost(
-  target: string,
-  language: string,
-  sourceId?: string
-): Promise<Post> {
-  const res = await fetch(`${base()}/posts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, language, sourceId }),
-  });
-  if (!res.ok) throw new Error(`Failed to create post: ${res.status}`);
-  return res.json();
+export function createPost(target: string, language: string, sourceId?: string): Promise<Post> {
+  return bridge.createPost(requireWs(), target, language, sourceId);
 }
 
-export async function updatePost(
+export function updatePost(
   id: string,
   updates: {
     content?: string;
     frontMatter?: { [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null };
   },
-  workspaceId?: string
+  workspaceId?: string,
 ): Promise<PostMutationResult> {
-  const res = await fetch(`${base(workspaceId)}/posts/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(updates),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Failed to update post: ${res.status}`);
-  }
-  return res.json();
+  return bridge.updatePost(requireWs(workspaceId), id, updates as PostUpdate);
 }
 
-export async function changePostStatus(
+export function changePostStatus(
   id: string,
   status: PostStatus,
-  workspaceId?: string
+  workspaceId?: string,
 ): Promise<PostMutationResult> {
-  const res = await fetch(`${base(workspaceId)}/posts/${id}/status`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to change status: ${res.status}`);
-  }
-  return res.json();
+  return bridge.changePostStatus(requireWs(workspaceId), id, status);
 }
 
-export async function deletePost(id: string, workspaceId?: string): Promise<void> {
-  const res = await fetch(`${base(workspaceId)}/posts/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
+export function deletePost(id: string, workspaceId?: string): Promise<void> {
+  return bridge.deletePost(requireWs(workspaceId), id);
 }
 
-export async function fetchReferrers(
+export function fetchReferrers(
   id: string,
-  workspaceId?: string
+  workspaceId?: string,
 ): Promise<{ count: number; ids: string[] }> {
-  const res = await fetch(`${base(workspaceId)}/posts/${id}/referrers`);
-  if (!res.ok) throw new Error(`Failed to fetch referrers: ${res.status}`);
-  return res.json();
+  return bridge.listReferrers(requireWs(workspaceId), id);
 }
 
-export async function rebuildPostIndex(): Promise<{ count: number }> {
-  const res = await fetch(`${base()}/posts/index/rebuild`, { method: "POST" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Failed to rebuild index: ${res.status}`);
-  }
-  return res.json();
+export function rebuildPostIndex(): Promise<{ count: number }> {
+  return bridge.rebuildPostIndex(requireWs());
 }
 
-export async function fetchTargets(): Promise<Target[]> {
-  const res = await fetch(`${base()}/targets`);
-  if (!res.ok) throw new Error(`Failed to fetch targets: ${res.status}`);
-  return res.json();
+// --- Targets ---
+
+export function fetchTargets(): Promise<Target[]> {
+  return bridge.listTargets(requireWs());
 }
 
-export async function fetchSettings(): Promise<Settings> {
-  const res = await fetch(`${base()}/settings`);
-  if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
-  return res.json();
+export function saveTargets(targets: Target[]): Promise<Target[]> {
+  return bridge.saveTargets(requireWs(), targets);
 }
 
-export async function saveSettings(settings: Settings): Promise<Settings> {
-  const res = await fetch(`${base()}/settings`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
-  });
-  if (!res.ok) throw new Error(`Failed to save settings: ${res.status}`);
-  return res.json();
+export function renameTarget(
+  oldName: string,
+  newName: string,
+): Promise<{ targets: Target[]; postsUpdated: number }> {
+  return bridge.renameTarget(requireWs(), oldName, newName);
 }
 
-export async function fetchAiConfigs(): Promise<AiConfigsData> {
-  const res = await fetch(`${base()}/ai-configs`);
-  if (!res.ok) throw new Error(`Failed to fetch AI configs: ${res.status}`);
-  return res.json();
+// --- Settings ---
+
+export function fetchSettings(): Promise<Settings> {
+  return bridge.getSettings(requireWs());
 }
 
-export async function createAiConfig(input: {
+export function saveSettings(settings: Settings): Promise<Settings> {
+  return bridge.saveSettings(requireWs(), settings);
+}
+
+// --- AI configs ---
+
+export function fetchAiConfigs(): Promise<AiConfigsData> {
+  return bridge.listAiConfigs(requireWs());
+}
+
+export function createAiConfig(input: {
   id: string;
   name: string;
   provider: AiConfig["provider"];
   model: string;
   apiKey?: string;
 }): Promise<AiConfigsData> {
-  const res = await fetch(`${base()}/ai-configs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to create AI config: ${res.status}`
-    );
-  }
-  return res.json();
+  return bridge.createAiConfig(requireWs(), input satisfies AiConfigInput);
 }
 
-export async function updateAiConfig(
+export function updateAiConfig(
   id: string,
   patch: {
     name?: string;
@@ -280,163 +167,67 @@ export async function updateAiConfig(
     model?: string;
     /** Omit to preserve, "" to clear, non-empty to replace. */
     apiKey?: string;
-  }
+  },
 ): Promise<AiConfigsData> {
-  const res = await fetch(`${base()}/ai-configs/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to update AI config: ${res.status}`
-    );
-  }
-  return res.json();
+  return bridge.updateAiConfig(requireWs(), id, patch satisfies AiConfigPatch);
 }
 
-export async function deleteAiConfig(id: string): Promise<AiConfigsData> {
-  const res = await fetch(`${base()}/ai-configs/${id}`, { method: "DELETE" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to delete AI config: ${res.status}`
-    );
-  }
-  return res.json();
+export function deleteAiConfig(id: string): Promise<AiConfigsData> {
+  return bridge.deleteAiConfig(requireWs(), id);
 }
 
-export async function setActiveAiConfig(id: string): Promise<AiConfigsData> {
-  const res = await fetch(`${base()}/ai-configs/active`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Failed to set active AI config: ${res.status}`
-    );
-  }
-  return res.json();
+export function setActiveAiConfig(id: string): Promise<AiConfigsData> {
+  return bridge.setActiveAiConfig(requireWs(), id);
 }
 
-export async function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
-  const res = await fetch(`${base()}/generation-prompts`);
-  if (!res.ok) throw new Error(`Failed to fetch generation prompts: ${res.status}`);
-  return res.json();
+// --- Generation prompts ---
+
+export function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
+  return bridge.getGenerationPrompts(requireWs());
 }
 
-export async function fetchGenerationPromptDefaults(): Promise<GenerationPromptsData> {
-  const res = await fetch(`${base()}/generation-prompts/defaults`);
-  if (!res.ok) throw new Error(`Failed to fetch generation prompt defaults: ${res.status}`);
-  return res.json();
+export function fetchGenerationPromptDefaults(): Promise<GenerationPromptsData> {
+  return bridge.getGenerationPromptDefaults(requireWs());
 }
 
-export async function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
-  const res = await fetch(`${base()}/generation-prompts`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`Failed to save generation prompts: ${res.status}`);
-  return res.json();
+export function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
+  return bridge.saveGenerationPrompts(requireWs(), data);
 }
 
-export async function saveTargets(targets: Target[]): Promise<Target[]> {
-  const res = await fetch(`${base()}/targets`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(targets),
-  });
-  if (!res.ok) throw new Error(`Failed to save targets: ${res.status}`);
-  return res.json();
+// --- Analysis prompts ---
+
+export function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
+  return bridge.listAnalysisPrompts(requireWs());
 }
 
-export async function renameTarget(
-  oldName: string,
-  newName: string
-): Promise<{ targets: Target[]; postsUpdated: number }> {
-  const res = await fetch(`${base()}/targets/rename`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ oldName, newName }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Failed to rename target: ${res.status}`);
-  }
-  return res.json();
+export function fetchAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
+  return bridge.listAnalysisPromptDefaults(requireWs());
 }
 
-export async function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
-  const res = await fetch(`${base()}/analysis-prompts`);
-  if (!res.ok) throw new Error(`Failed to fetch prompts: ${res.status}`);
-  return res.json();
+export function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
+  return bridge.saveAnalysisPrompts(requireWs(), prompts);
 }
 
-export async function fetchAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
-  const res = await fetch(`${base()}/analysis-prompts/defaults`);
-  if (!res.ok) throw new Error(`Failed to fetch prompt defaults: ${res.status}`);
-  return res.json();
+// --- Assets ---
+
+export function fetchAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
+  return bridge.listAssets(requireWs(workspaceId), postId);
 }
 
-export async function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
-  const res = await fetch(`${base()}/analysis-prompts`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(prompts),
-  });
-  if (!res.ok) throw new Error(`Failed to save prompts: ${res.status}`);
-  return res.json();
+export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<AssetMeta> {
+  // The picked File is read to bytes here and handed across the bridge — the old
+  // multipart upload is gone.
+  const data = await file.arrayBuffer();
+  return bridge.uploadAsset(requireWs(workspaceId), postId, { name: file.name, data });
 }
 
-export async function fetchAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
-  const res = await fetch(`${base(workspaceId)}/assets/${postId}`);
-  if (!res.ok) throw new Error(`Failed to fetch assets: ${res.status}`);
-  return res.json();
+export function deleteAsset(postId: string, filename: string, workspaceId?: string): Promise<void> {
+  return bridge.deleteAsset(requireWs(workspaceId), postId, filename);
 }
 
-export async function uploadAsset(
-  postId: string,
-  file: File,
-  workspaceId?: string
-): Promise<AssetMeta> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await fetch(`${base(workspaceId)}/assets/${postId}`, {
-    method: "POST",
-    body: form,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Upload failed: ${res.status}`);
-  }
-  return res.json();
-}
+// --- AI generation ---
 
-export async function deleteAsset(
-  postId: string,
-  filename: string,
-  workspaceId?: string
-): Promise<void> {
-  const res = await fetch(`${base(workspaceId)}/assets/${postId}/${encodeURIComponent(filename)}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Delete failed: ${res.status}`);
-  }
-}
-
-type MetadataGenerationResults = Record<string, { value: string } | { error: string }>;
-
-export async function generateMetadataField(
-  postId: string,
-  field: string,
-  content: string
-): Promise<string> {
+export async function generateMetadataField(postId: string, field: string, content: string): Promise<string> {
   const results = await generateMetadataFields(postId, [field], content);
   const result = results[field];
   if (!result || !("value" in result)) {
@@ -445,129 +236,37 @@ export async function generateMetadataField(
   return result.value;
 }
 
-export async function generateMetadataFields(
+export function generateMetadataFields(
   postId: string,
   fields: string[],
-  content: string
+  content: string,
 ): Promise<MetadataGenerationResults> {
-  const res = await fetchWithTimeout(
-    `${base()}/metadata/generate`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ postId, fields, content }),
-    },
-    METADATA_GENERATION_TIMEOUT_MS,
-    "Metadata generation timed out"
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Metadata generation failed: ${res.status}`
-    );
-  }
-  const data = await res.json() as { results: MetadataGenerationResults };
-  return data.results;
+  return bridge.generateMetadata(requireWs(), postId, fields, content);
 }
 
-export async function runAnalysis(
-  postId: string,
-  promptName: string,
-  content: string
-): Promise<string> {
-  const res = await fetch(`${base()}/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, promptName, content }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Analysis failed: ${res.status}`
-    );
-  }
-  const data = (await res.json()) as { result: string };
-  return data.result;
+export function runAnalysis(postId: string, promptName: string, content: string): Promise<string> {
+  return bridge.runAnalysis(requireWs(), postId, promptName, content);
 }
 
-export async function runAnalysisStream(
+export function runAnalysisStream(
   postId: string,
   promptName: string,
   content: string,
   options: {
     signal?: AbortSignal;
     onChunk: (delta: string) => void;
-  }
+  },
 ): Promise<void> {
-  const res = await fetch(`${base()}/analyze/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ postId, promptName, content }),
-    signal: options.signal,
-  });
-  if (!res.ok) {
-    // Pre-stream failure: a JSON {error} body, or plain text.
-    const raw = await res.text().catch(() => "");
-    let message = raw;
-    try {
-      const parsed = JSON.parse(raw) as { error?: unknown };
-      if (typeof parsed?.error === "string") message = parsed.error;
-    } catch {
-      // not JSON; keep the raw text
-    }
-    throw new Error(message || `Analysis failed: ${res.status}`);
+  const handle = bridge.runAnalysisStream(
+    { wsId: requireWs(), postId, promptName, content },
+    options.onChunk,
+  );
+  const { signal } = options;
+  if (signal) {
+    if (signal.aborted) handle.abort();
+    else signal.addEventListener("abort", () => handle.abort(), { once: true });
   }
-  if (!res.body) {
-    throw new Error("Analysis stream is unavailable in this environment.");
-  }
-
-  // The body is newline-delimited JSON frames (see the /analyze/stream route).
-  // A `done` frame marks normal completion and an `error` frame a mid-stream
-  // failure; if the stream ends with neither, the analysis was cut short and we
-  // must not present the partial text as complete.
-  let sawDone = false;
-  const handleFrame = (line: string): void => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    let frame: { type?: string; text?: string; message?: string };
-    try {
-      frame = JSON.parse(trimmed);
-    } catch {
-      return; // ignore a malformed line rather than corrupt the result
-    }
-    if (frame.type === "delta" && typeof frame.text === "string") {
-      options.onChunk(frame.text);
-    } else if (frame.type === "error") {
-      throw new Error(frame.message || "Analysis failed");
-    } else if (frame.type === "done") {
-      sawDone = true;
-    }
-  };
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        handleFrame(line);
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.trim()) handleFrame(buffer);
-  } finally {
-    reader.releaseLock();
-  }
-
-  if (!sawDone) {
-    throw new Error("Analysis ended unexpectedly before completing.");
-  }
+  return handle.done;
 }
 
 export type {
@@ -579,36 +278,29 @@ export type {
   ImagingStyle,
 };
 
-export async function generateImaging(
+export function generateImaging(
   postId: string,
   content: string,
   options: ImagingOptions,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string[]> {
-  const res = await fetchWithTimeout(
-    `${base()}/imaging`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ postId, content, ...options }),
-      signal,
-    },
-    IMAGING_GENERATION_TIMEOUT_MS,
-    "Imaging generation timed out"
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Imaging failed: ${res.status}`
-    );
-  }
-  const data = (await res.json()) as { items: string[] };
-  return data.items;
+  const result = bridge.generateImaging(requireWs(), postId, content, options);
+  if (!signal) return result;
+  // The underlying generation can't be cancelled mid-call, but the caller's
+  // abort still rejects this promise (the in-flight result is then discarded) —
+  // matching the old behavior where aborting the fetch gave up client-side.
+  return new Promise<string[]>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Imaging aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => reject(new DOMException("Imaging aborted", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    result.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
-/**
- * Returns the URL for serving a raw asset file.
- */
+/** The URL for serving a raw asset file through the custom protocol. */
 export function assetUrl(postId: string, filename: string, workspaceId?: string): string {
-  return `${base(workspaceId)}/assets/${postId}/${encodeURIComponent(filename)}/raw`;
+  return buildAssetUrl(requireWs(workspaceId), postId, filename);
 }

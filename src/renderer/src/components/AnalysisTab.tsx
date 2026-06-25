@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchAnalysisPrompts, runAnalysisStream } from "../api";
-import type { AnalysisPrompt } from "../types";
+import type { AnalysisPrompt } from "@shared/types";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
 
 interface AnalysisTabProps {
