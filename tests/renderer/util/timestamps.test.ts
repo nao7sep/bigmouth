@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compareInstants, formatLocalDateTime } from "@renderer/util/timestamps";
+import { compareInstants, formatLocalDateTime, isValidTimeZone } from "@renderer/util/timestamps";
 
 // Display formatting takes an explicit IANA zone, so its output depends on the
 // passed zone, never on the host machine's local zone.
@@ -33,5 +33,14 @@ describe("formatLocalDateTime", () => {
 
   it("returns an empty string for an unparseable timestamp", () => {
     expect(formatLocalDateTime("not a date", "Asia/Tokyo")).toBe("");
+  });
+});
+
+describe("isValidTimeZone", () => {
+  it("accepts real IANA zones and rejects junk", () => {
+    expect(isValidTimeZone("Asia/Tokyo")).toBe(true);
+    expect(isValidTimeZone("America/New_York")).toBe(true);
+    expect(isValidTimeZone("Not/AZone")).toBe(false);
+    expect(isValidTimeZone("")).toBe(false);
   });
 });

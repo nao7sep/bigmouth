@@ -350,6 +350,15 @@ body {
   outline-offset: -2px;
 }
 
+/* The listbox containers hold focus permanently (aria-activedescendant), so the
+   keyboard cursor belongs on the active row (above), not as a default ring drawn
+   around the whole list. Suppress the container's own focus ring. */
+.left-sections:focus,
+.post-picker-list:focus,
+.workspace-list:focus {
+  outline: none;
+}
+
 .post-item-title {
   font-size: 13px;
   font-weight: 500;
@@ -711,35 +720,6 @@ body {
   font-size: 12px;
   color: var(--bm-text-muted);
   margin-top: 4px;
-}
-
-.shortcuts-subheading {
-  margin: 18px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--bm-text-muted);
-}
-
-.shortcuts-nav {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.shortcuts-nav dt {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--bm-text);
-}
-
-.shortcuts-nav dd {
-  margin: 2px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--bm-text-soft);
 }
 
 /* Preview tab */

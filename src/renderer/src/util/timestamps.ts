@@ -16,6 +16,20 @@ export function compareInstants(a: string, b: string): number {
 }
 
 /**
+ * Whether a string is an IANA time zone the runtime accepts. Used to clamp a
+ * stored timezone to the default before it reaches the formatter, so a corrupt
+ * or hand-edited setting degrades gracefully instead of throwing per row.
+ */
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Formats a UTC ISO timestamp for display in the given IANA time zone, as
  * "yyyy-mm-dd HH:mm" (24-hour, no localization) — e.g. "2026-04-05 14:30".
  * Conversion to the user's configured zone happens here, at the display edge,

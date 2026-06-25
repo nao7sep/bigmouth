@@ -22,6 +22,7 @@ import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
 import { pickAdjacentPostId } from "./util/selection";
 import { applyPostMutationToBuckets } from "./util/postBuckets";
+import { isValidTimeZone } from "./util/timestamps";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -225,7 +226,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
-      if (settings.timezone?.trim()) setTimezone(settings.timezone);
+      if (settings.timezone?.trim() && isValidTimeZone(settings.timezone)) setTimezone(settings.timezone);
     }, []);
 
     const loadConfig = useCallback(async () => {
