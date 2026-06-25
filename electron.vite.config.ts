@@ -33,13 +33,6 @@ export default defineConfig({
   },
   renderer: {
     root: resolve("src/renderer"),
-    // Pinned to a deliberate, app-specific port (not electron-vite's shared 5173
-    // default) so two fleet Electron apps' dev servers can't collide; strictPort
-    // fails fast rather than silently drifting to another port.
-    server: {
-      port: 5273,
-      strictPort: true,
-    },
     build: {
       outDir: resolve("out/renderer"),
       emptyOutDir: true,

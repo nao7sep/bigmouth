@@ -3,8 +3,8 @@ set -euo pipefail
 
 # run-dev: run the app from source with live reload, in its loosest configuration.
 # For active coding and debugging. The strict, production-faithful launchers are
-# run-built (launch the existing production build without rebuilding) and rebuild
-# (build from clean in release config, then launch).
+# run-built (launch the existing packaged app bundle without rebuilding) and
+# rebuild (build and package a fresh bundle, then launch).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -29,58 +29,22 @@ pause_on_failure() {
   fi
 }
 
-stop_port() {
-  local port="$1"
-  local pids
-  pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
-  if [[ -n "$pids" ]]; then
-    echo "Stopping processes on port $port: $pids"
-    kill $pids 2>/dev/null || true
-    sleep 1
-    pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
-    if [[ -n "$pids" ]]; then
-      kill -9 $pids 2>/dev/null || true
-    fi
-  fi
-}
-
-open_browser_when_ready() {
-  (
-    for _ in {1..60}; do
-      if curl -fsS "http://127.0.0.1:3141/api/health" >/dev/null 2>&1 &&
-        curl -fsS "http://localhost:5273" >/dev/null 2>&1; then
-        open "http://localhost:5273" >/dev/null 2>&1 || true
-        exit 0
-      fi
-      sleep 1
-    done
-  ) &
-}
-
 trap 'pause_on_failure $?' EXIT
 
 require_command node
 require_command npm
-require_command lsof
-require_command curl
 
 cd "$REPO_DIR"
 
-log_step "Stopping stale BigMouth listeners"
-stop_port 3141
-stop_port 5273
-
-log_step "Installing root dependencies"
+log_step "Installing dependencies"
 npm install
 
-log_step "Installing server dependencies"
-npm install --prefix "$REPO_DIR/server"
+# npm install skips the Electron binary if the package is already at the locked version.
+log_step "Verifying Electron binary"
+if [[ ! -f node_modules/electron/path.txt ]]; then
+  echo "Electron binary missing; downloading..."
+  node node_modules/electron/install.js
+fi
 
-log_step "Installing client dependencies"
-npm install --prefix "$REPO_DIR/client"
-
-log_step "Waiting to open the browser when the server and client respond"
-open_browser_when_ready
-
-log_step "Starting server and client in development mode"
+log_step "Starting BigMouth in development mode"
 npm run dev
