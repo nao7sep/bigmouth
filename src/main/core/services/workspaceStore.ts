@@ -10,7 +10,6 @@ import path from "node:path";
 import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
-import { DEFAULT_ALLOWED_ORIGINS, DEFAULT_HOST, DEFAULT_PORT } from "../shared/defaults.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 
@@ -70,9 +69,6 @@ let appConfig: AppConfig | null = null;
 
 function defaultAppConfig(): AppConfig {
   return {
-    port: DEFAULT_PORT,
-    host: DEFAULT_HOST,
-    allowedOrigins: [...DEFAULT_ALLOWED_ORIGINS],
     workspaces: [],
   };
 }
@@ -83,18 +79,8 @@ function parseAppConfig(raw: unknown): AppConfig {
   }
 
   const source = raw as Record<string, unknown>;
-  if (typeof source.port !== "number" || !Number.isFinite(source.port)) {
-    throw new Error("Invalid app.json: port must be a number");
-  }
-  if (typeof source.host !== "string" || !source.host.trim()) {
-    throw new Error("Invalid app.json: host must be a non-empty string");
-  }
-  if (
-    !Array.isArray(source.allowedOrigins) ||
-    source.allowedOrigins.some((value) => typeof value !== "string")
-  ) {
-    throw new Error("Invalid app.json: allowedOrigins must be an array of strings");
-  }
+  // Older app.json files also carried port/host/allowedOrigins (the HTTP server's
+  // settings); they are ignored here and dropped on the next write.
   if (!Array.isArray(source.workspaces)) {
     throw new Error("Invalid app.json: workspaces must be an array");
   }
@@ -118,12 +104,7 @@ function parseAppConfig(raw: unknown): AppConfig {
     };
   });
 
-  return {
-    port: source.port,
-    host: source.host.trim(),
-    allowedOrigins: [...source.allowedOrigins],
-    workspaces,
-  };
+  return { workspaces };
 }
 
 /**
