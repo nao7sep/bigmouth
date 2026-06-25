@@ -638,13 +638,7 @@ function AiTab({
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
               placeholder={c.hasApiKey ? "Leave blank to keep the current key" : "Optional"}
             />
-            <p className="settings-hint">
-              {c.apiKey.trim()
-                ? "Will be saved when you click Save."
-                : c.hasApiKey
-                  ? "Leave blank to keep the current key."
-                  : "Optional."}
-            </p>
+            {c.apiKey.trim() && <p className="settings-hint">Saved when you click Save.</p>}
           </div>
           <button
             className="btn-toolbar btn-delete"
@@ -793,7 +787,7 @@ function GenerationTab({
   return (
     <div className="generation-tab">
       <p className="settings-hint">
-        Field guidance is inserted into a structured metadata request. BigMouth controls the JSON schema, draft content, existing metadata, and requested field list automatically.
+        Your field guidance is added to a structured request; the schema, content, and field list are filled in automatically.
       </p>
 
       <div className="metadata-generate-all-row">
@@ -850,7 +844,7 @@ function AnalysisPromptsTab({
   return (
     <div className="settings-section">
       <p className="settings-hint">
-        Built-ins focus on publishability, structure, credibility, and completion momentum. Use {"{content}"} where the draft should be inserted.
+        Use {"{content}"} where the draft should be inserted.
       </p>
       <div className="metadata-generate-all-row">
         <button

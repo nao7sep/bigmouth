@@ -80,7 +80,6 @@ export const CHANNELS = {
 
   // AI generation
   generateMetadata: "metadata:generate",
-  runAnalysis: "analysis:run",
   analysisStreamStart: "analysis:stream:start",
   analysisStreamAbort: "analysis:stream:abort",
   generateImaging: "imaging:generate",
@@ -214,7 +213,6 @@ export interface BigMouthApi {
 
   // AI generation
   generateMetadata(wsId: string, postId: string, fields: string[], content: string): Promise<MetadataGenerationResults>;
-  runAnalysis(wsId: string, postId: string, promptName: string, content: string): Promise<string>;
   runAnalysisStream(params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle;
   generateImaging(wsId: string, postId: string, content: string, options: ImagingOptions): Promise<string[]>;
 }

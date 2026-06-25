@@ -9,6 +9,7 @@ import { CHANNELS, type AssetUploadInput } from "@shared/ipc";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getSettings } from "../core/services/configStore.js";
 import { getPost } from "../core/services/postStore.js";
+import { isEditLocked } from "../core/shared/postLifecycle.js";
 import {
   listAssets,
   saveAssetFile,
@@ -70,8 +71,9 @@ export function registerAssetHandlers(): void {
 
     const post = getPost(dir, pid);
     if (!post) throw new Error("Post not found");
-    if (post.frontMatter.status === "published") {
-      throw new Error("Published posts are locked. Move the post back to Ready or Draft to change its assets.");
+    if (isEditLocked(post.frontMatter.status)) {
+      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
+      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
     }
 
     const buffer = Buffer.from(file.data);
@@ -148,8 +150,9 @@ export function registerAssetHandlers(): void {
 
     const post = getPost(dir, pid);
     if (!post) throw new Error("Post not found");
-    if (post.frontMatter.status === "published") {
-      throw new Error("Published posts are locked. Move the post back to Ready or Draft to change its assets.");
+    if (isEditLocked(post.frontMatter.status)) {
+      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
+      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
     }
 
     try {

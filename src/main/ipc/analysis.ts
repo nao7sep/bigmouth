@@ -6,7 +6,7 @@ import { getAnalysisPrompts, getActiveAiConfig } from "../core/services/configSt
 import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { metadataKeys, safeAiConfigLogContext, safePostLogContext } from "../core/shared/logSummaries.js";
+import { safeAiConfigLogContext, safePostLogContext } from "../core/shared/logSummaries.js";
 import { info as logInfo, warn as logWarn, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
@@ -51,46 +51,6 @@ function resolveAnalysisRequest(
 }
 
 export function registerAnalysisHandlers(): void {
-  ipcMain.handle(CHANNELS.runAnalysis, async (_event, wsId: string, postId: string, promptName: string, content: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const request = resolveAnalysisRequest(wsId, dir, { postId, promptName, content });
-    logInfo("analysis started", {
-      workspace: wsId,
-      postId: request.postId,
-      promptName: request.promptName,
-      contentSource: request.contentSource,
-      contentLength: request.postContent.length,
-      promptMode: request.promptMode,
-      ai: safeAiConfigLogContext(request.aiConfig),
-      post: safePostLogContext(request.post),
-    });
-    try {
-      const result = await request.provider.generateText(request.systemPrompt, request.userContent);
-      logInfo("analysis completed", { workspace: wsId, postId: request.postId, resultLength: result.length });
-      return result;
-    } catch (err) {
-      const details = logAiFailure(
-        {
-          kind: "Analysis",
-          workspaceId: wsId,
-          postId: request.postId,
-          promptName: request.promptName,
-          extra: {
-            contentSource: request.contentSource,
-            contentLength: request.postContent.length,
-            promptMode: request.promptMode,
-            language: request.post.frontMatter.language,
-            target: request.post.frontMatter.target,
-            metadataKeys: metadataKeys(request.post.frontMatter),
-            ai: safeAiConfigLogContext(request.aiConfig),
-          },
-        },
-        err,
-      );
-      throw new Error(err instanceof Error ? err.message : details);
-    }
-  });
-
   // The renderer subscribes to analysisStreamChannel(requestId) BEFORE invoking
   // this, so no early frame is missed. Validation throws (rejecting the invoke);
   // otherwise the stream is started and frames are pushed async on the channel.

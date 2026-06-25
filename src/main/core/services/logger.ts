@@ -57,7 +57,10 @@ export function initLogger(logsDir: string): void {
   currentLogFilePath = logFilePath;
 
   try {
-    logFd = fs.openSync(logFilePath, "a");
+    // Exclusive create ("wx"): a fresh file per session, never appended across
+    // launches. On the rare same-second filename clash the create fails and the
+    // logger degrades to the console fallback below (logging-conventions).
+    logFd = fs.openSync(logFilePath, "wx");
   } catch (err) {
     logFd = null;
     reportFileFailure(err);

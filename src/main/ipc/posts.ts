@@ -21,6 +21,7 @@ import {
 } from "../core/services/postStore.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
 import type { EditablePostMetadata } from "../core/shared/types.js";
+import { isEditLocked } from "../core/shared/postLifecycle.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -200,7 +201,7 @@ export function registerPostHandlers(): void {
 
     // Published and expired posts are locked — editing happens only after moving
     // back to Draft or Ready.
-    if (existing.frontMatter.status === "published" || existing.frontMatter.status === "expired") {
+    if (isEditLocked(existing.frontMatter.status)) {
       warn("post update rejected", { workspace: wsId, postId: id, reason: `${existing.frontMatter.status}-locked` });
       throw new Error(
         `${existing.frontMatter.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Ready or Draft to edit it.`,

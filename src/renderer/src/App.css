@@ -276,22 +276,6 @@ body {
   cursor: not-allowed;
 }
 
-.search-box {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid var(--bm-border);
-  border-radius: 6px;
-  background: var(--bm-surface-raised);
-  color: var(--bm-text);
-  font-size: 13px;
-  outline: none;
-}
-
-.search-box:focus {
-  border-color: var(--bm-accent);
-  box-shadow: 0 0 0 3px var(--bm-accent-ring);
-}
-
 .left-sections {
   flex: 1;
   overflow-y: auto;
@@ -427,11 +411,6 @@ body {
 .status-radio.active {
   background: var(--bm-accent);
   color: #fff;
-}
-
-.toolbar-dirty {
-  color: var(--bm-warning);
-  font-weight: 700;
 }
 
 .btn-toolbar {
@@ -1241,12 +1220,6 @@ body {
   background: var(--bm-surface-muted);
 }
 
-.settings-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
 /* ── Source Picker Modal ─────────────────────────────────── */
 
 .post-picker-item {
@@ -1259,11 +1232,6 @@ body {
 .post-picker-item:hover,
 .post-picker-item.active {
   background: var(--bm-accent-subtle);
-}
-
-.post-picker-item:focus-visible {
-  outline: 2px solid var(--bm-accent);
-  outline-offset: -2px;
 }
 
 .post-picker-title {
@@ -1663,7 +1631,6 @@ body {
 }
 
 /* Keyboard cursor, distinct from the persistent selection above. */
-.workspace-item:focus-visible,
 .workspace-item.active {
   outline: 2px solid var(--bm-accent);
   outline-offset: 2px;

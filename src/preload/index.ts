@@ -117,8 +117,6 @@ const api = {
   // --- AI generation ---
   generateMetadata: (wsId: string, postId: string, fields: string[], content: string) =>
     ipcRenderer.invoke(CHANNELS.generateMetadata, wsId, postId, fields, content) as Promise<MetadataGenerationResults>,
-  runAnalysis: (wsId: string, postId: string, promptName: string, content: string) =>
-    ipcRenderer.invoke(CHANNELS.runAnalysis, wsId, postId, promptName, content) as Promise<string>,
   runAnalysisStream: (params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle => {
     const requestId = `astream-${nextStreamId++}`;
     const channel = analysisStreamChannel(requestId);

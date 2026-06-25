@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyStatusTransition, STATUS_ORDER } from "@main/core/shared/postLifecycle.js";
+import { applyStatusTransition, isEditLocked, STATUS_ORDER } from "@main/core/shared/postLifecycle.js";
 import type { PostFrontMatter, PostStatus } from "@main/core/shared/types.js";
 
 const NOW = new Date("2026-04-05T14:30:22Z");
@@ -23,6 +23,15 @@ function transition(from: Partial<PostFrontMatter>, to: PostStatus): PostFrontMa
   applyStatusTransition(post, to, NOW);
   return post;
 }
+
+describe("isEditLocked", () => {
+  it("locks published and expired, leaves draft and ready editable", () => {
+    expect(isEditLocked("draft")).toBe(false);
+    expect(isEditLocked("ready")).toBe(false);
+    expect(isEditLocked("published")).toBe(true);
+    expect(isEditLocked("expired")).toBe(true);
+  });
+});
 
 describe("STATUS_ORDER", () => {
   it("orders draft < ready < published < expired", () => {

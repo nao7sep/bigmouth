@@ -246,10 +246,6 @@ export function generateMetadataFields(
   return bridge().generateMetadata(requireWs(), postId, fields, content);
 }
 
-export function runAnalysis(postId: string, promptName: string, content: string): Promise<string> {
-  return bridge().runAnalysis(requireWs(), postId, promptName, content);
-}
-
 export function runAnalysisStream(
   postId: string,
   promptName: string,

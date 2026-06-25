@@ -39,6 +39,16 @@ export const STATUS_ORDER: Record<PostStatus, number> = {
 };
 
 /**
+ * Published and expired posts are locked: their content, metadata, and assets
+ * are immutable until the post is moved back to Draft or Ready. This is the
+ * single source of truth for the lock, shared by the post-update and asset IPC
+ * handlers so they can never diverge on which states are editable.
+ */
+export function isEditLocked(status: PostStatus): boolean {
+  return status === "published" || status === "expired";
+}
+
+/**
  * Mutates `fm` to reflect a transition to `newStatus`, applying the lifecycle
  * timestamp rules above. Pure with respect to I/O. Does not validate the
  * transition (e.g. the slug requirement) — that is the store's responsibility.

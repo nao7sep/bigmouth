@@ -166,10 +166,6 @@ function ensureLoaded(): AppConfig {
   return appConfig;
 }
 
-export function getAppConfig(): AppConfig {
-  return ensureLoaded();
-}
-
 export function getLogsDir(): string {
   if (!logsDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
   return logsDir;
