@@ -56,7 +56,7 @@ export function describeAiError(err: unknown): Record<string, unknown> {
 }
 
 /**
- * Short, human-readable message for a failure, used as the HTTP fallback. Errors
+ * Short, human-readable message for a failure, used as the fallback message. Errors
  * surface their own `.message` at the call site; this covers the non-Error case.
  */
 export function aiErrorMessage(err: unknown): string {
@@ -65,7 +65,7 @@ export function aiErrorMessage(err: unknown): string {
 
 /**
  * Logs an AI/provider failure as one structured `error` record and returns a
- * short message suitable for the HTTP response. When the provider returns
+ * short message suitable for surfacing to the renderer. When the provider returns
  * unparseable free-form output, that output is captured in a single `rawResponse`
  * field (newlines JSON-escaped, so the event stays one physical line) — never a
  * multi-line block.

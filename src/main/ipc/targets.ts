@@ -7,7 +7,7 @@ import { renameTarget } from "../core/services/postStore.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
-// Mirrors the old PUT /targets validation, throwing instead of returning 400.
+// Validates the targets payload; throws on the first invalid field.
 function validateTargets(body: unknown): Target[] {
   if (!Array.isArray(body)) {
     throw new Error("targets must be an array");

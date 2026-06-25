@@ -123,6 +123,8 @@ const api = {
     const requestId = `astream-${nextStreamId++}`;
     const channel = analysisStreamChannel(requestId);
     let settled = false;
+    let started = false;
+    let abortRequested = false;
     let resolveDone!: () => void;
     let rejectDone!: (err: Error) => void;
     const done = new Promise<void>((resolve, reject) => {
@@ -144,14 +146,27 @@ const api = {
     // Subscribe before starting so an early frame is never missed.
     ipcRenderer.on(channel, listener);
 
-    void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, requestId, params) as Promise<void>).catch((err: unknown) => {
-      // Pre-stream failure (validation / provider init): no frames will arrive.
-      finish(() => rejectDone(err instanceof Error ? err : new Error(String(err))));
-    });
+    const sendAbort = (): void => ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
+
+    void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, requestId, params) as Promise<void>)
+      .then(() => {
+        started = true;
+        // If the caller aborted before the stream was registered, deliver the
+        // abort now — after registration, never before, so it cannot reach the
+        // main process ahead of the stream it is meant to cancel.
+        if (abortRequested) sendAbort();
+      })
+      .catch((err: unknown) => {
+        // Pre-stream failure (validation / provider init): no frames will arrive.
+        finish(() => rejectDone(err instanceof Error ? err : new Error(String(err))));
+      });
 
     const abort = (): void => {
       if (settled) return;
-      ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
+      abortRequested = true;
+      // Once the stream is registered, cancel it immediately; otherwise the start
+      // resolution above sends the abort as soon as registration completes.
+      if (started) sendAbort();
       finish(() => rejectDone(new Error("Analysis aborted")));
     };
 

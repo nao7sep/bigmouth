@@ -1,7 +1,7 @@
 /**
  * Workspace registry I/O.
  *
- * Manages ~/.bigmouth/app.json which contains the port and workspace list.
+ * Manages ~/.bigmouth/app.json which contains the workspace list.
  * Each workspace entry has an id, name, and absolute dataDirectory path.
  */
 
@@ -79,8 +79,6 @@ function parseAppConfig(raw: unknown): AppConfig {
   }
 
   const source = raw as Record<string, unknown>;
-  // Older app.json files also carried port/host/allowedOrigins (the HTTP server's
-  // settings); they are ignored here and dropped on the next write.
   if (!Array.isArray(source.workspaces)) {
     throw new Error("Invalid app.json: workspaces must be an array");
   }
@@ -340,18 +338,23 @@ export function updateWorkspace(id: string, updates: { name?: string; dataDirect
   const ws = config.workspaces.find((w) => w.id === id);
   if (!ws) return null;
 
-  if (updates.name !== undefined) ws.name = updates.name;
+  // Validate every change before mutating, so a rejected update leaves the
+  // in-memory registry (the same objects listWorkspaces hands the renderer)
+  // untouched rather than half-applied and out of sync with what is on disk.
+  let nextDir: string | undefined;
   if (updates.dataDirectory !== undefined) {
-    const newDir = expandPath(updates.dataDirectory);
-    const existing = findWorkspaceByDirectory(newDir);
+    nextDir = expandPath(updates.dataDirectory);
+    const existing = findWorkspaceByDirectory(nextDir);
     if (existing && existing.id !== id) {
       throw new Error(`That folder is already registered as workspace "${existing.name}".`);
     }
-    if (!isEmptyDirectory(newDir) && !isWorkspaceDirectory(newDir)) {
+    if (!isEmptyDirectory(nextDir) && !isWorkspaceDirectory(nextDir)) {
       throw new Error("Workspace location must be an empty folder or an existing workspace.");
     }
-    ws.dataDirectory = newDir;
   }
+
+  if (updates.name !== undefined) ws.name = updates.name;
+  if (nextDir !== undefined) ws.dataDirectory = nextDir;
 
   writeAppConfig();
   return ws;

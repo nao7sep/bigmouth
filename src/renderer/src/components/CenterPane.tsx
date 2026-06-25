@@ -7,10 +7,10 @@ import {
   useState,
 } from "react";
 import type { Post, PostMutationResult, PostStatus } from "@shared/types";
-import { fetchPost, updatePost, changePostStatus, deletePost, fetchReferrers } from "../api";
+import { getPost, updatePost, changePostStatus, deletePost, listReferrers } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
-import { ConfirmModal } from "./ConfirmModal";
+import { useConfirm } from "./ConfirmHost";
 import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useRadioGroup } from "../hooks/useRadioGroup";
@@ -77,9 +77,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   const [loadError, setLoadError] = useState<string | null>(null);
   const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [referrerCount, setReferrerCount] = useState(0);
-  const [draftRevertConfirmOpen, setDraftRevertConfirmOpen] = useState(false);
+  const confirm = useConfirm();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef("");
   const savedContentRef = useRef("");
@@ -170,7 +168,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     let cancelled = false;
     setLoadError(null);
 
-    fetchPost(postId, workspaceId)
+    getPost(postId, workspaceId)
       .then((loaded) => {
         if (cancelled) return;
         setPost(loaded);
@@ -247,7 +245,16 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     // already "ready" but publishedAtUtc is still set. published → ready
     // itself is non-destructive (timestamps are kept) and needs no prompt.
     if (newStatus === "draft" && (post.frontMatter.publishedAtUtc || post.frontMatter.expiredAtUtc)) {
-      setDraftRevertConfirmOpen(true);
+      void (async () => {
+        const ok = await confirm({
+          title: "Revert to draft?",
+          message:
+            "This clears the ready, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Ready instead.",
+          confirmLabel: "Revert to Draft",
+          danger: true,
+        });
+        if (ok) void applyStatusChange("draft");
+      })();
       return;
     }
     void applyStatusChange(newStatus);
@@ -265,17 +272,24 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   });
 
   const openDeleteConfirm = async () => {
+    let referrerCount = 0;
     try {
-      const { count } = await fetchReferrers(postId, workspaceId);
-      setReferrerCount(count);
+      const { count } = await listReferrers(postId, workspaceId);
+      referrerCount = count;
     } catch {
-      setReferrerCount(0);
+      referrerCount = 0;
     }
-    setDeleteConfirmOpen(true);
-  };
 
-  const handleDelete = async () => {
-    setDeleteConfirmOpen(false);
+    const ok = await confirm({
+      message:
+        referrerCount > 0
+          ? `Delete this post? This cannot be undone. ${referrerCount} other post${referrerCount === 1 ? "" : "s"} link${referrerCount === 1 ? "s" : ""} to it as their source and will be unlinked.`
+          : "Delete this post? This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await deletePost(postId, workspaceId);
       onPostDeleted();
@@ -455,32 +469,6 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
           pubBatchSize={pubBatchSize}
           onSelect={handleSetSource}
           onClose={() => setSourcePickerOpen(false)}
-        />
-      )}
-      {deleteConfirmOpen && (
-        <ConfirmModal
-          message={
-            referrerCount > 0
-              ? `Delete this post? This cannot be undone. ${referrerCount} other post${referrerCount === 1 ? "" : "s"} link${referrerCount === 1 ? "s" : ""} to it as their source and will be unlinked.`
-              : "Delete this post? This cannot be undone."
-          }
-          confirmLabel="Delete"
-          danger
-          onConfirm={() => void handleDelete()}
-          onCancel={() => setDeleteConfirmOpen(false)}
-        />
-      )}
-      {draftRevertConfirmOpen && (
-        <ConfirmModal
-          title="Revert to draft?"
-          message="This clears the ready, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Ready instead."
-          confirmLabel="Revert to Draft"
-          danger
-          onConfirm={() => {
-            setDraftRevertConfirmOpen(false);
-            void applyStatusChange("draft");
-          }}
-          onCancel={() => setDraftRevertConfirmOpen(false)}
         />
       )}
     </div>

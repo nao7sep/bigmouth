@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchAnalysisPrompts, runAnalysisStream } from "../api";
+import { listAnalysisPrompts, runAnalysisStream } from "../api";
 import type { AnalysisPrompt } from "@shared/types";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
 
@@ -27,7 +27,7 @@ export function AnalysisTab({
 
   // Load prompts on mount and after Settings updates them
   useEffect(() => {
-    fetchAnalysisPrompts()
+    listAnalysisPrompts()
       .then((list) => {
         setPromptsError(null);
         setPrompts(list);

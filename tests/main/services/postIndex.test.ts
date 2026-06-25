@@ -151,6 +151,49 @@ describe("expired projection", () => {
   });
 });
 
+describe("tolerates bad source files (one bad file never poisons the workspace)", () => {
+  function postsPath(name: string): string {
+    return path.join(dataDir, "posts", name);
+  }
+
+  it("skips a corrupt or id-less .md file instead of failing the whole load", () => {
+    const good = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, good.frontMatter.id, { frontMatter: { title: "Good post" } });
+
+    // A half-written / externally-created file with no front-matter id, plus an
+    // empty file, both land in posts/ out of band.
+    fs.writeFileSync(postsPath("20260101-000000-utc-bad.md"), "no front matter here\n");
+    fs.writeFileSync(postsPath("20260101-000001-utc-empty.md"), "");
+    clearCache(dataDir);
+
+    // The good post is still listed and readable; the bad files are skipped.
+    const ids = listDrafts(dataDir).map((p) => p.frontMatter.id);
+    expect(ids).toContain(good.frontMatter.id);
+    expect(getPost(dataDir, good.frontMatter.id)).not.toBeNull();
+  });
+
+  it("keeps exactly one entry for a duplicated post id, on both the load and rebuild paths", () => {
+    const original = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, original.frontMatter.id, { frontMatter: { title: "Original" } });
+    const raw = fs.readFileSync(original.filePath, "utf-8");
+
+    // A copy under a different name carries the same front-matter id.
+    fs.writeFileSync(postsPath("20260101-000000-utc-copy.md"), raw);
+    clearCache(dataDir);
+
+    // Incremental load: the duplicate is skipped, not silently overwritten away.
+    const drafts = listDrafts(dataDir).filter((p) => p.frontMatter.id === original.frontMatter.id);
+    expect(drafts).toHaveLength(1);
+    expect(getPost(dataDir, original.frontMatter.id)).not.toBeNull();
+
+    // Explicit rebuild behaves identically (no throw, still exactly one entry).
+    expect(() => rebuildIndex(dataDir)).not.toThrow();
+    const afterRebuild = listDrafts(dataDir).filter((p) => p.frontMatter.id === original.frontMatter.id);
+    expect(afterRebuild).toHaveLength(1);
+    expect(getPost(dataDir, original.frontMatter.id)).not.toBeNull();
+  });
+});
+
 describe("reconcile", () => {
   it("drops an entry whose file disappeared out of band", () => {
     const keep = createPost(dataDir, "blogger", "en");

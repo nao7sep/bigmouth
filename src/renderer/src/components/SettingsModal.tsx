@@ -3,21 +3,21 @@ import { nanoid } from "nanoid";
 import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
 import { AI_PROVIDERS } from "@shared/types";
 import {
-  fetchSettings,
+  getSettings,
   saveSettings,
-  fetchTargets,
+  listTargets,
   saveTargets,
   renameTarget,
-  fetchAnalysisPrompts,
-  fetchAnalysisPromptDefaults,
+  listAnalysisPrompts,
+  listAnalysisPromptDefaults,
   saveAnalysisPrompts,
-  fetchAiConfigs,
+  listAiConfigs,
   createAiConfig,
   updateAiConfig,
   deleteAiConfig,
   setActiveAiConfig,
-  fetchGenerationPrompts,
-  fetchGenerationPromptDefaults,
+  getGenerationPrompts,
+  getGenerationPromptDefaults,
   saveGenerationPrompts,
   rebuildPostIndex,
 } from "../api";
@@ -25,7 +25,7 @@ import {
   GENERATION_PROMPT_KEYS,
   GENERATION_PROMPT_LABELS,
 } from "../generationPromptDefaults";
-import { ConfirmModal } from "./ConfirmModal";
+import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useTablist } from "../hooks/useTablist";
 
@@ -81,9 +81,9 @@ export function SettingsModal({
   const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // Snapshot of the loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
@@ -99,13 +99,13 @@ export function SettingsModal({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetchSettings(),
-      fetchAiConfigs(),
-      fetchGenerationPromptDefaults(),
-      fetchGenerationPrompts(),
-      fetchTargets(),
-      fetchAnalysisPromptDefaults(),
-      fetchAnalysisPrompts(),
+      getSettings(),
+      listAiConfigs(),
+      getGenerationPromptDefaults(),
+      getGenerationPrompts(),
+      listTargets(),
+      listAnalysisPromptDefaults(),
+      listAnalysisPrompts(),
     ])
       .then(([s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
         if (cancelled) return;
@@ -140,10 +140,17 @@ export function SettingsModal({
     JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current)) ||
     JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
 
-  const handleRequestClose = () => {
+  const handleRequestClose = async () => {
     if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
     if (!isDirty) { onClose(); return; }
-    setShowDiscardConfirm(true);
+    const ok = await confirm({
+      title: "Discard Changes",
+      message: "You have unsaved changes. Discard them and close?",
+      confirmLabel: "Discard",
+      cancelLabel: "Keep Editing",
+      danger: true,
+    });
+    if (ok) onClose();
   };
 
   const isValid = (): boolean => {
@@ -234,7 +241,7 @@ export function SettingsModal({
       return latest;
     } catch (err) {
       try {
-        initialAiConfigs.current = await fetchAiConfigs();
+        initialAiConfigs.current = await listAiConfigs();
       } catch {
         // Best-effort resync; fall through and surface the original error.
       }
@@ -285,103 +292,90 @@ export function SettingsModal({
   };
 
   return (
-    <>
-      <ModalShell
-        title="Settings"
-        onClose={handleRequestClose}
-        width={560}
-        maxHeight="85vh"
-        closeDisabled={saving}
-      >
-        {loadError ? (
-          <div className="modal-body">
-            <p className="settings-field-error">{loadError}</p>
-            <p>Close and reopen Settings to try again.</p>
+    <ModalShell
+      title="Settings"
+      onClose={() => void handleRequestClose()}
+      width={560}
+      maxHeight="85vh"
+      closeDisabled={saving}
+    >
+      {loadError ? (
+        <div className="modal-body">
+          <p className="settings-field-error">{loadError}</p>
+          <p>Close and reopen Settings to try again.</p>
+        </div>
+      ) : !loaded ? (
+        <div className="modal-body">
+          <p>Loading…</p>
+        </div>
+      ) : (
+        <>
+          <div className="settings-tabs" aria-label="Settings sections" {...tablistProps}>
+            {TABS.map((t) => {
+              const { onClick, ...tabProps } = getTabProps(t);
+              return (
+                <button
+                  key={t}
+                  className={`settings-tab${tab === t ? " active" : ""}`}
+                  onClick={onClick}
+                  {...tabProps}
+                  autoFocus={t === tab}
+                >
+                  {TAB_LABELS[t]}
+                </button>
+              );
+            })}
           </div>
-        ) : !loaded ? (
-          <div className="modal-body">
-            <p>Loading…</p>
-          </div>
-        ) : (
-          <>
-            <div className="settings-tabs" aria-label="Settings sections" {...tablistProps}>
-              {TABS.map((t) => {
-                const { onClick, ...tabProps } = getTabProps(t);
-                return (
-                  <button
-                    key={t}
-                    className={`settings-tab${tab === t ? " active" : ""}`}
-                    onClick={onClick}
-                    {...tabProps}
-                    autoFocus={t === tab}
-                  >
-                    {TAB_LABELS[t]}
-                  </button>
-                );
-              })}
-            </div>
 
-            <div className="modal-body" {...getPanelProps(tab)}>
-              {tab === "general" && settings && (
-                <GeneralTab
-                  settings={settings}
-                  onChange={setSettings}
-                />
-              )}
-              {tab === "providers" && aiConfigs && (
-                <AiTab
-                  aiConfigs={aiConfigs}
-                  onChange={setAiConfigs}
-                />
-              )}
-              {tab === "targets" && (
-                <TargetsTab
-                  targets={targets}
-                  supportedLanguages={settings?.supportedLanguages ?? []}
-                  onChange={setTargets}
-                />
-              )}
-              {tab === "analysis" && (
-                <AnalysisPromptsTab
-                  prompts={prompts}
-                  defaults={analysisPromptDefaults}
-                  onChange={setPrompts}
-                />
-              )}
-              {tab === "generation" && generationPrompts && generationPromptDefaults && (
-                <GenerationTab
-                  data={generationPrompts}
-                  defaults={generationPromptDefaults}
-                  onChange={setGenerationPrompts}
-                />
-              )}
-            </div>
-            {saveError && <p className="settings-field-error">{saveError}</p>}
-            <div className="modal-footer">
-              <button
-                className="btn-primary"
-                style={{ width: "auto" }}
-                onClick={handleSaveAll}
-                disabled={!canSave}
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </>
-        )}
-      </ModalShell>
-      {showDiscardConfirm && (
-        <ConfirmModal
-          title="Discard Changes"
-          message="You have unsaved changes. Discard them and close?"
-          confirmLabel="Discard"
-          cancelLabel="Keep Editing"
-          danger
-          onConfirm={onClose}
-          onCancel={() => setShowDiscardConfirm(false)}
-        />
+          <div className="modal-body" {...getPanelProps(tab)}>
+            {tab === "general" && settings && (
+              <GeneralTab
+                settings={settings}
+                onChange={setSettings}
+              />
+            )}
+            {tab === "providers" && aiConfigs && (
+              <AiTab
+                aiConfigs={aiConfigs}
+                onChange={setAiConfigs}
+              />
+            )}
+            {tab === "targets" && (
+              <TargetsTab
+                targets={targets}
+                supportedLanguages={settings?.supportedLanguages ?? []}
+                onChange={setTargets}
+              />
+            )}
+            {tab === "analysis" && (
+              <AnalysisPromptsTab
+                prompts={prompts}
+                defaults={analysisPromptDefaults}
+                onChange={setPrompts}
+              />
+            )}
+            {tab === "generation" && generationPrompts && generationPromptDefaults && (
+              <GenerationTab
+                data={generationPrompts}
+                defaults={generationPromptDefaults}
+                onChange={setGenerationPrompts}
+              />
+            )}
+          </div>
+          {saveError && <p className="settings-field-error">{saveError}</p>}
+          <div className="modal-footer">
+            <button
+              className="btn-primary"
+              style={{ width: "auto" }}
+              onClick={handleSaveAll}
+              disabled={!canSave}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </>
       )}
-    </>
+    </ModalShell>
   );
 }
 

@@ -23,6 +23,7 @@ import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { compareInstants } from "../shared/timestamps.js";
+import { warn as logWarn } from "./logger.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
@@ -143,11 +144,8 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
 function buildFromDisk(dataDir: string): Map<string, PostIndexEntry> {
   const map = new Map<string, PostIndexEntry>();
   for (const fileName of postFileNames(dataDir)) {
-    const entry = entryFromFile(dataDir, fileName);
-    if (map.has(entry.id)) {
-      throw new Error(`Duplicate post id "${entry.id}" across ${map.get(entry.id)!.fileName} and ${fileName}`);
-    }
-    map.set(entry.id, entry);
+    const entry = tryEntryFromFile(dataDir, fileName);
+    if (entry) insertUnique(map, entry);
   }
   return map;
 }
@@ -167,9 +165,8 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
 
   for (const fileName of onDisk) {
     if (indexed.has(fileName)) continue;
-    const entry = entryFromFile(dataDir, fileName);
-    map.set(entry.id, entry);
-    changed = true;
+    const entry = tryEntryFromFile(dataDir, fileName);
+    if (entry && insertUnique(map, entry)) changed = true;
   }
 
   for (const [id, entry] of [...map.entries()]) {
@@ -182,18 +179,58 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
   return changed;
 }
 
-function entryFromFile(dataDir: string, fileName: string): PostIndexEntry {
-  const post = readPost(path.join(postsDir(dataDir), fileName));
-  if (!post.frontMatter.id) {
-    throw new Error(`Post file is missing a front matter id: ${fileName}`);
+/**
+ * Reads one post file into an index entry, or returns null when the file cannot
+ * contribute a valid row — unreadable, malformed front matter, or no id. A bad
+ * source file is skipped and logged, never thrown: the index is a derived cache
+ * and must tolerate a corrupt or half-written `.md` the same way `readIndexFile`
+ * tolerates a corrupt `index.json`, rather than letting one bad file make the
+ * whole workspace unreadable.
+ */
+function tryEntryFromFile(dataDir: string, fileName: string): PostIndexEntry | null {
+  try {
+    const post = readPost(path.join(postsDir(dataDir), fileName));
+    if (!post.frontMatter.id) {
+      logWarn("post file skipped: missing front matter id", { fileName });
+      return null;
+    }
+    return projectIndexEntry(post.frontMatter, fileName, post.content);
+  } catch (err) {
+    logWarn("post file skipped: unreadable or malformed", {
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
-  return projectIndexEntry(post.frontMatter, fileName, post.content);
+}
+
+/**
+ * Inserts an entry under its id, keeping the first file seen for a given id and
+ * logging any later collision rather than throwing or silently overwriting.
+ * Callers iterate files in sorted order, so the surviving file is deterministic.
+ * Returns whether the entry was inserted.
+ */
+function insertUnique(map: Map<string, PostIndexEntry>, entry: PostIndexEntry): boolean {
+  const existing = map.get(entry.id);
+  if (existing) {
+    logWarn("post file skipped: duplicate id", {
+      id: entry.id,
+      kept: existing.fileName,
+      ignored: entry.fileName,
+    });
+    return false;
+  }
+  map.set(entry.id, entry);
+  return true;
 }
 
 function postFileNames(dataDir: string): string[] {
   const dir = postsDir(dataDir);
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .sort();
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {

@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, MouseEventHandler, RefObject } from "react";
-import { fetchPosts, createPost, fetchTargets, fetchSettings, revealCurrentLogFile } from "./api";
+import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile } from "./api";
 import { LeftPane } from "./components/LeftPane";
 import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
@@ -72,6 +72,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [maxUploadMb, setMaxUploadMb] = useState(500);
     const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
     const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
+    const [timezone, setTimezone] = useState("Asia/Tokyo");
     const [editorContent, setEditorContent] = useState("");
     const [currentPost, setCurrentPost] = useState<Post | null>(null);
     const [exportOpen, setExportOpen] = useState(false);
@@ -183,7 +184,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         if (!sessionAliveRef.current) return;
         const pubOffset = opts?.publishedOffset ?? 0;
         const expOffset = opts?.expiredOffset ?? 0;
-        const data = await fetchPosts(pubOffset, pubBatchSize, expOffset);
+        const data = await listPosts(pubOffset, pubBatchSize, expOffset);
         if (!sessionAliveRef.current) return;
 
         draftsRef.current = data.drafts;
@@ -224,10 +225,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
+      if (settings.timezone?.trim()) setTimezone(settings.timezone);
     }, []);
 
     const loadConfig = useCallback(async () => {
-      const [nextTargets, settings] = await Promise.all([fetchTargets(), fetchSettings()]);
+      const [nextTargets, settings] = await Promise.all([listTargets(), getSettings()]);
       if (!sessionAliveRef.current) return;
       setTargets(nextTargets);
       applySettings(settings);
@@ -273,12 +275,30 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       };
 
       const handler = (e: KeyboardEvent) => {
+        // A control deeper in the tree may have already consumed this event; the
+        // convention is that chrome shortcuts stand down when it did.
+        if (e.defaultPrevented) return;
+
         const mod = e.metaKey || e.ctrlKey;
         if (!mod) return;
 
         // While an IME candidate is pending, the chord belongs to the composition — even Cmd+N,
         // which otherwise fires inside an input, stands down until it commits (text-input-ime).
         if (isComposingEvent(e)) return;
+
+        // App-level dialogs use their conventional chords and open from anywhere,
+        // like menu accelerators (Cmd/Ctrl+, for Settings, Cmd/Ctrl+/ or ? for the
+        // shortcuts reference), so they sit ahead of the input-focus guards below.
+        if (e.key === ",") {
+          e.preventDefault();
+          setSettingsOpen(true);
+          return;
+        }
+        if (e.key === "/" || e.key === "?") {
+          e.preventDefault();
+          setShortcutsOpen(true);
+          return;
+        }
 
         const tag = (e.target as HTMLElement).tagName;
         if (tag === "TEXTAREA" || tag === "SELECT") return;
@@ -526,6 +546,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             onRevealCurrentLogFile={handleRevealCurrentLogFile}
             onSwitchWorkspace={onSwitchWorkspace}
             workspaceName={workspace.name}
+            timezone={timezone}
           />
           <div className="pane-divider" onMouseDown={onStartLeftDrag} />
           {selectedPostId ? (

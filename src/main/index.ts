@@ -22,10 +22,10 @@ registerAssetScheme();
 
 let shuttingDown = false;
 
-// Resolve the storage root, bring up file logging, then open the window. This is
-// the desktop counterpart of the old server bootstrap: the main process now owns
-// the single storage resolver and the filesystem (storage-path-conventions), and
-// the renderer reaches it over IPC (wired in later phases) rather than HTTP.
+// Startup sequence: resolve the storage root, bring up file logging, register the
+// asset protocol and the IPC handlers the renderer calls, install the application
+// menu, and open the window. The main process owns the single storage resolver and
+// the filesystem (storage-path-conventions).
 function bootstrap(): void {
   const appConfig = initAppDir();
   initLogger(getLogsDir());

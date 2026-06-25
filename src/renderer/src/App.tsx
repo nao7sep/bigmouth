@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
-import { fetchWorkspaces, setActiveWorkspace } from "./api";
+import { listWorkspaces, setActiveWorkspace } from "./api";
 import type { Workspace } from "@shared/types";
 import {
   CENTER_MIN,
@@ -118,7 +118,7 @@ export function App() {
       return;
     }
 
-    fetchWorkspaces()
+    listWorkspaces()
       .then((workspaces) => {
         const ws = workspaces.find((workspace) => workspace.id === storedId);
         if (ws) {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
-import { ConfirmModal } from "./ConfirmModal";
+import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import type { Target } from "@shared/types";
 
@@ -37,7 +37,7 @@ export function NewPostModal({
   const [sourceTitle, setSourceTitle] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const confirm = useConfirm();
 
   const initialLanguage = resolveLanguage(undefined, supportedLanguages);
   const isDirty =
@@ -45,12 +45,19 @@ export function NewPostModal({
     selectedLanguage !== initialLanguage ||
     sourceId !== "";
 
-  const handleRequestClose = () => {
-    if (isDirty) {
-      setShowDiscardConfirm(true);
-    } else {
+  const handleRequestClose = async () => {
+    if (!isDirty) {
       onClose();
+      return;
     }
+    const ok = await confirm({
+      title: "Discard new post?",
+      message: "You have unsaved selections. Discard them and close?",
+      confirmLabel: "Discard",
+      cancelLabel: "Keep Editing",
+      danger: true,
+    });
+    if (ok) onClose();
   };
 
   const picker = usePostPicker(pubBatchSize);
@@ -94,7 +101,7 @@ export function NewPostModal({
   };
 
   return (
-    <ModalShell title="New Post" onClose={handleRequestClose} width={440}>
+    <ModalShell title="New Post" onClose={() => void handleRequestClose()} width={440}>
       <div className="modal-body">
         <div className="form-field">
           <label className="form-label">Target</label>
@@ -168,7 +175,7 @@ export function NewPostModal({
         {createError && <p className="settings-field-error">{createError}</p>}
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={handleRequestClose}>
+        <button className="btn-toolbar" onClick={() => void handleRequestClose()}>
           Cancel
         </button>
         <button
@@ -180,17 +187,6 @@ export function NewPostModal({
           {creating ? "Creating…" : "Create"}
         </button>
       </div>
-      {showDiscardConfirm && (
-        <ConfirmModal
-          title="Discard new post?"
-          message="You have unsaved selections. Discard them and close?"
-          confirmLabel="Discard"
-          cancelLabel="Keep Editing"
-          danger
-          onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
-          onCancel={() => setShowDiscardConfirm(false)}
-        />
-      )}
     </ModalShell>
   );
 }

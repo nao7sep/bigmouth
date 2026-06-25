@@ -70,11 +70,11 @@ export interface PostSummary {
 }
 
 /**
- * The subset of front matter a client may edit through `PUT /posts/:id`.
+ * The subset of front matter the renderer may edit through the update operation.
  * Identity (id) and lifecycle fields (status, createdAtUtc, updatedAtUtc,
  * readyAtUtc, publishedAtUtc, expiredAtUtc) are intentionally absent: identity
- * never changes and lifecycle moves only through the status endpoint. A null
- * value clears the field.
+ * never changes and lifecycle moves only through the status-change operation. A
+ * null value clears the field.
  */
 export interface EditablePostMetadata {
   target?: string | null;
@@ -119,8 +119,8 @@ export interface AiConfig {
   id: string;        // nanoid, stable identity
   name: string;      // user-defined label (e.g., "Claude Sonnet")
   provider: AiProvider;
-  apiKey: string;    // obfuscated in settings.json, plain in memory, empty in client responses
-  hasApiKey?: boolean; // client-only flag: true when a key is already stored server-side
+  apiKey: string;    // obfuscated in settings.json, plain in memory, empty in the renderer-facing view
+  hasApiKey?: boolean; // renderer-facing flag: true when a key is stored on disk
   model: string;     // e.g., "claude-sonnet-4-6"
 }
 

@@ -13,6 +13,8 @@ const SHORTCUTS = [
   { key: "Cmd+3", description: "Switch to Assets tab" },
   { key: "Cmd+4", description: "Switch to Preview tab" },
   { key: "Cmd+5", description: "Switch to Metadata tab" },
+  { key: "Cmd+,", description: "Settings" },
+  { key: "Cmd+/", description: "Keyboard shortcuts" },
 ];
 
 const NAV_HINTS: { title: string; body: string }[] = [

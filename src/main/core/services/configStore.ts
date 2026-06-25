@@ -33,11 +33,24 @@ function envApiKey(provider: AiProvider): string | null {
   return value && value.trim() !== "" ? value.trim() : null;
 }
 
+/**
+ * Reads and parses a workspace JSON config file. A corrupt file (truncated, or
+ * edited by hand into invalid JSON) surfaces as a clear error naming the file,
+ * rather than a bare `SyntaxError: Unexpected token` from the parser.
+ */
+function readJsonFile<T>(dataDir: string, fileName: string): T {
+  const raw = fs.readFileSync(path.join(dataDir, fileName), "utf-8");
+  try {
+    return JSON.parse(raw) as T;
+  } catch (cause) {
+    throw new Error(`${fileName} is not valid JSON.`, { cause });
+  }
+}
+
 // --- Settings ---
 
 export function getSettings(dataDir: string): Settings {
-  const raw = fs.readFileSync(path.join(dataDir, "settings.json"), "utf-8");
-  return JSON.parse(raw) as Settings;
+  return readJsonFile<Settings>(dataDir, "settings.json");
 }
 
 export function saveSettings(dataDir: string, settings: Settings): Settings {
@@ -58,8 +71,7 @@ export function saveSettings(dataDir: string, settings: Settings): Settings {
 // --- AI Configs ---
 
 function readAiConfigsRaw(dataDir: string): AiConfigsData {
-  const raw = fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8");
-  return JSON.parse(raw) as AiConfigsData;
+  return readJsonFile<AiConfigsData>(dataDir, "ai-configs.json");
 }
 
 /**
@@ -89,8 +101,8 @@ export function getActiveAiConfig(dataDir: string): AiConfig | null {
 
 /**
  * Returns AI configs with empty API key fields plus a boolean indicating
- * whether a key is already stored server-side. The plaintext key is never sent
- * over HTTP.
+ * whether a key is already stored on disk. The plaintext key never crosses the
+ * IPC bridge.
  */
 export function getAiConfigsForClient(dataDir: string): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
@@ -124,7 +136,7 @@ export type CreateAiConfigInput = {
 
 /**
  * Creates a new AI config with a caller-supplied id. Throws if the id is
- * already in use. Returns the updated client view.
+ * already in use. Returns the renderer-facing config view.
  */
 export function createAiConfig(dataDir: string, input: CreateAiConfigInput): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
@@ -158,7 +170,7 @@ export type UpdateAiConfigPatch = {
 
 /**
  * Applies a partial update to a single AI config. Throws if the id does not
- * exist. Returns the updated client view.
+ * exist. Returns the renderer-facing config view.
  */
 export function updateAiConfig(
   dataDir: string,
@@ -214,8 +226,7 @@ export function setActiveAiConfig(dataDir: string, id: string): AiConfigsData {
 // --- Targets ---
 
 export function getTargets(dataDir: string): Target[] {
-  const raw = fs.readFileSync(path.join(dataDir, "targets.json"), "utf-8");
-  return JSON.parse(raw) as Target[];
+  return readJsonFile<Target[]>(dataDir, "targets.json");
 }
 
 export function saveTargets(dataDir: string, targets: Target[]): Target[] {
@@ -231,8 +242,7 @@ export function saveTargets(dataDir: string, targets: Target[]): Target[] {
 // --- Analysis Prompts ---
 
 export function getAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
-  const raw = fs.readFileSync(path.join(dataDir, "analysis-prompts.json"), "utf-8");
-  return JSON.parse(raw) as AnalysisPrompt[];
+  return readJsonFile<AnalysisPrompt[]>(dataDir, "analysis-prompts.json");
 }
 
 export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): AnalysisPrompt[] {
@@ -247,8 +257,7 @@ export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]):
 // --- Generation Prompts ---
 
 export function getGenerationPrompts(dataDir: string): GenerationPromptsData {
-  const raw = fs.readFileSync(path.join(dataDir, "generation-prompts.json"), "utf-8");
-  return JSON.parse(raw) as GenerationPromptsData;
+  return readJsonFile<GenerationPromptsData>(dataDir, "generation-prompts.json");
 }
 
 export function saveGenerationPrompts(

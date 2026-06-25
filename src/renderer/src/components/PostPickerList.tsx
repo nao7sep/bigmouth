@@ -66,13 +66,11 @@ export function PostPickerList({
         onKeyDown={(e) => {
           if (isComposingKeyboardEvent(composingRef, e)) return;
           // ArrowDown hands focus off to the results so the keyboard flow is
-          // filter → pick without a Tab in between.
-          if (e.key === "ArrowDown") {
-            const firstRow = listboxProps.ref.current?.querySelector<HTMLElement>('[role="option"]');
-            if (firstRow) {
-              e.preventDefault();
-              firstRow.focus();
-            }
+          // filter → pick without a Tab in between. The listbox container is the
+          // focus holder; autoActivateFirst already rests its cursor on row 0.
+          if (e.key === "ArrowDown" && listboxProps.ref.current) {
+            e.preventDefault();
+            listboxProps.ref.current.focus();
           }
         }}
       />

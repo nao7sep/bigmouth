@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  fetchWorkspaces,
+  listWorkspaces,
   openOrCreateWorkspace,
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
 } from "../api";
 import type { Workspace } from "@shared/types";
-import { ConfirmModal } from "./ConfirmModal";
+import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
@@ -39,8 +39,7 @@ export function WorkspaceModal({
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
-  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const confirm = useConfirm();
 
   const renameComposing = useComposing();
   const nameComposing = useComposing();
@@ -73,16 +72,28 @@ export function WorkspaceModal({
       return;
     }
     if (!dismissable) return;
-    if (isDirty) {
-      setShowDiscardConfirm(true);
-    } else {
+    if (!isDirty) {
       onClose();
+      return;
     }
+    void (async () => {
+      const ok = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved workspace edits. Discard them and close?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (ok) {
+        clearForm();
+        onClose();
+      }
+    })();
   };
 
   const load = () => {
     setLoading(true);
-    fetchWorkspaces()
+    listWorkspaces()
       .then((ws) => {
         setWorkspaces(ws);
         setLoading(false);
@@ -119,21 +130,40 @@ export function WorkspaceModal({
     load();
   };
 
-  const handleDelete = async (ws: Workspace) => {
-    if (ws.id === activeWorkspaceId) {
-      const canDelete = await onWorkspaceDeleted(ws.id);
-      if (!canDelete) return;
-    }
-    try {
-      await deleteWorkspace(ws.id);
-      setDeleteTarget(null);
-      load();
-    } catch (err) {
-      if (ws.id === activeWorkspaceId) {
-        await onSelect(ws);
-      }
-      setError(err instanceof Error ? err.message : "Failed to delete workspace.");
-    }
+  const handleDelete = (ws: Workspace) => {
+    void confirm({
+      title: "Delete workspace",
+      message: `Remove "${ws.name}" from the workspace list? The data files on disk will not be deleted.`,
+      confirmLabel: "Delete",
+      danger: true,
+      // The whole deletion runs inside onConfirm so the host keeps the dialog
+      // busy while it runs and, on failure, holds it open with the reason shown.
+      onConfirm: async () => {
+        // Active-workspace pre-check has side effects (it flushes pending
+        // changes and tears down the session), so it must run only after the
+        // user confirms — not before opening the dialog. A veto means the
+        // session could not be unwound (unsaved changes); throw so the dialog
+        // stays open and the deletion does not proceed.
+        if (ws.id === activeWorkspaceId) {
+          const canDelete = await onWorkspaceDeleted(ws.id);
+          if (!canDelete) {
+            throw new Error("Resolve the unsaved changes in the active workspace before deleting it.");
+          }
+        }
+        try {
+          await deleteWorkspace(ws.id);
+        } catch (err) {
+          // Deletion failed: if this was the active workspace, the pre-check
+          // already cleared it, so re-select it to restore the session before
+          // surfacing the error. Re-throw so the host shows it in the dialog.
+          if (ws.id === activeWorkspaceId) {
+            await onSelect(ws);
+          }
+          throw err instanceof Error ? err : new Error("Failed to delete workspace.");
+        }
+        load();
+      },
+    });
   };
 
   const sorted = useMemo(
@@ -257,7 +287,7 @@ export function WorkspaceModal({
                           tabIndex={-1}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDeleteTarget(ws);
+                            handleDelete(ws);
                           }}
                         >
                           Delete
@@ -336,33 +366,6 @@ export function WorkspaceModal({
           </button>
         </div>
       </div>
-
-      {deleteTarget && (
-        <ConfirmModal
-          title="Delete workspace"
-          message={`Remove "${deleteTarget.name}" from the workspace list? The data files on disk will not be deleted.`}
-          confirmLabel="Delete"
-          danger
-          onConfirm={() => handleDelete(deleteTarget)}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-
-      {showDiscardConfirm && (
-        <ConfirmModal
-          title="Discard changes?"
-          message="You have unsaved workspace edits. Discard them and close?"
-          confirmLabel="Discard"
-          cancelLabel="Keep Editing"
-          danger
-          onConfirm={() => {
-            setShowDiscardConfirm(false);
-            clearForm();
-            onClose();
-          }}
-          onCancel={() => setShowDiscardConfirm(false)}
-        />
-      )}
     </ModalShell>
   );
 }

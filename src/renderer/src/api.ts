@@ -44,7 +44,7 @@ function requireWs(workspaceId = wsId): string {
 
 // --- Workspace management (no workspace context) ---
 
-export function fetchWorkspaces(): Promise<Workspace[]> {
+export function listWorkspaces(): Promise<Workspace[]> {
   return bridge().listWorkspaces();
 }
 
@@ -73,11 +73,11 @@ export function pickWorkspaceDirectory(): Promise<string | null> {
 
 // --- Posts ---
 
-export function fetchPosts(publishedOffset = 0, limit = 50, expiredOffset = 0): Promise<PostListResponse> {
+export function listPosts(publishedOffset = 0, limit = 50, expiredOffset = 0): Promise<PostListResponse> {
   return bridge().listPosts(requireWs(), publishedOffset, limit, expiredOffset);
 }
 
-export function fetchPost(id: string, workspaceId?: string): Promise<Post> {
+export function getPost(id: string, workspaceId?: string): Promise<Post> {
   return bridge().getPost(requireWs(workspaceId), id);
 }
 
@@ -108,7 +108,7 @@ export function deletePost(id: string, workspaceId?: string): Promise<void> {
   return bridge().deletePost(requireWs(workspaceId), id);
 }
 
-export function fetchReferrers(
+export function listReferrers(
   id: string,
   workspaceId?: string,
 ): Promise<{ count: number; ids: string[] }> {
@@ -121,7 +121,7 @@ export function rebuildPostIndex(): Promise<{ count: number }> {
 
 // --- Targets ---
 
-export function fetchTargets(): Promise<Target[]> {
+export function listTargets(): Promise<Target[]> {
   return bridge().listTargets(requireWs());
 }
 
@@ -138,7 +138,7 @@ export function renameTarget(
 
 // --- Settings ---
 
-export function fetchSettings(): Promise<Settings> {
+export function getSettings(): Promise<Settings> {
   return bridge().getSettings(requireWs());
 }
 
@@ -148,7 +148,7 @@ export function saveSettings(settings: Settings): Promise<Settings> {
 
 // --- AI configs ---
 
-export function fetchAiConfigs(): Promise<AiConfigsData> {
+export function listAiConfigs(): Promise<AiConfigsData> {
   return bridge().listAiConfigs(requireWs());
 }
 
@@ -185,11 +185,11 @@ export function setActiveAiConfig(id: string): Promise<AiConfigsData> {
 
 // --- Generation prompts ---
 
-export function fetchGenerationPrompts(): Promise<GenerationPromptsData> {
+export function getGenerationPrompts(): Promise<GenerationPromptsData> {
   return bridge().getGenerationPrompts(requireWs());
 }
 
-export function fetchGenerationPromptDefaults(): Promise<GenerationPromptsData> {
+export function getGenerationPromptDefaults(): Promise<GenerationPromptsData> {
   return bridge().getGenerationPromptDefaults(requireWs());
 }
 
@@ -199,11 +199,11 @@ export function saveGenerationPrompts(data: GenerationPromptsData): Promise<Gene
 
 // --- Analysis prompts ---
 
-export function fetchAnalysisPrompts(): Promise<AnalysisPrompt[]> {
+export function listAnalysisPrompts(): Promise<AnalysisPrompt[]> {
   return bridge().listAnalysisPrompts(requireWs());
 }
 
-export function fetchAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
+export function listAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
   return bridge().listAnalysisPromptDefaults(requireWs());
 }
 
@@ -213,7 +213,7 @@ export function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<Analysis
 
 // --- Assets ---
 
-export function fetchAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
+export function listAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
   return bridge().listAssets(requireWs(workspaceId), postId);
 }
 
@@ -289,8 +289,7 @@ export function generateImaging(
   const result = bridge().generateImaging(requireWs(), postId, content, options);
   if (!signal) return result;
   // The underlying generation can't be cancelled mid-call, but the caller's
-  // abort still rejects this promise (the in-flight result is then discarded) —
-  // matching the old behavior where aborting the fetch gave up client-side.
+  // abort still rejects this promise; the in-flight result is then discarded.
   return new Promise<string[]>((resolve, reject) => {
     if (signal.aborted) {
       reject(new DOMException("Imaging aborted", "AbortError"));

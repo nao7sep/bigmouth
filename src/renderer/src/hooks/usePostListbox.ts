@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -22,18 +23,21 @@ import { isComposingKeyboardEvent } from "./useComposing";
 // The app's listbox layer: one shared hook behind the post list. It realizes
 // the composite-control contract for a grouped, single-select listbox:
 //
-//   - One tab stop (roving tabindex): the active row carries tabIndex 0, every
-//     other row tabIndex -1; the container is focusable when the list is empty.
-//   - Up/Down/Home/End/PageUp/PageDown move the active cursor; stop-at-ends.
+//   - One tab stop: the `role="listbox"` container holds focus (tabIndex 0) and
+//     points at the active row with `aria-activedescendant`. Rows are not
+//     themselves focusable, so a row leaving the set can never drop DOM focus to
+//     <body> — the container keeps focus and the keyboard throughout.
+//   - Up/Down/Home/End/PageUp/PageDown move the active cursor (scrolled into
+//     view as it moves); stop-at-ends.
 //   - Type-ahead by row label, composition-guarded for IME.
 //   - MANUAL activation: arrows move only the cursor; Enter/Space commit via
 //     `onActivate`. Committing a post flushes/can-discard in-progress editor
 //     state, so it must not fire on every keystroke.
 //   - The active cursor (hook-owned `activeId`) and the committed selection
 //     (`selectedId`, the app's source of truth) are separate state.
-//   - Recovery: when the active row leaves the rendered set while focus is in
-//     the list, focus moves to the surviving neighbour before paint; if focus
-//     has left the list, state updates silently (never steal focus).
+//   - Recovery: when the active row leaves the rendered set, the cursor moves to
+//     the surviving neighbour. No focus juggling is needed — focus never left
+//     the container.
 //
 // Group headers, collapse toggles, and "load more" are not the listbox's
 // concern — the caller renders them outside the row sequence (see LeftPane).
@@ -48,7 +52,7 @@ export interface PostListRow {
 export interface PostRowProps {
   role: "option";
   "aria-selected": boolean;
-  tabIndex: 0 | -1;
+  id: string;
   ref: (el: HTMLElement | null) => void;
   onClick: () => void;
 }
@@ -58,7 +62,8 @@ export interface UsePostListboxResult {
   listboxProps: {
     role: "listbox";
     ref: RefObject<HTMLDivElement | null>;
-    tabIndex?: 0;
+    tabIndex: 0;
+    "aria-activedescendant"?: string;
     onKeyDown: (e: ReactKeyboardEvent) => void;
   };
   /** Props for one option row. */
@@ -95,6 +100,8 @@ export function usePostListbox({
    */
   autoActivateFirst?: boolean;
 }): UsePostListboxResult {
+  const baseId = useId();
+  const rowDomId = useCallback((id: string) => `${baseId}-opt-${id}`, [baseId]);
   const listboxRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLElement>());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -112,23 +119,19 @@ export function usePostListbox({
         ? ids[0]
         : null;
 
-  const focusRow = useCallback((id: string) => {
-    rowRefs.current.get(id)?.focus();
+  // Focus stays on the container; moving the cursor only scrolls the active row
+  // into view (aria-activedescendant carries the cursor for assistive tech).
+  const scrollActiveIntoView = useCallback((id: string) => {
+    rowRefs.current.get(id)?.scrollIntoView({ block: "nearest" });
   }, []);
 
-  // Recovery + never-steal-focus. When the rendered rows change such that the
-  // row the user was on has left the set (deleted, archived, status-changed out
-  // of view), two things must happen. Selection recovery is the session's job:
-  // it has already moved `selectedId` to the surviving neighbour via
-  // `pickAdjacentPostId`, so the resolved cursor below already points there.
-  // What the listbox owns is FOCUS recovery: the unmounted focused row has
-  // dropped DOM focus to <body>, and this layout effect — which runs after the
-  // commit but before paint, so the move is invisible — restores focus to the
-  // recovered cursor row.
-  //
-  // `removalFocusTargetId` from the pre-change order is the fallback for when
-  // the session did not (or could not) move selection: it picks the same
-  // next-then-previous neighbour at the id level.
+  // Recovery. When the rendered rows change such that the row the user was on
+  // has left the set (deleted, archived, status-changed out of view), the cursor
+  // moves to the surviving neighbour. Selection recovery is the session's job —
+  // it has already moved `selectedId` via `pickAdjacentPostId`, so the resolved
+  // cursor below already points there; `removalFocusTargetId` from the pre-change
+  // order is the fallback when it did not. There is no focus to restore: DOM
+  // focus lives on the container, which does not unmount when a row leaves.
   const prevRowsRef = useRef<readonly PostListRow[]>(rows);
   useLayoutEffect(() => {
     const prevRows = prevRowsRef.current;
@@ -137,22 +140,12 @@ export function usePostListbox({
     if (activeId == null) return; // never navigated yet; nothing to recover
     if (indexOfId(ids, activeId) !== -1) return; // active row still present
 
-    // The active row left the rendered set. Adopt the session's recovered
-    // selection if it is in view, else the pre-change neighbour.
     const neighbour =
       indexOfId(ids, selectedId) !== -1
         ? selectedId
         : removalFocusTargetId(prevRows.map((r) => r.id), activeId);
     setActiveId(neighbour);
-
-    // Never steal focus: only take DOM focus when the list had it. The unmounted
-    // focused row leaves focus on <body>; that is our "focus was inside" signal.
-    if (neighbour != null && document.activeElement === document.body) {
-      // Defer until the recovered row has received its roving tabIndex=0.
-      queueMicrotask(() => {
-        if (document.activeElement === document.body) focusRow(neighbour);
-      });
-    }
+    if (neighbour != null) scrollActiveIntoView(neighbour);
   }, [rows]);
 
   // Type-ahead buffer with idle reset.
@@ -170,9 +163,9 @@ export function usePostListbox({
       if (index < 0 || index >= ids.length) return;
       const id = ids[index];
       setActiveId(id);
-      focusRow(id);
+      scrollActiveIntoView(id);
     },
-    [ids, focusRow],
+    [ids, scrollActiveIntoView],
   );
 
   const onKeyDown = useCallback(
@@ -254,34 +247,34 @@ export function usePostListbox({
     (id: string): PostRowProps => ({
       role: "option",
       "aria-selected": id === selectedId,
-      tabIndex: id === resolvedActiveId ? 0 : -1,
+      // A stable DOM id so the container's aria-activedescendant can point here.
+      id: rowDomId(id),
       ref: (el) => {
         if (el) rowRefs.current.set(id, el);
         else rowRefs.current.delete(id);
       },
       onClick: () => {
-        // Pointer parity: clicking sets the cursor and commits, mirroring
-        // Enter on a row. Focus follows so subsequent arrows continue from here.
+        // Pointer parity: clicking sets the cursor and commits, mirroring Enter
+        // on a row. Focus moves to the container so subsequent arrows continue.
         setActiveId(id);
-        focusRow(id);
+        listboxRef.current?.focus();
         onActivate(id);
       },
-      // Key handling lives on the container (listboxProps.onKeyDown): a row's
-      // keydown bubbles up to it, so one handler serves both the focused row and
-      // the empty-list container — and never double-fires.
+      // Key handling lives on the container (listboxProps.onKeyDown), which is
+      // the focus holder; rows are not focusable.
     }),
-    [selectedId, resolvedActiveId, focusRow, onActivate],
+    [selectedId, rowDomId, onActivate],
   );
 
   return {
     listboxProps: {
       role: "listbox",
       ref: listboxRef,
-      // The control must always have exactly one tab stop. When a row is the
-      // resting cursor it carries tabIndex 0; otherwise (an empty list, or a
-      // non-empty list with nothing active/selected) the container itself is the
-      // tab stop, and the first arrow press enters the rows.
-      tabIndex: resolvedActiveId == null ? 0 : undefined,
+      // The container is the single, permanent tab stop and focus holder; the
+      // active row is conveyed via aria-activedescendant rather than by moving
+      // DOM focus into the rows.
+      tabIndex: 0,
+      "aria-activedescendant": resolvedActiveId != null ? rowDomId(resolvedActiveId) : undefined,
       onKeyDown,
     },
     getRowProps,

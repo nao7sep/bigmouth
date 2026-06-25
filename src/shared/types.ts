@@ -1,5 +1,5 @@
-// The canonical data shapes exchanged across the IPC boundary — the wire DTOs the
-// renderer codes against and the main-process handlers return. The single source
+// The canonical data shapes exchanged across the IPC boundary between the main
+// process and the renderer. The single source
 // of truth: the renderer imports these directly, and the core keeps only its
 // internal supersets (the on-disk `Post` with `filePath`, `PostIndexEntry`). It
 // must stay environment-neutral (no DOM, no Node types), since `src/shared` is
@@ -72,7 +72,8 @@ export interface PostListResponse {
 /**
  * The subset of front matter a client may edit. Identity (id) and lifecycle
  * fields (status, *AtUtc) are intentionally absent — identity never changes and
- * lifecycle moves only through the status method. A null value clears the field.
+ * lifecycle moves only through the dedicated status-change operation. A null value
+ * clears the field.
  */
 export interface EditablePostMetadata {
   target?: string | null;

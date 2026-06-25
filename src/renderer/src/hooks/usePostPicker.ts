@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchPosts } from "../api";
+import { listPosts } from "../api";
 import type { PostSummary } from "@shared/types";
 
 export interface PostPickerState {
@@ -30,7 +30,7 @@ export function usePostPicker(
     loadingMoreRef.current = false;
     setLoadingMore(false);
     setError(null);
-    fetchPosts(0, batchSize, 0)
+    listPosts(0, batchSize, 0)
       .then((data) => {
         const all = [...data.drafts, ...data.ready, ...data.published, ...data.expired];
         setAllPosts(excludeId ? all.filter((p) => p.frontMatter.id !== excludeId) : all);
@@ -55,7 +55,7 @@ export function usePostPicker(
     const requestPubOffset = pubOffset;
     const requestExpOffset = expOffset;
 
-    fetchPosts(requestPubOffset, batchSize, requestExpOffset)
+    listPosts(requestPubOffset, batchSize, requestExpOffset)
       .then((data) => {
         const incoming = [...data.published, ...data.expired];
         const next = excludeId

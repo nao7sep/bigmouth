@@ -11,7 +11,7 @@ interface PreviewTabProps {
 export function PreviewTab({ workspaceId, content, postId }: PreviewTabProps) {
   const html = useMemo(() => {
     if (!content.trim()) return null;
-    // Resolve image filenames to the asset serve endpoint
+    // Resolve image filenames to the custom asset-protocol URL.
     const resolved = content.replace(
       /!\[([^\]]*)\]\(([^/)][^)]*)\)/g,
       (_, alt, filename) => `![${alt}](${assetUrl(postId, filename, workspaceId)})`

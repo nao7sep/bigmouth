@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
+import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
 import type { AssetMeta } from "@shared/types";
-import { ConfirmModal } from "./ConfirmModal";
+import { useConfirm } from "./ConfirmHost";
 
 interface AssetsTabProps {
   workspaceId: string;
@@ -27,7 +27,7 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Mirrors server-side sanitizeFilename logic
+// Mirrors the main-process sanitizeFilename logic
 function sanitizeFilename(raw: string): string {
   const base = raw.split("/").pop() ?? raw;
   return base.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -43,15 +43,13 @@ export function AssetsTab({
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
-  const [duplicateNames, setDuplicateNames] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     try {
-      const list = await fetchAssets(postId, workspaceId);
+      const list = await listAssets(postId, workspaceId);
       setAssets(list);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Failed to load assets");
@@ -61,8 +59,6 @@ export function AssetsTab({
   useEffect(() => {
     setAssets([]);
     setUploadError(null);
-    setPendingFiles(null);
-    setDuplicateNames([]);
     load();
   }, [load]);
 
@@ -108,11 +104,14 @@ export function AssetsTab({
       .filter((name) => existingNames.has(name));
 
     if (dupes.length > 0) {
-      setPendingFiles(uploadable);
-      setDuplicateNames(dupes);
-    } else {
-      await uploadFiles(uploadable);
+      const ok = await confirm({
+        title: "Replace existing file?",
+        message: `${dupes.join(", ")} already exist${dupes.length === 1 ? "s" : ""}. Replace?`,
+        confirmLabel: "Replace",
+      });
+      if (!ok) return;
     }
+    await uploadFiles(uploadable);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -130,21 +129,14 @@ export function AssetsTab({
     }
   };
 
-  const handleConfirmReplace = async () => {
-    const files = pendingFiles ?? [];
-    setPendingFiles(null);
-    setDuplicateNames([]);
-    await uploadFiles(files);
-  };
-
-  const handleCancelReplace = () => {
-    setPendingFiles(null);
-    setDuplicateNames([]);
-  };
-
   const handleDelete = async (filename: string) => {
     if (readOnly) return;
-    setDeleteTarget(null);
+    const ok = await confirm({
+      message: `Delete "${filename}"?`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteAsset(postId, filename, workspaceId);
       setAssets((prev) => prev.filter((a) => a.filename !== filename));
@@ -211,29 +203,11 @@ export function AssetsTab({
                 postId={postId}
                 asset={asset}
                 onInsert={() => handleInsert(asset.filename)}
-                onDelete={() => setDeleteTarget(asset.filename)}
+                onDelete={() => void handleDelete(asset.filename)}
                 readOnly={readOnly}
               />
             ))}
         </div>
-      )}
-      {deleteTarget && (
-        <ConfirmModal
-          message={`Delete "${deleteTarget}"?`}
-          confirmLabel="Delete"
-          danger
-          onConfirm={() => handleDelete(deleteTarget)}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-      {duplicateNames.length > 0 && (
-        <ConfirmModal
-          title="Replace existing file?"
-          message={`${duplicateNames.join(", ")} already exist${duplicateNames.length === 1 ? "s" : ""}. Replace?`}
-          confirmLabel="Replace"
-          onConfirm={handleConfirmReplace}
-          onCancel={handleCancelReplace}
-        />
       )}
     </div>
   );

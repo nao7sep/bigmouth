@@ -6,7 +6,7 @@ import { getSettings, saveSettings } from "../core/services/configStore.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
-// Mirrors the old PUT /settings validation, throwing instead of returning 400.
+// Validates the settings payload; throws on the first invalid field.
 function validateSettings(body: unknown): asserts body is Settings {
   const s = body as Partial<Record<keyof Settings, unknown>>;
   if (typeof s.timezone !== "string" || !s.timezone.trim()) {

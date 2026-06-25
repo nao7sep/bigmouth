@@ -11,14 +11,11 @@ import { info as logInfo, warn as logWarn, error as logError } from "../core/ser
 import { resolveWorkspace } from "./context.js";
 
 // In-flight streams keyed by the renderer-supplied request id, so an abort
-// message can cancel the matching generation.
+// message can cancel the matching generation. The renderer holds its abort until
+// the start invoke has resolved (see preload), so an abort can never reach this
+// process before the stream is registered. An abort for an id that is no longer
+// active therefore means the stream has already finished, and is safely ignored.
 const activeStreams = new Map<string, { abort: () => void }>();
-
-// Request ids aborted before their stream registered — the abort message can race
-// ahead of the start handler (the renderer aborts while the start invoke is still
-// in flight). The start handler checks this so the provider call is never made for
-// an already-cancelled request, rather than leaking an uncancelled stream.
-const abortedBeforeStart = new Set<string>();
 
 function resolveAnalysisRequest(
   wsId: string,
@@ -98,13 +95,6 @@ export function registerAnalysisHandlers(): void {
   // this, so no early frame is missed. Validation throws (rejecting the invoke);
   // otherwise the stream is started and frames are pushed async on the channel.
   ipcMain.handle(CHANNELS.analysisStreamStart, (event, requestId: string, params: AnalysisStreamParams) => {
-    // The abort message may have raced ahead of this handler — if so, don't start
-    // the generation at all. (This handler runs synchronously through to
-    // activeStreams.set, so once it begins no abort can interleave before the
-    // stream is registered; the only gap is an abort that arrives first.)
-    if (abortedBeforeStart.delete(requestId)) {
-      return;
-    }
     const dir = resolveWorkspace(params.wsId).dataDirectory;
     const request = resolveAnalysisRequest(params.wsId, dir, params);
     const channel = analysisStreamChannel(requestId);
@@ -179,13 +169,8 @@ export function registerAnalysisHandlers(): void {
 
   ipcMain.on(CHANNELS.analysisStreamAbort, (_event, requestId: string) => {
     const active = activeStreams.get(requestId);
-    if (active) {
-      active.abort();
-      activeStreams.delete(requestId);
-      return;
-    }
-    // The abort raced ahead of the start handler; record it so start skips the
-    // provider call rather than leaving an uncancelled stream running.
-    abortedBeforeStart.add(requestId);
+    if (!active) return; // already finished, or never registered — nothing to cancel
+    active.abort();
+    activeStreams.delete(requestId);
   });
 }

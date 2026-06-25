@@ -29,6 +29,7 @@ interface LeftPaneProps {
   onRevealCurrentLogFile: () => Promise<void> | void;
   onSwitchWorkspace: () => void;
   workspaceName: string;
+  timezone: string;
 }
 
 interface SectionDef {
@@ -62,6 +63,7 @@ export function LeftPane({
   onRevealCurrentLogFile,
   onSwitchWorkspace,
   workspaceName,
+  timezone,
 }: LeftPaneProps) {
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [readyOpen, setReadyOpen] = useState(true);
@@ -202,6 +204,7 @@ export function LeftPane({
             activeId={activeId}
             getRowProps={getRowProps}
             composing={handlers}
+            timezone={timezone}
           />
         ))}
       </div>
@@ -217,12 +220,14 @@ function Section({
   activeId,
   getRowProps,
   composing,
+  timezone,
 }: {
   section: SectionDef;
   selectedPostId: string | null;
   activeId: string | null;
   getRowProps: ReturnType<typeof usePostListbox>["getRowProps"];
   composing: ReturnType<typeof useComposing>["handlers"];
+  timezone: string;
 }) {
   const { label, posts, open, toggle, emptyText, timestampField, totalCount, onLoadMore } =
     section;
@@ -255,6 +260,7 @@ function Section({
                 rowProps={getRowProps(p.frontMatter.id)}
                 composing={composing}
                 timestampField={timestampField}
+                timezone={timezone}
               />
             ))
           )}
@@ -293,6 +299,7 @@ function PostItem({
   rowProps,
   composing,
   timestampField,
+  timezone,
 }: {
   post: PostSummary;
   selected: boolean;
@@ -300,6 +307,7 @@ function PostItem({
   rowProps: ReturnType<ReturnType<typeof usePostListbox>["getRowProps"]>;
   composing: ReturnType<typeof useComposing>["handlers"];
   timestampField: string;
+  timezone: string;
 }) {
   const fm = post.frontMatter;
   const displayName = getPostTitle(fm);
@@ -315,7 +323,7 @@ function PostItem({
       <div className="post-item-title">{displayName}</div>
       <div className="post-item-meta">
         {fm.target}
-        {ts && <> &middot; {formatLocalDateTime(ts)}</>}
+        {ts && <> &middot; {formatLocalDateTime(ts, timezone)}</>}
       </div>
     </div>
   );

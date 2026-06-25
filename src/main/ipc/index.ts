@@ -13,8 +13,8 @@ import { registerAnalysisHandlers } from "./analysis.js";
 import { registerDialogHandlers } from "./dialog.js";
 
 /**
- * Registers every ipcMain handler. Called once at startup. Domains are added
- * here as they are ported from the old Express routers.
+ * Registers every ipcMain handler. Called once at startup. Each domain registers
+ * its IPC handlers here; one registrar per domain.
  */
 export function registerIpcHandlers(): void {
   registerWorkspaceHandlers();

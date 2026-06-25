@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
-// The hook's only dependency is fetchPosts; mock it so the tests drive the
-// load/pagination/error logic without touching the network.
+// The hook's only dependency is listPosts; mock it so the tests drive the
+// load/pagination/error logic without real data.
 vi.mock("@renderer/api", () => ({
-  fetchPosts: vi.fn(),
+  listPosts: vi.fn(),
 }));
 
 import { usePostPicker } from "@renderer/hooks/usePostPicker";
-import { fetchPosts } from "@renderer/api";
+import { listPosts } from "@renderer/api";
 import type { PostStatus, PostSummary } from "@shared/types";
 
-const mockFetchPosts = vi.mocked(fetchPosts);
+const mockListPosts = vi.mocked(listPosts);
 
 function summary(
   id: string,
@@ -52,7 +52,7 @@ function page(opts: {
 }
 
 beforeEach(() => {
-  mockFetchPosts.mockReset();
+  mockListPosts.mockReset();
 });
 
 afterEach(() => {
@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("usePostPicker", () => {
   it("combines drafts, ready, published, and expired on initial load", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({
         drafts: [summary("d1")],
         ready: [summary("c1")],
@@ -81,7 +81,7 @@ describe("usePostPicker", () => {
   });
 
   it("loads more when only the expired archive has further pages", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({ expired: [summary("e1", { status: "expired" })], expiredTotal: 2 })
     );
 
@@ -89,7 +89,7 @@ describe("usePostPicker", () => {
     await waitFor(() => expect(result.current.posts).toHaveLength(1));
     expect(result.current.hasMore).toBe(true);
 
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({
         expired: [summary("e2", { status: "expired" })],
         expiredTotal: 2,
@@ -101,11 +101,11 @@ describe("usePostPicker", () => {
     await waitFor(() => expect(result.current.posts).toHaveLength(2));
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["e1", "e2"]);
     // The second fetch must request the expired archive from its current offset.
-    expect(mockFetchPosts).toHaveBeenLastCalledWith(0, 1, 1);
+    expect(mockListPosts).toHaveBeenLastCalledWith(0, 1, 1);
   });
 
   it("excludes the current post id", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({ drafts: [summary("keep"), summary("self")] })
     );
 
@@ -116,7 +116,7 @@ describe("usePostPicker", () => {
   });
 
   it("filters by query across id, target, language, and title", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({
         drafts: [
           summary("a", { title: "Hello world" }),
@@ -133,7 +133,7 @@ describe("usePostPicker", () => {
   });
 
   it("appends and de-duplicates overlapping pages on loadMore", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({ published: [summary("p1")], publishedTotal: 3 })
     );
 
@@ -142,7 +142,7 @@ describe("usePostPicker", () => {
     expect(result.current.hasMore).toBe(true);
 
     // Second page re-includes p1 (must be de-duped) and adds p2.
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({ published: [summary("p1"), summary("p2")], publishedTotal: 3, publishedOffset: 1 })
     );
 
@@ -152,7 +152,7 @@ describe("usePostPicker", () => {
   });
 
   it("surfaces an error when the initial load fails", async () => {
-    mockFetchPosts.mockRejectedValueOnce(new Error("network down"));
+    mockListPosts.mockRejectedValueOnce(new Error("network down"));
 
     const { result } = renderHook(() => usePostPicker(50));
 
@@ -161,14 +161,14 @@ describe("usePostPicker", () => {
   });
 
   it("keeps already-loaded posts when loadMore fails", async () => {
-    mockFetchPosts.mockResolvedValueOnce(
+    mockListPosts.mockResolvedValueOnce(
       page({ published: [summary("p1")], publishedTotal: 3 })
     );
 
     const { result } = renderHook(() => usePostPicker(1));
     await waitFor(() => expect(result.current.posts).toHaveLength(1));
 
-    mockFetchPosts.mockRejectedValueOnce(new Error("load more failed"));
+    mockListPosts.mockRejectedValueOnce(new Error("load more failed"));
     act(() => result.current.loadMore());
 
     await waitFor(() => expect(result.current.error).toBe("load more failed"));

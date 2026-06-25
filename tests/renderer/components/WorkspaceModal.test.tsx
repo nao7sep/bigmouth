@@ -2,32 +2,37 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type { Workspace } from "@shared/types";
 
-// WorkspaceModal only reaches the network through these four api calls.
+// WorkspaceModal only talks to the main process through these four api calls.
 vi.mock("@renderer/api", () => ({
-  fetchWorkspaces: vi.fn(),
+  listWorkspaces: vi.fn(),
   openOrCreateWorkspace: vi.fn(),
   updateWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
 }));
 
 import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
-import { fetchWorkspaces } from "@renderer/api";
+import { ConfirmProvider } from "@renderer/components/ConfirmHost";
+import { listWorkspaces } from "@renderer/api";
 
-const mockFetchWorkspaces = vi.mocked(fetchWorkspaces);
+const mockListWorkspaces = vi.mocked(listWorkspaces);
 
 const WORKSPACE: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/data/alpha" };
 
 async function renderModal() {
   const onClose = vi.fn();
+  // Confirms now route through the app-wide host, so the modal needs a
+  // ConfirmProvider in scope to call useConfirm.
   const utils = render(
-    <WorkspaceModal
-      dismissable
-      onClose={onClose}
-      onSelect={vi.fn()}
-      activeWorkspaceId={WORKSPACE.id}
-      onWorkspaceDeleted={vi.fn()}
-      onWorkspaceUpdated={vi.fn()}
-    />
+    <ConfirmProvider>
+      <WorkspaceModal
+        dismissable
+        onClose={onClose}
+        onSelect={vi.fn()}
+        activeWorkspaceId={WORKSPACE.id}
+        onWorkspaceDeleted={vi.fn()}
+        onWorkspaceUpdated={vi.fn()}
+      />
+    </ConfirmProvider>
   );
   // Flush the workspace load so the list (and its Rename button) renders.
   await act(async () => {
@@ -38,12 +43,12 @@ async function renderModal() {
 
 afterEach(() => {
   cleanup();
-  mockFetchWorkspaces.mockReset();
+  mockListWorkspaces.mockReset();
 });
 
 describe("WorkspaceModal inline rename — Escape", () => {
   it("cancels the rename without opening the discard dialog", async () => {
-    mockFetchWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { onClose, getByText, queryByText, getByDisplayValue, queryByDisplayValue } =
       await renderModal();
 
@@ -62,7 +67,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
   });
 
   it("closes the modal on the next Escape once no edit is in progress", async () => {
-    mockFetchWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { onClose, getByText, getByDisplayValue } = await renderModal();
 
     fireEvent.click(getByText("Rename"));

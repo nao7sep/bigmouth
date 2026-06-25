@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { setActiveWorkspace, runAnalysisStream, fetchPosts, fetchWorkspaces } from "@renderer/api";
+import { setActiveWorkspace, runAnalysisStream, listPosts, listWorkspaces } from "@renderer/api";
 import type { AnalysisStreamHandle, BigMouthApi } from "@shared/ipc";
 
 // api.ts is a thin adapter over the preload bridge (`window.bigmouth`); these
 // tests assert the adapter's own behavior — workspace-id threading, the
-// no-workspace guard, and the analysis-stream signal→abort wiring. The NDJSON
-// frame-reassembly contract the old fetch-based streaming carried now lives in
-// the preload, where it reassembles the per-request delta/done/error events.
+// no-workspace guard, and the analysis-stream signal→abort wiring. The bridge
+// itself reassembles the per-request delta/done/error frames in the preload.
 function installBridge(overrides: Record<string, unknown> = {}): void {
   window.bigmouth = overrides as unknown as BigMouthApi;
 }
@@ -19,22 +18,22 @@ describe("api bridge adapter", () => {
   });
 
   it("throws when no workspace is active for a scoped call", () => {
-    expect(() => fetchPosts()).toThrow("No active workspace set");
+    expect(() => listPosts()).toThrow("No active workspace set");
   });
 
   it("threads the active workspace id into scoped calls", () => {
-    const listPosts = vi.fn().mockResolvedValue({});
-    installBridge({ listPosts });
+    const listPostsBridge = vi.fn().mockResolvedValue({});
+    installBridge({ listPosts: listPostsBridge });
     setActiveWorkspace("w1");
-    void fetchPosts(0, 50, 0);
-    expect(listPosts).toHaveBeenCalledWith("w1", 0, 50, 0);
+    void listPosts(0, 50, 0);
+    expect(listPostsBridge).toHaveBeenCalledWith("w1", 0, 50, 0);
   });
 
   it("forwards non-scoped calls without a workspace id", () => {
-    const listWorkspaces = vi.fn().mockResolvedValue([]);
-    installBridge({ listWorkspaces });
-    void fetchWorkspaces();
-    expect(listWorkspaces).toHaveBeenCalledWith();
+    const listWorkspacesBridge = vi.fn().mockResolvedValue([]);
+    installBridge({ listWorkspaces: listWorkspacesBridge });
+    void listWorkspaces();
+    expect(listWorkspacesBridge).toHaveBeenCalledWith();
   });
 
   describe("runAnalysisStream", () => {

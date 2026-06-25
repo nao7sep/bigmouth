@@ -25,6 +25,13 @@ afterEach(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
+describe("corrupt config files", () => {
+  it("surfaces a clear error naming the file rather than a bare SyntaxError", () => {
+    fs.writeFileSync(path.join(dataDir, "settings.json"), "{ not valid json", "utf-8");
+    expect(() => getSettings(dataDir)).toThrow(/settings\.json is not valid JSON/);
+  });
+});
+
 describe("settings", () => {
   it("normalizes supportedLanguages: de-duplicated and sorted", () => {
     const settings = getSettings(dataDir);

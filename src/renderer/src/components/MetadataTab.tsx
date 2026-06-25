@@ -50,7 +50,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // `fields` is the single source of truth for the editable values while this
     // tab is mounted. The component is keyed by postId (see RightPane), so it
     // remounts for each post and seeds from front matter exactly once; it is
-    // also the only writer of these fields, so server echoes never need to be
+    // also the only writer of these fields, so persisted echoes never need to be
     // merged back in.
     const [fields, setFields] = useState(() => extractFields(frontMatter));
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
@@ -588,7 +588,7 @@ function extractFields(fm: PostFrontMatter): Record<string, string> {
 // Scalar metadata fields that are stored as a single line. They are edited in
 // `<textarea>`s (which, unlike `<input>`, keep pasted newlines), so they get
 // single-line cleanup at commit time \u2014 never on a keystroke. `slug` is excluded
-// (server-validated, not normalized) and `extra` is excluded (free-text KVP).
+// (validated in the main process, not normalized) and `extra` is excluded (free-text KVP).
 const SINGLE_LINE_FIELDS = new Set(["title", "titleEn", "metaDescription", "metaDescriptionEn"]);
 
 // Parses a raw textarea value into the form persisted in front matter, applying

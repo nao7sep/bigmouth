@@ -16,6 +16,7 @@ import {
   listExpired,
   countExpired,
   clearCache,
+  renameTarget,
 } from "@main/core/services/postStore.js";
 
 let dataDir: string;
@@ -266,5 +267,29 @@ describe("index recovery", () => {
     const created = createPost(dataDir, "blogger", "en");
     clearCache(dataDir);
     expect(getPost(dataDir, created.frontMatter.id)?.frontMatter.id).toBe(created.frontMatter.id);
+  });
+});
+
+describe("renameTarget", () => {
+  it("retargets every post carrying the old target name", () => {
+    const a = createPost(dataDir, "blogger", "en");
+    const b = createPost(dataDir, "blogger", "en");
+    const count = renameTarget(dataDir, "blogger", "journal");
+    expect(count).toBe(2);
+    expect(getPost(dataDir, a.frontMatter.id)?.frontMatter.target).toBe("journal");
+    expect(getPost(dataDir, b.frontMatter.id)?.frontMatter.target).toBe("journal");
+  });
+
+  it("skips an entry whose file vanished out of band instead of throwing partway", () => {
+    const keep = createPost(dataDir, "blogger", "en");
+    const gone = createPost(dataDir, "blogger", "en");
+
+    // The file disappears but its index entry lingers until the next reconcile.
+    fs.unlinkSync(gone.filePath);
+
+    // The rename must not throw on the missing file, and must still retarget the
+    // surviving post (no all-or-nothing failure leaving some posts behind).
+    expect(() => renameTarget(dataDir, "blogger", "journal")).not.toThrow();
+    expect(getPost(dataDir, keep.frontMatter.id)?.frontMatter.target).toBe("journal");
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import { createRef } from "react";
 
-// MetadataTab only reaches the network through these three api calls.
+// MetadataTab only talks to the main process through these three api calls.
 vi.mock("@renderer/api", () => ({
   updatePost: vi.fn(),
   generateMetadataField: vi.fn(),

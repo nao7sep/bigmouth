@@ -17,8 +17,8 @@ import { writeFileAtomic } from "../shared/atomicWrite.js";
 const EXCERPT_MAX_CHARS = 100;
 
 // Markdown bodies use two trailing spaces as a hard line break, so the body
-// normalization keeps line ends and only drops blank lines at the edges. This
-// matches the old behavior, which also dropped only leading and trailing blanks.
+// normalization keeps line ends and only drops blank lines at the edges. Only
+// leading and trailing blank lines are dropped.
 const BODY_MULTILINE_OPTS = {
   trimLineEnds: false,
   dropEdgeBlankLines: true,

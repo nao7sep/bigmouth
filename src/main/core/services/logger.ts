@@ -3,7 +3,7 @@
  *
  * Writes one JSON object per line (JSON Lines) to a per-launch session file at
  * ~/.bigmouth/logs/yyyymmdd-hhmmss-utc.log, and echoes each line to the console.
- * Logs are shared across all workspaces (the app is a single server process).
+ * Logs are shared across all workspaces (the app is a single process).
  *
  * Contract (see conventions/20260610-030818-utc-logging-conventions.md):
  *   - The logging call takes a STRUCTURED object, never a rendered string. Every

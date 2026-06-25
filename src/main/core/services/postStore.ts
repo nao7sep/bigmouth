@@ -272,6 +272,10 @@ export function renameTarget(dataDir: string, oldName: string, newName: string):
   for (const entry of index.allEntries(dataDir)) {
     if (entry.target !== oldName) continue;
     const filePath = filePathFor(dataDir, entry);
+    // Tolerate an index entry whose file vanished out of band — skip it (the next
+    // load reconciles the stale entry away) instead of throwing partway through
+    // and leaving some posts renamed and others not. Mirrors clearSourceReferences.
+    if (!fs.existsSync(filePath)) continue;
     const post = readPost(filePath);
     post.frontMatter.target = newName;
     writePost(filePath, post.frontMatter, post.content);
