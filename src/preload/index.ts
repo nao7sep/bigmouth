@@ -28,6 +28,10 @@ import type {
   Workspace,
 } from "@shared/types";
 
+// Per-window counter for analysis-stream request ids. Generated renderer-side so
+// the renderer can subscribe to the per-request channel before the stream starts.
+let nextStreamId = 1;
+
 // The bridge the renderer talks to instead of HTTP. Each method forwards to an
 // ipcMain handler (Phase 3) by channel; the analysis stream subscribes to a
 // per-request event channel and reassembles the old NDJSON done/error framing
@@ -116,7 +120,8 @@ const api = {
   runAnalysis: (wsId: string, postId: string, promptName: string, content: string) =>
     ipcRenderer.invoke(CHANNELS.runAnalysis, wsId, postId, promptName, content) as Promise<string>,
   runAnalysisStream: (params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle => {
-    let requestId: string | null = null;
+    const requestId = `astream-${nextStreamId++}`;
+    const channel = analysisStreamChannel(requestId);
     let settled = false;
     let resolveDone!: () => void;
     let rejectDone!: (err: Error) => void;
@@ -125,39 +130,29 @@ const api = {
       rejectDone = reject;
     });
 
-    void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, params) as Promise<string>)
-      .then((id) => {
-        if (settled) {
-          // Aborted before the stream started; tell main to drop it.
-          ipcRenderer.send(CHANNELS.analysisStreamAbort, id);
-          return;
-        }
-        requestId = id;
-        const channel = analysisStreamChannel(id);
-        const finish = (settle: () => void): void => {
-          if (settled) return;
-          settled = true;
-          ipcRenderer.removeListener(channel, listener);
-          settle();
-        };
-        function listener(_event: unknown, frame: AnalysisStreamFrame): void {
-          if (frame.type === "delta") onDelta(frame.text);
-          else if (frame.type === "done") finish(resolveDone);
-          else if (frame.type === "error") finish(() => rejectDone(new Error(frame.message)));
-        }
-        ipcRenderer.on(channel, listener);
-      })
-      .catch((err: unknown) => {
-        if (settled) return;
-        settled = true;
-        rejectDone(err instanceof Error ? err : new Error(String(err)));
-      });
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      ipcRenderer.removeListener(channel, listener);
+      settle();
+    };
+    function listener(_event: unknown, frame: AnalysisStreamFrame): void {
+      if (frame.type === "delta") onDelta(frame.text);
+      else if (frame.type === "done") finish(resolveDone);
+      else if (frame.type === "error") finish(() => rejectDone(new Error(frame.message)));
+    }
+    // Subscribe before starting so an early frame is never missed.
+    ipcRenderer.on(channel, listener);
+
+    void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, requestId, params) as Promise<void>).catch((err: unknown) => {
+      // Pre-stream failure (validation / provider init): no frames will arrive.
+      finish(() => rejectDone(err instanceof Error ? err : new Error(String(err))));
+    });
 
     const abort = (): void => {
       if (settled) return;
-      settled = true;
-      if (requestId !== null) ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
-      rejectDone(new Error("Analysis aborted"));
+      ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
+      finish(() => rejectDone(new Error("Analysis aborted")));
     };
 
     return { done, abort };
