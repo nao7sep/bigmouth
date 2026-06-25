@@ -13,9 +13,11 @@ files:
 
 mac:
   category: public.app-category.productivity
+  icon: build/icon.icns
   target:
     - dmg
 
 win:
+  icon: build/icon.ico
   target:
     - nsis

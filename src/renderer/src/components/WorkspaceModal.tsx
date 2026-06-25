@@ -4,6 +4,7 @@ import {
   openOrCreateWorkspace,
   updateWorkspace,
   deleteWorkspace,
+  pickWorkspaceDirectory,
 } from "../api";
 import type { Workspace } from "@shared/types";
 import { ConfirmModal } from "./ConfirmModal";
@@ -51,6 +52,14 @@ export function WorkspaceModal({
     setError(null);
     setName("");
     setLocation("");
+  };
+
+  const handleBrowse = async () => {
+    const dir = await pickWorkspaceDirectory();
+    if (dir) {
+      setError(null);
+      setLocation(dir);
+    }
   };
 
   const handleRequestClose = () => {
@@ -290,21 +299,27 @@ export function WorkspaceModal({
           <label className="form-label">
             Location <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>(optional)</span>
           </label>
-          <input
-            className="form-input"
-            value={location}
-            onChange={(e) => {
-              setError(null);
-              setLocation(e.target.value);
-            }}
-            placeholder="Default location if blank"
-            onCompositionStart={locationComposing.handlers.onCompositionStart}
-            onCompositionEnd={locationComposing.handlers.onCompositionEnd}
-            onKeyDown={(e) => {
-              if (isComposingKeyboardEvent(locationComposing.composingRef, e)) return;
-              if (e.key === "Enter") void handleSubmit();
-            }}
-          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="form-input"
+              style={{ flex: 1 }}
+              value={location}
+              onChange={(e) => {
+                setError(null);
+                setLocation(e.target.value);
+              }}
+              placeholder="Default location if blank"
+              onCompositionStart={locationComposing.handlers.onCompositionStart}
+              onCompositionEnd={locationComposing.handlers.onCompositionEnd}
+              onKeyDown={(e) => {
+                if (isComposingKeyboardEvent(locationComposing.composingRef, e)) return;
+                if (e.key === "Enter") void handleSubmit();
+              }}
+            />
+            <button className="btn-toolbar" type="button" onClick={() => void handleBrowse()}>
+              Browse
+            </button>
+          </div>
           <p className="settings-hint">
             Blank uses the default workspace folder. Missing folders are created; existing folders must be empty or already be a complete BigMouth workspace. `~/` works on every platform.
           </p>

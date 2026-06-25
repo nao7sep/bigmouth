@@ -35,6 +35,7 @@ export const CHANNELS = {
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
   revealCurrentLogFile: "log:revealCurrent",
+  pickDirectory: "dialog:pickDirectory",
 
   // Posts
   listPosts: "post:list",
@@ -167,6 +168,8 @@ export interface BigMouthApi {
   updateWorkspace(id: string, updates: { name?: string; dataDirectory?: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<void>;
   revealCurrentLogFile(): Promise<string>;
+  /** Native folder picker for choosing a workspace directory; null if cancelled. */
+  pickDirectory(): Promise<string | null>;
 
   // Posts
   listPosts(wsId: string, publishedOffset: number, limit: number, expiredOffset: number): Promise<PostListResponse>;

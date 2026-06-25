@@ -19,7 +19,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { utcNow, formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -78,41 +77,6 @@ export function closeLogger(): void {
 
 export function getCurrentLogFilePath(): string | null {
   return currentLogFilePath;
-}
-
-export async function revealCurrentLogFile(): Promise<string> {
-  if (!currentLogFilePath) {
-    throw new Error("Current log file is not available");
-  }
-
-  const filePath = currentLogFilePath;
-  let command: string;
-  let args: string[];
-
-  if (process.platform === "darwin") {
-    command = "open";
-    args = ["-R", filePath];
-  } else if (process.platform === "win32") {
-    command = "explorer.exe";
-    args = [`/select,${filePath.replace(/\//g, "\\")}`];
-  } else {
-    command = "xdg-open";
-    args = [path.dirname(filePath)];
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "ignore" });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`Reveal command failed with exit code ${code ?? "unknown"}`));
-    });
-  });
-
-  return filePath;
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
+import { installApplicationMenu } from "./menu.js";
 
 app.setName("BigMouth");
 
@@ -37,6 +38,7 @@ function bootstrap(): void {
 
   handleAssetProtocol();
   registerIpcHandlers();
+  installApplicationMenu();
   createMainWindow();
 
   app.on("activate", () => {

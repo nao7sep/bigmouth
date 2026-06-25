@@ -2,6 +2,8 @@ import { BrowserWindow, Menu, nativeTheme, shell } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
+
 // Matches the renderer `--bm-bg` (#f4efe8 in App.css) so the pre-paint window
 // background does not flash a different color before the page loads.
 const WINDOW_BACKGROUND = "#f4efe8";
@@ -61,15 +63,16 @@ function openExternalIfAllowed(rawUrl: string): void {
 }
 
 // The BrowserWindow construction options. Exported as a pure helper so the
-// default size and (later) the derived minimums are verified in a unit test
-// without driving a real window. The content-derived minimum size (window min =
-// sum of pane minimums + chrome, per app-chrome-conventions) is wired in Phase 8
-// from a shared layout module; until then no minimum is set, rather than a magic
-// number the conventions forbid.
+// default size and the derived minimums are verified in a unit test without
+// driving a real window. The minimum size is the pane-row minimum plus chrome,
+// sourced from @shared/layout (app-chrome-conventions) — never hand-typed, so it
+// can never disagree with the renderer's pane minimums.
 export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {
   return {
     width: 1480,
     height: 940,
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
     titleBarStyle: "default",

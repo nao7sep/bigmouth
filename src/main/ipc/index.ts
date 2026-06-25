@@ -10,6 +10,7 @@ import { registerMetadataHandlers } from "./metadata.js";
 import { registerImagingHandlers } from "./imaging.js";
 import { registerAssetHandlers } from "./assets.js";
 import { registerAnalysisHandlers } from "./analysis.js";
+import { registerDialogHandlers } from "./dialog.js";
 
 /**
  * Registers every ipcMain handler. Called once at startup. Domains are added
@@ -28,4 +29,5 @@ export function registerIpcHandlers(): void {
   registerImagingHandlers();
   registerAssetHandlers();
   registerAnalysisHandlers();
+  registerDialogHandlers();
 }

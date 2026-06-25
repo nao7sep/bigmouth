@@ -85,7 +85,7 @@ export function SettingsModal({
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Snapshot of server-loaded values, used for dirty detection.
+  // Snapshot of the loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
   const initialAiConfigs = useRef<AiConfigsData | null>(null);
   const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
@@ -173,16 +173,15 @@ export function SettingsModal({
   });
 
   // Commit AI-config edits as a sequence of per-resource calls. Order:
-  //   1. Create new configs   (so their ids exist on the server)
+  //   1. Create new configs   (so their ids exist)
   //   2. Update existing ones (so the data is current before the active swap)
   //   3. Set the active id    (the new active must exist; current active must
   //                            differ from any config we are about to delete)
-  //   4. Delete removed ones  (server refuses to delete the active config)
+  //   4. Delete removed ones  (the store refuses to delete the active config)
   //
-  // On any failure mid-sequence, resync `initialAiConfigs.current` from the
-  // server so a retry diffs against what's actually persisted rather than
-  // re-issuing the work already committed (POST would 400 with "already
-  // exists", etc.).
+  // On any failure mid-sequence, resync `initialAiConfigs.current` from what's
+  // actually persisted so a retry diffs against that rather than re-issuing the
+  // work already committed (a create would fail with "already exists", etc.).
   const commitAiConfigChanges = async (): Promise<AiConfigsData | null> => {
     if (!aiConfigs) return null;
     const initial = initialAiConfigs.current;

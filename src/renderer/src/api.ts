@@ -68,6 +68,10 @@ export function revealCurrentLogFile(): Promise<string> {
   return bridge.revealCurrentLogFile();
 }
 
+export function pickWorkspaceDirectory(): Promise<string | null> {
+  return bridge.pickDirectory();
+}
+
 // --- Posts ---
 
 export function fetchPosts(publishedOffset = 0, limit = 50, expiredOffset = 0): Promise<PostListResponse> {

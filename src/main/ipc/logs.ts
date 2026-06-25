@@ -1,24 +1,17 @@
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
-import {
-  revealCurrentLogFile,
-  info,
-  error as logError,
-  serializeError,
-} from "../core/services/logger.js";
+import { getCurrentLogFilePath, info, warn } from "../core/services/logger.js";
 
 export function registerLogHandlers(): void {
-  // Phase 9 swaps the core's platform-shell reveal for Electron's
-  // shell.showItemInFolder; the contract surface stays the same.
-  ipcMain.handle(CHANNELS.revealCurrentLogFile, async () => {
-    try {
-      const path = await revealCurrentLogFile();
-      info("current log revealed", { path });
-      return path;
-    } catch (err) {
-      logError("current log reveal failed", { error: serializeError(err) });
-      throw err instanceof Error ? err : new Error("Failed to reveal current log file");
+  ipcMain.handle(CHANNELS.revealCurrentLogFile, () => {
+    const path = getCurrentLogFilePath();
+    if (!path) {
+      warn("current log reveal failed", { reason: "no-current-log" });
+      throw new Error("Current log file is not available");
     }
+    shell.showItemInFolder(path);
+    info("current log revealed", { path });
+    return path;
   });
 }
