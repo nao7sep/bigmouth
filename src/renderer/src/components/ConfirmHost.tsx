@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -39,6 +39,20 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   // Guards against a double-click on Confirm firing onConfirm twice while the
   // first run is still in flight (React state updates are async).
   const runningRef = useRef(false);
+
+  // The live queue, mirrored to a ref so the unmount cleanup can settle whatever
+  // is still pending without re-subscribing on every queue change.
+  const queueRef = useRef<ConfirmRequest[]>([]);
+  queueRef.current = queue;
+  useEffect(
+    () => () => {
+      // On teardown (host unmount / app quit / OS shutdown) every pending dialog
+      // promise must settle, through the cancel path, so no caller is left
+      // awaiting forever (modal-dialog-conventions: promises always settle).
+      for (const request of queueRef.current) request.resolve(false);
+    },
+    [],
+  );
 
   const confirm = useCallback<ConfirmFn>((options) => {
     return new Promise<boolean>((resolve) => {
