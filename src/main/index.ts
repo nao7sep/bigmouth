@@ -11,6 +11,7 @@ import {
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
+import { registerIpcHandlers } from "./ipc/index.js";
 
 app.setName("BigMouth");
 
@@ -30,6 +31,7 @@ function bootstrap(): void {
     logFile: getCurrentLogFilePath(),
   });
 
+  registerIpcHandlers();
   createMainWindow();
 
   app.on("activate", () => {
