@@ -1,9 +1,10 @@
 /**
- * Toy obfuscation for API keys stored in ai-configs.json.
+ * Toy obfuscation for the API keys in the storage-root secrets file
+ * (~/.bigmouth/api-keys.json).
  *
- * This is NOT encryption. It only makes keys not plainly visible when
- * someone glances at the file. If an attacker has filesystem access,
- * they have bigger problems (passport scans, credit card photos, etc.).
+ * This is NOT encryption. It only makes keys not plainly visible when someone
+ * glances at the file; the real protection is that file's 0600 permissions and
+ * its place outside any git-versionable workspace.
  *
  * The algorithm: reverse the string, then base64-encode it.
  */

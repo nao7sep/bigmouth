@@ -2,7 +2,7 @@
  * Default values used when initializing the app for the first time.
  */
 
-import type { Settings, AnalysisPrompt, AiConfigsData, GenerationPromptsData } from "./types.js";
+import type { Settings, AnalysisPrompt, StoredAiConfigsData, GenerationPromptsData } from "./types.js";
 import { nanoid } from "nanoid";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
@@ -11,7 +11,7 @@ export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 
 const defaultAiConfigId = nanoid();
 
-export const DEFAULT_AI_CONFIGS: AiConfigsData = {
+export const DEFAULT_AI_CONFIGS: StoredAiConfigsData = {
   activeId: defaultAiConfigId,
   configs: [
     {
@@ -19,7 +19,6 @@ export const DEFAULT_AI_CONFIGS: AiConfigsData = {
       name: "Default",
       provider: "claude",
       model: DEFAULT_CLAUDE_MODEL,
-      apiKey: "",
     },
   ],
 };

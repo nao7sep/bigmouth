@@ -150,14 +150,21 @@ describe("workspace paths are cwd-independent", () => {
 
 describe("secret resolution (environment-first)", () => {
   let dataDir: string;
+  let root: string;
 
   beforeEach(() => {
+    // The key now lives in the storage-root secrets file (api-keys.json), so the
+    // root must be initialized; the workspace holds only non-secret config.
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-secrets-home-"));
+    process.env.BIGMOUTH_HOME = root;
+    initAppDir();
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-secrets-"));
     initializeWorkspaceData(dataDir);
   });
 
   afterEach(() => {
     fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   });
 
   it("prefers an env API key over the stored obfuscated one", () => {

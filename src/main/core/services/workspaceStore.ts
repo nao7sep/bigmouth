@@ -23,6 +23,7 @@ const HOME_ENV_VAR = "BIGMOUTH_HOME";
 let appDir: string | null = null;
 let appJsonPath: string | null = null;
 let logsDir: string | null = null;
+let apiKeysPath: string | null = null;
 let defaultWorkspacesDir: string | null = null;
 
 /**
@@ -126,6 +127,7 @@ export function initAppDir(): AppConfig {
   appDir = resolveAppDir();
   appJsonPath = path.join(appDir, "app.json");
   logsDir = path.join(appDir, "logs");
+  apiKeysPath = path.join(appDir, "api-keys.json");
   defaultWorkspacesDir = path.join(appDir, "workspaces");
 
   // Create the root + standard subdirs on first use. If the root cannot be
@@ -169,6 +171,12 @@ function ensureLoaded(): AppConfig {
 export function getLogsDir(): string {
   if (!logsDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
   return logsDir;
+}
+
+/** The storage-root secrets file (`~/.bigmouth/api-keys.json`) — outside any workspace. */
+export function getApiKeysPath(): string {
+  if (!apiKeysPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
+  return apiKeysPath;
 }
 
 export function listWorkspaces(): Workspace[] {

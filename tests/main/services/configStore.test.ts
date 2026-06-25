@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
+import { initAppDir, getApiKeysPath } from "@main/core/services/workspaceStore.js";
 import {
   getSettings,
   saveSettings,
@@ -15,14 +16,29 @@ import {
 } from "@main/core/services/configStore.js";
 
 let dataDir: string;
+let homeDir: string;
+const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 beforeEach(() => {
+  // A fresh storage root per test gives the secrets file (api-keys.json) a real,
+  // isolated home; the AI-config tests rely on the stored key, so the env key is
+  // cleared (it would otherwise win, env-first).
+  homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-confighome-"));
+  process.env.BIGMOUTH_HOME = homeDir;
+  delete process.env.ANTHROPIC_API_KEY;
+  initAppDir();
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore-"));
   initializeWorkspaceData(dataDir);
 });
 
 afterEach(() => {
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
+  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(homeDir, { recursive: true, force: true });
 });
 
 describe("corrupt config files", () => {
@@ -44,7 +60,7 @@ describe("settings", () => {
 });
 
 describe("AI config API key handling", () => {
-  it("stores the key obfuscated and never exposes plaintext to the client", () => {
+  it("keeps the key out of the workspace file and in the storage-root secrets file", () => {
     createAiConfig(dataDir, {
       id: "c1",
       name: "Claude",
@@ -53,9 +69,15 @@ describe("AI config API key handling", () => {
       apiKey: "sk-ant-secret",
     });
 
-    // On-disk file must not contain the plaintext key.
+    // The git-versionable workspace file carries no key at all — not even the field.
     const onDisk = fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8");
     expect(onDisk).not.toContain("sk-ant-secret");
+    expect(onDisk).not.toContain("apiKey");
+
+    // The key lives in the secrets file under the storage root, obfuscated (not plaintext).
+    const secrets = fs.readFileSync(getApiKeysPath(), "utf-8");
+    expect(secrets).not.toContain("sk-ant-secret");
+    expect(JSON.parse(secrets).keys.c1).toBeTruthy();
 
     // Client view carries no key, only the hasApiKey flag.
     const created = getAiConfigsForClient(dataDir).configs.find((c) => c.id === "c1");

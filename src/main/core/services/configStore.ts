@@ -13,25 +13,14 @@ import type {
   AiConfig,
   AiConfigsData,
   AiProvider,
+  StoredAiConfig,
+  StoredAiConfigsData,
   GenerationPromptsData,
 } from "../shared/types.js";
-import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
-
-// Per the storage-path-conventions' secrets rule, resolution prefers the
-// environment: a value present in the provider's designated environment
-// variable wins over the stored (obfuscated) key, so a user can supply a key
-// without persisting it. The env value is main-process-internal only and is never
-// written back to ai-configs.json or sent to the renderer.
-const API_KEY_ENV_VAR: Record<AiProvider, string> = {
-  claude: "ANTHROPIC_API_KEY",
-};
-
-function envApiKey(provider: AiProvider): string | null {
-  const value = process.env[API_KEY_ENV_VAR[provider]];
-  return value && value.trim() !== "" ? value.trim() : null;
-}
+import * as apiKeys from "./apiKeys.js";
+import { getApiKeysPath } from "./workspaceStore.js";
 
 /**
  * Reads and parses a workspace JSON config file. A corrupt file (truncated, or
@@ -70,13 +59,29 @@ export function saveSettings(dataDir: string, settings: Settings): Settings {
 
 // --- AI Configs ---
 
-function readAiConfigsRaw(dataDir: string): AiConfigsData {
-  return readJsonFile<AiConfigsData>(dataDir, "ai-configs.json");
+function readAiConfigsRaw(dataDir: string): StoredAiConfigsData {
+  return readJsonFile<StoredAiConfigsData>(dataDir, "ai-configs.json");
+}
+
+// Persist only the non-secret config shape. Rebuilding each entry from its known
+// fields guarantees no `apiKey` (or any other stray field from a legacy file)
+// is ever written back into the git-versionable workspace.
+function writeAiConfigsRaw(dataDir: string, data: StoredAiConfigsData): void {
+  const persisted: StoredAiConfigsData = {
+    activeId: data.activeId,
+    configs: (data.configs ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      provider: c.provider,
+      model: c.model,
+    })),
+  };
+  writeFileAtomic(path.join(dataDir, "ai-configs.json"), JSON.stringify(persisted, null, 2) + "\n");
 }
 
 /**
- * Returns the active AI config with its API key deobfuscated, freshly
- * constructed — never a mutated re-export of the parsed file. For
+ * Returns the active AI config with its API key resolved (environment-first, then
+ * the storage-root secrets file — never the workspace), freshly constructed. For
  * main-process-internal use only (analysis, generation, imaging). NEVER send the
  * result of this function to the renderer.
  *
@@ -88,24 +93,23 @@ export function getActiveAiConfig(dataDir: string): AiConfig | null {
   const data = readAiConfigsRaw(dataDir);
   const stored = (data.configs ?? []).find((c) => c.id === data.activeId);
   if (!stored) return null;
-  // Environment-first: an env key for this provider wins over the stored one.
-  const fromEnv = envApiKey(stored.provider);
   return {
     id: stored.id,
     name: stored.name,
     provider: stored.provider,
     model: stored.model,
-    apiKey: fromEnv ?? (stored.apiKey ? deobfuscate(stored.apiKey) : ""),
+    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), stored.id, stored.provider) ?? "",
   };
 }
 
 /**
- * Returns AI configs with empty API key fields plus a boolean indicating
- * whether a key is already stored on disk. The plaintext key never crosses the
- * IPC bridge.
+ * Returns AI configs with empty API key fields plus a boolean indicating whether
+ * a key is resolvable (from the environment or the secrets file). The key value
+ * never crosses the IPC bridge.
  */
 export function getAiConfigsForClient(dataDir: string): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
+  const keysPath = getApiKeysPath();
   return {
     activeId: data.activeId,
     configs: (data.configs ?? []).map((config) => ({
@@ -113,17 +117,10 @@ export function getAiConfigsForClient(dataDir: string): AiConfigsData {
       name: config.name,
       provider: config.provider,
       apiKey: "",
-      hasApiKey: Boolean(config.apiKey),
+      hasApiKey: apiKeys.hasApiKey(keysPath, config.id, config.provider),
       model: config.model,
     })),
   };
-}
-
-function writeAiConfigsRaw(dataDir: string, data: AiConfigsData): void {
-  writeFileAtomic(
-    path.join(dataDir, "ai-configs.json"),
-    JSON.stringify(data, null, 2) + "\n"
-  );
 }
 
 export type CreateAiConfigInput = {
@@ -136,22 +133,25 @@ export type CreateAiConfigInput = {
 
 /**
  * Creates a new AI config with a caller-supplied id. Throws if the id is
- * already in use. Returns the renderer-facing config view.
+ * already in use. Any supplied key goes to the secrets file, not the workspace.
+ * Returns the renderer-facing config view.
  */
 export function createAiConfig(dataDir: string, input: CreateAiConfigInput): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
   if ((data.configs ?? []).some((c) => c.id === input.id)) {
     throw new Error(`AI config with id "${input.id}" already exists`);
   }
-  const stored: AiConfig = {
+  const stored: StoredAiConfig = {
     id: input.id,
     name: input.name,
     provider: input.provider,
     model: input.model,
-    apiKey: input.apiKey && input.apiKey.length > 0 ? obfuscate(input.apiKey) : "",
   };
   data.configs = [...(data.configs ?? []), stored];
   writeAiConfigsRaw(dataDir, data);
+  if (input.apiKey !== undefined && input.apiKey.length > 0) {
+    apiKeys.writeApiKey(getApiKeysPath(), input.id, input.apiKey);
+  }
   return getAiConfigsForClient(dataDir);
 }
 
@@ -160,10 +160,10 @@ export type UpdateAiConfigPatch = {
   provider?: AiProvider;
   model?: string;
   /**
-   * Key handling:
+   * Key handling (the key lives in the secrets file, not the workspace):
    *   - field omitted from patch → existing key is preserved
    *   - empty string ("")        → existing key is cleared
-   *   - non-empty string         → existing key is replaced (and obfuscated)
+   *   - non-empty string         → existing key is replaced
    */
   apiKey?: string;
 };
@@ -185,16 +185,18 @@ export function updateAiConfig(
   if (patch.name !== undefined) config.name = patch.name;
   if (patch.provider !== undefined) config.provider = patch.provider;
   if (patch.model !== undefined) config.model = patch.model;
-  if (patch.apiKey !== undefined) {
-    config.apiKey = patch.apiKey.length > 0 ? obfuscate(patch.apiKey) : "";
-  }
   writeAiConfigsRaw(dataDir, data);
+  if (patch.apiKey !== undefined) {
+    // "" clears the stored key; a non-empty value replaces it; an omitted field
+    // (handled above) leaves it untouched.
+    apiKeys.writeApiKey(getApiKeysPath(), id, patch.apiKey);
+  }
   return getAiConfigsForClient(dataDir);
 }
 
 /**
- * Removes a single AI config. Refuses to delete the currently active config —
- * the caller must reassign `activeId` to a different config (or to "") first.
+ * Removes a single AI config and its stored key. Refuses to delete the currently
+ * active config — the caller must reassign `activeId` (or set it to "") first.
  */
 export function deleteAiConfig(dataDir: string, id: string): AiConfigsData {
   const data = readAiConfigsRaw(dataDir);
@@ -206,6 +208,7 @@ export function deleteAiConfig(dataDir: string, id: string): AiConfigsData {
   }
   data.configs = (data.configs ?? []).filter((c) => c.id !== id);
   writeAiConfigsRaw(dataDir, data);
+  apiKeys.clearApiKey(getApiKeysPath(), id);
   return getAiConfigsForClient(dataDir);
 }
 
