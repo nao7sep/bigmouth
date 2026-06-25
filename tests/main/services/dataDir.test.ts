@@ -41,4 +41,19 @@ describe("initializeWorkspaceData", () => {
     const raw = fs.readFileSync(path.join(dataDir, "targets.json"), "utf-8");
     expect(JSON.parse(raw)).toEqual([]);
   });
+
+  it("gives each workspace a unique default AI config id, even in the same session", () => {
+    // The secret store keys by config id, so two workspaces sharing a default id
+    // would share (and clobber) each other's key — they must differ.
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-datadir-"));
+    try {
+      initializeWorkspaceData(dataDir);
+      initializeWorkspaceData(other);
+      const idHere = JSON.parse(fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8")).configs[0].id;
+      const idOther = JSON.parse(fs.readFileSync(path.join(other, "ai-configs.json"), "utf-8")).configs[0].id;
+      expect(idHere).not.toBe(idOther);
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
 });

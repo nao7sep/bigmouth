@@ -7,7 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { DEFAULT_SETTINGS, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_AI_CONFIGS, DEFAULT_GENERATION_PROMPTS_DATA } from "../shared/defaults.js";
+import { DEFAULT_SETTINGS, DEFAULT_ANALYSIS_PROMPTS, makeDefaultAiConfigs, DEFAULT_GENERATION_PROMPTS_DATA } from "../shared/defaults.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import type { Target } from "../shared/types.js";
 
@@ -26,7 +26,7 @@ export function initializeWorkspaceData(dataDir: string): void {
 
   writeWorkspaceFile(
     path.join(dataDir, "ai-configs.json"),
-    JSON.stringify(DEFAULT_AI_CONFIGS, null, 2) + "\n"
+    JSON.stringify(makeDefaultAiConfigs(), null, 2) + "\n"
   );
 
   writeWorkspaceFile(

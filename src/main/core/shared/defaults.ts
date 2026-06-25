@@ -9,19 +9,27 @@ import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 // Model used for a Claude AI config that has no explicit model set.
 export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 
-const defaultAiConfigId = nanoid();
-
-export const DEFAULT_AI_CONFIGS: StoredAiConfigsData = {
-  activeId: defaultAiConfigId,
-  configs: [
-    {
-      id: defaultAiConfigId,
-      name: "Default",
-      provider: "claude",
-      model: DEFAULT_CLAUDE_MODEL,
-    },
-  ],
-};
+/**
+ * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
+ * module constant) so every workspace gets a UNIQUE default config id: the secret
+ * store (`~/.bigmouth/api-keys.json`) keys by config id, so two workspaces created
+ * in the same session must not share one, or setting/clearing a key in one would
+ * affect the other.
+ */
+export function makeDefaultAiConfigs(): StoredAiConfigsData {
+  const id = nanoid();
+  return {
+    activeId: id,
+    configs: [
+      {
+        id,
+        name: "Default",
+        provider: "claude",
+        model: DEFAULT_CLAUDE_MODEL,
+      },
+    ],
+  };
+}
 
 export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
   prompts: { ...DEFAULT_GENERATION_PROMPTS },
