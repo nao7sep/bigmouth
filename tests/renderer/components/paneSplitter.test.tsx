@@ -6,7 +6,7 @@ import {
   RIGHT_MIN,
   ROW_MIN,
   clampPaneWidth,
-} from "../../src/paneConstants";
+} from "@renderer/paneConstants";
 
 const LEFT_MAX = 720;
 const RIGHT_MAX = 960;

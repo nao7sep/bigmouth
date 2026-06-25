@@ -10,7 +10,7 @@ import {
   safeResolveUnder,
   assetDir,
   type AssetMeta,
-} from "../../src/../src/services/assetStore.js";
+} from "@main/core/services/assetStore.js";
 
 let dataDir: string;
 const POST = "post-1";

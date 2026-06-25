@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { multiline, truncate } from "../../src/../src/shared/textCleanup.js";
+import { multiline, truncate } from "@main/core/shared/textCleanup.js";
 
 // Options the server uses for Markdown post bodies: keep trailing whitespace (a
 // two-space hard line break), drop only edge blank lines, keep interior blanks.

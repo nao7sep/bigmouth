@@ -27,5 +27,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"]
   },
-  "include": ["tests/**/*.ts", "tests/**/*.tsx", "tests/**/*.d.ts"]
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "tests/**/*.d.ts", "src/renderer/src/global.d.ts"]
 }

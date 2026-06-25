@@ -9,8 +9,7 @@ import { getWorkspace } from "./core/services/workspaceStore.js";
 import { assetDir, safeResolveUnder } from "./core/services/assetStore.js";
 import { error as logError, serializeError } from "./core/services/logger.js";
 
-// Replaces the old HTTP `GET …/assets/:postId/:filename/raw` endpoint. The raw
-// file is streamed from its own opaque origin (the custom scheme) with the same
+// Streams a raw asset file from its own opaque origin (the custom scheme) with
 // `nosniff` + `sandbox` hardening, so an uploaded HTML/SVG can never execute in
 // the app's origin.
 

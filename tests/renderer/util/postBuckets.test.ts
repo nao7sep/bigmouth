@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { applyPostMutationToBuckets, type PostBuckets } from "../../src/util/postBuckets";
-import type { PostStatus, PostSummary } from "../../src/types";
+import { applyPostMutationToBuckets, type PostBuckets } from "@renderer/util/postBuckets";
+import type { PostStatus, PostSummary } from "@shared/types";
 
 function summary(
   id: string,

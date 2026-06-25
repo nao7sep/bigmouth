@@ -4,10 +4,10 @@
 // the tsconfig-env-split-conventions this interface lives in `shared` so neither
 // side imports a type from the other across the process line.
 //
-// One method per function in the old HTTP `api.ts`. Each workspace-scoped method
-// takes the workspace id explicitly where the old REST route carried `:wsId` in
-// the path. DOM types never appear here (e.g. uploads cross as bytes, not `File`),
-// which keeps the contract valid under both the node and web typechecks.
+// One method per data operation, grouped by domain. Each workspace-scoped method
+// takes the workspace id explicitly. DOM types never appear here (e.g. uploads
+// cross as bytes, not `File`), keeping the contract valid under both the node and
+// web typechecks.
 
 import type {
   AiConfigsData,
@@ -91,7 +91,7 @@ export function analysisStreamChannel(requestId: string): string {
   return `analysis:stream:${requestId}`;
 }
 
-// --- Raw asset serving (custom protocol, replacing the old HTTP /raw endpoint) ---
+// --- Raw asset serving (custom protocol) ---
 
 /** The privileged scheme main registers to stream raw asset files to <img> etc. */
 export const ASSET_SCHEME = "bigmouth-asset";
@@ -108,7 +108,7 @@ export function assetUrl(wsId: string, postId: string, filename: string): string
 // --- Method payload/result helpers ---
 
 /** Raw bytes for an asset upload — the renderer reads the picked `File` to an
- * ArrayBuffer and hands the bytes over, replacing the old multipart upload. */
+ * ArrayBuffer and hands the bytes over. */
 export interface AssetUploadInput {
   name: string;
   data: ArrayBuffer;
@@ -146,7 +146,7 @@ export interface AnalysisStreamParams {
 
 /** One frame main pushes on the per-request analysis-stream channel. The explicit
  * done/error framing is what lets the renderer tell a complete analysis from one
- * cut short — carried over verbatim from the old NDJSON stream. */
+ * cut short, so a partial result is never mistaken for a complete one. */
 export type AnalysisStreamFrame =
   | { type: "delta"; text: string }
   | { type: "done" }

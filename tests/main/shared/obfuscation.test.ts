@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { obfuscate, deobfuscate } from "../../src/../src/shared/obfuscation.js";
+import { obfuscate, deobfuscate } from "@main/core/shared/obfuscation.js";
 
 describe("obfuscation round-trip", () => {
   it("recovers the original string", () => {

@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../../src/../src/services/dataDir.js";
-import { createPost, updatePost, getPost, listDrafts, changeStatus, clearCache, rebuildIndex } from "../../src/../src/services/postStore.js";
-import { canonicalIndexJson } from "../../src/../src/services/postIndex.js";
-import type { PostIndexEntry } from "../../src/../src/shared/types.js";
+import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
+import { createPost, updatePost, getPost, listDrafts, changeStatus, clearCache, rebuildIndex } from "@main/core/services/postStore.js";
+import { canonicalIndexJson } from "@main/core/services/postIndex.js";
+import type { PostIndexEntry } from "@main/core/shared/types.js";
 
 let dataDir: string;
 

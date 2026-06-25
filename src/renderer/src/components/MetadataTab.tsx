@@ -61,7 +61,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
     const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
     const fieldsRef = useRef(fields);
-    // The value last confirmed saved on the server for each field, in the same
+    // The value last confirmed saved for each field, in the same
     // raw string form as `fields` and seeded from the same front matter, so
     // nothing starts dirty. A field is dirty exactly when its current value
     // differs from this snapshot. Deriving dirtiness from one saved snapshot —

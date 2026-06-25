@@ -11,13 +11,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, getLogsDir, createWorkspace } from "../../src/../src/services/workspaceStore.js";
-import { initializeWorkspaceData } from "../../src/../src/services/dataDir.js";
+import { initAppDir, getLogsDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import {
   createAiConfig,
   setActiveAiConfig,
   getActiveAiConfig,
-} from "../../src/../src/services/configStore.js";
+} from "@main/core/services/configStore.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;

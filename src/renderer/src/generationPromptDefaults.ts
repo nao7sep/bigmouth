@@ -1,8 +1,8 @@
 /**
  * Generation prompt field order and labels used by the Settings UI.
  *
- * Prompt text defaults come from the server so the client does not carry its
- * own copy of built-in prompt content.
+ * Prompt text defaults come from the main process so the renderer does not carry
+ * its own copy of built-in prompt content.
  */
 
 export const GENERATION_PROMPT_KEYS = [

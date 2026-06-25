@@ -3,15 +3,15 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import { createRef } from "react";
 
 // MetadataTab only reaches the network through these three api calls.
-vi.mock("../../src/api", () => ({
+vi.mock("@renderer/api", () => ({
   updatePost: vi.fn(),
   generateMetadataField: vi.fn(),
   generateMetadataFields: vi.fn(),
 }));
 
-import { MetadataTab, type MetadataTabHandle } from "../../src/components/MetadataTab";
-import { updatePost, generateMetadataFields } from "../../src/api";
-import type { PostFrontMatter, PostMutationResult } from "../../src/types";
+import { MetadataTab, type MetadataTabHandle } from "@renderer/components/MetadataTab";
+import { updatePost, generateMetadataFields } from "@renderer/api";
+import type { PostFrontMatter, PostMutationResult } from "@shared/types";
 
 const AUTOSAVE_DELAY_MS = 1_000;
 const mockUpdatePost = vi.mocked(updatePost);

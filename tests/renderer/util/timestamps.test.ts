@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compareInstants, formatLocalDateTime } from "../../src/util/timestamps";
+import { compareInstants, formatLocalDateTime } from "@renderer/util/timestamps";
 
 // Display formatting is local-time. The suite runs under a fixed, DST-free zone
 // (Asia/Tokyo, +9) pinned in vite.config.ts so this output is deterministic.

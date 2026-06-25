@@ -1,6 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { describe, expect, it } from "vitest";
-import { isComposingEvent, isComposingKeyboardEvent } from "../../src/hooks/useComposing";
+import { isComposingEvent, isComposingKeyboardEvent } from "@renderer/hooks/useComposing";
 
 const ref = (value: boolean): RefObject<boolean> => ({ current: value });
 

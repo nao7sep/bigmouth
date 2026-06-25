@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderSafeMarkdown } from "../../src/../src/util/safeMarkdown";
+import { renderSafeMarkdown } from "@renderer/util/safeMarkdown";
 
 describe("renderSafeMarkdown", () => {
   it("renders ordinary markdown", () => {

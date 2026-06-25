@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { getPostTitle } from "../../src/../src/util/postTitle";
-import type { PostFrontMatter } from "../../src/types";
+import { getPostTitle } from "@renderer/util/postTitle";
+import type { PostFrontMatter } from "@shared/types";
 
 function frontMatter(overrides: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {

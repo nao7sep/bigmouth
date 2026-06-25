@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 // from the package root where Vitest runs — Node built-ins are typed via
 // tests/node-shims.d.ts.)
 
-const css = readFileSync(`${process.cwd()}/src/App.css`, "utf8");
+const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
 
 describe("App.css window chrome", () => {
   it("declares a light color-scheme so native UI matches the theme", () => {

@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { writeFileAtomic } from "../../src/../src/shared/atomicWrite.js";
+import { writeFileAtomic } from "@main/core/shared/atomicWrite.js";
 
 describe("writeFileAtomic", () => {
   let dir: string;

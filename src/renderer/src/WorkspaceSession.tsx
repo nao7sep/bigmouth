@@ -386,7 +386,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const handlePostUpdated = useCallback((result: PostMutationResult) => {
       if (!sessionAliveRef.current) return;
 
-      // The server returns the canonical list summary (including its derived
+      // The update returns the canonical list summary (including its derived
       // excerpt); use it verbatim for the list and the full post for the editor.
       const summary: PostSummary = { frontMatter: result.summary };
       const id = result.frontMatter.id;

@@ -32,12 +32,11 @@ import type {
 // the renderer can subscribe to the per-request channel before the stream starts.
 let nextStreamId = 1;
 
-// The bridge the renderer talks to instead of HTTP. Each method forwards to an
-// ipcMain handler (Phase 3) by channel; the analysis stream subscribes to a
-// per-request event channel and reassembles the old NDJSON done/error framing
-// behind a single Promise. Implemented via `satisfies` (tsconfig-env-split-
-// conventions) so the shared contract is enforced without leaking a preload type
-// back to the renderer.
+// The bridge the renderer talks to over IPC. Each method forwards to an ipcMain
+// handler by channel; the analysis stream subscribes to a per-request event
+// channel and reassembles the delta/done/error frames behind a single Promise.
+// Implemented via `satisfies` (tsconfig-env-split-conventions) so the shared
+// contract is enforced without leaking a preload type back to the renderer.
 const api = {
   // --- Workspace management ---
   listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,

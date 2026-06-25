@@ -1,110 +1,72 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { setActiveWorkspace, runAnalysisStream } from "../src/api";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { setActiveWorkspace, runAnalysisStream, fetchPosts, fetchWorkspaces } from "@renderer/api";
+import type { AnalysisStreamHandle, BigMouthApi } from "@shared/ipc";
 
-// A minimal fake of the streaming Response surface runAnalysisStream consumes:
-// `.ok`/`.status`, a chunked `.body.getReader()`, and `.text()`. Driving it by
-// explicit chunks lets us assert the NDJSON-frame contract deterministically,
-// including frames split across reads.
-function streamResponse(chunks: string[], status = 200): Response {
-  const enc = new TextEncoder();
-  let i = 0;
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    body: {
-      getReader() {
-        return {
-          read: async () =>
-            i < chunks.length
-              ? { done: false, value: enc.encode(chunks[i++]) }
-              : { done: true, value: undefined },
-          releaseLock() {},
-        };
-      },
-    },
-    text: async () => chunks.join(""),
-  } as unknown as Response;
+// api.ts is a thin adapter over the preload bridge (`window.bigmouth`); these
+// tests assert the adapter's own behavior — workspace-id threading, the
+// no-workspace guard, and the analysis-stream signal→abort wiring. The NDJSON
+// frame-reassembly contract the old fetch-based streaming carried now lives in
+// the preload, where it reassembles the per-request delta/done/error events.
+function installBridge(overrides: Record<string, unknown> = {}): void {
+  window.bigmouth = overrides as unknown as BigMouthApi;
 }
 
-function errorResponse(body: unknown, status: number): Response {
-  return {
-    ok: false,
-    status,
-    body: null,
-    text: async () => JSON.stringify(body),
-  } as unknown as Response;
-}
-
-const frame = (obj: unknown) => JSON.stringify(obj) + "\n";
-
-describe("runAnalysisStream", () => {
-  beforeEach(() => setActiveWorkspace("w1"));
-  afterEach(() => vi.restoreAllMocks());
-
-  it("delivers delta frames and resolves on a done frame", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse([
-          frame({ type: "delta", text: "Hello " }),
-          frame({ type: "delta", text: "world" }),
-          frame({ type: "done" }),
-        ]),
-      ),
-    );
-    const chunks: string[] = [];
-    await runAnalysisStream("p1", "Prompt", "content", { onChunk: (d) => chunks.push(d) });
-    expect(chunks.join("")).toBe("Hello world");
+describe("api bridge adapter", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setActiveWorkspace("");
+    installBridge();
   });
 
-  it("throws on an error frame after delivering the partial text", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse([
-          frame({ type: "delta", text: "partial" }),
-          frame({ type: "error", message: "provider exploded" }),
-        ]),
-      ),
-    );
-    const chunks: string[] = [];
-    await expect(
-      runAnalysisStream("p1", "Prompt", "content", { onChunk: (d) => chunks.push(d) }),
-    ).rejects.toThrow("provider exploded");
-    expect(chunks.join("")).toBe("partial");
+  it("throws when no workspace is active for a scoped call", () => {
+    expect(() => fetchPosts()).toThrow("No active workspace set");
   });
 
-  it("throws when the stream ends without a done frame (silent truncation)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(streamResponse([frame({ type: "delta", text: "cut short" })])),
-    );
-    await expect(
-      runAnalysisStream("p1", "Prompt", "content", { onChunk: () => {} }),
-    ).rejects.toThrow(/unexpectedly/i);
+  it("threads the active workspace id into scoped calls", () => {
+    const listPosts = vi.fn().mockResolvedValue({});
+    installBridge({ listPosts });
+    setActiveWorkspace("w1");
+    void fetchPosts(0, 50, 0);
+    expect(listPosts).toHaveBeenCalledWith("w1", 0, 50, 0);
   });
 
-  it("reassembles a frame split across read chunks", async () => {
-    const f = frame({ type: "delta", text: "abc" });
-    const mid = Math.floor(f.length / 2);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        streamResponse([f.slice(0, mid), f.slice(mid), frame({ type: "done" })]),
-      ),
-    );
-    const chunks: string[] = [];
-    await runAnalysisStream("p1", "Prompt", "content", { onChunk: (d) => chunks.push(d) });
-    expect(chunks.join("")).toBe("abc");
+  it("forwards non-scoped calls without a workspace id", () => {
+    const listWorkspaces = vi.fn().mockResolvedValue([]);
+    installBridge({ listWorkspaces });
+    void fetchWorkspaces();
+    expect(listWorkspaces).toHaveBeenCalledWith();
   });
 
-  it("surfaces a pre-stream HTTP error body", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(errorResponse({ error: "no active AI config" }, 503)),
-    );
-    await expect(
-      runAnalysisStream("p1", "Prompt", "content", { onChunk: () => {} }),
-    ).rejects.toThrow("no active AI config");
+  describe("runAnalysisStream", () => {
+    it("forwards params + onChunk and resolves with the bridge handle's done", async () => {
+      let resolveDone!: () => void;
+      const handle: AnalysisStreamHandle = {
+        done: new Promise<void>((r) => (resolveDone = r)),
+        abort: vi.fn(),
+      };
+      const runStream = vi.fn(() => handle);
+      installBridge({ runAnalysisStream: runStream });
+      setActiveWorkspace("w1");
+
+      const onChunk = vi.fn();
+      const promise = runAnalysisStream("p1", "Prompt", "content", { onChunk });
+      expect(runStream).toHaveBeenCalledWith(
+        { wsId: "w1", postId: "p1", promptName: "Prompt", content: "content" },
+        onChunk,
+      );
+      resolveDone();
+      await expect(promise).resolves.toBeUndefined();
+    });
+
+    it("wires an AbortSignal to the handle's abort", () => {
+      const handle: AnalysisStreamHandle = { done: new Promise<void>(() => {}), abort: vi.fn() };
+      installBridge({ runAnalysisStream: () => handle });
+      setActiveWorkspace("w1");
+      const controller = new AbortController();
+      void runAnalysisStream("p1", "Prompt", "content", { onChunk: () => {}, signal: controller.signal });
+      expect(handle.abort).not.toHaveBeenCalled();
+      controller.abort();
+      expect(handle.abort).toHaveBeenCalledTimes(1);
+    });
   });
 });

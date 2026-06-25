@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { singleLine } from "../../src/../src/util/textCleanup";
+import { singleLine } from "@renderer/util/textCleanup";
 
 describe("singleLine", () => {
   it("trims leading and trailing whitespace", () => {

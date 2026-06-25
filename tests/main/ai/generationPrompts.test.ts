@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   systemPromptForField,
   DEFAULT_GENERATION_PROMPTS,
-} from "../../src/../src/ai/generationPrompts.js";
+} from "@main/core/ai/generationPrompts.js";
 
 describe("systemPromptForField", () => {
   it("returns the default prompt when no custom override exists", () => {

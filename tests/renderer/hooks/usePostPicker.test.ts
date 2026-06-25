@@ -3,13 +3,13 @@ import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
 // The hook's only dependency is fetchPosts; mock it so the tests drive the
 // load/pagination/error logic without touching the network.
-vi.mock("../../src/api", () => ({
+vi.mock("@renderer/api", () => ({
   fetchPosts: vi.fn(),
 }));
 
-import { usePostPicker } from "../../src/hooks/usePostPicker";
-import { fetchPosts } from "../../src/api";
-import type { PostStatus, PostSummary } from "../../src/types";
+import { usePostPicker } from "@renderer/hooks/usePostPicker";
+import { fetchPosts } from "@renderer/api";
+import type { PostStatus, PostSummary } from "@shared/types";
 
 const mockFetchPosts = vi.mocked(fetchPosts);
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "../../src/../src/services/dataDir.js";
+import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import {
   createPost,
   getPost,
@@ -16,7 +16,7 @@ import {
   listExpired,
   countExpired,
   clearCache,
-} from "../../src/../src/services/postStore.js";
+} from "@main/core/services/postStore.js";
 
 let dataDir: string;
 

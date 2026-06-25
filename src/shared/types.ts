@@ -1,10 +1,9 @@
 // The canonical data shapes exchanged across the IPC boundary — the wire DTOs the
-// renderer codes against and the main-process handlers return. This is the single
-// source of truth the layout consolidation calls for: the renderer adopts it in
-// Phase 6 (deleting its local `types.ts`) and the core in Phase 3 (keeping only
-// its internal supersets — the on-disk `Post` with `filePath`, `PostIndexEntry`,
-// the trimmed `AppConfig`). It must stay environment-neutral (no DOM, no Node
-// types), since `src/shared` is type-checked under both the node and web configs.
+// renderer codes against and the main-process handlers return. The single source
+// of truth: the renderer imports these directly, and the core keeps only its
+// internal supersets (the on-disk `Post` with `filePath`, `PostIndexEntry`). It
+// must stay environment-neutral (no DOM, no Node types), since `src/shared` is
+// type-checked under both the node and web configs.
 
 // --- Workspace ---
 

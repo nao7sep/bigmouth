@@ -3,7 +3,7 @@
  *
  * All internal timestamps are UTC and serialized in the canonical ISO 8601 form
  * (exactly 3 fractional digits + Z). Conversion to local time happens only at
- * the client display edge; the server never converts local time to UTC.
+ * the renderer's display edge; the main process never converts local time to UTC.
  */
 
 /**

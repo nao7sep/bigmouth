@@ -3,7 +3,7 @@ import {
   formatForFilename,
   formatUtcIso,
   compareInstants,
-} from "../../src/../src/shared/timestamps.js";
+} from "@main/core/shared/timestamps.js";
 
 describe("formatForFilename", () => {
   it("formats a UTC date as yyyymmdd-hhmmss-utc", () => {

@@ -22,8 +22,8 @@ import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 // Per the storage-path-conventions' secrets rule, resolution prefers the
 // environment: a value present in the provider's designated environment
 // variable wins over the stored (obfuscated) key, so a user can supply a key
-// without persisting it. The env value is server-internal only and is never
-// written back to ai-configs.json or sent to the client.
+// without persisting it. The env value is main-process-internal only and is never
+// written back to ai-configs.json or sent to the renderer.
 const API_KEY_ENV_VAR: Record<AiProvider, string> = {
   claude: "ANTHROPIC_API_KEY",
 };
@@ -65,8 +65,8 @@ function readAiConfigsRaw(dataDir: string): AiConfigsData {
 /**
  * Returns the active AI config with its API key deobfuscated, freshly
  * constructed — never a mutated re-export of the parsed file. For
- * server-internal use only (analysis, generation, imaging). NEVER send the
- * result of this function to the client.
+ * main-process-internal use only (analysis, generation, imaging). NEVER send the
+ * result of this function to the renderer.
  *
  * Narrowing the return value to a single config means plaintext keys never
  * exist as a collection: misuse can only ever leak the one config a route

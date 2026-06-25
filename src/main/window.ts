@@ -17,9 +17,9 @@ const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
 // isolation). The dev server needs inline/eval and a websocket for HMR, so this
 // is applied only to the built app. style-src allows 'unsafe-inline' because
 // CodeMirror injects its editor theme as runtime <style> elements; img-src allows
-// data: for inline image URIs that sanitized markdown may carry. The raw-asset
-// custom scheme is added to img-src / connect-src in Phase 5, when that protocol
-// replaces the old HTTP /raw endpoint.
+// data: for inline image URIs that sanitized markdown may carry. The
+// `bigmouth-asset:` custom scheme is allowed in img-src / connect-src so the
+// renderer can load uploaded asset files.
 const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self'",

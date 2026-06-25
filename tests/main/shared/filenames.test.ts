@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { postFileName } from "../../src/../src/shared/filenames.js";
+import { postFileName } from "@main/core/shared/filenames.js";
 
 const ts = new Date("2026-04-05T14:30:22Z");
 

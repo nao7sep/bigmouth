@@ -6,7 +6,7 @@ import {
   removalFocusTargetId,
   typeAheadMatch,
   flatPostListIds,
-} from "../../src/util/compositeNav";
+} from "@renderer/util/compositeNav";
 
 // These are the pure navigation helpers behind every composite control. The
 // DOM-facing behaviour they enable (roving focus, focus landing after a move,

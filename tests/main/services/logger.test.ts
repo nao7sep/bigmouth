@@ -13,7 +13,7 @@ import {
   isDebugLoggingEnabled,
   redact,
   serializeError,
-} from "../../src/../src/services/logger.js";
+} from "@main/core/services/logger.js";
 
 // Reads every JSON object written to the current session log file.
 function readLogLines(): Record<string, unknown>[] {

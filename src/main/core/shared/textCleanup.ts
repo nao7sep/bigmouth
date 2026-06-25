@@ -4,7 +4,7 @@
  * no cross-app shared package — and are copied verbatim from the convention's
  * reference implementation.
  *
- * The server uses two of the three patterns:
+ * The main process uses two of the three patterns:
  *
  * - `multiline` normalizes post bodies on read and write. Post bodies are
  *   Markdown, so callers keep trailing whitespace (two trailing spaces are a

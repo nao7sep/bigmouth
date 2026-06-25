@@ -1,8 +1,8 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 import { useEffect, useState } from "react";
-import { ModalShell } from "../../src/components/ModalShell";
-import { useAnyModalOpen } from "../../src/hooks/useModalStack";
+import { ModalShell } from "@renderer/components/ModalShell";
+import { useAnyModalOpen } from "@renderer/hooks/useModalStack";
 
 afterEach(cleanup);
 

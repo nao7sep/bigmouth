@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { pickAdjacentPostId } from "../../src/../src/util/selection";
-import type { PostSummary } from "../../src/types";
+import { pickAdjacentPostId } from "@renderer/util/selection";
+import type { PostSummary } from "@shared/types";
 
 function list(...ids: string[]): PostSummary[] {
   return ids.map((id) => ({

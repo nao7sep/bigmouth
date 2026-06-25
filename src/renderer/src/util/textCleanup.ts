@@ -4,7 +4,7 @@
  * package — and are copied verbatim from the convention's reference
  * implementation.
  *
- * The client uses one of the three patterns: `singleLine`, applied at commit
+ * The renderer uses one of the three patterns: `singleLine`, applied at commit
  * time to scalar metadata fields edited in `<textarea>`s, which (unlike an
  * `<input>`) do not sanitize pasted newlines out. Cleanup runs on save, never on
  * a keystroke (see the text-input-ime conventions).

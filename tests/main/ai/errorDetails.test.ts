@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describeAiError, aiErrorMessage, logAiFailure } from "../../src/../src/ai/errorDetails.js";
-import { initLogger, closeLogger, getCurrentLogFilePath } from "../../src/../src/services/logger.js";
+import { describeAiError, aiErrorMessage, logAiFailure } from "@main/core/ai/errorDetails.js";
+import { initLogger, closeLogger, getCurrentLogFilePath } from "@main/core/services/logger.js";
 
 function readLogLines(): Record<string, unknown>[] {
   const filePath = getCurrentLogFilePath();

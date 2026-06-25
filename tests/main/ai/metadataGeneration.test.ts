@@ -7,8 +7,8 @@ import {
   normalizeGeneratedMetadata,
   metadataValueToClientString,
   type MetadataField,
-} from "../../src/../src/ai/metadataGeneration.js";
-import type { PostFrontMatter } from "../../src/shared/types.js";
+} from "@main/core/ai/metadataGeneration.js";
+import type { PostFrontMatter } from "@main/core/shared/types.js";
 
 function frontMatter(overrides: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {

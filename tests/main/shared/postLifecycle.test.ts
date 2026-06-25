@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { applyStatusTransition, STATUS_ORDER } from "../../src/../src/shared/postLifecycle.js";
-import type { PostFrontMatter, PostStatus } from "../../src/../src/shared/types.js";
+import { applyStatusTransition, STATUS_ORDER } from "@main/core/shared/postLifecycle.js";
+import type { PostFrontMatter, PostStatus } from "@main/core/shared/types.js";
 
 const NOW = new Date("2026-04-05T14:30:22Z");
 const STAMP = "2026-04-05T14:30:22.000Z";

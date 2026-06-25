@@ -1,17 +1,17 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
-import type { Workspace } from "../../src/types";
+import type { Workspace } from "@shared/types";
 
 // WorkspaceModal only reaches the network through these four api calls.
-vi.mock("../../src/api", () => ({
+vi.mock("@renderer/api", () => ({
   fetchWorkspaces: vi.fn(),
   openOrCreateWorkspace: vi.fn(),
   updateWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
 }));
 
-import { WorkspaceModal } from "../../src/components/WorkspaceModal";
-import { fetchWorkspaces } from "../../src/api";
+import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
+import { fetchWorkspaces } from "@renderer/api";
 
 const mockFetchWorkspaces = vi.mocked(fetchWorkspaces);
 
