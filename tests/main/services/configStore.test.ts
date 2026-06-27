@@ -65,6 +65,38 @@ describe("settings", () => {
     });
     expect(getSettings(dataDir).supportedLanguages).toEqual(["en", "es", "ja"]);
   });
+
+  it("backfills fields absent from an older settings file with their defaults", () => {
+    // A settings.json written before uiFontFamily/contentFont existed: the read
+    // must fill them from defaults rather than yield undefined (no migration code).
+    fs.writeFileSync(
+      path.join(dataDir, "settings.json"),
+      JSON.stringify({
+        timezone: "UTC",
+        supportedLanguages: ["en"],
+        publishedPostsPerLoad: 50,
+        maxUploadMb: 500,
+        editorWatermark: "",
+        extraFieldWatermark: "",
+      }),
+      "utf-8",
+    );
+    const loaded = getSettings(dataDir);
+    expect(loaded.uiFontFamily).toBe("");
+    expect(loaded.contentFont).toEqual({ family: "", size: 14, lineHeight: 1.6, padding: 16, bold: false, italic: false, underline: false });
+  });
+
+  it("round-trips the UI font and content font", () => {
+    const settings = getSettings(dataDir);
+    saveSettings(dataDir, {
+      ...settings,
+      uiFontFamily: "Inter, system-ui",
+      contentFont: { family: "Iosevka", size: 18, lineHeight: 1.8, padding: 24, bold: true, italic: true, underline: false },
+    });
+    const reread = getSettings(dataDir);
+    expect(reread.uiFontFamily).toBe("Inter, system-ui");
+    expect(reread.contentFont).toEqual({ family: "Iosevka", size: 18, lineHeight: 1.8, padding: 24, bold: true, italic: true, underline: false });
+  });
 });
 
 describe("AI config API key handling", () => {

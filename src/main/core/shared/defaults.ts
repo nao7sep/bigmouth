@@ -44,6 +44,19 @@ export const DEFAULT_SETTINGS: Settings = {
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:
     "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://...",
+  // UI font empty = the built-in default stack. Editor content font mirrors
+  // @shared/types DEFAULT_CONTENT_FONT (inherit UI family, 14px, 1.6 line-height)
+  // — the editor's prior hard-coded values, now configurable.
+  uiFontFamily: "",
+  contentFont: {
+    family: "",
+    size: 14,
+    lineHeight: 1.6,
+    padding: 16,
+    bold: false,
+    italic: false,
+    underline: false,
+  },
 };
 
 export const DEFAULT_ANALYSIS_PROMPTS: AnalysisPrompt[] = [

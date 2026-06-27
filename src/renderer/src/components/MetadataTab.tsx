@@ -10,7 +10,8 @@ import {
 import type { Post, PostFrontMatter, PostMutationResult } from "@shared/types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
-import { singleLine } from "../util/textCleanup";
+import { extractFields, parseFieldValue } from "../util/metadataFields";
+import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
 
 interface MetadataTabProps {
   workspaceId: string;
@@ -101,13 +102,13 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // (no parse round-trip) and tag normalization never makes a field look
     // perpetually unsaved.
     const isDirty = useCallback(
-      (key: string) => (fieldsRef.current[key] ?? "") !== (savedRef.current[key] ?? ""),
+      (key: string) => isFieldDirty(fieldsRef.current[key], savedRef.current[key]),
       []
     );
 
     const dirtyKeys = useCallback(
-      () => Object.keys(fieldsRef.current).filter((key) => isDirty(key)),
-      [isDirty]
+      () => dirtyFieldKeys(fieldsRef.current, savedRef.current),
+      []
     );
 
     // Persists one field. `rawValue` is supplied only by generation, where the
@@ -141,19 +142,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
       for (const key of Object.keys(saveTimers.current)) clearTimer(key);
 
-      // Save every dirty field, then re-check: a field edited while one of these
-      // saves was in flight stays dirty and must also be persisted before we
-      // report success, because the caller unmounts this tab on a true result.
-      // Each successful save advances the saved snapshot, so this converges; a
-      // failed save stops the drain and surfaces as a false result.
-      let ok = true;
-      for (let pending = dirtyKeys(); pending.length > 0; pending = dirtyKeys()) {
-        for (const key of pending) {
-          if (!(await persistField(key))) ok = false;
-        }
-        if (!ok) break;
-      }
-      return ok;
+      // Save every dirty field, re-checking until none remain — a field edited
+      // while one of these saves was in flight stays dirty and must also be
+      // persisted before we report success, because the caller unmounts this tab
+      // on a true result. See flushDirtyFields for the convergence/failure rules.
+      return flushDirtyFields(dirtyKeys, persistField);
     }, [dirtyKeys, persistField]);
 
     useImperativeHandle(
@@ -561,46 +554,3 @@ function AutoGrowTextarea({
   );
 }
 
-function extractFields(fm: PostFrontMatter): Record<string, string> {
-  const get = (key: string) => {
-    const val = (fm as Record<string, unknown>)[key];
-    if (Array.isArray(val)) return val.join(", ");
-    return (val as string) ?? "";
-  };
-
-  const fields: Record<string, string> = {
-    title: get("title"),
-    slug: get("slug"),
-    tags: get("tags"),
-    metaDescription: get("metaDescription"),
-    extra: get("extra"),
-  };
-
-  if (fm.language !== "en") {
-    fields.titleEn = get("titleEn");
-    fields.tagsEn = get("tagsEn");
-    fields.metaDescriptionEn = get("metaDescriptionEn");
-  }
-
-  return fields;
-}
-
-// Scalar metadata fields that are stored as a single line. They are edited in
-// `<textarea>`s (which, unlike `<input>`, keep pasted newlines), so they get
-// single-line cleanup at commit time \u2014 never on a keystroke. `slug` is excluded
-// (validated in the main process, not normalized) and `extra` is excluded (free-text KVP).
-const SINGLE_LINE_FIELDS = new Set(["title", "titleEn", "metaDescription", "metaDescriptionEn"]);
-
-// Parses a raw textarea value into the form persisted in front matter, applying
-// commit-time cleanup. Called only from save paths (persistField, generateAll),
-// so cleanup runs on save, not while the user types.
-function parseFieldValue(key: string, value: string): string | string[] {
-  if (key === "tags" || key === "tagsEn") {
-    return value
-      .split(/[,\u3001]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-  }
-  if (SINGLE_LINE_FIELDS.has(key)) return singleLine(value);
-  return value;
-}

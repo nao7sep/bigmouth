@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import {
   setActiveWorkspace,
   runAnalysisStream,
@@ -272,6 +273,8 @@ describe("api wrappers — call-through and argument shape", () => {
         maxUploadMb: 500,
         editorWatermark: "",
         extraFieldWatermark: "",
+        uiFontFamily: "",
+        contentFont: DEFAULT_CONTENT_FONT,
       };
       void saveSettings(settings);
       expect(b.saveSettings).toHaveBeenCalledWith("w1", settings);

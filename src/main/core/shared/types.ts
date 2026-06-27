@@ -144,6 +144,19 @@ export interface StoredAiConfigsData {
   configs: StoredAiConfig[];
 }
 
+// Mirror of @shared/types ContentFont (the two type worlds can't import each
+// other). The editor content font: family ("" = inherit the UI font), size,
+// line-height, and weight/style/decoration toggles.
+export interface ContentFont {
+  family: string;
+  size: number;
+  lineHeight: number;
+  padding: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+}
+
 export interface Settings {
   timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
   supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
@@ -151,6 +164,8 @@ export interface Settings {
   maxUploadMb: number;             // max asset upload size in MB (default: 500)
   editorWatermark: string;         // placeholder text in the empty editor
   extraFieldWatermark: string;     // placeholder text in the extra textarea
+  uiFontFamily: string;            // UI font family; "" = built-in default stack (App.css --bm-font-ui)
+  contentFont: ContentFont;        // markdown editor content font (independent of the UI font)
 }
 
 export interface AiConfigsData {

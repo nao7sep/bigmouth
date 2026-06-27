@@ -356,6 +356,15 @@ export function WorkspaceModal({
         </div>
         {error && <p className="settings-field-error">{error}</p>}
         <div className="dialog-actions">
+          {dismissable && (
+            <button
+              className="btn-toolbar"
+              onClick={handleRequestClose}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+          )}
           <button
             className="btn-primary"
             style={{ width: "auto" }}

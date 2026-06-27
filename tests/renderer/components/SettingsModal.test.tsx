@@ -7,6 +7,7 @@ import type {
   AiConfigsData,
   GenerationPromptsData,
 } from "@shared/types";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 // SettingsModal reaches the main process only through these api functions; mock
 // the whole module so the dialog renders against in-memory fixtures.
@@ -61,6 +62,8 @@ function settings(): Settings {
     maxUploadMb: 500,
     editorWatermark: "",
     extraFieldWatermark: "",
+    uiFontFamily: "",
+    contentFont: { ...DEFAULT_CONTENT_FONT },
   };
 }
 

@@ -102,6 +102,13 @@ function clickDeleteConfirm() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 }
 
+// The confirmation's "Cancel" shares its label with the modal's footer dismiss
+// button, so scope to the confirmation dialog to click the right one.
+function clickDeleteCancel() {
+  const dialog = screen.getByRole("dialog", { name: "Delete workspace" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+}
+
 beforeEach(() => {
   mockOpenOrCreate.mockReset();
   mockUpdateWorkspace.mockReset();
@@ -344,7 +351,9 @@ describe("WorkspaceModal — inline rename save", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText, queryByDisplayValue } = await renderWith();
     fireEvent.click(getByText("Rename"));
-    fireEvent.click(getByText("Cancel"));
+    // The inline-edit Cancel shares its label with the modal's footer dismiss
+    // button; scope to the workspace row so the query is unambiguous.
+    fireEvent.click(within(screen.getByRole("option")).getByText("Cancel"));
     expect(queryByDisplayValue("Alpha")).toBeNull();
     expect(getByText("Rename")).toBeTruthy();
   });
@@ -428,10 +437,10 @@ describe("WorkspaceModal — delete", () => {
 
   it("does not delete when the confirmation is cancelled", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const { getByText, getByRole } = await renderWith();
+    const { getByText } = await renderWith();
 
     fireEvent.click(getByText("Delete"));
-    fireEvent.click(getByRole("button", { name: "Cancel" }));
+    clickDeleteCancel();
     await act(async () => {
       await Promise.resolve();
     });

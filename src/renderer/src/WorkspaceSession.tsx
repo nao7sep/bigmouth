@@ -17,7 +17,8 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "@shared/types";
+import type { ContentFont, Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "@shared/types";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
 import { pickAdjacentPostId } from "./util/selection";
@@ -73,6 +74,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [maxUploadMb, setMaxUploadMb] = useState(500);
     const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
     const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
+    const [contentFont, setContentFont] = useState<ContentFont>(DEFAULT_CONTENT_FONT);
     const [timezone, setTimezone] = useState("Asia/Tokyo");
     const [editorContent, setEditorContent] = useState("");
     const [currentPost, setCurrentPost] = useState<Post | null>(null);
@@ -227,6 +229,13 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
       if (settings.timezone?.trim() && isValidTimeZone(settings.timezone)) setTimezone(settings.timezone);
+      setContentFont(settings.contentFont);
+      // Apply the UI font family by overriding --bm-font-ui on the document root;
+      // blank reverts to the App.css default. The string is handed to CSS verbatim
+      // (engine-resolved), per the app-chrome-conventions.
+      const uiFont = settings.uiFontFamily?.trim();
+      if (uiFont) document.documentElement.style.setProperty("--bm-font-ui", uiFont);
+      else document.documentElement.style.removeProperty("--bm-font-ui");
     }, []);
 
     const loadConfig = useCallback(async () => {
@@ -567,6 +576,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 onBeforeStatusChange={flushRightPaneChanges}
                 pubBatchSize={pubBatchSize}
                 watermark={watermark}
+                contentFont={contentFont}
                 editorRef={editorRef}
               />
               <div className="pane-divider" onMouseDown={onStartRightDrag} />

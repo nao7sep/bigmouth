@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { CHANNELS } from "@shared/ipc";
 import type { Settings } from "@shared/types";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
@@ -45,6 +46,8 @@ function validSettings(overrides: Partial<Settings> = {}): Settings {
     maxUploadMb: 100,
     editorWatermark: "write here",
     extraFieldWatermark: "extra",
+    uiFontFamily: "",
+    contentFont: DEFAULT_CONTENT_FONT,
     ...overrides,
   };
 }
@@ -103,6 +106,26 @@ describe("settings IPC handlers", () => {
     expect(() =>
       invoke(CHANNELS.saveSettings, wsId, validSettings({ extraFieldWatermark: 5 as unknown as string })),
     ).toThrow(/extraFieldWatermark/);
+    expect(() =>
+      invoke(CHANNELS.saveSettings, wsId, validSettings({ uiFontFamily: 5 as unknown as string })),
+    ).toThrow(/uiFontFamily/);
+  });
+
+  it("validates the content font: type, ranges, and toggles", () => {
+    const withFont = (over: Partial<Settings["contentFont"]>) =>
+      validSettings({ contentFont: { ...DEFAULT_CONTENT_FONT, ...over } });
+    expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ contentFont: null as unknown as Settings["contentFont"] }))).toThrow(/contentFont/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ family: 5 as unknown as string }))).toThrow(/contentFont\.family/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ size: 4 }))).toThrow(/contentFont\.size/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ size: 99 }))).toThrow(/contentFont\.size/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ lineHeight: 0.5 }))).toThrow(/contentFont\.lineHeight/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ padding: -1 }))).toThrow(/contentFont\.padding/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ padding: 999 }))).toThrow(/contentFont\.padding/);
+    expect(() => invoke(CHANNELS.saveSettings, wsId, withFont({ bold: "yes" as unknown as boolean }))).toThrow(/contentFont\.bold/);
+    // A valid, fully-specified content font round-trips.
+    const saved = invoke(CHANNELS.saveSettings, wsId, withFont({ family: "Iosevka", size: 18, lineHeight: 1.8, padding: 24, bold: true }));
+    expect(saved.contentFont).toEqual({ family: "Iosevka", size: 18, lineHeight: 1.8, padding: 24, bold: true, italic: false, underline: false });
+    expect(invoke(CHANNELS.getSettings, wsId).contentFont.size).toBe(18);
   });
 
   it("surfaces an unknown workspace as a thrown Error", () => {

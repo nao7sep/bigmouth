@@ -20,63 +20,12 @@ import {
   getPostSummary,
 } from "../core/services/postStore.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
-import type { EditablePostMetadata } from "../core/shared/types.js";
-import { isEditLocked } from "../core/shared/postLifecycle.js";
+import { validatePostUpdate } from "../core/shared/postUpdate.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
-// Slug must be safe for export filenames and URLs: ASCII alphanumerics, hyphens,
-// and underscores only.
-const SLUG_RE = /^[a-zA-Z0-9_-]+$/;
-
-const EDITABLE_FRONT_MATTER_KEYS = [
-  "target",
-  "language",
-  "title",
-  "titleEn",
-  "slug",
-  "tags",
-  "tagsEn",
-  "metaDescription",
-  "metaDescriptionEn",
-  "extra",
-  "sourceId",
-] as const;
-
-const RESERVED_FRONT_MATTER_KEYS = new Set([
-  "id",
-  "status",
-  "createdAtUtc",
-  "updatedAtUtc",
-  "readyAtUtc",
-  "publishedAtUtc",
-  "expiredAtUtc",
-]);
-
 const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
-
-function validateSlug(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  return SLUG_RE.test(value) ? value : null;
-}
-
-/**
- * Copies only the editable front matter keys from a request body. Reserved keys
- * are rejected earlier; unknown keys are ignored so an update can never invent
- * front matter.
- */
-function pickEditableFrontMatter(frontMatter: unknown): EditablePostMetadata {
-  const edits: EditablePostMetadata = {};
-  if (!frontMatter || typeof frontMatter !== "object") return edits;
-  const source = frontMatter as Record<string, unknown>;
-  for (const key of EDITABLE_FRONT_MATTER_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      (edits as Record<string, unknown>)[key] = source[key];
-    }
-  }
-  return edits;
-}
 
 export function registerPostHandlers(): void {
   ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, publishedOffset: number, limit: number, expiredOffset: number) => {
@@ -193,52 +142,28 @@ export function registerPostHandlers(): void {
   ipcMain.handle(CHANNELS.updatePost, (_event, wsId: string, id: string, updates: PostUpdate) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const content = updates?.content;
-    const frontMatter: unknown = updates?.frontMatter;
     const existing = getPost(dir, id);
     if (!existing) {
       throw new Error("Post not found");
     }
 
-    // Published and expired posts are locked — editing happens only after moving
-    // back to Draft or Ready.
-    if (isEditLocked(existing.frontMatter.status)) {
-      warn("post update rejected", { workspace: wsId, postId: id, reason: `${existing.frontMatter.status}-locked` });
-      throw new Error(
-        `${existing.frontMatter.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Ready or Draft to edit it.`,
-      );
+    const validation = validatePostUpdate(existing.frontMatter, updates);
+    if (!validation.ok) {
+      warn("post update rejected", {
+        workspace: wsId,
+        postId: id,
+        reason: validation.reason,
+        ...(validation.reservedKeys ? { reservedKeys: validation.reservedKeys } : {}),
+      });
+      throw new Error(validation.message);
     }
 
-    if (frontMatter !== undefined && (!frontMatter || typeof frontMatter !== "object" || Array.isArray(frontMatter))) {
-      throw new Error("frontMatter must be an object");
-    }
+    const edits = validation.edits;
 
-    const reservedKeys = Object.keys((frontMatter as Record<string, unknown>) ?? {}).filter((key) =>
-      RESERVED_FRONT_MATTER_KEYS.has(key),
-    );
-    if (reservedKeys.length > 0) {
-      warn("post update rejected", { workspace: wsId, postId: id, reason: "reserved-front-matter", reservedKeys });
-      throw new Error(`Reserved front matter fields cannot be updated here: ${reservedKeys.join(", ")}`);
-    }
-
-    if (frontMatter && Object.prototype.hasOwnProperty.call(frontMatter, "slug")) {
-      const slug = (frontMatter as Record<string, unknown>).slug;
-      if (slug !== null && slug !== undefined && slug !== "") {
-        if (!validateSlug(slug)) {
-          warn("post update rejected", { workspace: wsId, postId: id, reason: "invalid-slug" });
-          throw new Error("Invalid slug: only letters, digits, hyphens, and underscores are allowed");
-        }
-      }
-    }
-
-    const edits = pickEditableFrontMatter(frontMatter);
-
-    if (typeof edits.sourceId === "string" && edits.sourceId) {
-      if (edits.sourceId === id) {
-        throw new Error("A post cannot be its own source");
-      }
-      if (!postExists(dir, edits.sourceId)) {
-        throw new Error("Source post not found");
-      }
+    // The only edit check that needs the filesystem: a referenced source post
+    // must exist. The self-source rule is decided purely in validatePostUpdate.
+    if (typeof edits.sourceId === "string" && edits.sourceId && !postExists(dir, edits.sourceId)) {
+      throw new Error("Source post not found");
     }
 
     const oldSlug = presentString(existing.frontMatter.slug);

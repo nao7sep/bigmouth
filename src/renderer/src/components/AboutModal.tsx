@@ -39,6 +39,11 @@ export function AboutModal({ onClose }: AboutModalProps) {
           &copy; 2026 Yoshinao Inoguchi &mdash; MIT License
         </p>
       </div>
+      <div className="modal-footer">
+        <button className="btn-toolbar" onClick={onClose}>
+          Close
+        </button>
+      </div>
     </ModalShell>
   );
 }

@@ -160,6 +160,44 @@ export interface ImagingOptions {
 
 // --- Settings ---
 
+// Content font for the markdown editor — the surface the user writes their own
+// text in, so it carries the full per-app-chrome-conventions content-font set
+// (family, size, line-height, weight, style, decoration, and — being a multi-line
+// field — padding) independent of the UI font. `family` blank means "inherit the
+// UI font".
+export interface ContentFont {
+  family: string;
+  size: number;
+  lineHeight: number;
+  padding: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+}
+
+// Bounds for the editor content font, shared by the IPC validator and the
+// Settings UI so a value can never be representable in one place but not the
+// other. Family is free text (engine-resolved), so it has no bound.
+export const CONTENT_FONT_SIZE_MIN = 8;
+export const CONTENT_FONT_SIZE_MAX = 48;
+export const CONTENT_LINE_HEIGHT_MIN = 1;
+export const CONTENT_LINE_HEIGHT_MAX = 3;
+export const CONTENT_PADDING_MIN = 0;
+export const CONTENT_PADDING_MAX = 64;
+
+// The renderer's pre-load placeholder for the content font. Mirrors
+// DEFAULT_SETTINGS.contentFont in the main core (the two type worlds can't import
+// each other); keep them in sync.
+export const DEFAULT_CONTENT_FONT: ContentFont = {
+  family: "",
+  size: 14,
+  lineHeight: 1.6,
+  padding: 16,
+  bold: false,
+  italic: false,
+  underline: false,
+};
+
 export interface Settings {
   timezone: string;
   supportedLanguages: string[];
@@ -167,4 +205,10 @@ export interface Settings {
   maxUploadMb: number;
   editorWatermark: string;
   extraFieldWatermark: string;
+  // UI (chrome) font family. Blank = the built-in default stack (App.css
+  // --bm-font-ui). A non-empty value overrides --bm-font-ui at runtime and is
+  // handed to CSS verbatim (engine-resolved, graceful fallback). Family only —
+  // no UI font-size knob.
+  uiFontFamily: string;
+  contentFont: ContentFont;
 }

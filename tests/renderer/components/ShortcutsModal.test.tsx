@@ -19,10 +19,11 @@ describe("ShortcutsModal", () => {
     // Spot-check a representative binding and its label.
     expect(getByText("New post")).toBeTruthy();
     const kbds = Array.from(container.querySelectorAll("kbd")).map((k) => k.textContent);
+    // Mac-first default (no platform stubbed) shows the single "Cmd" word, with
+    // punctuation spelled out per the keyboard-shortcut convention — never a glyph
+    // or raw symbol, and never the combined "Cmd/Ctrl" form.
     expect(kbds).toContain("Cmd+N");
-    expect(kbds).toContain("Cmd+/");
-    // The cross-platform note is shown.
-    expect(getByText(/use Ctrl instead of Cmd/)).toBeTruthy();
+    expect(kbds).toContain("Cmd+Slash");
   });
 
   it("autofocuses the close button", () => {

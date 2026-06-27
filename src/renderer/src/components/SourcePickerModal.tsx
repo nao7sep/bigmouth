@@ -32,6 +32,11 @@ export function SourcePickerModal({
           onSelect={(id) => { onSelect(id); onClose(); }}
         />
       </div>
+      <div className="modal-footer">
+        <button className="btn-toolbar" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
     </ModalShell>
   );
 }

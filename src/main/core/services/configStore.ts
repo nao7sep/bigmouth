@@ -19,6 +19,7 @@ import type {
   Workspace,
 } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { DEFAULT_SETTINGS } from "../shared/defaults.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 import * as apiKeys from "./apiKeys.js";
 import { getApiKeysPath } from "./workspaceStore.js";
@@ -40,7 +41,12 @@ function readJsonFile<T>(dataDir: string, fileName: string): T {
 // --- Settings ---
 
 export function getSettings(dataDir: string): Settings {
-  return readJsonFile<Settings>(dataDir, "settings.json");
+  // Fill any field absent from the on-disk file with its default, so a settings
+  // file written before a field existed loads cleanly instead of yielding an
+  // `undefined` the renderer/validator then trips over. This is a defaults
+  // backfill, not schema-migration scaffolding — the app is pre-release, so new
+  // fields simply default in place (PLAYBOOK).
+  return { ...DEFAULT_SETTINGS, ...readJsonFile<Settings>(dataDir, "settings.json") };
 }
 
 export function saveSettings(dataDir: string, settings: Settings): Settings {
@@ -53,6 +59,18 @@ export function saveSettings(dataDir: string, settings: Settings): Settings {
     maxUploadMb: settings.maxUploadMb,
     editorWatermark: settings.editorWatermark,
     extraFieldWatermark: settings.extraFieldWatermark,
+    uiFontFamily: settings.uiFontFamily,
+    // Rebuilt field-by-field (like the rest of normalized) so no stray key from a
+    // hand-edited file is written back.
+    contentFont: {
+      family: settings.contentFont.family,
+      size: settings.contentFont.size,
+      lineHeight: settings.contentFont.lineHeight,
+      padding: settings.contentFont.padding,
+      bold: settings.contentFont.bold,
+      italic: settings.contentFont.italic,
+      underline: settings.contentFont.underline,
+    },
   };
   writeFileAtomic(path.join(dataDir, "settings.json"), JSON.stringify(normalized, null, 2) + "\n");
   return normalized;

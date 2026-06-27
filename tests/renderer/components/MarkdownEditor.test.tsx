@@ -5,6 +5,7 @@ import {
   MarkdownEditor,
   type MarkdownEditorHandle,
 } from "@renderer/components/MarkdownEditor";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 afterEach(cleanup);
 
@@ -23,6 +24,7 @@ function renderEditor(
       content={props.content ?? ""}
       onContentChange={onContentChange}
       watermark={props.watermark ?? "Write here…"}
+      contentFont={props.contentFont ?? DEFAULT_CONTENT_FONT}
       readOnly={props.readOnly}
     />
   );
@@ -60,6 +62,7 @@ describe("MarkdownEditor external content sync", () => {
         content="second"
         onContentChange={onContentChange}
         watermark="w"
+        contentFont={DEFAULT_CONTENT_FONT}
       />
     );
     expect(container.querySelector(".cm-content")?.textContent).toContain("second");
@@ -76,6 +79,7 @@ describe("MarkdownEditor external content sync", () => {
         content="externally changed"
         onContentChange={onContentChange}
         watermark="w"
+        contentFont={DEFAULT_CONTENT_FONT}
       />
     );
     expect(onContentChange).not.toHaveBeenCalled();
@@ -91,6 +95,7 @@ describe("MarkdownEditor external content sync", () => {
         content="same"
         onContentChange={onContentChange}
         watermark="different watermark"
+        contentFont={DEFAULT_CONTENT_FONT}
       />
     );
     expect(onContentChange).not.toHaveBeenCalled();
@@ -145,6 +150,7 @@ describe("MarkdownEditor read-only reconfiguration", () => {
         content="doc"
         onContentChange={onContentChange}
         watermark="w"
+        contentFont={DEFAULT_CONTENT_FONT}
         readOnly={false}
       />
     );

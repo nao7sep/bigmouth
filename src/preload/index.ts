@@ -38,6 +38,10 @@ let nextStreamId = 1;
 // Implemented via `satisfies` (tsconfig-env-split-conventions) so the shared
 // contract is enforced without leaking a preload type back to the renderer.
 const api = {
+  // The running OS, read synchronously here in the Node-capable preload so the
+  // renderer can resolve the platform without an IPC round-trip.
+  platform: process.platform,
+
   // --- Workspace management ---
   listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,
   openOrCreateWorkspace: (name?: string, dataDirectory?: string) =>

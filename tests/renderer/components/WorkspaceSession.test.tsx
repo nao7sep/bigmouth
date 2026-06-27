@@ -9,6 +9,7 @@ import type {
   Target,
   Workspace,
 } from "@shared/types";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 // WorkspaceSession is the session orchestrator. It reaches the main process only
 // through these five api calls; everything else it owns is state, routing, and
@@ -266,6 +267,8 @@ const SETTINGS: Settings = {
   maxUploadMb: 100,
   editorWatermark: "WATER",
   extraFieldWatermark: "EXTRA",
+  uiFontFamily: "",
+  contentFont: DEFAULT_CONTENT_FONT,
 };
 
 const TARGETS: Target[] = [{ name: "blog", defaultLanguage: "en", requiresMetadata: true }];

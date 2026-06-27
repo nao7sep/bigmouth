@@ -160,7 +160,26 @@ export interface AnalysisStreamHandle {
 
 // --- The bridge surface ---
 
+// The Node platform string (member set of NodeJS.Platform), spelled out as a
+// portable union so this shared contract carries no @types/node dependency — it
+// is imported by the renderer, which is typechecked without Node types.
+export type Platform =
+  | "aix"
+  | "android"
+  | "darwin"
+  | "freebsd"
+  | "haiku"
+  | "linux"
+  | "openbsd"
+  | "sunos"
+  | "win32"
+  | "cygwin"
+  | "netbsd";
+
 export interface BigMouthApi {
+  /** The running OS, exposed synchronously from the preload (process.platform). */
+  platform: Platform;
+
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
   openOrCreateWorkspace(name?: string, dataDirectory?: string): Promise<Workspace>;

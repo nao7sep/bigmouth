@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
-import { AI_PROVIDERS } from "@shared/types";
+import {
+  AI_PROVIDERS,
+  CONTENT_FONT_SIZE_MAX,
+  CONTENT_FONT_SIZE_MIN,
+  CONTENT_LINE_HEIGHT_MAX,
+  CONTENT_LINE_HEIGHT_MIN,
+  CONTENT_PADDING_MAX,
+  CONTENT_PADDING_MIN,
+} from "@shared/types";
 import {
   getSettings,
   saveSettings,
@@ -161,6 +169,10 @@ export function SettingsModal({
     if (langs.length === 0 || langs.some((l) => !/^[a-z]{2}$/.test(l)) || new Set(langs).size !== langs.length) return false;
     if (!settings.timezone.trim()) return false;
     try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); } catch { return false; }
+    const cf = settings.contentFont;
+    if (!Number.isFinite(cf.size) || cf.size < CONTENT_FONT_SIZE_MIN || cf.size > CONTENT_FONT_SIZE_MAX) return false;
+    if (!Number.isFinite(cf.lineHeight) || cf.lineHeight < CONTENT_LINE_HEIGHT_MIN || cf.lineHeight > CONTENT_LINE_HEIGHT_MAX) return false;
+    if (!Number.isFinite(cf.padding) || cf.padding < CONTENT_PADDING_MIN || cf.padding > CONTENT_PADDING_MAX) return false;
     if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim())) return false;
     const tNames = targets.map((t) => t.name.trim());
     if (tNames.some((n) => !n) || new Set(tNames).size !== tNames.length) return false;
@@ -365,6 +377,13 @@ export function SettingsModal({
           {saveError && <p className="settings-field-error">{saveError}</p>}
           <div className="modal-footer">
             <button
+              className="btn-toolbar"
+              onClick={() => void handleRequestClose()}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
               className="btn-primary"
               style={{ width: "auto" }}
               onClick={handleSaveAll}
@@ -487,9 +506,128 @@ function GeneralTab({
         />
       </div>
 
+      <div className="settings-subheading">Fonts</div>
+      <FontsSection settings={settings} update={update} />
+
       <div className="settings-subheading">Maintenance</div>
       <RebuildIndexSection />
     </div>
+  );
+}
+
+// --- Fonts ---
+
+function FontsSection({
+  settings,
+  update,
+}: {
+  settings: Settings;
+  update: (patch: Partial<Settings>) => void;
+}) {
+  const cf = settings.contentFont;
+  const updateContentFont = (patch: Partial<Settings["contentFont"]>) =>
+    update({ contentFont: { ...cf, ...patch } });
+
+  const sizeInvalid =
+    !Number.isFinite(cf.size) || cf.size < CONTENT_FONT_SIZE_MIN || cf.size > CONTENT_FONT_SIZE_MAX;
+  const lineHeightInvalid =
+    !Number.isFinite(cf.lineHeight) ||
+    cf.lineHeight < CONTENT_LINE_HEIGHT_MIN ||
+    cf.lineHeight > CONTENT_LINE_HEIGHT_MAX;
+  const paddingInvalid =
+    !Number.isFinite(cf.padding) || cf.padding < CONTENT_PADDING_MIN || cf.padding > CONTENT_PADDING_MAX;
+
+  const checkboxStyle = { display: "inline-flex", alignItems: "center", gap: 6 } as const;
+
+  return (
+    <>
+      <div className="form-field">
+        <label className="form-label">UI font</label>
+        <input
+          className="form-input"
+          value={settings.uiFontFamily}
+          onChange={(e) => update({ uiFontFamily: e.target.value })}
+          placeholder="Blank = default system font"
+        />
+        <p className="settings-hint">
+          Comma-separated families for the app interface; the first one your system has is used.
+        </p>
+      </div>
+      <div className="form-field">
+        <label className="form-label">Editor font</label>
+        <input
+          className="form-input"
+          value={cf.family}
+          onChange={(e) => updateContentFont({ family: e.target.value })}
+          placeholder="Blank = same as UI font"
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div className="form-field" style={{ flex: 1 }}>
+          <label className="form-label">Editor font size (px)</label>
+          <input
+            className="form-input"
+            type="number"
+            min={CONTENT_FONT_SIZE_MIN}
+            max={CONTENT_FONT_SIZE_MAX}
+            value={cf.size}
+            onChange={(e) => updateContentFont({ size: parseInt(e.target.value) || cf.size })}
+          />
+          {sizeInvalid && <FieldError msg={`Must be ${CONTENT_FONT_SIZE_MIN}–${CONTENT_FONT_SIZE_MAX}.`} />}
+        </div>
+        <div className="form-field" style={{ flex: 1 }}>
+          <label className="form-label">Line height</label>
+          <input
+            className="form-input"
+            type="number"
+            min={CONTENT_LINE_HEIGHT_MIN}
+            max={CONTENT_LINE_HEIGHT_MAX}
+            step={0.1}
+            value={cf.lineHeight}
+            onChange={(e) => updateContentFont({ lineHeight: parseFloat(e.target.value) || cf.lineHeight })}
+          />
+          {lineHeightInvalid && (
+            <FieldError msg={`Must be ${CONTENT_LINE_HEIGHT_MIN}–${CONTENT_LINE_HEIGHT_MAX}.`} />
+          )}
+        </div>
+        <div className="form-field" style={{ flex: 1 }}>
+          <label className="form-label">Editor padding (px)</label>
+          <input
+            className="form-input"
+            type="number"
+            min={CONTENT_PADDING_MIN}
+            max={CONTENT_PADDING_MAX}
+            value={cf.padding}
+            onChange={(e) => {
+              const next = parseInt(e.target.value);
+              updateContentFont({ padding: Number.isNaN(next) ? cf.padding : next });
+            }}
+          />
+          {paddingInvalid && <FieldError msg={`Must be ${CONTENT_PADDING_MIN}–${CONTENT_PADDING_MAX}.`} />}
+        </div>
+      </div>
+      <div className="form-field">
+        <label className="form-label">Editor text style</label>
+        <div style={{ display: "flex", gap: 16 }}>
+          <label style={checkboxStyle}>
+            <input type="checkbox" checked={cf.bold} onChange={(e) => updateContentFont({ bold: e.target.checked })} />
+            Bold
+          </label>
+          <label style={checkboxStyle}>
+            <input type="checkbox" checked={cf.italic} onChange={(e) => updateContentFont({ italic: e.target.checked })} />
+            Italic
+          </label>
+          <label style={checkboxStyle}>
+            <input
+              type="checkbox"
+              checked={cf.underline}
+              onChange={(e) => updateContentFont({ underline: e.target.checked })}
+            />
+            Underline
+          </label>
+        </div>
+      </div>
+    </>
   );
 }
 

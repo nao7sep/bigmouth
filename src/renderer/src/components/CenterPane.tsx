@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostMutationResult, PostStatus } from "@shared/types";
+import type { ContentFont, Post, PostMutationResult, PostStatus } from "@shared/types";
 import { getPost, updatePost, changePostStatus, deletePost, listReferrers } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
@@ -28,6 +28,7 @@ interface CenterPaneProps {
   onBeforeStatusChange?: () => Promise<boolean>;
   pubBatchSize: number;
   watermark: string;
+  contentFont: ContentFont;
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
@@ -66,6 +67,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     onBeforeStatusChange,
     pubBatchSize,
     watermark,
+    contentFont,
     editorRef,
   },
   ref
@@ -452,6 +454,7 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
           content={content}
           onContentChange={handleContentChange}
           watermark={watermark}
+          contentFont={contentFont}
           readOnly={locked}
         />
       </div>

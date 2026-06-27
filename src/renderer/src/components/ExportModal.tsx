@@ -76,6 +76,9 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
       </pre>
 
       <div className="export-actions">
+        <button className="btn-toolbar" onClick={onClose}>
+          Close
+        </button>
         <button className="btn-export" onClick={handleCopy}>
           {copiedKey === "copy" ? (
             "✓ Copied"

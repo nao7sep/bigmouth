@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { createRef } from "react";
 import type { Post, PostMutationResult, PostFrontMatter } from "@shared/types";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 // CenterPane's only backend seam is these api calls; mock the lot.
 vi.mock("@renderer/api", () => ({
@@ -85,6 +86,7 @@ function baseProps() {
     onSelectPost: vi.fn(),
     pubBatchSize: 10,
     watermark: "Write…",
+    contentFont: DEFAULT_CONTENT_FONT,
     // Optional props, declared here so the override type accepts them.
     onGoBack: undefined as (() => void) | undefined,
     onBeforeStatusChange: undefined as (() => Promise<boolean>) | undefined,

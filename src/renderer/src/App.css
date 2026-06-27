@@ -3,6 +3,12 @@
      render light. The color-scheme declaration alone leaves the default scroll
      bar in place, so the bars are also styled explicitly below. */
   color-scheme: light;
+  /* UI font (app chrome). Explicit default stack; the Settings "UI font" field
+     overrides this variable at runtime with a verbatim, engine-resolved family
+     string. Family only — no UI font-size knob. The editor's content font is set
+     separately on the CodeMirror surface, not from this variable. */
+  --bm-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   --bm-bg: #f4efe8;
   --bm-surface: #fffaf4;
   --bm-surface-muted: #f7f0e8;
@@ -52,8 +58,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--bm-font-ui);
   font-size: 14px;
   color: var(--bm-text);
   background: var(--bm-bg);
@@ -693,12 +698,6 @@ body {
   padding: 8px 0 8px 0;
   font-size: 13px;
   color: var(--bm-text-soft);
-}
-
-.shortcuts-note {
-  font-size: 12px;
-  color: var(--bm-text-muted);
-  margin-top: 4px;
 }
 
 /* Preview tab */
