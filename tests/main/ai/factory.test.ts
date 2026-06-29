@@ -7,7 +7,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
     id: "cfg1",
     name: "Claude",
-    provider: "claude",
+    provider: "anthropic",
     apiKey: "sk-ant-test",
     model: "claude-opus-4-8",
     ...overrides,

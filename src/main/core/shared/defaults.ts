@@ -24,7 +24,7 @@ export function makeDefaultAiConfigs(): StoredAiConfigsData {
       {
         id,
         name: "Default",
-        provider: "claude",
+        provider: "anthropic",
         model: DEFAULT_CLAUDE_MODEL,
       },
     ],

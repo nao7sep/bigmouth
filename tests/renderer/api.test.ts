@@ -294,7 +294,7 @@ describe("api wrappers — call-through and argument shape", () => {
     it("createAiConfig forwards ws + the AiConfigInput", () => {
       const b = bridge();
       installBridge(b);
-      const input = { id: "c1", name: "C", provider: "claude" as const, model: "m", apiKey: "k" };
+      const input = { id: "c1", name: "C", provider: "anthropic" as const, model: "m", apiKey: "k" };
       void createAiConfig(input);
       expect(b.createAiConfig).toHaveBeenCalledWith("w1", input);
     });

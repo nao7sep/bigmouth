@@ -67,7 +67,7 @@ describe("aiConfig IPC handlers", () => {
     invoke(CHANNELS.createAiConfig, wsId, {
       id: "c1",
       name: "Claude",
-      provider: "claude",
+      provider: "anthropic",
       model: "m",
       apiKey: "sk-secret",
     });
@@ -78,15 +78,15 @@ describe("aiConfig IPC handlers", () => {
   });
 
   it("validates create input", () => {
-    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "bad id!", name: "n", provider: "claude", model: "m" }))
+    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "bad id!", name: "n", provider: "anthropic", model: "m" }))
       .toThrow(/id is required/);
     expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "n", provider: "nope", model: "m" }))
       .toThrow(/provider must be one of/);
   });
 
   it("updates, sets-active, and deletes through the store", () => {
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "claude", model: "m" });
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c2", name: "B", provider: "claude", model: "m" });
+    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "anthropic", model: "m" });
+    invoke(CHANNELS.createAiConfig, wsId, { id: "c2", name: "B", provider: "anthropic", model: "m" });
 
     const updated = invoke(CHANNELS.updateAiConfig, wsId, "c1", { name: "Renamed" });
     expect(updated.configs.find((c) => c.id === "c1")?.name).toBe("Renamed");
@@ -99,7 +99,7 @@ describe("aiConfig IPC handlers", () => {
   });
 
   it("maps store errors (deleting the active config) to a thrown Error", () => {
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "claude", model: "m" });
+    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "anthropic", model: "m" });
     invoke(CHANNELS.setActiveAiConfig, wsId, "c1");
     expect(() => invoke(CHANNELS.deleteAiConfig, wsId, "c1")).toThrow(/active/i);
   });

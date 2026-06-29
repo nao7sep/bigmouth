@@ -36,7 +36,7 @@ vi.mock("@main/core/services/postStore.js", () => ({
 
 vi.mock("@main/core/services/configStore.js", () => ({
   getAnalysisPrompts: () => [{ name: "P", text: "Analyze: {content}" }],
-  getActiveAiConfig: () => ({ id: "c1", name: "cfg", provider: "claude", model: "m", apiKey: "k" }),
+  getActiveAiConfig: () => ({ id: "c1", name: "cfg", provider: "anthropic", model: "m", apiKey: "k" }),
 }));
 
 vi.mock("@main/core/ai/promptTemplates.js", () => ({

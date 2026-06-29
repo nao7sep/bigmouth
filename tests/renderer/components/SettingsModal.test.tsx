@@ -83,7 +83,7 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
   return {
     activeId: "c1",
     configs: [
-      { id: "c1", name: "Primary", provider: "claude", apiKey: "", model: "claude-sonnet-4-6" },
+      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-4-6" },
     ],
     ...overrides,
   };
@@ -190,7 +190,7 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
     const { getByRole } = await renderModal(
       aiConfigs({
         configs: [
-          { id: "c1", name: "Primary", provider: "claude", apiKey: "", model: "m", usingEnvKey: true },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m", usingEnvKey: true },
         ],
       }),
     );
@@ -204,7 +204,7 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
     const { getByRole } = await renderModal(
       aiConfigs({
         configs: [
-          { id: "c1", name: "Primary", provider: "claude", apiKey: "", model: "m", hasApiKey: true },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m", hasApiKey: true },
         ],
       }),
     );
@@ -252,8 +252,8 @@ describe("SettingsModal — AI Configs add/edit/delete rows", () => {
       aiConfigs({
         activeId: "c1",
         configs: [
-          { id: "c1", name: "Primary", provider: "claude", apiKey: "", model: "m" },
-          { id: "c2", name: "Secondary", provider: "claude", apiKey: "", model: "m" },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m" },
+          { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "m" },
         ],
       }),
     );
@@ -284,8 +284,8 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     const initial = aiConfigs({
       activeId: "c1",
       configs: [
-        { id: "c1", name: "Primary", provider: "claude", apiKey: "", model: "m1" },
-        { id: "c2", name: "Secondary", provider: "claude", apiKey: "", model: "m2" },
+        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m1" },
+        { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "m2" },
       ],
     });
     const { getByRole, onClose, onSettingsChanged } = await renderModal(initial);
@@ -339,7 +339,7 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
 
     // The new config was created.
     expect(mock.createAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "New", model: "m3", provider: "claude" }),
+      expect.objectContaining({ name: "New", model: "m3", provider: "anthropic" }),
     );
     // The active swap was issued for c2.
     expect(mock.setActiveAiConfig).toHaveBeenCalledWith("c2");

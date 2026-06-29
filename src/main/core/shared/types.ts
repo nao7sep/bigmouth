@@ -112,7 +112,7 @@ export interface AppConfig {
 
 // --- Settings ---
 
-export const AI_PROVIDERS = ["claude"] as const;
+export const AI_PROVIDERS = ["anthropic"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export interface AiConfig {

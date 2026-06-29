@@ -67,7 +67,7 @@ describe("safeAiConfigLogContext", () => {
     const config: AiConfig = {
       id: "cfg1",
       name: "Claude",
-      provider: "claude",
+      provider: "anthropic",
       apiKey: "sk-ant-super-secret",
       model: "claude-opus-4-8",
     };
@@ -80,7 +80,7 @@ describe("safeAiConfigLogContext", () => {
     const config: AiConfig = {
       id: "cfg1",
       name: "",
-      provider: "claude",
+      provider: "anthropic",
       apiKey: "",
       model: "claude-opus-4-8",
     };

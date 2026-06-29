@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
 import {
   AI_PROVIDERS,
+  PROVIDER_LABELS,
   CONTENT_FONT_SIZE_MAX,
   CONTENT_FONT_SIZE_MIN,
   CONTENT_LINE_HEIGHT_MAX,
@@ -690,7 +691,7 @@ function AiTab({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "claude", apiKey: "", hasApiKey: false, model: "claude-sonnet-4-6" },
+        { id, name: "", provider: "anthropic", apiKey: "", hasApiKey: false, model: "claude-sonnet-4-6" },
       ],
     });
   };
@@ -752,7 +753,7 @@ function AiTab({
               >
                 {AI_PROVIDERS.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {PROVIDER_LABELS[p] ?? p}
                   </option>
                 ))}
               </select>

@@ -117,8 +117,12 @@ export interface AssetMeta {
 
 // --- AI config ---
 
-export const AI_PROVIDERS = ["claude"] as const;
+export const AI_PROVIDERS = ["anthropic"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+// User-facing display names. The internal id is the conventional vendor/env name
+// (api-key-storage-conventions); the product label is a display mapping only.
+export const PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: "Claude" };
 
 export interface AiConfig {
   id: string;

@@ -13,7 +13,7 @@ export function createProvider(config: AiConfig): AiProvider {
     throw new Error("AI API key is not configured");
   }
 
-  if (config.provider === "claude") {
+  if (config.provider === "anthropic") {
     const model = config.model || DEFAULT_CLAUDE_MODEL;
     return new ClaudeProvider(config.apiKey, model);
   }

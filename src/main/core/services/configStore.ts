@@ -175,7 +175,7 @@ export function createAiConfig(workspace: Workspace, input: CreateAiConfigInput)
   // without machinery, so ordering bounds the blast radius instead.)
   writeAiConfigsRaw(workspace.dataDirectory, data);
   if (input.apiKey !== undefined) {
-    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, input.id, input.apiKey);
+    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, input.id, input.provider, input.apiKey);
   }
   return getAiConfigsForClient(workspace);
 }
@@ -216,7 +216,7 @@ export function updateAiConfig(
   // untouched. Rewrite the workspace file only when a non-secret field changed —
   // a key-only edit must not dirty the git-versioned ai-configs.json.
   if (patch.apiKey !== undefined) {
-    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, id, patch.apiKey);
+    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, id, config.provider, patch.apiKey);
   }
   if (metadataChanged) {
     writeAiConfigsRaw(workspace.dataDirectory, data);

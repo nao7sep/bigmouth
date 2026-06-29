@@ -7,9 +7,9 @@ describe("obfuscation round-trip", () => {
     expect(deobfuscate(obfuscate(key))).toBe(key);
   });
 
-  // The contract is API keys, which are ASCII. BMP non-ASCII also round-trips.
-  // Astral-plane characters (emoji) are NOT supported — split("")/reverse()
-  // corrupts surrogate pairs — but no API key contains them, so it's out of scope.
+  // The contract is API keys, which are ASCII. Any UTF-8 string also round-trips:
+  // the encoding reverses the raw bytes (an involution), so reversing twice
+  // restores the original bytes exactly — code points and astral chars included.
   it("preserves BMP non-ASCII characters", () => {
     const value = "日本語のキー";
     expect(deobfuscate(obfuscate(value))).toBe(value);

@@ -168,7 +168,7 @@ describe("updateWorkspace directory change", () => {
 describe("deleteWorkspace", () => {
   it("removes the workspace and clears its stored API keys", () => {
     const ws = createWorkspace("Keyed", tempDir("ws"));
-    writeApiKey(getApiKeysPath(), ws.id, "c1", "sk-secret");
+    writeApiKey(getApiKeysPath(), ws.id, "c1", "anthropic", "sk-secret");
     expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(true);
 
     expect(deleteWorkspace(ws.id)).toBe(true);

@@ -1,30 +1,29 @@
 /**
- * API key storage — the secret store, kept OUT of the git-versionable workspace.
+ * API key storage and resolution — the secret store at `~/.bigmouth/api-keys.json`,
+ * kept OUT of the git-versionable workspace. This is the fleet
+ * api-key-storage-conventions realized for bigmouth's scoped key identity.
  *
- * Keys live in one file under the app storage root (`~/.bigmouth/api-keys.json`),
- * never inside a workspace a user may point at any folder and commit
- * (storage-path-conventions, "Secrets and keys"). configStore resolves, sets, and
- * clears keys through here; the workspace file persists only non-secret config.
+ * A key belongs to a (workspaceId, configId) pair, because a config id travels
+ * inside the committed `ai-configs.json` and the machine-local workspace id
+ * disambiguates two clones. Those ids are opaque (nanoid: mixed case, `_`/`-`),
+ * so they are NOT segments — they live in the container path, which the
+ * convention reserves for exactly this. The provider is segment 0:
  *
- * Keyed by (workspaceId, configId). A config id travels inside the committed
- * `ai-configs.json`, so two workspaces that share one — a copied folder, a repo
- * cloned and opened twice on one machine — would otherwise collide on a single
- * key. The workspace registry id (machine-local, stable across folder moves,
- * distinct per clone) disambiguates them, and lets a workspace's keys be dropped
- * in one step when it is removed. The key itself is machine-local and re-entered
- * (or supplied via env) wherever the workspace is opened.
+ *   { "workspaces": { "<wsId>": { "configs": { "<cfgId>": { "keys": { "anthropic": "obf:…" } } } } } }
  *
- * Contract:
- *   - Resolution is environment-first: the provider's env var (ANTHROPIC_API_KEY)
- *     wins over the stored value and is never written back. Both sources are
+ * Contract (api-key-storage-conventions):
+ *   - The key id is the provider segment; its environment variable is the
+ *     segment uppercased + "_API_KEY" (anthropic → ANTHROPIC_API_KEY), derived
+ *     with no mapping table because the provider id IS the conventional name.
+ *   - Resolution prefers the environment (scope-independent, provider-level): the
+ *     env value wins over the stored value and is never written back. Both are
  *     trimmed; a blank value counts as no key.
  *   - The stored value is lightly obfuscated (NOT encryption); the real
- *     protection is the file's 0600 mode. On POSIX the file is created 0600, and a
- *     group/world-readable file is tightened on every read (warned once per
- *     process, so a key read on each AI call does not spam the log). Skipped on
- *     Windows, which uses a different permission model.
- *   - A corrupt file, or any non-string entry in it, is treated as absent rather
- *     than allowed to throw — a hand-edited secrets file never bricks AI use.
+ *     protection is the file's 0600 mode. On POSIX the file is created 0600 and a
+ *     group/world-readable file is tightened on read (warned once per process).
+ *   - A corrupt/unreadable file is moved aside to a timestamped neighbour and
+ *     treated as empty rather than throwing; a non-string or non-conforming entry
+ *     is ignored, so a hand-edited file never bricks key resolution.
  */
 
 import fs from "node:fs";
@@ -34,27 +33,30 @@ import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { warn as logWarn } from "./logger.js";
 
-// The environment variable that takes precedence over the stored key, per provider.
-const API_KEY_ENV_VAR: Record<AiProvider, string> = {
-  claude: "ANTHROPIC_API_KEY",
-};
-
 const SECRETS_FILE_MODE = 0o600;
 const ENFORCE_FILE_MODE = process.platform !== "win32";
+const SEGMENT_RE = /^[a-z0-9]+$/;
 
-// The secrets file: workspaceId -> configId -> obfuscated key. Nested (not a flat
-// composite key) so a workspace's keys read and drop as one unit.
-type WorkspaceKeys = Record<string, string>;
+// The secrets file: workspaceId -> configs -> configId -> keys -> segment -> value.
+// Nested so a workspace's keys read and drop as one unit, and a config's keys sit
+// behind a `keys` node that can hold future per-config metadata siblings.
+interface ConfigKeys {
+  keys: Record<string, string>;
+}
 interface ApiKeysFile {
-  workspaces: Record<string, WorkspaceKeys>;
+  workspaces: Record<string, { configs: Record<string, ConfigKeys> }>;
 }
 
 // Warn at most once per process about an insecure file mode, so a key read on
 // every AI call does not spam the log. The tightening itself is never suppressed.
 let modeWarned = false;
 
+function apiKeyEnvVar(provider: AiProvider): string {
+  return `${provider.toUpperCase()}_API_KEY`;
+}
+
 function envApiKey(provider: AiProvider): string | null {
-  const value = process.env[API_KEY_ENV_VAR[provider]]?.trim();
+  const value = process.env[apiKeyEnvVar(provider)]?.trim();
   return value ? value : null;
 }
 
@@ -83,31 +85,81 @@ function ensureSecureMode(filePath: string): void {
   }
 }
 
-// Read the whole store, tolerating a missing/corrupt file and dropping any entry
-// that is not a string, so a hand-edited file degrades to "no key", not a throw.
+function utcStampForFilename(): string {
+  const d = new Date();
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `-${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}-utc`
+  );
+}
+
+// Move the unreadable file aside to a timestamped neighbour (handled once, not
+// re-flagged on every read), returning the new path or null on failure.
+function moveAsideInvalid(filePath: string): string | null {
+  const movedTo = `${filePath}.${utcStampForFilename()}.invalid`;
+  try {
+    fs.renameSync(filePath, movedTo);
+    return movedTo;
+  } catch {
+    return null;
+  }
+}
+
+// Validate and canonicalize the on-disk tree, dropping anything that is not the
+// expected shape: workspace -> configs -> config -> keys -> { <segment>: string }.
+function normalize(raw: unknown): ApiKeysFile {
+  const out: ApiKeysFile = { workspaces: {} };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const workspaces = (raw as { workspaces?: unknown }).workspaces;
+  if (!workspaces || typeof workspaces !== "object" || Array.isArray(workspaces)) return out;
+  for (const [wsId, wsNode] of Object.entries(workspaces as Record<string, unknown>)) {
+    if (!wsNode || typeof wsNode !== "object" || Array.isArray(wsNode)) continue;
+    const configs = (wsNode as { configs?: unknown }).configs;
+    if (!configs || typeof configs !== "object" || Array.isArray(configs)) continue;
+    const outConfigs: Record<string, ConfigKeys> = {};
+    for (const [cfgId, cfgNode] of Object.entries(configs as Record<string, unknown>)) {
+      if (!cfgNode || typeof cfgNode !== "object" || Array.isArray(cfgNode)) continue;
+      const keys = (cfgNode as { keys?: unknown }).keys;
+      if (!keys || typeof keys !== "object" || Array.isArray(keys)) continue;
+      const outKeys: Record<string, string> = {};
+      for (const [seg, value] of Object.entries(keys as Record<string, unknown>)) {
+        const canonical = seg.toLowerCase();
+        if (typeof value === "string" && SEGMENT_RE.test(canonical)) outKeys[canonical] = value;
+      }
+      if (Object.keys(outKeys).length > 0) outConfigs[cfgId] = { keys: outKeys };
+    }
+    if (Object.keys(outConfigs).length > 0) out.workspaces[wsId] = { configs: outConfigs };
+  }
+  return out;
+}
+
 function readFile(filePath: string): ApiKeysFile {
   ensureSecureMode(filePath);
-  let raw: unknown;
+  let text: string;
   try {
-    raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-  } catch {
-    return { workspaces: {} }; // No file, or corrupt JSON.
+    text = fs.readFileSync(filePath, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { workspaces: {} };
+    const movedTo = moveAsideInvalid(filePath);
+    logWarn("api-keys.json was unreadable; set aside and treating as empty", {
+      path: filePath,
+      movedTo,
+      error: (err as Error).message,
+    });
+    return { workspaces: {} };
   }
-  const workspaces: Record<string, WorkspaceKeys> = {};
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const rawWorkspaces = (raw as { workspaces?: unknown }).workspaces;
-    if (rawWorkspaces && typeof rawWorkspaces === "object" && !Array.isArray(rawWorkspaces)) {
-      for (const [wsId, configs] of Object.entries(rawWorkspaces as Record<string, unknown>)) {
-        if (!configs || typeof configs !== "object" || Array.isArray(configs)) continue;
-        const keys: WorkspaceKeys = {};
-        for (const [configId, value] of Object.entries(configs as Record<string, unknown>)) {
-          if (typeof value === "string") keys[configId] = value;
-        }
-        if (Object.keys(keys).length > 0) workspaces[wsId] = keys;
-      }
-    }
+  try {
+    return normalize(JSON.parse(text));
+  } catch (err) {
+    const movedTo = moveAsideInvalid(filePath);
+    logWarn("api-keys.json was not valid JSON; set aside and treating as empty", {
+      path: filePath,
+      movedTo,
+      error: (err as Error).message,
+    });
+    return { workspaces: {} };
   }
-  return { workspaces };
 }
 
 function writeFile(filePath: string, data: ApiKeysFile): void {
@@ -118,23 +170,25 @@ function writeFile(filePath: string, data: ApiKeysFile): void {
   );
 }
 
-// Apply a mutation and persist only if it changed the stored content, so a no-op
-// clear never materializes an empty file. Empty workspace buckets are pruned so a
-// cleared workspace leaves no trace.
+// Apply a mutation and persist only if it changed the stored content, pruning
+// emptied config and workspace buckets so a cleared scope leaves no trace.
 function update(filePath: string, mutate: (data: ApiKeysFile) => void): void {
   const data = readFile(filePath);
   const before = JSON.stringify(data);
   mutate(data);
-  for (const [wsId, keys] of Object.entries(data.workspaces)) {
-    if (Object.keys(keys).length === 0) delete data.workspaces[wsId];
+  for (const [wsId, wsNode] of Object.entries(data.workspaces)) {
+    for (const [cfgId, cfgNode] of Object.entries(wsNode.configs)) {
+      if (Object.keys(cfgNode.keys).length === 0) delete wsNode.configs[cfgId];
+    }
+    if (Object.keys(wsNode.configs).length === 0) delete data.workspaces[wsId];
   }
   if (JSON.stringify(data) !== before) writeFile(filePath, data);
 }
 
 /**
- * Resolve a config's API key, environment-first. Returns the env value when the
- * provider's env var is set (never persisting it), otherwise the stored key, or
- * null when neither resolves to a non-blank value.
+ * Resolve a config's API key, environment-first. The env var is provider-level
+ * (`ANTHROPIC_API_KEY`) and overrides every workspace/config; otherwise the
+ * stored key for this (workspace, config) is used, or null when neither resolves.
  */
 export function resolveApiKey(
   filePath: string,
@@ -144,24 +198,23 @@ export function resolveApiKey(
 ): string | null {
   const fromEnv = envApiKey(provider);
   if (fromEnv !== null) return fromEnv;
-  const stored = readFile(filePath).workspaces[workspaceId]?.[configId];
+  const stored = readFile(filePath).workspaces[workspaceId]?.configs[configId]?.keys[provider];
   const key = stored ? deobfuscate(stored).trim() : "";
   return key.length > 0 ? key : null;
 }
 
 /**
- * The config ids that have their own stored key in this workspace. Lets the
- * renderer-facing per-config "key is stored" flag be built with a single read;
- * the environment is deliberately excluded so the flag reflects only what is
- * stored for that specific config.
+ * The config ids in a workspace that have their own stored key (any non-empty
+ * key in the config's `keys`). The environment is deliberately excluded so the
+ * renderer's per-config "key is stored" flag reflects only what is stored.
  */
 export function readStoredConfigIds(filePath: string, workspaceId: string): Set<string> {
-  const keys = readFile(filePath).workspaces[workspaceId];
-  if (!keys) return new Set();
+  const configs = readFile(filePath).workspaces[workspaceId]?.configs;
+  if (!configs) return new Set();
   return new Set(
-    Object.entries(keys)
-      .filter(([, value]) => deobfuscate(value).trim().length > 0)
-      .map(([configId]) => configId),
+    Object.entries(configs)
+      .filter(([, cfgNode]) => Object.values(cfgNode.keys).some((v) => deobfuscate(v).trim().length > 0))
+      .map(([cfgId]) => cfgId),
   );
 }
 
@@ -170,22 +223,32 @@ export function hasEnvApiKey(provider: AiProvider): boolean {
   return envApiKey(provider) !== null;
 }
 
-/** Store (obfuscated) or, for a blank key, remove the config's key. */
-export function writeApiKey(filePath: string, workspaceId: string, configId: string, key: string): void {
+/** Store (obfuscated, trimmed) or, for a blank key, remove the config's key. */
+export function writeApiKey(
+  filePath: string,
+  workspaceId: string,
+  configId: string,
+  provider: AiProvider,
+  key: string,
+): void {
   const trimmed = key.trim();
   update(filePath, (data) => {
     if (trimmed.length > 0) {
-      (data.workspaces[workspaceId] ??= {})[configId] = obfuscate(trimmed);
+      const ws = (data.workspaces[workspaceId] ??= { configs: {} });
+      const cfg = (ws.configs[configId] ??= { keys: {} });
+      cfg.keys[provider] = obfuscate(trimmed);
     } else {
-      delete data.workspaces[workspaceId]?.[configId];
+      const cfg = data.workspaces[workspaceId]?.configs[configId];
+      if (cfg) delete cfg.keys[provider];
     }
   });
 }
 
-/** Remove the config's stored key. The environment value, if any, is unaffected. */
+/** Remove a config's stored key entirely. The environment value is unaffected. */
 export function clearApiKey(filePath: string, workspaceId: string, configId: string): void {
   update(filePath, (data) => {
-    delete data.workspaces[workspaceId]?.[configId];
+    const ws = data.workspaces[workspaceId];
+    if (ws) delete ws.configs[configId];
   });
 }
 

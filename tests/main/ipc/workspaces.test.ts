@@ -119,7 +119,7 @@ describe("workspace IPC handlers", () => {
 
   it("deletes a workspace and clears its stored API keys", () => {
     const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Keyed");
-    writeApiKey(getApiKeysPath(), ws.id, "c1", "sk-secret");
+    writeApiKey(getApiKeysPath(), ws.id, "c1", "anthropic", "sk-secret");
     expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(true);
 
     const result = invoke<void>(CHANNELS.deleteWorkspace, ws.id);
