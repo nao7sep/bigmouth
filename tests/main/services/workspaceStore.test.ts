@@ -75,6 +75,16 @@ describe("openWorkspace gating", () => {
     fs.unlinkSync(path.join(dir, "config.json")); // a partial workspace is broken, not openable
     expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
   });
+
+  it("rejects a generic folder whose config.json is not a BigMouth config", () => {
+    // A blog or static-site folder can hold config.json + posts/ + assets/ without
+    // being a workspace; accepting it would overwrite its config on the first save.
+    const dir = tempDir("blog");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.mkdirSync(path.join(dir, "assets"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog", theme: "dark" }));
+    expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
+  });
 });
 
 describe("updateWorkspace validates before mutating", () => {

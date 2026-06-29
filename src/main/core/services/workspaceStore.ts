@@ -11,6 +11,7 @@ import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { forgetWorkspace } from "./activeConfig.js";
@@ -199,16 +200,26 @@ function isWorkspaceDirectory(dir: string): boolean {
   const stat = fs.statSync(dir);
   if (!stat.isDirectory()) return false;
 
-  const requiredFiles = ["config.json"];
   const requiredDirs = ["posts", "assets"];
+  const dirsPresent = requiredDirs.every((entry) => {
+    const entryPath = path.join(dir, entry);
+    return fs.existsSync(entryPath) && fs.statSync(entryPath).isDirectory();
+  });
+  if (!dirsPresent) return false;
 
-  return (
-    requiredFiles.every((entry) => fs.existsSync(path.join(dir, entry))) &&
-    requiredDirs.every((entry) => {
-      const entryPath = path.join(dir, entry);
-      return fs.existsSync(entryPath) && fs.statSync(entryPath).isDirectory();
-    })
-  );
+  // config.json must not merely exist but parse as a BigMouth config (its schema
+  // version + sections). A generic blog/static-site folder that happens to have a
+  // config.json alongside posts/ and assets/ is NOT a workspace — accepting it
+  // would let the first settings save normalize-and-overwrite its unrelated config.
+  const configPath = path.join(dir, "config.json");
+  if (!fs.existsSync(configPath)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  } catch {
+    return false;
+  }
+  return isWorkspaceConfig(parsed);
 }
 
 function isEmptyDirectory(dir: string): boolean {
