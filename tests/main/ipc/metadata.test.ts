@@ -52,7 +52,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
-import { setActiveAiConfig } from "@main/core/services/configStore.js";
+import { deleteAiConfig, getAiConfigsForClient } from "@main/core/services/configStore.js";
 import { registerMetadataHandlers } from "@main/ipc/metadata.js";
 
 let home: string;
@@ -158,7 +158,7 @@ describe("metadata generation IPC handler", () => {
 
   it("throws when there is no active AI configuration", async () => {
     const ws = { id: wsId, name: "WS", dataDirectory: dataDir };
-    setActiveAiConfig(ws, ""); // clear the default active config
+    for (const c of getAiConfigsForClient(ws).configs) deleteAiConfig(ws, c.id); // no configs → no active
 
     await expect(invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "")).rejects.toThrow(
       /No active AI configuration/i,

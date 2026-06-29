@@ -98,10 +98,8 @@ describe("aiConfig IPC handlers", () => {
     expect(afterDelete.configs.map((c) => c.id)).not.toContain("c1");
   });
 
-  it("maps store errors (deleting the active config) to a thrown Error", () => {
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "anthropic", model: "m" });
-    invoke(CHANNELS.setActiveAiConfig, wsId, "c1");
-    expect(() => invoke(CHANNELS.deleteAiConfig, wsId, "c1")).toThrow(/active/i);
+  it("maps store errors (deleting a missing config) to a thrown Error", () => {
+    expect(() => invoke(CHANNELS.deleteAiConfig, wsId, "ghost")).toThrow(/not found/i);
   });
 
   it("rejects a malformed id before reaching the store", () => {

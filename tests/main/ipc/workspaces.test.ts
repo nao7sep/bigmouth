@@ -71,7 +71,7 @@ describe("workspace IPC handlers", () => {
     const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "My WS");
     expect(ws.name).toBe("My WS");
     expect(ws.id).toBeTruthy();
-    expect(fs.existsSync(path.join(ws.dataDirectory, "settings.json"))).toBe(true);
+    expect(fs.existsSync(path.join(ws.dataDirectory, "config.json"))).toBe(true);
 
     const list = invoke<Workspace[]>(CHANNELS.listWorkspaces);
     expect(list).toHaveLength(1);

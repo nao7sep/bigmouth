@@ -4,7 +4,7 @@
  * api-key-storage-conventions realized for bigmouth's scoped key identity.
  *
  * A key belongs to a (workspaceId, configId) pair, because a config id travels
- * inside the committed `ai-configs.json` and the machine-local workspace id
+ * inside the committed `config.json` and the machine-local workspace id
  * disambiguates two clones. Those ids are opaque (nanoid: mixed case, `_`/`-`),
  * so they are NOT segments — they live in the container path, which the
  * convention reserves for exactly this. The provider is segment 0:

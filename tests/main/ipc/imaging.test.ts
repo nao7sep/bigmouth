@@ -51,7 +51,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
-import { setActiveAiConfig } from "@main/core/services/configStore.js";
+import { deleteAiConfig, getAiConfigsForClient } from "@main/core/services/configStore.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 
 let home: string;
@@ -174,7 +174,7 @@ describe("imaging generation IPC handler", () => {
 
   it("throws when there is no active AI configuration", async () => {
     const ws = { id: wsId, name: "WS", dataDirectory: dataDir };
-    setActiveAiConfig(ws, "");
+    for (const c of getAiConfigsForClient(ws).configs) deleteAiConfig(ws, c.id); // no configs → no active
 
     await expect(invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions())).rejects.toThrow(
       /No active AI configuration/i,

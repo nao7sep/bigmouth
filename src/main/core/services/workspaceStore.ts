@@ -13,6 +13,7 @@ import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
+import { forgetWorkspace } from "./activeConfig.js";
 
 const APP_NAME = "bigmouth";
 const HOME_ENV_VAR = "BIGMOUTH_HOME";
@@ -198,13 +199,7 @@ function isWorkspaceDirectory(dir: string): boolean {
   const stat = fs.statSync(dir);
   if (!stat.isDirectory()) return false;
 
-  const requiredFiles = [
-    "settings.json",
-    "ai-configs.json",
-    "targets.json",
-    "analysis-prompts.json",
-    "generation-prompts.json",
-  ];
+  const requiredFiles = ["config.json"];
   const requiredDirs = ["posts", "assets"];
 
   return (
@@ -376,5 +371,6 @@ export function deleteWorkspace(id: string): boolean {
   // file keyed by workspace id, so deregistering a workspace must take its keys
   // with it rather than leave them orphaned forever.
   clearWorkspaceKeys(getApiKeysPath(), id);
+  forgetWorkspace(id);
   return true;
 }

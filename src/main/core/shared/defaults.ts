@@ -2,7 +2,8 @@
  * Default values used when initializing the app for the first time.
  */
 
-import type { Settings, AnalysisPrompt, StoredAiConfigsData, GenerationPromptsData } from "./types.js";
+import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, WorkspaceConfig } from "./types.js";
+import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { nanoid } from "nanoid";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
@@ -12,22 +13,25 @@ export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 /**
  * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
  * module constant) so every workspace gets a fresh default config id rather than
- * one frozen at import and shared by all — ids are unique by nature. (The secret
- * store keys by (workspace id, config id), so a shared id no longer collides; this
- * just keeps the ids honestly distinct.)
+ * one frozen at import and shared by all — ids are unique by nature.
  */
-export function makeDefaultAiConfigs(): StoredAiConfigsData {
-  const id = nanoid();
+export function makeDefaultAiConfigs(): StoredAiConfig[] {
+  return [{ id: nanoid(), name: "Default", provider: "anthropic", model: DEFAULT_CLAUDE_MODEL }];
+}
+
+/**
+ * The default `config.json` for a freshly initialized workspace: flat, in modal
+ * order (general settings, then targets, AI configs, analysis prompts, generation
+ * prompts). A function so each workspace gets fresh, distinct AI config ids.
+ */
+export function makeDefaultConfig(): WorkspaceConfig {
   return {
-    activeId: id,
-    configs: [
-      {
-        id,
-        name: "Default",
-        provider: "anthropic",
-        model: DEFAULT_CLAUDE_MODEL,
-      },
-    ],
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    ...DEFAULT_SETTINGS,
+    targets: [],
+    aiConfigs: makeDefaultAiConfigs(),
+    analysisPrompts: DEFAULT_ANALYSIS_PROMPTS,
+    generationPrompts: DEFAULT_GENERATION_PROMPTS_DATA,
   };
 }
 

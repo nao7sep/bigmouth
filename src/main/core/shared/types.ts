@@ -126,8 +126,9 @@ export interface AiConfig {
 }
 
 /**
- * The persisted shape of an AI config in the workspace's `ai-configs.json`. The
- * API key is deliberately absent — it lives in the storage-root secrets file
+ * The persisted shape of an AI config in the workspace's `config.json` (the
+ * `aiConfigs` section). The API key is deliberately absent — it lives in the
+ * storage-root secrets file
  * (`~/.bigmouth/api-keys.json`), keyed by (workspace id, config id), so a
  * git-versioned workspace never carries a secret (storage-path-conventions). The
  * config id is the link between the committed config and the local key.
@@ -139,9 +140,22 @@ export interface StoredAiConfig {
   model: string;
 }
 
-export interface StoredAiConfigsData {
-  activeId: string;
-  configs: StoredAiConfig[];
+export const CONFIG_SCHEMA_VERSION = 1;
+
+/**
+ * The single per-workspace config file (`config.json`): all of a workspace's
+ * durable settings, flat (no nested "settings" wrapper), with top-level keys
+ * ordered to mirror the Settings modal — general fields, then targets, AI
+ * configs, analysis prompts, generation prompts. The active AI config is NOT
+ * here; it is volatile session state (services/activeConfig), defaulting to the
+ * first config each launch.
+ */
+export interface WorkspaceConfig extends Settings {
+  schemaVersion: number;
+  targets: Target[];
+  aiConfigs: StoredAiConfig[];
+  analysisPrompts: AnalysisPrompt[];
+  generationPrompts: GenerationPromptsData;
 }
 
 // Mirror of @shared/types ContentFont (the two type worlds can't import each

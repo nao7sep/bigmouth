@@ -51,8 +51,8 @@ afterEach(() => {
 
 describe("corrupt config files", () => {
   it("surfaces a clear error naming the file rather than a bare SyntaxError", () => {
-    fs.writeFileSync(path.join(dataDir, "settings.json"), "{ not valid json", "utf-8");
-    expect(() => getSettings(dataDir)).toThrow(/settings\.json is not valid JSON/);
+    fs.writeFileSync(path.join(dataDir, "config.json"), "{ not valid json", "utf-8");
+    expect(() => getSettings(dataDir)).toThrow(/config\.json is not valid JSON/);
   });
 });
 
@@ -67,10 +67,10 @@ describe("settings", () => {
   });
 
   it("backfills fields absent from an older settings file with their defaults", () => {
-    // A settings.json written before uiFontFamily/contentFont existed: the read
+    // A config.json written before uiFontFamily/contentFont existed: the read
     // must fill them from defaults rather than yield undefined (no migration code).
     fs.writeFileSync(
-      path.join(dataDir, "settings.json"),
+      path.join(dataDir, "config.json"),
       JSON.stringify({
         timezone: "UTC",
         supportedLanguages: ["en"],
@@ -110,7 +110,7 @@ describe("AI config API key handling", () => {
     });
 
     // The git-versionable workspace file carries no key at all — not even the field.
-    const onDisk = fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8");
+    const onDisk = fs.readFileSync(path.join(dataDir, "config.json"), "utf-8");
     expect(onDisk).not.toContain("sk-ant-secret");
     expect(onDisk).not.toContain("apiKey");
 
@@ -157,10 +157,10 @@ describe("AI config API key handling", () => {
     expect(getAiConfigsForClient(ws).configs[0].hasApiKey).toBe(false);
   });
 
-  it("a key-only update does not rewrite the git-versioned ai-configs.json", () => {
+  it("a key-only update does not rewrite the git-versioned config.json", () => {
     createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", apiKey: "old" });
     setActiveAiConfig(ws, "c1");
-    const configPath = path.join(dataDir, "ai-configs.json");
+    const configPath = path.join(dataDir, "config.json");
     const before = fs.readFileSync(configPath, "utf-8");
 
     updateAiConfig(ws, "c1", { apiKey: "new-key" });
@@ -208,10 +208,12 @@ describe("AI config API key handling", () => {
 });
 
 describe("AI config lifecycle guards", () => {
-  it("refuses to delete the active config", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m" });
+  it("deleting the active config falls the active back to the first remaining", () => {
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
     setActiveAiConfig(ws, "c1");
-    expect(() => deleteAiConfig(ws, "c1")).toThrow(/active/i);
+    const after = deleteAiConfig(ws, "c1");
+    expect(after.configs.some((c) => c.id === "c1")).toBe(false);
+    expect(after.activeId).toBe(after.configs[0].id); // active = first remaining config
   });
 
   it("deletes a non-active config", () => {
@@ -239,10 +241,16 @@ describe("AI config lifecycle guards", () => {
     expect(() => updateAiConfig(ws, "ghost", { name: "x" })).toThrow(/not found/i);
   });
 
-  it("accepts an empty active id to mean no active config", () => {
+  it("an empty active id clears the session selection, falling back to the first config", () => {
     createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
     setActiveAiConfig(ws, "c1");
-    expect(setActiveAiConfig(ws, "").activeId).toBe("");
-    expect(getActiveAiConfig(ws)).toBeNull(); // no active config resolves to null
+    const after = setActiveAiConfig(ws, "");
+    expect(after.activeId).toBe(after.configs[0].id); // back to the first config
+  });
+
+  it("resolves to no active config only when there are no configs", () => {
+    for (const c of getAiConfigsForClient(ws).configs) deleteAiConfig(ws, c.id);
+    expect(getAiConfigsForClient(ws).activeId).toBe(""); // no configs → none
+    expect(getActiveAiConfig(ws)).toBeNull();
   });
 });

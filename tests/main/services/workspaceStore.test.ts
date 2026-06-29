@@ -72,7 +72,7 @@ describe("openWorkspace gating", () => {
   it("rejects a directory missing a required workspace file", () => {
     const dir = tempDir("partial");
     initializeWorkspaceData(dir);
-    fs.unlinkSync(path.join(dir, "settings.json")); // a partial workspace is broken, not openable
+    fs.unlinkSync(path.join(dir, "config.json")); // a partial workspace is broken, not openable
     expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
   });
 });

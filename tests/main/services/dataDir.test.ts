@@ -22,24 +22,19 @@ describe("initializeWorkspaceData", () => {
     }
   });
 
-  it("writes all default config files as valid JSON", () => {
+  it("writes the default config.json as valid JSON with every section present", () => {
     initializeWorkspaceData(dataDir);
-    for (const file of [
-      "settings.json",
-      "ai-configs.json",
-      "generation-prompts.json",
-      "targets.json",
-      "analysis-prompts.json",
-    ]) {
-      const raw = fs.readFileSync(path.join(dataDir, file), "utf-8");
-      expect(() => JSON.parse(raw)).not.toThrow();
+    const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
+    expect(config.schemaVersion).toBe(1);
+    for (const section of ["targets", "aiConfigs", "analysisPrompts", "generationPrompts"]) {
+      expect(config).toHaveProperty(section);
     }
   });
 
-  it("seeds targets.json with an empty array", () => {
+  it("seeds an empty targets section", () => {
     initializeWorkspaceData(dataDir);
-    const raw = fs.readFileSync(path.join(dataDir, "targets.json"), "utf-8");
-    expect(JSON.parse(raw)).toEqual([]);
+    const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
+    expect(config.targets).toEqual([]);
   });
 
   it("gives each workspace a unique default AI config id, even in the same session", () => {
@@ -49,8 +44,8 @@ describe("initializeWorkspaceData", () => {
     try {
       initializeWorkspaceData(dataDir);
       initializeWorkspaceData(other);
-      const idHere = JSON.parse(fs.readFileSync(path.join(dataDir, "ai-configs.json"), "utf-8")).configs[0].id;
-      const idOther = JSON.parse(fs.readFileSync(path.join(other, "ai-configs.json"), "utf-8")).configs[0].id;
+      const idHere = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8")).aiConfigs[0].id;
+      const idOther = JSON.parse(fs.readFileSync(path.join(other, "config.json"), "utf-8")).aiConfigs[0].id;
       expect(idHere).not.toBe(idOther);
     } finally {
       fs.rmSync(other, { recursive: true, force: true });
