@@ -1,7 +1,12 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
+
+// Single source of truth for the app version: package.json. Injected into the
+// renderer as __APP_VERSION__ so the About modal never drifts from the release.
+const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
 export default defineConfig({
   main: {
@@ -44,5 +49,8 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    define: {
+      __APP_VERSION__: JSON.stringify(version),
+    },
   },
 });

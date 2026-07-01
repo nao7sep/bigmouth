@@ -11,7 +11,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
     <ModalShell title="About BigMouth" onClose={onClose} width={380} autoFocusClose>
       <div className="modal-body">
         <p style={{ marginBottom: 4 }}>
-          <strong>BigMouth</strong> — Version 0.1.0
+          <strong>BigMouth</strong> — Version {__APP_VERSION__}
         </p>
         <p style={{ marginTop: 8, fontSize: 13, color: "var(--bm-text-soft)", lineHeight: 1.6 }}>
           A local-first writing preflight tool for composing blog and social media posts.

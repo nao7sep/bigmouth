@@ -8,6 +8,9 @@ declare global {
   interface Window {
     bigmouth: BigMouthApi;
   }
+  // The app version, single-sourced from package.json — injected as a build define
+  // (electron.vite.config.ts) and mirrored for tests (vitest.config.ts).
+  const __APP_VERSION__: string;
 }
 
 export {};

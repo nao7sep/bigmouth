@@ -1,6 +1,11 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+// __APP_VERSION__ is injected from package.json in electron.vite.config.ts for the
+// build; mirror it here so renderer tests that render the About modal resolve it.
+const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
 // The tests run in two environments: the main-process tests (the framework-free
 // core) under Node, and the renderer tests (React components + DOM utilities)
@@ -43,6 +48,9 @@ export default defineConfig({
       {
         resolve: { alias },
         plugins: [react()],
+        define: {
+          __APP_VERSION__: JSON.stringify(version),
+        },
         test: {
           name: "renderer",
           environment: "jsdom",
