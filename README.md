@@ -18,6 +18,13 @@ BigMouth is a local-first **desktop app** (Electron — a React renderer over a 
 - A Claude (Anthropic) API key for the AI features (analysis, metadata, imaging). Everything else works without one.
 - Node.js 22+ and npm, to build or run from source.
 
+## Download
+
+Prebuilt installers and portable builds for macOS (Apple Silicon) and Windows are on the [Releases](https://github.com/nao7sep/bigmouth/releases) page. These builds are **unsigned**, so the OS warns the first time you open one:
+
+- **macOS** — right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/BigMouth.app`).
+- **Windows** — on the SmartScreen prompt, click **More info → Run anyway**.
+
 ## Getting started
 
 Double-click the launcher for your platform — `scripts/run-dev.command` on macOS, `scripts/run-dev.ps1` on Windows — or run from source:

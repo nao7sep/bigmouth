@@ -29,8 +29,17 @@ mac:
     - target: dmg
       arch:
         - arm64
+    - target: zip
+      arch:
+        - arm64
 
 win:
   icon: build/icon.ico
   target:
     - nsis
+    - zip
+
+# Clean, predictable installer filename (electron-builder's default is
+# "BigMouth Setup 0.1.0.exe", with a space). Portable zips keep their defaults.
+nsis:
+  artifactName: ${productName}-${version}-setup.${ext}
