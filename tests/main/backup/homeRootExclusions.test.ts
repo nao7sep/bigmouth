@@ -1,5 +1,5 @@
-// The home-root exclude list: durable data (including secrets) is kept; logs/, backups/, the internal
-// workspaces/ tree, and atomic-write temporaries are dropped.
+// The home-root exclude list: durable data is kept; secrets (api-keys.json) and their .invalid quarantine
+// files, logs/, backups/, the internal workspaces/ tree, and atomic-write temporaries are dropped.
 
 import { describe, it, expect } from "vitest";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@main/core/backup/homeRootExclusions.js";
 
 describe("isExcludedFile", () => {
-  it.each(["workspaces.json", "api-keys.json", "some/durable.json"])(
+  it.each(["workspaces.json", "some/durable.json"])(
     "includes %s",
     (relativePath) => {
       expect(isExcludedFile(relativePath)).toBe(false);
@@ -17,6 +17,9 @@ describe("isExcludedFile", () => {
   );
 
   it.each([
+    "api-keys.json", // secret store — excluded, so no key material reaches a backup
+    "Api-Keys.json", // basename matched case-insensitively
+    "api-keys.json.20260701-000000-utc.invalid", // secret-store quarantine file
     "logs/20260701.log",
     "backups/index.json",
     "backups/backup-20260701-000000-utc.zip",
@@ -32,12 +35,17 @@ describe("isExcludedFile", () => {
 });
 
 describe("isNoiseOrTempFile", () => {
-  it.each([".DS_Store", "Thumbs.db", "desktop.ini", "Desktop.ini", ".workspaces.json.1234.tmp"])(
-    "flags the litter base name %s",
-    (name) => {
-      expect(isNoiseOrTempFile(name)).toBe(true);
-    },
-  );
+  it.each([
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+    "Desktop.ini",
+    ".workspaces.json.1234.tmp",
+    "api-keys.json.20260701-000000-utc.invalid",
+    "api-keys.json.20260701-000000-utc.INVALID", // case-insensitive
+  ])("flags the litter base name %s", (name) => {
+    expect(isNoiseOrTempFile(name)).toBe(true);
+  });
 
   it.each(["config.json", "p1.md", "assets", "desktop.png"])(
     "keeps the real base name %s",

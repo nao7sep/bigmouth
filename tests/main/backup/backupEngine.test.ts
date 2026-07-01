@@ -1,7 +1,8 @@
 // End-to-end backup runs over a throwaway BIGMOUTH_HOME: a first run captures workspaces.json and each
 // workspace's files at the mirror paths; an unchanged run writes nothing; an edit captures only what
 // changed; a corrupt index resets to a full backup; a dead workspace link is skipped without failing the
-// run. The backups directory is owner-only (0700) so a secret it may contain is not downgraded.
+// run. Secrets are excluded from backups (data-backup conventions), so the backups dir/archives/index
+// carry no key material and get no mode hardening.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -78,10 +79,6 @@ describe("runBackup", () => {
     expect(entries).toContain("workspaces.json");
     expect(entries).toContain(`workspaces/${ws.id}/config.json`);
     expect(entries).toContain(`workspaces/${ws.id}/posts/p1.md`);
-
-    if (process.platform !== "win32") {
-      expect(fs.statSync(getBackupsDir()).mode & 0o777).toBe(0o700);
-    }
   });
 
   it("writes nothing on a second run with no changes", async () => {
