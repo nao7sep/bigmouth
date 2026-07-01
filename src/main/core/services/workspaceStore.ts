@@ -182,6 +182,22 @@ export function getApiKeysPath(): string {
   return apiKeysPath;
 }
 
+/** The storage root (`~/.bigmouth/`) — the home root the backup walks. */
+export function getAppRoot(): string {
+  if (!appDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
+  return appDir;
+}
+
+/** The data-backup directory (`~/.bigmouth/backups/`); see the data-backup conventions. */
+export function getBackupsDir(): string {
+  return path.join(getAppRoot(), "backups");
+}
+
+/** The backup change ledger (`~/.bigmouth/backups/index.json`). */
+export function getBackupIndexPath(): string {
+  return path.join(getBackupsDir(), "index.json");
+}
+
 export function listWorkspaces(): Workspace[] {
   return ensureLoaded().workspaces;
 }

@@ -11,6 +11,7 @@ import {
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
+import { runBackupInBackground } from "./core/backup/backupService.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { installApplicationMenu } from "./menu.js";
@@ -40,6 +41,10 @@ function bootstrap(): void {
   registerIpcHandlers();
   installApplicationMenu();
   createMainWindow();
+
+  // Just-in-case data backup: fire-and-forget on the event loop after the window is created, so it never
+  // delays startup. config.json and workspaces.json are already materialized by initAppDir above.
+  runBackupInBackground();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
