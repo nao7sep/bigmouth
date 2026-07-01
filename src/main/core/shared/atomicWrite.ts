@@ -4,7 +4,7 @@
  * Writes a sibling temp file in the target's own directory, then renames it
  * over the target. A crash mid-write leaves either the old file or the new one,
  * never a truncated one — which is what keeps the JSON stores under the storage
- * root (app.json, settings.json, the index, …) readable after any interruption.
+ * root (workspaces.json, settings.json, the index, …) readable after any interruption.
  * The rename is atomic only when the temp file is on the same filesystem as the
  * target, hence the same-directory temp.
  *

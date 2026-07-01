@@ -34,7 +34,30 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       initAppDir();
       expect(getLogsDir()).toBe(path.join(root, "logs"));
       expect(fs.existsSync(path.join(root, "logs"))).toBe(true);
-      expect(fs.existsSync(path.join(root, "app.json"))).toBe(true);
+      expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("names the workspace registry workspaces.json, never the old app.json", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-registry-"));
+    try {
+      process.env.BIGMOUTH_HOME = root;
+      initAppDir();
+      // The registry is created on first init and must land at workspaces.json.
+      expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
+      expect(fs.existsSync(path.join(root, "app.json"))).toBe(false);
+
+      // A write (adding a workspace) must persist to the same workspaces.json,
+      // and must not resurrect an app.json under any code path.
+      createWorkspace("Registry WS");
+      expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
+      expect(fs.existsSync(path.join(root, "app.json"))).toBe(false);
+
+      const parsed = JSON.parse(fs.readFileSync(path.join(root, "workspaces.json"), "utf-8"));
+      expect(Array.isArray(parsed.workspaces)).toBe(true);
+      expect(parsed.workspaces).toHaveLength(1);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

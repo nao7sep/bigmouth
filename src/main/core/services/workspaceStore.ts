@@ -1,7 +1,7 @@
 /**
  * Workspace registry I/O.
  *
- * Manages ~/.bigmouth/app.json which contains the workspace list.
+ * Manages ~/.bigmouth/workspaces.json which contains the workspace list.
  * Each workspace entry has an id, name, and absolute dataDirectory path.
  */
 
@@ -24,7 +24,7 @@ const HOME_ENV_VAR = "BIGMOUTH_HOME";
 // just before startup (e.g. by a test) is honored, and the resolver never
 // captures a half-set environment.
 let appDir: string | null = null;
-let appJsonPath: string | null = null;
+let workspacesJsonPath: string | null = null;
 let logsDir: string | null = null;
 let apiKeysPath: string | null = null;
 let defaultWorkspacesDir: string | null = null;
@@ -79,17 +79,17 @@ function defaultAppConfig(): AppConfig {
 
 function parseAppConfig(raw: unknown): AppConfig {
   if (!raw || typeof raw !== "object") {
-    throw new Error("Invalid app.json: expected an object");
+    throw new Error("Invalid workspaces.json: expected an object");
   }
 
   const source = raw as Record<string, unknown>;
   if (!Array.isArray(source.workspaces)) {
-    throw new Error("Invalid app.json: workspaces must be an array");
+    throw new Error("Invalid workspaces.json: workspaces must be an array");
   }
 
   const workspaces = source.workspaces.map((item) => {
     if (!item || typeof item !== "object") {
-      throw new Error("Invalid app.json: each workspace must be an object");
+      throw new Error("Invalid workspaces.json: each workspace must be an object");
     }
     const record = item as Record<string, unknown>;
     if (
@@ -97,7 +97,7 @@ function parseAppConfig(raw: unknown): AppConfig {
       typeof record.name !== "string" ||
       typeof record.dataDirectory !== "string"
     ) {
-      throw new Error("Invalid app.json: each workspace needs id, name, and dataDirectory");
+      throw new Error("Invalid workspaces.json: each workspace needs id, name, and dataDirectory");
     }
     return {
       id: record.id,
@@ -121,14 +121,14 @@ function expandPath(p: string): string {
 }
 
 /**
- * Ensures ~/.bigmouth/ and logs/ exist. Loads or creates app.json.
+ * Ensures ~/.bigmouth/ and logs/ exist. Loads or creates workspaces.json.
  * Must be called once at startup.
  */
 export function initAppDir(): AppConfig {
   // Resolve the root and its derived paths here (not at import) so BIGMOUTH_HOME
   // is read at a defined startup point with the environment fully known.
   appDir = resolveAppDir();
-  appJsonPath = path.join(appDir, "app.json");
+  workspacesJsonPath = path.join(appDir, "workspaces.json");
   logsDir = path.join(appDir, "logs");
   apiKeysPath = path.join(appDir, "api-keys.json");
   defaultWorkspacesDir = path.join(appDir, "workspaces");
@@ -149,8 +149,8 @@ export function initAppDir(): AppConfig {
     );
   }
 
-  if (fs.existsSync(appJsonPath)) {
-    const raw = fs.readFileSync(appJsonPath, "utf-8");
+  if (fs.existsSync(workspacesJsonPath)) {
+    const raw = fs.readFileSync(workspacesJsonPath, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
     appConfig = parseAppConfig(parsed);
   } else {
@@ -162,8 +162,8 @@ export function initAppDir(): AppConfig {
 }
 
 function writeAppConfig(): void {
-  if (!appJsonPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
-  writeFileAtomic(appJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
+  if (!workspacesJsonPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
+  writeFileAtomic(workspacesJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
 }
 
 function ensureLoaded(): AppConfig {
