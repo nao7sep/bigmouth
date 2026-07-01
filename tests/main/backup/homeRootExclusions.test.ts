@@ -18,6 +18,10 @@ describe("isExcludedFile", () => {
     "backups/backup-20260701-000000-utc.zip",
     "workspaces/abc123/config.json",
     ".workspaces.json.1234.tmp",
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+    "Desktop.ini", // OS-noise floor, matched case-insensitively
   ])("excludes %s", (relativePath) => {
     expect(isExcludedFile(relativePath)).toBe(true);
   });
