@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getAppRoot, listWorkspaces } from "../services/workspaceStore.js";
 import { forHomeFile, forWorkspaceFile, normalize } from "./archivePaths.js";
-import { isExcludedDir, isExcludedFile } from "./homeRootExclusions.js";
+import { isExcludedDir, isExcludedFile, isNoiseOrTempFile } from "./homeRootExclusions.js";
 import { truncateToSecondMs } from "./backupTime.js";
 import type { BackupCandidate, BackupSkip } from "./backupTypes.js";
 
@@ -45,6 +45,10 @@ async function collectWorkspaces(candidates: BackupCandidate[], skips: BackupSki
       continue;
     }
     await walk(dir, dir, skips, async (fullPath, relative) => {
+      // The OS-noise floor and *.tmp temporaries litter any directory the user browses, including a
+      // workspace's external dataDirectory (e.g. assets/<postId>/.DS_Store), so drop them here too. The
+      // home-root EXCLUDED_DIRS pruning does NOT apply — those names are meaningful data inside a workspace.
+      if (isNoiseOrTempFile(path.basename(fullPath))) return;
       await addCandidate(candidates, skips, fullPath, forWorkspaceFile(workspace.id, relative));
     });
   }

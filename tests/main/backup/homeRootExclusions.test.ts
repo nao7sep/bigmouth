@@ -2,7 +2,11 @@
 // workspaces/ tree, and atomic-write temporaries are dropped.
 
 import { describe, it, expect } from "vitest";
-import { isExcludedFile, isExcludedDir } from "@main/core/backup/homeRootExclusions.js";
+import {
+  isExcludedFile,
+  isExcludedDir,
+  isNoiseOrTempFile,
+} from "@main/core/backup/homeRootExclusions.js";
 
 describe("isExcludedFile", () => {
   it.each(["workspaces.json", "api-keys.json", "some/durable.json"])(
@@ -25,6 +29,22 @@ describe("isExcludedFile", () => {
   ])("excludes %s", (relativePath) => {
     expect(isExcludedFile(relativePath)).toBe(true);
   });
+});
+
+describe("isNoiseOrTempFile", () => {
+  it.each([".DS_Store", "Thumbs.db", "desktop.ini", "Desktop.ini", ".workspaces.json.1234.tmp"])(
+    "flags the litter base name %s",
+    (name) => {
+      expect(isNoiseOrTempFile(name)).toBe(true);
+    },
+  );
+
+  it.each(["config.json", "p1.md", "assets", "desktop.png"])(
+    "keeps the real base name %s",
+    (name) => {
+      expect(isNoiseOrTempFile(name)).toBe(false);
+    },
+  );
 });
 
 describe("isExcludedDir", () => {

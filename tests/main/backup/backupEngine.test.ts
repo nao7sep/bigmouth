@@ -110,6 +110,22 @@ describe("runBackup", () => {
     expect(entries).toEqual([`workspaces/${ws.id}/posts/p1.md`]);
   });
 
+  it("excludes OS-noise and *.tmp litter inside a workspace dataDirectory", async () => {
+    const ws = createWorkspace("W1");
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md"), "# hi");
+    // Finder browsing / atomic writes drop these into the external dataDir; they must not be archived.
+    fs.mkdirSync(path.join(ws.dataDirectory, "assets", "post123"), { recursive: true });
+    fs.writeFileSync(path.join(ws.dataDirectory, "assets", "post123", ".DS_Store"), "junk");
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md.9876.tmp"), "half-written");
+
+    const report = await runBackup(RUN1);
+
+    const entries = await zipEntries(archivePath(report.archiveFileName!));
+    expect(entries).toContain(`workspaces/${ws.id}/posts/p1.md`);
+    expect(entries).not.toContain(`workspaces/${ws.id}/assets/post123/.DS_Store`);
+    expect(entries).not.toContain(`workspaces/${ws.id}/posts/p1.md.9876.tmp`);
+  });
+
   it("resets a corrupt index to a full backup", async () => {
     const ws = createWorkspace("W1");
     fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md"), "# hi");

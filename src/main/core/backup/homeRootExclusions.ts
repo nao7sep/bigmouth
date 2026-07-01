@@ -23,11 +23,22 @@ function baseName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+/**
+ * True when a file's base name is fleet-wide litter that must never be archived in any root: the OS
+ * folder-metadata floor (`.DS_Store`, `Thumbs.db`, `desktop.ini`, case-insensitive) or an atomic-write
+ * `*.tmp` temporary. These apply at any depth in any directory the user browses, so both the home-root
+ * walk and the workspace walk share this predicate. The `EXCLUDED_DIRS` pruning below is home-root-relative
+ * and deliberately NOT part of this — a workspace's own `logs`/`backups`/`workspaces` subdir is real data.
+ */
+export function isNoiseOrTempFile(fileBaseName: string): boolean {
+  const lower = fileBaseName.toLowerCase();
+  return lower.endsWith(".tmp") || OS_NOISE_NAMES.has(lower);
+}
+
 /** True when a home-root file must not be backed up. */
 export function isExcludedFile(relativePath: string): boolean {
   const path = normalize(relativePath);
-  if (path.toLowerCase().endsWith(".tmp")) return true;
-  if (OS_NOISE_NAMES.has(baseName(path).toLowerCase())) return true;
+  if (isNoiseOrTempFile(baseName(path))) return true;
   return EXCLUDED_DIRS.some((dir) => path === dir || path.startsWith(`${dir}/`));
 }
 
