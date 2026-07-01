@@ -17,6 +17,7 @@ import {
   assetDir,
   sanitizeFilename,
   safeResolveUnder,
+  type AssetMeta,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -113,8 +114,9 @@ export function registerAssetHandlers(): void {
       uploadedAt: formatUtcIso(utcNow()),
     };
 
+    let storedMeta: AssetMeta;
     try {
-      saveAssetFile(dir, pid, filename, buffer, meta);
+      storedMeta = saveAssetFile(dir, pid, filename, buffer, meta);
     } catch (err) {
       logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));
@@ -122,13 +124,13 @@ export function registerAssetHandlers(): void {
     logInfo("asset uploaded", {
       workspace: wsId,
       postId: pid,
-      filename,
+      filename: storedMeta.filename,
       size: buffer.length,
       width: width ?? null,
       height: height ?? null,
       hasMetadata: hasMetadata ?? false,
     });
-    return meta;
+    return storedMeta;
   });
 
   ipcMain.handle(CHANNELS.deleteAsset, (_event, wsId: string, postId: string, filename: string) => {

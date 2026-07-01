@@ -69,6 +69,39 @@ describe("saveAssetFile / listAssets / deleteAsset", () => {
   });
 });
 
+// --- Case-insensitive sibling collisions (macOS/Windows never clobber) -------
+
+describe("saveAssetFile disambiguates case-only filename collisions", () => {
+  it("keeps both files when a new name differs only in case from an existing one", () => {
+    saveAssetFile(dataDir, POST, "Photo.png", Buffer.from("abc"), meta("Photo.png"));
+    const stored = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
+
+    // The second upload gets a distinct, human-readable name (casing preserved).
+    expect(stored.filename).toBe("photo (1).png");
+
+    // Both survive on disk as separate files...
+    const dir = assetDir(dataDir, POST);
+    const onDisk = fs.readdirSync(dir).filter((f) => f !== "meta.json" && !f.startsWith("."));
+    expect(onDisk.sort()).toEqual(["Photo.png", "photo (1).png"].sort());
+
+    // ...and meta.json records both, exactly as written to disk.
+    const listed = listAssets(dataDir, POST);
+    expect(listed.map((a) => a.filename).sort()).toEqual(["Photo.png", "photo (1).png"].sort());
+    expect(listed.find((a) => a.filename === "Photo.png")?.size).toBe(3);
+    expect(listed.find((a) => a.filename === "photo (1).png")?.size).toBe(2);
+  });
+
+  it("replaces in place on an exact same-name (case-identical) re-upload", () => {
+    saveAssetFile(dataDir, POST, "photo.png", Buffer.from("abc"), meta("photo.png"));
+    const stored = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
+
+    expect(stored.filename).toBe("photo.png");
+    const listed = listAssets(dataDir, POST);
+    expect(listed.map((a) => a.filename)).toEqual(["photo.png"]);
+    expect(listed[0].size).toBe(2); // overwritten, not duplicated
+  });
+});
+
 // --- Crash recovery: a derived cache reconciled against the files -----------
 
 describe("listAssets self-heals against the files on disk", () => {

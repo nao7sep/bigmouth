@@ -4,6 +4,15 @@
  * Assets are stored under:
  *   {dataDir}/assets/{postId}/{filename}
  *
+ * This is a workspace-level `assets/` collection keyed by post id, deliberately PARALLEL
+ * to `posts/` — not nested as `posts/{postId}/{postId}.md` + `posts/{postId}/assets/`.
+ * Most posts have no attachments, so nesting only the posts that DO would force a bare
+ * `post-A.md` file and a `post-B/` directory to sit side by side in one workspace folder —
+ * a file and a per-post directory mixed together, inconsistent and awkward. Keeping posts
+ * and assets as two flat, parallel collections linked by post id makes the layout uniform.
+ * The data-backup archive mirrors this parallel structure rather than folding assets under
+ * each post (see data-backup-conventions: "within a root, mirror the app's organization").
+ *
  * A sidecar file {dataDir}/assets/{postId}/meta.json holds cached metadata
  * (size, dimensions, metadata warning flag) so list requests are fast.
  *
@@ -48,22 +57,35 @@ export function listAssets(dataDir: string, postId: string): AssetMeta[] {
   return reconcileAssets(assetDir(dataDir, postId));
 }
 
+/**
+ * Installs an uploaded asset and commits its metadata, returning the metadata as
+ * actually stored — `filename` may be disambiguated (see below), so callers must
+ * use the returned `filename`, not the one they passed in.
+ *
+ * Filenames are case-insensitively unique within a post's asset dir (a set built
+ * on Linux must not collide on case-insensitive macOS/Windows). A re-upload with
+ * the exact same name replaces in place; a name that differs ONLY in case from a
+ * DIFFERENT existing asset is disambiguated with a numeric suffix ("photo (1).png").
+ */
 export function saveAssetFile(
   dataDir: string,
   postId: string,
   filename: string,
   buffer: Buffer,
   meta: AssetMeta
-): void {
+): AssetMeta {
   const dir = ensureAssetDir(dataDir, postId);
-  const destPath = safeResolveUnder(dir, filename);
+  const siblings = reconcileAssets(dir);
+  const finalName = uniqueCaseInsensitiveName(filename, siblings);
+  const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
-  const existing = reconcileAssets(dir).filter((a) => a.filename !== filename);
+  const finalMeta: AssetMeta = { ...meta, filename: finalName };
+  const existing = siblings.filter((a) => a.filename !== finalName);
 
   // Install the file via temp+rename (atomic, and replaces any same-named file),
   // then commit the metadata. If a crash lands between the two, the orphaned file
   // is reconciled back into the list on the next read — no data is lost.
-  const tempPath = path.join(dir, tempName(filename, "upload"));
+  const tempPath = path.join(dir, tempName(finalName, "upload"));
   try {
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, destPath);
@@ -71,7 +93,27 @@ export function saveAssetFile(
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     throw err;
   }
-  writeAssetMeta(metaPath, [...existing, meta]);
+  writeAssetMeta(metaPath, [...existing, finalMeta]);
+  return finalMeta;
+}
+
+/**
+ * Returns `filename` if it doesn't case-insensitively collide with a DIFFERENT
+ * sibling (an exact-name match is a replace-in-place, so it's kept as-is), else a
+ * numerically-suffixed variant ("photo (1).png") that clears every sibling
+ * case-insensitively. The human casing of the chosen name is preserved.
+ */
+function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): string {
+  const taken = new Set(siblings.map((a) => a.filename.toLowerCase()));
+  if (!taken.has(filename.toLowerCase()) || siblings.some((a) => a.filename === filename)) {
+    return filename;
+  }
+  const ext = path.extname(filename);
+  const stem = filename.slice(0, filename.length - ext.length);
+  for (let n = 1; ; n++) {
+    const candidate = `${stem} (${n})${ext}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
 }
 
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
