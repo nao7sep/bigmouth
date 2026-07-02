@@ -278,7 +278,7 @@ body {
 .btn-new-post:disabled,
 .btn-primary:disabled {
   background: var(--bm-accent-disabled);
-  cursor: not-allowed;
+  cursor: default;
 }
 
 .left-sections {
