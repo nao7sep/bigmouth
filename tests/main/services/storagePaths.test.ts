@@ -13,10 +13,12 @@ import { initAppDir, getLogsDir, createWorkspace } from "@main/core/services/wor
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
+const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
 
 beforeEach(() => {
   delete process.env.BIGMOUTH_HOME;
   delete process.env.BIGMOUTH_TEST_BASE;
+  delete process.env.BIGMOUTH_TEST_UNSET;
 });
 
 afterEach(() => {
@@ -24,6 +26,8 @@ afterEach(() => {
   else process.env.BIGMOUTH_HOME = SAVED_HOME;
   if (SAVED_TEST_BASE === undefined) delete process.env.BIGMOUTH_TEST_BASE;
   else process.env.BIGMOUTH_TEST_BASE = SAVED_TEST_BASE;
+  if (SAVED_TEST_UNSET === undefined) delete process.env.BIGMOUTH_TEST_UNSET;
+  else process.env.BIGMOUTH_TEST_UNSET = SAVED_TEST_UNSET;
 });
 
 describe("storage root (BIGMOUTH_HOME)", () => {
@@ -135,6 +139,35 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       fs.rmSync(file, { recursive: true, force: true });
     }
   });
+
+  // Both of these guard the same hazard: an env reference that leaves
+  // BIGMOUTH_HOME expanding to nothing must be a hard startup error, never a
+  // silent path.resolve(home, "") collapse onto the bare home directory —
+  // which would otherwise materialize config.json/logs/backups/ directly in
+  // $HOME and walk $HOME as the backup root.
+  it("throws a startup error naming BIGMOUTH_HOME when it references an unset $VAR", () => {
+    delete process.env.BIGMOUTH_TEST_UNSET;
+    process.env.BIGMOUTH_HOME = "$BIGMOUTH_TEST_UNSET";
+    expect(() => initAppDir()).toThrow(/BIGMOUTH_HOME/);
+    expect(() => initAppDir()).toThrow(/expands to an empty path/);
+  });
+
+  it("throws a startup error naming BIGMOUTH_HOME when it references a %VAR% set to the empty string", () => {
+    process.env.BIGMOUTH_TEST_BASE = "";
+    process.env.BIGMOUTH_HOME = "%BIGMOUTH_TEST_BASE%";
+    expect(() => initAppDir()).toThrow(/BIGMOUTH_HOME/);
+    expect(() => initAppDir()).toThrow(/expands to an empty path/);
+  });
+
+  it("does not create anything under the bare home directory when BIGMOUTH_HOME collapses to empty", () => {
+    // Guards the exact regression: before the fix, this combination resolved
+    // to os.homedir() itself rather than throwing.
+    process.env.BIGMOUTH_TEST_BASE = "";
+    process.env.BIGMOUTH_HOME = "$BIGMOUTH_TEST_BASE";
+    const before = fs.existsSync(path.join(os.homedir(), "workspaces.json"));
+    expect(() => initAppDir()).toThrow();
+    expect(fs.existsSync(path.join(os.homedir(), "workspaces.json"))).toBe(before);
+  });
 });
 
 describe("workspace paths are cwd-independent", () => {
@@ -155,6 +188,33 @@ describe("workspace paths are cwd-independent", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(path.join(os.homedir(), rel), { recursive: true, force: true });
+    }
+  });
+
+  // The same expansion pipeline resolves a user-supplied workspace directory,
+  // so it must reject the identical collapsed-to-empty hazard rather than
+  // register a workspace rooted at the bare home directory.
+  it("rejects a workspace directory that references an unset $VAR instead of collapsing onto the home directory", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-unset-"));
+    try {
+      process.env.BIGMOUTH_HOME = root;
+      initAppDir();
+      delete process.env.BIGMOUTH_TEST_UNSET;
+      expect(() => createWorkspace("Bad WS", "$BIGMOUTH_TEST_UNSET")).toThrow(/expands to an empty path/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a workspace directory that references a $VAR set to the empty string", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-empty-"));
+    try {
+      process.env.BIGMOUTH_HOME = root;
+      initAppDir();
+      process.env.BIGMOUTH_TEST_BASE = "";
+      expect(() => createWorkspace("Bad WS", "$BIGMOUTH_TEST_BASE")).toThrow(/expands to an empty path/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -24,6 +24,10 @@
  *   - A corrupt/unreadable file is moved aside to a timestamped neighbour and
  *     treated as empty rather than throwing; a non-string or non-conforming entry
  *     is ignored, so a hand-edited file never bricks key resolution.
+ *   - A stored value whose `obf:` payload fails strict base64 validation (a
+ *     hand-edited or truncated file) resolves as absent rather than the
+ *     garbage a tolerant base64 decoder would silently produce; resolveApiKey
+ *     warns once, naming the key, when this happens.
  */
 
 import fs from "node:fs";
@@ -198,7 +202,22 @@ export function resolveApiKey(
   const fromEnv = envApiKey(provider);
   if (fromEnv !== null) return fromEnv;
   const stored = readFile(filePath).workspaces[workspaceId]?.configs[configId]?.keys[provider];
-  const key = stored ? deobfuscate(stored).trim() : "";
+  if (!stored) return null;
+  const decoded = deobfuscate(stored);
+  if (decoded === null) {
+    // Malformed obf: payload (fails strict base64 validation) — resolve as
+    // absent rather than send Buffer.from's tolerant-decode garbage to the
+    // provider as a key, per the api-key-storage-conventions. Warn once here,
+    // naming the key, since (unlike a genuinely empty value) this is a data
+    // problem worth surfacing.
+    logWarn("stored API key has an invalid obf: encoding; treating as absent", {
+      workspaceId,
+      configId,
+      key: provider,
+    });
+    return null;
+  }
+  const key = decoded.trim();
   return key.length > 0 ? key : null;
 }
 
@@ -212,7 +231,7 @@ export function readStoredConfigIds(filePath: string, workspaceId: string): Set<
   if (!configs) return new Set();
   return new Set(
     Object.entries(configs)
-      .filter(([, cfgNode]) => Object.values(cfgNode.keys).some((v) => deobfuscate(v).trim().length > 0))
+      .filter(([, cfgNode]) => Object.values(cfgNode.keys).some((v) => (deobfuscate(v) ?? "").trim().length > 0))
       .map(([cfgId]) => cfgId),
   );
 }

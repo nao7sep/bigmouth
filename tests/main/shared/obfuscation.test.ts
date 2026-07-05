@@ -27,3 +27,31 @@ describe("obfuscation round-trip", () => {
     expect(encoded).not.toContain(key);
   });
 });
+
+describe("strict obf: decode", () => {
+  it("returns null for a marked value whose payload is not valid base64", () => {
+    // Buffer.from(..., "base64") is a tolerant decoder: it silently drops
+    // characters outside the alphabet instead of rejecting them, so without a
+    // strict pre-check this would decode to non-empty garbage rather than
+    // being recognized as malformed.
+    expect(deobfuscate("obf:!!!not-base64!!!")).toBeNull();
+  });
+
+  it("returns null for a payload whose length is not a multiple of 4", () => {
+    expect(deobfuscate("obf:QQ")).toBeNull(); // valid alphabet, wrong length
+  });
+
+  it("returns null for a payload with invalid interior padding", () => {
+    expect(deobfuscate("obf:Q=Q=")).toBeNull();
+  });
+
+  it("still decodes a valid obf: value unchanged (round-trip)", () => {
+    const key = "sk-ant-valid-key";
+    const encoded = obfuscate(key);
+    expect(deobfuscate(encoded)).toBe(key);
+  });
+
+  it("still treats an untagged value as plaintext", () => {
+    expect(deobfuscate("hand-pasted-key")).toBe("hand-pasted-key");
+  });
+});

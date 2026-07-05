@@ -30,26 +30,53 @@ let apiKeysPath: string | null = null;
 let defaultWorkspacesDir: string | null = null;
 
 /**
+ * Expands `$VAR` / `%VAR%` environment references against the current
+ * environment. An unset (or empty-string) reference expands to nothing,
+ * matching shell behavior, rather than being left as a literal `$VAR` that
+ * would otherwise become a path segment — this is what lets expandAndResolve
+ * detect the collapsed-to-empty case below instead of silently threading a
+ * literal `$VAR` into a directory name.
+ */
+function expandEnvReferences(value: string): string {
+  return value
+    .replace(/\$(\w+)/g, (_match, name: string) => process.env[name] ?? "")
+    .replace(/%([^%]+)%/g, (_match, name: string) => process.env[name] ?? "");
+}
+
+/**
  * The single path-expansion pipeline for the app. Expands a leading ~ / ~/ / ~\
- * to `base`, substitutes $VAR / %VAR% environment references (an unknown
- * reference is left literal), and resolves the result to an absolute path
- * against `base` — never against the working directory, so a relative value can
- * never be interpreted relative to how the app happened to be launched.
+ * to `base`, substitutes $VAR / %VAR% environment references, and resolves the
+ * result to an absolute path against `base` — never against the working
+ * directory, so a relative value can never be interpreted relative to how the
+ * app happened to be launched.
  *
  * Both the BIGMOUTH_HOME storage root and every user-supplied workspace
  * directory resolve through this one function, so the two cannot diverge in how
  * they expand ~, $VAR, or %VAR%, and neither can fall through to process.cwd().
+ *
+ * An input whose env references leave it expanding to nothing (an unset or
+ * empty-string $VAR/%VAR%) is a hard error, never a silent fallback: without
+ * this guard, path.resolve(base, "") collapses onto the bare `base` directory,
+ * which for BIGMOUTH_HOME would materialize config.json/logs/backups/ directly
+ * in $HOME and walk $HOME as the backup root. `label` names the setting that
+ * was being expanded (e.g. "BIGMOUTH_HOME") in the thrown message.
  */
-function expandAndResolve(input: string, base: string): string {
+function expandAndResolve(input: string, base: string, label: string): string {
   let value = input.trim();
   if (value === "~") {
     value = base;
   } else if (value.startsWith("~/") || value.startsWith("~\\")) {
     value = path.join(base, value.slice(2));
   }
-  value = value
-    .replace(/\$(\w+)/g, (match, name: string) => process.env[name] ?? match)
-    .replace(/%([^%]+)%/g, (match, name: string) => process.env[name] ?? match);
+  value = expandEnvReferences(value).trim();
+
+  if (value.length === 0) {
+    throw new Error(
+      `${label} is set to "${input}" but expands to an empty path (an unset or empty $VAR/%VAR%?). ` +
+        "Set it to a usable directory.",
+    );
+  }
+
   return path.isAbsolute(value) ? path.normalize(value) : path.resolve(base, value);
 }
 
@@ -58,7 +85,8 @@ function expandAndResolve(input: string, base: string): string {
  * otherwise ~/.bigmouth. The root is derived from the home-directory API and
  * never from the working directory or the running code's location, so the same
  * root is used however the app is launched. The override is expanded and made
- * absolute against the home directory by the shared pipeline above.
+ * absolute against the home directory by the shared pipeline above; an override
+ * that expands to nothing is a startup error there, not a silent fallback.
  */
 function resolveAppDir(): string {
   const home = os.homedir();
@@ -66,7 +94,7 @@ function resolveAppDir(): string {
   if (override === undefined || override.trim() === "") {
     return path.join(home, `.${APP_NAME}`);
   }
-  return expandAndResolve(override, home);
+  return expandAndResolve(override, home, HOME_ENV_VAR);
 }
 
 let appConfig: AppConfig | null = null;
@@ -114,10 +142,12 @@ function parseAppConfig(raw: unknown): AppConfig {
  * pipeline (see expandAndResolve): a leading ~ / ~/ / ~\, $VAR, and %VAR% are
  * expanded, and a relative value resolves against the home directory — never the
  * working directory, which on a double-clicked or service launch is unrelated to
- * where the user meant the folder to be.
+ * where the user meant the folder to be. A directory that expands to nothing
+ * (an unset or empty-string $VAR/%VAR%) is rejected rather than silently
+ * resolved onto the bare home directory, same as the BIGMOUTH_HOME override.
  */
 function expandPath(p: string): string {
-  return expandAndResolve(p, os.homedir());
+  return expandAndResolve(p, os.homedir(), "Workspace directory");
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ import {
   clearApiKey,
   clearWorkspaceKeys,
 } from "@main/core/services/apiKeys.js";
+import * as logger from "@main/core/services/logger.js";
 
 let dir: string;
 let keyFile: string;
@@ -169,6 +170,41 @@ describe("apiKeys secret store", () => {
     it("treats a wrong-typed workspaces field as empty", () => {
       fs.writeFileSync(keyFile, JSON.stringify({ workspaces: [] }));
       expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+    });
+
+    it("resolves a malformed obf: value as absent and warns naming the key, rather than passing decoded garbage to the provider", () => {
+      // Buffer.from(..., "base64") silently drops characters outside the
+      // alphabet instead of rejecting them, so an unvalidated decode of this
+      // value would produce non-empty garbage that passes a truthiness check.
+      fs.writeFileSync(
+        keyFile,
+        JSON.stringify({
+          workspaces: {
+            [W1]: { configs: { c1: { keys: { anthropic: "obf:!!!not-base64!!!" } } } },
+          },
+        }),
+      );
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const [message, fields] = warnSpy.mock.calls[0]!;
+        expect(message).toMatch(/invalid obf: encoding/);
+        expect(fields).toMatchObject({ workspaceId: W1, configId: "c1", key: "anthropic" });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("round-trips a validly stored key unchanged, with no warning", () => {
+      writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-real-key");
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-real-key");
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });
