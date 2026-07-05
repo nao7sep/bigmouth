@@ -7,7 +7,7 @@
  * mode hardening. Also excluded are: `logs/` (recreatable), `backups/` (the feature's own output —
  * capturing it would recurse), `workspaces/` (the default internal workspaces, which are captured from the
  * registry instead, so they are not double-walked here), `*.tmp` (atomic-write temporaries), `*.invalid`
- * (quarantine files the secret store sets aside — `<file>.<stamp>.invalid`, matched case-insensitively),
+ * (quarantine files the secret store sets aside — `<stem>-<stamp>.invalid`, matched case-insensitively),
  * and the OS folder-metadata litter a file manager drops into any directory the user opens (`.DS_Store`,
  * `Thumbs.db`, `desktop.ini` — the fleet floor, matched case-insensitively). Paths are the forward-slash
  * relative path under the root. (Symlinks are never followed: the collector's walk uses the directory
@@ -33,7 +33,7 @@ function baseName(path: string): string {
 /**
  * True when a file's base name is fleet-wide litter that must never be archived in any root: the OS
  * folder-metadata floor (`.DS_Store`, `Thumbs.db`, `desktop.ini`, case-insensitive), an atomic-write
- * `*.tmp` temporary, or a `*.invalid` quarantine file the secret store sets aside (`<file>.<stamp>.invalid`,
+ * `*.tmp` temporary, or a `*.invalid` quarantine file the secret store sets aside (`<stem>-<stamp>.invalid`,
  * case-insensitive). These apply at any depth in any directory the user browses, so both the home-root
  * walk and the workspace walk share this predicate. The `EXCLUDED_DIRS` pruning below is home-root-relative
  * and deliberately NOT part of this — a workspace's own `logs`/`backups`/`workspaces` subdir is real data.

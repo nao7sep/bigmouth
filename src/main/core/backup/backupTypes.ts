@@ -8,8 +8,11 @@
 
 /** One captured file state, as stored in `backups/index.json`. */
 export interface BackupIndexEntry {
-  /** The capturing run's UTC file stamp (`yyyymmdd-hhmmss-utc`); also the stem of that run's archive,
-   *  so the zip holding this entry is `backup-<archivedAt>.zip` — derived, never stored. */
+  /** The capturing run's UTC file stamp, in the `yyyymmdd-hhmmss-fff-utc` millisecond form (the
+   *  timestamp-conventions' machine-paced default); also the stem of that run's archive, so the zip
+   *  holding this entry is `backup-<archivedAt>.zip` — derived, never stored. Entries written before
+   *  milliseconds were adopted carry the older second-precision `yyyymmdd-hhmmss-utc` form and remain
+   *  valid as-is — nothing migrates them. */
   archivedAt: string;
   /** The file's full entry path within the zip, e.g. `workspaces/<id>/assets/<postId>/file`. */
   archivePath: string;

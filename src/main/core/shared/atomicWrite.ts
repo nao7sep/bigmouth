@@ -8,6 +8,11 @@
  * The rename is atomic only when the temp file is on the same filesystem as the
  * target, hence the same-directory temp.
  *
+ * The temp name is `<stem>-<nanoid>.tmp` (the derived-filename grammar): the
+ * nanoid is what lets two concurrent unlocked writers of the same target each
+ * rename their own complete content into place without ever sharing — and
+ * tearing — one temp file.
+ *
  * An optional `mode` is applied at creation — the temp file is opened with those
  * permissions, so the secret content never touches disk at a looser default for
  * even an instant (a chmod after the write would leave exactly that window). Used
@@ -16,18 +21,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { nanoid } from "nanoid";
 
 export function writeFileAtomic(filePath: string, content: string, mode?: number): void {
   const dir = path.dirname(filePath);
-  const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${nextTempCounter()}.tmp`);
+  const ext = path.extname(filePath);
+  const stem = path.basename(filePath, ext);
+  const tempPath = path.join(dir, `${stem}-${nanoid()}.tmp`);
   fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
   fs.renameSync(tempPath, filePath);
-}
-
-// A per-process counter keeps concurrent atomic writes from colliding on the
-// temp filename without relying on Date.now()/Math.random().
-let tempCounter = 0;
-function nextTempCounter(): number {
-  tempCounter += 1;
-  return tempCounter;
 }

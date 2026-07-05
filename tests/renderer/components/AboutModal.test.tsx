@@ -1,9 +1,19 @@
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 
 import { AboutModal } from "@renderer/components/AboutModal";
 
 afterEach(cleanup);
+
+// The version is single-sourced from package.json (mirrored into __APP_VERSION__ by
+// vitest.config.ts); read it the same way so this test never needs a manual edit on a bump.
+// Uses node:url's own URL (not the jsdom-environment global, which resolves a relative
+// `import.meta.url` base against `window.location` instead) to locate the file.
+const { version: APP_VERSION } = JSON.parse(
+  readFileSync(new NodeURL("../../../package.json", import.meta.url), "utf8"),
+);
 
 describe("AboutModal", () => {
   it("renders the dialog with the app name, version and license", () => {
@@ -12,7 +22,7 @@ describe("AboutModal", () => {
     // The ModalShell title doubles as the dialog's accessible name.
     const labelId = dialog.getAttribute("aria-labelledby");
     expect(document.getElementById(labelId!)?.textContent).toBe("About BigMouth");
-    expect(getByText(/Version 0\.1\.0/)).toBeTruthy();
+    expect(getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, "\\.")}`))).toBeTruthy();
     expect(getByText(/MIT License/)).toBeTruthy();
   });
 

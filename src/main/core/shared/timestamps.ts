@@ -19,6 +19,11 @@ export function utcNow(): Date {
  * Output: "yyyymmdd-hhmmss-utc" (per playbook convention).
  *
  * Example: 2026-04-05T14:30:22Z -> "20260405-143022-utc"
+ *
+ * Second precision is for human-paced names — a filename produced once per user
+ * action (a post file, a one-off export) can never collide within the same
+ * second. A name a machine stamps on its own schedule uses
+ * {@link formatForFilenameMs} instead.
  */
 export function formatForFilename(date: Date): string {
   const y = date.getUTCFullYear().toString();
@@ -28,6 +33,28 @@ export function formatForFilename(date: Date): string {
   const mi = pad2(date.getUTCMinutes());
   const s = pad2(date.getUTCSeconds());
   return `${y}${mo}${d}-${h}${mi}${s}-utc`;
+}
+
+/**
+ * Formats a UTC Date for use in a machine-paced filename.
+ * Output: "yyyymmdd-hhmmss-fff-utc" (timestamp-conventions' machine-paced form).
+ *
+ * Use this — never {@link formatForFilename} — for a name the app stamps on its
+ * own as part of its own operation rather than once per user action: a session
+ * log, a backup archive, a quarantine name, and their peers. Millisecond
+ * precision shrinks (but does not abolish) the same-instant collision window
+ * that second precision leaves open for these.
+ *
+ * Example: 2026-06-10T03:15:42.123Z -> "20260610-031542-123-utc"
+ */
+export function formatForFilenameMs(date: Date): string {
+  return date
+    .toISOString()
+    .slice(0, 23)
+    .replaceAll("-", "")
+    .replaceAll(":", "")
+    .replace(".", "-")
+    .replace("T", "-") + "-utc";
 }
 
 /**

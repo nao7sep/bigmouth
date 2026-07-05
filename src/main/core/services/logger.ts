@@ -2,8 +2,10 @@
  * Logging module.
  *
  * Writes one JSON object per line (JSON Lines) to a per-launch session file at
- * ~/.bigmouth/logs/yyyymmdd-hhmmss-utc.log, and echoes each line to the console.
- * Logs are shared across all workspaces (the app is a single process).
+ * ~/.bigmouth/logs/yyyymmdd-hhmmss-fff-utc.log (the UTC session-start stamp, to
+ * the millisecond — the timestamp-conventions' machine-paced form), and echoes
+ * each line to the console. Logs are shared across all workspaces (the app is a
+ * single process).
  *
  * Contract (see conventions/20260610-030818-utc-logging-conventions.md):
  *   - The logging call takes a STRUCTURED object, never a rendered string. Every
@@ -19,7 +21,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { utcNow, formatForFilename, formatUtcIso } from "../shared/timestamps.js";
+import { utcNow, formatForFilenameMs, formatUtcIso } from "../shared/timestamps.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
@@ -53,13 +55,13 @@ let fileWriteDegraded = false;
 export function initLogger(logsDir: string): void {
   fs.mkdirSync(logsDir, { recursive: true });
 
-  const logFilePath = path.join(logsDir, `${formatForFilename(utcNow())}.log`);
+  const logFilePath = path.join(logsDir, `${formatForFilenameMs(utcNow())}.log`);
   currentLogFilePath = logFilePath;
 
   try {
     // Exclusive create ("wx"): a fresh file per session, never appended across
-    // launches. On the rare same-second filename clash the create fails and the
-    // logger degrades to the console fallback below (logging-conventions).
+    // launches. On the rare same-millisecond filename clash the create fails and
+    // the logger degrades to the console fallback below (logging-conventions).
     logFd = fs.openSync(logFilePath, "wx");
   } catch (err) {
     logFd = null;

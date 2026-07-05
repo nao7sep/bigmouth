@@ -41,10 +41,10 @@ afterEach(() => {
 });
 
 describe("session file", () => {
-  it("names the file with the UTC session-start stamp and nothing else", () => {
+  it("names the file with the millisecond UTC session-start stamp and nothing else", () => {
     const filePath = getCurrentLogFilePath();
     expect(filePath).not.toBeNull();
-    expect(path.basename(filePath as string)).toMatch(/^\d{8}-\d{6}-utc\.log$/);
+    expect(path.basename(filePath as string)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
   });
 });
 

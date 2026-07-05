@@ -2,7 +2,7 @@
 // orphaned sibling temp file is left behind, and an existing file is replaced
 // in full (the rename swaps the new content over the old, never a truncation).
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -48,5 +48,23 @@ describe("writeFileAtomic", () => {
     const target = path.join(dir, "secret.json");
     writeFileAtomic(target, "s3cr3t", 0o600);
     expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+  });
+
+  it("names the temp file <stem>-<nanoid>.tmp in the target's own directory", () => {
+    // Derived-filename grammar: the discriminator is hyphen-joined into the
+    // target's stem, never dot-appended after the full filename.
+    const target = path.join(dir, "data.json");
+    const realRename = fs.renameSync.bind(fs);
+    let tempPathSeen = "";
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      tempPathSeen = from as string;
+      return realRename(from, to);
+    });
+
+    writeFileAtomic(target, "hi");
+    spy.mockRestore();
+
+    expect(path.dirname(tempPathSeen)).toBe(dir);
+    expect(path.basename(tempPathSeen)).toMatch(/^data-[A-Za-z0-9_-]+\.tmp$/);
   });
 });

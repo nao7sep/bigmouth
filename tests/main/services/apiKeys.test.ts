@@ -144,10 +144,13 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(keyFile, "{ not json");
       expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
       expect(readStoredConfigIds(keyFile, W1).size).toBe(0);
-      // Preserved aside (timestamped), not left in place to re-flag, not deleted.
+      // Preserved aside under the derived-filename grammar: <stem>-<millisecond UTC
+      // stamp>.invalid — never the full "api-keys.json" name with ".invalid" dot-appended.
       const entries = fs.readdirSync(dir);
-      expect(entries.some((e) => e.startsWith("api-keys.json.") && e.endsWith(".invalid"))).toBe(true);
+      const quarantined = entries.find((e) => e.startsWith("api-keys-") && e.endsWith(".invalid"));
+      expect(quarantined).toMatch(/^api-keys-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
       expect(entries).not.toContain("api-keys.json");
+      expect(entries.some((e) => e.startsWith("api-keys.json."))).toBe(false);
     });
 
     it("ignores a non-string entry and treats an untagged value as plaintext", () => {

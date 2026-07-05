@@ -21,6 +21,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { nanoid } from "nanoid";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 
 export interface AssetMeta {
   filename: string;
@@ -85,7 +87,7 @@ export function saveAssetFile(
   // Install the file via temp+rename (atomic, and replaces any same-named file),
   // then commit the metadata. If a crash lands between the two, the orphaned file
   // is reconciled back into the list on the next read — no data is lost.
-  const tempPath = path.join(dir, tempName(finalName, "upload"));
+  const tempPath = path.join(dir, tempName(finalName));
   try {
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, destPath);
@@ -139,13 +141,18 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * Merges the cached `meta.json` (if any) with the asset files on disk: keeps
  * cached entries whose file still exists, in their stored order, then appends a
  * projected entry for any asset file the cache doesn't know about (sorted by
- * name for determinism). Dotfiles (temp files) and `meta.json` are ignored.
+ * name for determinism). Dotfiles and `*.tmp` atomic-write temporaries (an
+ * in-flight or crash-orphaned upload, per `tempName` below) and `meta.json`
+ * are ignored.
  */
 function reconcileAssets(dir: string): AssetMeta[] {
   if (!fs.existsSync(dir)) return [];
 
   const onDisk = new Set(
-    fs.readdirSync(dir).filter((entry) => entry !== META_FILENAME && !entry.startsWith(".")),
+    fs.readdirSync(dir).filter(
+      (entry) =>
+        entry !== META_FILENAME && !entry.startsWith(".") && !entry.toLowerCase().endsWith(".tmp"),
+    ),
   );
 
   const cached = readAssetMeta(path.join(dir, META_FILENAME));
@@ -208,12 +215,15 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
 }
 
 function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
-  const tempPath = `${metaPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tempPath, JSON.stringify(assets, null, 2) + "\n");
-  fs.renameSync(tempPath, metaPath);
+  writeFileAtomic(metaPath, JSON.stringify(assets, null, 2) + "\n");
 }
 
-function tempName(filename: string, purpose: string): string {
+// The derived-filename grammar's atomic-write shape: `<stem>-<nanoid>.tmp`, same
+// directory as the final asset file. The nanoid is what lets two uploads of the
+// same name race safely — each writes its own temp and only one rename wins.
+function tempName(filename: string): string {
   const safeName = sanitizeFilename(filename);
-  return `.${purpose}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`;
+  const ext = path.extname(safeName);
+  const stem = path.basename(safeName, ext);
+  return `${stem}-${nanoid()}.tmp`;
 }

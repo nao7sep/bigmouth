@@ -61,6 +61,13 @@ describe("saveAssetFile / listAssets / deleteAsset", () => {
     expect(listed[0].size).toBe(3);
   });
 
+  it("leaves no orphaned <stem>-<nanoid>.tmp behind after a successful upload", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const onDisk = fs.readdirSync(assetDir(dataDir, POST));
+    expect(onDisk.sort()).toEqual(["a.png", "meta.json"]);
+    expect(onDisk.some((f) => f.toLowerCase().endsWith(".tmp"))).toBe(false);
+  });
+
   it("removes the file, the meta, and the empty dir on the last delete", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     deleteAsset(dataDir, POST, "a.png");
@@ -129,6 +136,13 @@ describe("listAssets self-heals against the files on disk", () => {
   it("ignores dotfiles (in-flight temp files) when reconciling", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(path.join(assetDir(dataDir, POST), ".upload-tmp-123"), "partial");
+
+    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
+  });
+
+  it("ignores a crash-orphaned <stem>-<nanoid>.tmp (current atomic-write shape, no leading dot)", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    fs.writeFileSync(path.join(assetDir(dataDir, POST), "photo-V1StGXR8_Z5jD.tmp"), "partial");
 
     expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
   });

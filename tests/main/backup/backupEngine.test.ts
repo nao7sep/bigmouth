@@ -73,7 +73,7 @@ describe("runBackup", () => {
 
     expect(report.fatal).toBeUndefined();
     expect(report.nothingChanged).toBe(false);
-    expect(report.archiveFileName).toBe("backup-20260701-000000-utc.zip");
+    expect(report.archiveFileName).toBe("backup-20260701-000000-000-utc.zip");
 
     const entries = await zipEntries(archivePath(report.archiveFileName!));
     expect(entries).toContain("workspaces.json");
@@ -89,7 +89,7 @@ describe("runBackup", () => {
     const report = await runBackup(RUN2);
 
     expect(report.nothingChanged).toBe(true);
-    expect(fs.existsSync(archivePath("backup-20260701-010000-utc.zip"))).toBe(false);
+    expect(fs.existsSync(archivePath("backup-20260701-010000-000-utc.zip"))).toBe(false);
   });
 
   it("captures only the changed file after an edit", async () => {
@@ -103,7 +103,7 @@ describe("runBackup", () => {
     const report = await runBackup(RUN2);
 
     expect(report.filesArchived).toBe(1);
-    const entries = await zipEntries(archivePath("backup-20260701-010000-utc.zip"));
+    const entries = await zipEntries(archivePath("backup-20260701-010000-000-utc.zip"));
     expect(entries).toEqual([`workspaces/${ws.id}/posts/p1.md`]);
   });
 
@@ -113,7 +113,8 @@ describe("runBackup", () => {
     // Finder browsing / atomic writes drop these into the external dataDir; they must not be archived.
     fs.mkdirSync(path.join(ws.dataDirectory, "assets", "post123"), { recursive: true });
     fs.writeFileSync(path.join(ws.dataDirectory, "assets", "post123", ".DS_Store"), "junk");
-    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md.9876.tmp"), "half-written");
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md.9876.tmp"), "half-written"); // pre-rollout shape
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1-V1StGXR8_Z5jD.tmp"), "half-written"); // <stem>-<nanoid>.tmp
 
     const report = await runBackup(RUN1);
 
@@ -121,6 +122,61 @@ describe("runBackup", () => {
     expect(entries).toContain(`workspaces/${ws.id}/posts/p1.md`);
     expect(entries).not.toContain(`workspaces/${ws.id}/assets/post123/.DS_Store`);
     expect(entries).not.toContain(`workspaces/${ws.id}/posts/p1.md.9876.tmp`);
+    expect(entries).not.toContain(`workspaces/${ws.id}/posts/p1-V1StGXR8_Z5jD.tmp`);
+  });
+
+  it("stamps archivedAt with the millisecond UTC form and leaves no orphaned temp zip", async () => {
+    const ws = createWorkspace("W1");
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md"), "# hi");
+
+    const report = await runBackup(new Date("2026-07-01T00:00:00.123Z"));
+
+    expect(report.archiveFileName).toBe("backup-20260701-000000-123-utc.zip");
+
+    const index = JSON.parse(fs.readFileSync(getBackupIndexPath(), "utf-8"));
+    expect(index.entries.every((e: { archivedAt: string }) => e.archivedAt === "20260701-000000-123-utc")).toBe(
+      true,
+    );
+
+    // Only the final archive and the index remain — no stray <stem>-<nanoid>.tmp survives the run.
+    const backupsDirEntries = fs.readdirSync(getBackupsDir());
+    expect(backupsDirEntries.sort()).toEqual(["backup-20260701-000000-123-utc.zip", "index.json"]);
+  });
+
+  it("advances to the next free millisecond when the target archive name is already taken", async () => {
+    const ws = createWorkspace("W1");
+    fs.writeFileSync(path.join(ws.dataDirectory, "posts", "p1.md"), "# hi");
+
+    // Pre-create an archive at the exact name this run would otherwise land on.
+    fs.mkdirSync(getBackupsDir(), { recursive: true });
+    fs.writeFileSync(archivePath("backup-20260701-000000-000-utc.zip"), "not a real zip");
+
+    const report = await runBackup(RUN1);
+
+    expect(report.fatal).toBeUndefined();
+    expect(report.nothingChanged).toBe(false);
+    // The colliding name is untouched; the run lands one millisecond later instead.
+    expect(report.archiveFileName).toBe("backup-20260701-000000-001-utc.zip");
+    expect(fs.readFileSync(archivePath("backup-20260701-000000-000-utc.zip"), "utf-8")).toBe(
+      "not a real zip",
+    );
+
+    const entries = await zipEntries(archivePath(report.archiveFileName!));
+    expect(entries).toContain(`workspaces/${ws.id}/posts/p1.md`);
+
+    // The index records carry the advanced stamp, not the originally-requested one.
+    const index = JSON.parse(fs.readFileSync(getBackupIndexPath(), "utf-8"));
+    expect(index.entries.every((e: { archivedAt: string }) => e.archivedAt === "20260701-000000-001-utc")).toBe(
+      true,
+    );
+
+    // No stray temp file survives the run.
+    const backupsDirEntries = fs.readdirSync(getBackupsDir());
+    expect(backupsDirEntries.sort()).toEqual([
+      "backup-20260701-000000-000-utc.zip",
+      "backup-20260701-000000-001-utc.zip",
+      "index.json",
+    ]);
   });
 
   it("resets a corrupt index to a full backup", async () => {
