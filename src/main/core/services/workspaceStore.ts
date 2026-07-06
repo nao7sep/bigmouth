@@ -57,8 +57,8 @@ function expandEnvReferences(value: string): string {
  * An input whose env references leave it expanding to nothing (an unset or
  * empty-string $VAR/%VAR%) is a hard error, never a silent fallback: without
  * this guard, path.resolve(base, "") collapses onto the bare `base` directory,
- * which for BIGMOUTH_HOME would materialize config.json/logs/backups/ directly
- * in $HOME and walk $HOME as the backup root. `label` names the setting that
+ * which for BIGMOUTH_HOME would materialize workspaces.json, logs/, and the
+ * backups.sqlite3 store directly in $HOME. `label` names the setting that
  * was being expanded (e.g. "BIGMOUTH_HOME") in the thrown message.
  */
 function expandAndResolve(input: string, base: string, label: string): string {

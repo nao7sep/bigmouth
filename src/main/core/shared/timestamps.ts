@@ -41,9 +41,9 @@ export function formatForFilename(date: Date): string {
  *
  * Use this — never {@link formatForFilename} — for a name the app stamps on its
  * own as part of its own operation rather than once per user action: a session
- * log, a backup archive, a quarantine name, and their peers. Millisecond
- * precision shrinks (but does not abolish) the same-instant collision window
- * that second precision leaves open for these.
+ * log, a quarantine name, and their peers. Millisecond precision shrinks (but
+ * does not abolish) the same-instant collision window that second precision
+ * leaves open for these.
  *
  * Example: 2026-06-10T03:15:42.123Z -> "20260610-031542-123-utc"
  */

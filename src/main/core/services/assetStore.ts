@@ -10,8 +10,8 @@
  * `post-A.md` file and a `post-B/` directory to sit side by side in one workspace folder —
  * a file and a per-post directory mixed together, inconsistent and awkward. Keeping posts
  * and assets as two flat, parallel collections linked by post id makes the layout uniform.
- * The data-backup archive mirrors this parallel structure rather than folding assets under
- * each post (see data-backup-conventions: "within a root, mirror the app's organization").
+ * Assets are binary and are not backed up (see the record-hook notes below); only the
+ * posts' text is recorded by the write-through data-backup store.
  *
  * A sidecar file {dataDir}/assets/{postId}/meta.json holds cached metadata
  * (size, dimensions, metadata warning flag) so list requests are fast.
