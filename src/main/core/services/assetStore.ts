@@ -89,6 +89,10 @@ export function saveAssetFile(
   // is reconciled back into the list on the next read — no data is lost.
   const tempPath = path.join(dir, tempName(finalName));
   try {
+    // not recorded: an uploaded asset is BINARY (an image/attachment), copied in and re-acquirable from
+    // its source. Binaries are written by code paths that never call the record hook — they carry no
+    // text-recovery value and would bloat the text history (data-backup conventions: binary and
+    // binary-ish writes are excluded). This is a raw fs write, not the managed-text choke point.
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, destPath);
   } catch (err) {
@@ -215,6 +219,11 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
 }
 
 function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
+  // not recorded: meta.json is a sidecar colocated in the binary-bearing assets/<postId>/ directory.
+  // A directory that holds binaries is excluded wholesale, sidecars included — this cache is meaningless
+  // without the images (which are excluded) and is regenerable from them (reconcileAssets rebuilds it),
+  // so it rides along into exclusion rather than being recorded orphaned (data-backup conventions:
+  // anything colocated in a binary-bearing directory is excluded). Kept on the bare atomic write.
   writeFileAtomic(metaPath, JSON.stringify(assets, null, 2) + "\n");
 }
 

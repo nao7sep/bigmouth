@@ -10,7 +10,7 @@ import path from "node:path";
 import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { writeManagedText } from "../shared/atomicWrite.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
@@ -193,7 +193,10 @@ export function initAppDir(): AppConfig {
 
 function writeAppConfig(): void {
   if (!workspacesJsonPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
-  writeFileAtomic(workspacesJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
+  // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
+  // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
+  // folders themselves survive, so it is exactly the managed text the backup exists to protect.
+  writeManagedText(workspacesJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
 }
 
 function ensureLoaded(): AppConfig {
@@ -212,20 +215,11 @@ export function getApiKeysPath(): string {
   return apiKeysPath;
 }
 
-/** The storage root (`~/.bigmouth/`) — the home root the backup walks. */
+/** The storage root (`~/.bigmouth/`). Resolves `BIGMOUTH_HOME`/`~/.bigmouth` once at startup; the
+ *  write-through data-backup store derives `backups.sqlite3` under it (data-backup conventions). */
 export function getAppRoot(): string {
   if (!appDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
   return appDir;
-}
-
-/** The data-backup directory (`~/.bigmouth/backups/`); see the data-backup conventions. */
-export function getBackupsDir(): string {
-  return path.join(getAppRoot(), "backups");
-}
-
-/** The backup change ledger (`~/.bigmouth/backups/index.json`). */
-export function getBackupIndexPath(): string {
-  return path.join(getBackupsDir(), "index.json");
 }
 
 export function listWorkspaces(): Workspace[] {

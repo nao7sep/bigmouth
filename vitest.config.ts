@@ -43,6 +43,9 @@ export default defineConfig({
           name: "main",
           environment: "node",
           include: ["tests/main/**/*.test.ts"],
+          // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_HOME root
+          // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
+          setupFiles: ["tests/main/setup.ts"],
         },
       },
       {

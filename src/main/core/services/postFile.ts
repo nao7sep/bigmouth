@@ -11,7 +11,7 @@ import fs from "node:fs";
 import matter from "gray-matter";
 import type { Post, PostFrontMatter, PostIndexEntry } from "../shared/types.js";
 import { multiline, truncate } from "../shared/textCleanup.js";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { writeManagedText } from "../shared/atomicWrite.js";
 
 // Length, in graphemes, of a body-derived preview label for an untitled post.
 const EXCERPT_MAX_CHARS = 100;
@@ -72,7 +72,12 @@ export function readPost(filePath: string): Post {
 export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
   const cleanFm = canonicalizeFrontMatter(frontMatter);
   const output = matter.stringify(multiline(content, BODY_MULTILINE_OPTS), cleanFm);
-  writeFileAtomic(filePath, output);
+  // recorded: a post .md file is the primary user-authored durable text this app owns — the very thing
+  // the backup exists for. `filePath` is the full absolute path whether the workspace lives internally
+  // under ~/.bigmouth/workspaces/ or at a user-chosen external location; either way the same managed-
+  // text choke point records the exact bytes just written (data-backup conventions: every authored .md
+  // is recorded, external managed locations included).
+  writeManagedText(filePath, output);
 }
 
 /**

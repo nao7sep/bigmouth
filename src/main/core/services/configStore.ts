@@ -29,7 +29,7 @@ import type {
   Workspace,
 } from "../shared/types.js";
 import { CONFIG_SCHEMA_VERSION } from "../shared/types.js";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { writeManagedText } from "../shared/atomicWrite.js";
 import { DEFAULT_SETTINGS } from "../shared/defaults.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 import * as apiKeys from "./apiKeys.js";
@@ -134,7 +134,11 @@ function readConfig(dataDir: string): WorkspaceConfig {
 }
 
 function writeConfig(dataDir: string, config: WorkspaceConfig): void {
-  writeFileAtomic(path.join(dataDir, CONFIG_FILE), JSON.stringify(config, null, 2) + "\n");
+  // recorded: a workspace's config.json is its durable, user-authored settings (targets, AI configs,
+  // analysis/generation prompts). It is managed text under a workspace's data directory — internal or
+  // at a user-chosen absolute path — and carries no secret (keys live in api-keys.json), so it is
+  // recorded on every save (data-backup conventions: config.json is recorded).
+  writeManagedText(path.join(dataDir, CONFIG_FILE), JSON.stringify(config, null, 2) + "\n");
 }
 
 // --- Settings -----------------------------------------------------------------

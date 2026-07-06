@@ -21,7 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { writeManagedText } from "../shared/atomicWrite.js";
 import { compareInstants } from "../shared/timestamps.js";
 import { warn as logWarn } from "./logger.js";
 
@@ -234,7 +234,12 @@ function postFileNames(dataDir: string): string[] {
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
-  writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()]));
+  // recorded: posts/index.json is a durable managed JSON store — it sits in the text-bearing posts/
+  // directory (NOT a binary-bearing one), and it carries user-authored derived text (titles, slugs,
+  // excerpts). Though rebuildable from the .md files, the default is to record every managed text store,
+  // and write-gating (upsert no-ops) plus the store's own dedup absorb its churn (data-backup
+  // conventions: every durable JSON store is recorded).
+  writeManagedText(indexPath(dataDir), canonicalIndexJson([...map.values()]));
 }
 
 // --- Canonical serialization (byte-identical across rebuilds) ---

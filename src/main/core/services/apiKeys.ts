@@ -166,6 +166,12 @@ function readFile(filePath: string): ApiKeysFile {
 }
 
 function writeFile(filePath: string, data: ApiKeysFile): void {
+  // not recorded: api-keys.json is the SECRET store. Secrets are never written through the managed-text
+  // choke point — a backup history containing a credential would become sensitive-at-rest in its
+  // entirety and would have to be guarded as the secret is. Keeping keys out is what lets
+  // backups.sqlite3 stay no more sensitive than ordinary user text (data-backup conventions: secrets are
+  // never recorded). A key lost to a wipe is re-entered by the user; the live file keeps its own 0600
+  // protection below, which is where a secret is guarded — not here.
   writeFileAtomic(
     filePath,
     JSON.stringify(data, null, 2) + "\n",
