@@ -1,0 +1,181 @@
+import { contextBridge, ipcRenderer } from "electron";
+
+import {
+  CHANNELS,
+  analysisStreamChannel,
+  type AiConfigInput,
+  type AiConfigPatch,
+  type AnalysisStreamFrame,
+  type AnalysisStreamHandle,
+  type AnalysisStreamParams,
+  type AssetUploadInput,
+  type BigMouthApi,
+  type MetadataGenerationResults,
+  type PostUpdate,
+} from "@shared/ipc";
+import type {
+  AiConfigsData,
+  AnalysisPrompt,
+  AssetMeta,
+  GenerationPromptsData,
+  ImagingOptions,
+  Post,
+  PostListResponse,
+  PostMutationResult,
+  PostStatus,
+  Settings,
+  Target,
+  Workspace,
+} from "@shared/types";
+
+// Per-window counter for analysis-stream request ids. Generated renderer-side so
+// the renderer can subscribe to the per-request channel before the stream starts.
+let nextStreamId = 1;
+
+// The bridge the renderer talks to over IPC. Each method forwards to an ipcMain
+// handler by channel; the analysis stream subscribes to a per-request event
+// channel and reassembles the delta/done/error frames behind a single Promise.
+// Implemented via `satisfies` (tsconfig-env-split-conventions) so the shared
+// contract is enforced without leaking a preload type back to the renderer.
+const api = {
+  // The running OS, read synchronously here in the Node-capable preload so the
+  // renderer can resolve the platform without an IPC round-trip.
+  platform: process.platform,
+
+  // --- Workspace management ---
+  listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,
+  openOrCreateWorkspace: (name?: string, dataDirectory?: string) =>
+    ipcRenderer.invoke(CHANNELS.openOrCreateWorkspace, name, dataDirectory) as Promise<Workspace>,
+  updateWorkspace: (id: string, updates: { name?: string; dataDirectory?: string }) =>
+    ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
+  deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
+  revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,
+  pickDirectory: () => ipcRenderer.invoke(CHANNELS.pickDirectory) as Promise<string | null>,
+
+  // --- Posts ---
+  listPosts: (wsId: string, publishedOffset: number, limit: number, expiredOffset: number) =>
+    ipcRenderer.invoke(CHANNELS.listPosts, wsId, publishedOffset, limit, expiredOffset) as Promise<PostListResponse>,
+  getPost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.getPost, wsId, id) as Promise<Post>,
+  createPost: (wsId: string, target: string, language: string, sourceId?: string) =>
+    ipcRenderer.invoke(CHANNELS.createPost, wsId, target, language, sourceId) as Promise<Post>,
+  updatePost: (wsId: string, id: string, updates: PostUpdate) =>
+    ipcRenderer.invoke(CHANNELS.updatePost, wsId, id, updates) as Promise<PostMutationResult>,
+  changePostStatus: (wsId: string, id: string, status: PostStatus) =>
+    ipcRenderer.invoke(CHANNELS.changePostStatus, wsId, id, status) as Promise<PostMutationResult>,
+  deletePost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.deletePost, wsId, id) as Promise<void>,
+  listReferrers: (wsId: string, id: string) =>
+    ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,
+  rebuildPostIndex: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{ count: number }>,
+
+  // --- Targets ---
+  listTargets: (wsId: string) => ipcRenderer.invoke(CHANNELS.listTargets, wsId) as Promise<Target[]>,
+  saveTargets: (wsId: string, targets: Target[]) =>
+    ipcRenderer.invoke(CHANNELS.saveTargets, wsId, targets) as Promise<Target[]>,
+  renameTarget: (wsId: string, oldName: string, newName: string) =>
+    ipcRenderer.invoke(CHANNELS.renameTarget, wsId, oldName, newName) as Promise<{
+      targets: Target[];
+      postsUpdated: number;
+    }>,
+
+  // --- Settings ---
+  getSettings: (wsId: string) => ipcRenderer.invoke(CHANNELS.getSettings, wsId) as Promise<Settings>,
+  saveSettings: (wsId: string, settings: Settings) =>
+    ipcRenderer.invoke(CHANNELS.saveSettings, wsId, settings) as Promise<Settings>,
+
+  // --- AI configs ---
+  listAiConfigs: (wsId: string) => ipcRenderer.invoke(CHANNELS.listAiConfigs, wsId) as Promise<AiConfigsData>,
+  createAiConfig: (wsId: string, input: AiConfigInput) =>
+    ipcRenderer.invoke(CHANNELS.createAiConfig, wsId, input) as Promise<AiConfigsData>,
+  updateAiConfig: (wsId: string, id: string, patch: AiConfigPatch) =>
+    ipcRenderer.invoke(CHANNELS.updateAiConfig, wsId, id, patch) as Promise<AiConfigsData>,
+  deleteAiConfig: (wsId: string, id: string) =>
+    ipcRenderer.invoke(CHANNELS.deleteAiConfig, wsId, id) as Promise<AiConfigsData>,
+  setActiveAiConfig: (wsId: string, id: string) =>
+    ipcRenderer.invoke(CHANNELS.setActiveAiConfig, wsId, id) as Promise<AiConfigsData>,
+
+  // --- Generation prompts ---
+  getGenerationPrompts: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.getGenerationPrompts, wsId) as Promise<GenerationPromptsData>,
+  getGenerationPromptDefaults: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.getGenerationPromptDefaults, wsId) as Promise<GenerationPromptsData>,
+  saveGenerationPrompts: (wsId: string, data: GenerationPromptsData) =>
+    ipcRenderer.invoke(CHANNELS.saveGenerationPrompts, wsId, data) as Promise<GenerationPromptsData>,
+
+  // --- Analysis prompts ---
+  listAnalysisPrompts: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.listAnalysisPrompts, wsId) as Promise<AnalysisPrompt[]>,
+  listAnalysisPromptDefaults: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.listAnalysisPromptDefaults, wsId) as Promise<AnalysisPrompt[]>,
+  saveAnalysisPrompts: (wsId: string, prompts: AnalysisPrompt[]) =>
+    ipcRenderer.invoke(CHANNELS.saveAnalysisPrompts, wsId, prompts) as Promise<AnalysisPrompt[]>,
+
+  // --- Assets ---
+  listAssets: (wsId: string, postId: string) =>
+    ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetMeta[]>,
+  uploadAsset: (wsId: string, postId: string, file: AssetUploadInput) =>
+    ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetMeta>,
+  deleteAsset: (wsId: string, postId: string, filename: string) =>
+    ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<void>,
+
+  // --- AI generation ---
+  generateMetadata: (wsId: string, postId: string, fields: string[], content: string) =>
+    ipcRenderer.invoke(CHANNELS.generateMetadata, wsId, postId, fields, content) as Promise<MetadataGenerationResults>,
+  runAnalysisStream: (params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle => {
+    const requestId = `astream-${nextStreamId++}`;
+    const channel = analysisStreamChannel(requestId);
+    let settled = false;
+    let started = false;
+    let abortRequested = false;
+    let resolveDone!: () => void;
+    let rejectDone!: (err: Error) => void;
+    const done = new Promise<void>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      ipcRenderer.removeListener(channel, listener);
+      settle();
+    };
+    function listener(_event: unknown, frame: AnalysisStreamFrame): void {
+      if (frame.type === "delta") onDelta(frame.text);
+      else if (frame.type === "done") finish(resolveDone);
+      else if (frame.type === "error") finish(() => rejectDone(new Error(frame.message)));
+    }
+    // Subscribe before starting so an early frame is never missed.
+    ipcRenderer.on(channel, listener);
+
+    const sendAbort = (): void => ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
+
+    void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, requestId, params) as Promise<void>)
+      .then(() => {
+        started = true;
+        // If the caller aborted before the stream was registered, deliver the
+        // abort now — after registration, never before, so it cannot reach the
+        // main process ahead of the stream it is meant to cancel.
+        if (abortRequested) sendAbort();
+      })
+      .catch((err: unknown) => {
+        // Pre-stream failure (validation / provider init): no frames will arrive.
+        finish(() => rejectDone(err instanceof Error ? err : new Error(String(err))));
+      });
+
+    const abort = (): void => {
+      if (settled) return;
+      abortRequested = true;
+      // Once the stream is registered, cancel it immediately; otherwise the start
+      // resolution above sends the abort as soon as registration completes.
+      if (started) sendAbort();
+      finish(() => rejectDone(new Error("Analysis aborted")));
+    };
+
+    return { done, abort };
+  },
+  generateImaging: (wsId: string, postId: string, content: string, options: ImagingOptions) =>
+    ipcRenderer.invoke(CHANNELS.generateImaging, wsId, postId, content, options) as Promise<string[]>,
+} satisfies BigMouthApi;
+
+contextBridge.exposeInMainWorld("bigmouth", api);
