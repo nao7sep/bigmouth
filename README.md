@@ -25,9 +25,9 @@ Prebuilt installers and portable builds for macOS (Apple Silicon) and Windows ar
 - **macOS** — right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/BigMouth.app`).
 - **Windows** — on the SmartScreen prompt, click **More info → Run anyway**.
 
-## Getting started
+## Run from source
 
-Double-click the launcher for your platform — `scripts/run-dev.command` on macOS, `scripts/run-dev.ps1` on Windows — or run from source:
+Double-click the launcher for your platform — `scripts/run-dev.command` on macOS, `scripts/run-dev.ps1` on Windows — or run it by hand:
 
 ```sh
 npm install
