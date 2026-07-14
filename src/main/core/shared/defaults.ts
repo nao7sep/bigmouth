@@ -7,8 +7,9 @@ import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { nanoid } from "nanoid";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
-// Model used for a Claude AI config that has no explicit model set.
-export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+// Model used for a Claude AI config that has no explicit model set. A current, capable default;
+// the user may set any model id per config, and a bad/retired one fails fast at the API call.
+export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5";
 
 /**
  * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
@@ -41,6 +42,7 @@ export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Tokyo",
+  // keep in sync with DEFAULT_SUPPORTED_LANGUAGES in @shared/types (the two type worlds can't import each other)
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,
   maxUploadMb: 500,

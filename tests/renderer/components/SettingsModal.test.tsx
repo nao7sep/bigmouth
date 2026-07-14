@@ -695,7 +695,7 @@ describe("SettingsModal — Analysis tab", () => {
     });
 
     const panel = openTab(getByRole, "Analysis");
-    fireEvent.click(within(panel).getByText("Restore built-in prompts"));
+    fireEvent.click(within(panel).getByText("Reset to latest defaults"));
     // The restored name/text land in the row's inputs (value, not text content).
     const p = getByRole("tabpanel");
     expect(within(p).getByDisplayValue("Built-in")).toBeTruthy();
@@ -737,7 +737,7 @@ describe("SettingsModal — Generation tab", () => {
     });
 
     const panel = openTab(getByRole, "Generation");
-    fireEvent.click(within(panel).getByText("Restore built-in prompts"));
+    fireEvent.click(within(panel).getByText("Reset to latest defaults"));
     expect((within(getByRole("tabpanel")).getAllByRole("textbox")[0] as HTMLTextAreaElement).value).toBe(
       "DEFAULT TITLE PROMPT",
     );

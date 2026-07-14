@@ -10,6 +10,7 @@ import {
   CONTENT_LINE_HEIGHT_MIN,
   CONTENT_PADDING_MAX,
   CONTENT_PADDING_MIN,
+  DEFAULT_SUPPORTED_LANGUAGES,
 } from "@shared/types";
 import {
   getSettings,
@@ -461,6 +462,12 @@ function GeneralTab({
           placeholder="en, ja, es, fr, de"
         />
         {langsError && <FieldError msg={langsError} />}
+        <div className="metadata-generate-all-row">
+          <button className="btn-action" onClick={() => update({ supportedLanguages: [...DEFAULT_SUPPORTED_LANGUAGES] })}>
+            Reset to latest defaults
+          </button>
+          <p className="settings-hint">Replaces the language list with the latest built-in defaults. Save to persist; close without saving to keep your current languages.</p>
+        </div>
       </div>
       <div className="form-field">
         <label className="form-label">Published posts per load</label>
@@ -691,7 +698,7 @@ function AiTab({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "anthropic", apiKey: "", hasApiKey: false, model: "claude-sonnet-4-6" },
+        { id, name: "", provider: "anthropic", apiKey: "", hasApiKey: false, model: "claude-sonnet-5" },
       ],
     });
   };
@@ -791,7 +798,7 @@ function AiTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addConfig}>
+      <button className="btn-action" onClick={addConfig}>
         + Add AI Config
       </button>
     </div>
@@ -897,7 +904,7 @@ function TargetsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addTarget} disabled={!canAddTarget}>
+      <button className="btn-action" onClick={addTarget} disabled={!canAddTarget}>
         + Add Target
       </button>
     </div>
@@ -932,9 +939,10 @@ function GenerationTab({
       </p>
 
       <div className="metadata-generate-all-row">
-        <button className="btn-toolbar" onClick={restoreAll}>
-          Restore built-in prompts
+        <button className="btn-action" onClick={restoreAll}>
+          Reset to latest defaults
         </button>
+        <p className="settings-hint">Replaces all generation prompts with the latest built-in defaults. Save to persist; close without saving to keep your edits.</p>
       </div>
 
       {GENERATION_PROMPT_KEYS.map((key) => {
@@ -989,11 +997,12 @@ function AnalysisPromptsTab({
       </p>
       <div className="metadata-generate-all-row">
         <button
-          className="btn-toolbar"
+          className="btn-action"
           onClick={() => onChange(defaults.map((prompt) => ({ ...prompt })))}
         >
-          Restore built-in prompts
+          Reset to latest defaults
         </button>
+        <p className="settings-hint">Replaces all analysis prompts with the latest built-in defaults. Save to persist; close without saving to keep your edits.</p>
       </div>
       {prompts.map((p, i) => (
         <div key={i} className="settings-list-item">
@@ -1028,7 +1037,7 @@ function AnalysisPromptsTab({
         </div>
       ))}
 
-      <button className="btn-toolbar" onClick={addPrompt}>
+      <button className="btn-action" onClick={addPrompt}>
         + Add Prompt
       </button>
     </div>

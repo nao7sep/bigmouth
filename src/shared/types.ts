@@ -202,6 +202,12 @@ export const DEFAULT_CONTENT_FONT: ContentFont = {
   underline: false,
 };
 
+// The seeded default supported-language codes (config-seeding-conventions). Mirrors
+// DEFAULT_SETTINGS.supportedLanguages in the main core (the two type worlds can't import each other);
+// keep them in sync. Exposed here so the Settings modal's "Reset to latest defaults" for the language
+// list can pull the current built-ins without reaching into main.
+export const DEFAULT_SUPPORTED_LANGUAGES: string[] = ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"];
+
 export interface Settings {
   timezone: string;
   supportedLanguages: string[];

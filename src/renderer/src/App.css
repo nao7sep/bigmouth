@@ -432,6 +432,29 @@ body {
   background: var(--bm-panel);
 }
 
+/* Solid, content-width action button (Add / Restore) — reads as a real button, not a
+   subtle toolbar pill, and never stretches to fill a flex-column settings section. */
+.btn-action {
+  align-self: flex-start;
+  padding: 6px 14px;
+  background: var(--bm-surface-raised);
+  border: 1px solid var(--bm-border);
+  border-radius: 6px;
+  color: var(--bm-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-action:hover {
+  background: var(--bm-panel);
+}
+
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .btn-delete {
   color: var(--bm-danger);
 }

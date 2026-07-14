@@ -122,7 +122,7 @@ export interface AiConfig {
   apiKey: string;    // resolved in memory (env or the secrets file); empty in the renderer-facing view, never persisted in the workspace
   hasApiKey?: boolean;   // renderer-facing flag: a key is stored for THIS config (env-independent)
   usingEnvKey?: boolean; // renderer-facing flag: the provider's env var is set, so it overrides any stored key
-  model: string;     // e.g., "claude-sonnet-4-6"
+  model: string;     // e.g., "claude-sonnet-5"
 }
 
 /**
