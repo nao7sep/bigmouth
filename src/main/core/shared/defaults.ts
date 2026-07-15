@@ -42,7 +42,6 @@ export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Tokyo",
-  // keep in sync with DEFAULT_SUPPORTED_LANGUAGES in @shared/types (the two type worlds can't import each other)
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,
   maxUploadMb: 500,

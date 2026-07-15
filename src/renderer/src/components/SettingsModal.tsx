@@ -10,7 +10,6 @@ import {
   CONTENT_LINE_HEIGHT_MIN,
   CONTENT_PADDING_MAX,
   CONTENT_PADDING_MIN,
-  DEFAULT_SUPPORTED_LANGUAGES,
 } from "@shared/types";
 import {
   getSettings,
@@ -462,12 +461,6 @@ function GeneralTab({
           placeholder="en, ja, es, fr, de"
         />
         {langsError && <FieldError msg={langsError} />}
-        <div className="metadata-generate-all-row">
-          <button className="btn-action" onClick={() => update({ supportedLanguages: [...DEFAULT_SUPPORTED_LANGUAGES] })}>
-            Reset to latest defaults
-          </button>
-          <p className="settings-hint">Replaces the language list with the latest built-in defaults. Save to persist; close without saving to keep your current languages.</p>
-        </div>
       </div>
       <div className="form-field">
         <label className="form-label">Published posts per load</label>
@@ -926,7 +919,7 @@ function GenerationTab({
     onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
 
-  const restoreAll = () => {
+  const resetGenerationPromptsToDefaults = () => {
     onChange({
       prompts: { ...defaults.prompts },
     });
@@ -939,10 +932,9 @@ function GenerationTab({
       </p>
 
       <div className="metadata-generate-all-row">
-        <button className="btn-action" onClick={restoreAll}>
-          Reset to latest defaults
+        <button className="btn-action" onClick={resetGenerationPromptsToDefaults}>
+          Reset generation prompts
         </button>
-        <p className="settings-hint">Replaces all generation prompts with the latest built-in defaults. Save to persist; close without saving to keep your edits.</p>
       </div>
 
       {GENERATION_PROMPT_KEYS.map((key) => {
@@ -990,19 +982,19 @@ function AnalysisPromptsTab({
     onChange(prompts.filter((_, i) => i !== index));
   };
 
+  const resetAnalysisPromptsToDefaults = () => {
+    onChange(defaults.map((prompt) => ({ ...prompt })));
+  };
+
   return (
     <div className="settings-section">
       <p className="settings-hint">
         Use {"{content}"} where the draft should be inserted.
       </p>
       <div className="metadata-generate-all-row">
-        <button
-          className="btn-action"
-          onClick={() => onChange(defaults.map((prompt) => ({ ...prompt })))}
-        >
-          Reset to latest defaults
+        <button className="btn-action" onClick={resetAnalysisPromptsToDefaults}>
+          Reset analysis prompts
         </button>
-        <p className="settings-hint">Replaces all analysis prompts with the latest built-in defaults. Save to persist; close without saving to keep your edits.</p>
       </div>
       {prompts.map((p, i) => (
         <div key={i} className="settings-list-item">
