@@ -123,6 +123,8 @@ export interface AiConfigInput {
   name: string;
   provider: AiProvider;
   model: string;
+  thinking: boolean;
+  maxTokens: number;
   apiKey?: string;
 }
 
@@ -130,6 +132,8 @@ export interface AiConfigPatch {
   name?: string;
   provider?: AiProvider;
   model?: string;
+  thinking?: boolean;
+  maxTokens?: number;
   /** Omit to preserve, "" to clear, non-empty to replace. */
   apiKey?: string;
 }
@@ -148,6 +152,10 @@ export interface AnalysisStreamParams {
  * cut short, so a partial result is never mistaken for a complete one. */
 export type AnalysisStreamFrame =
   | { type: "delta"; text: string }
+  // The model's reasoning summary, produced before the answer when the AI config has
+  // thinking on. A separate frame so the renderer can show it as reasoning rather than
+  // splicing it into the analysis text.
+  | { type: "thinking"; text: string }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -232,6 +240,10 @@ export interface BigMouthApi {
 
   // AI generation
   generateMetadata(wsId: string, postId: string, fields: string[], content: string): Promise<MetadataGenerationResults>;
-  runAnalysisStream(params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle;
+  runAnalysisStream(
+    params: AnalysisStreamParams,
+    onDelta: (delta: string) => void,
+    onThinking?: (delta: string) => void,
+  ): AnalysisStreamHandle;
   generateImaging(wsId: string, postId: string, content: string, options: ImagingOptions): Promise<string[]>;
 }

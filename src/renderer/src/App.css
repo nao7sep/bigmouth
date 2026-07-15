@@ -455,6 +455,43 @@ body {
   cursor: default;
 }
 
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bm-text);
+}
+
+.settings-checkbox input:disabled + * ,
+.settings-checkbox:has(input:disabled) {
+  opacity: 0.5;
+}
+
+/* Reasoning is secondary to the analysis it precedes: readable, not competing. */
+.analysis-thinking {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--bm-border);
+  border-radius: 6px;
+  background: var(--bm-surface-raised);
+}
+
+.analysis-thinking > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--bm-text-muted, var(--bm-text));
+}
+
+.analysis-thinking-body {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--bm-text-muted, var(--bm-text));
+}
+
 .btn-delete {
   color: var(--bm-danger);
 }

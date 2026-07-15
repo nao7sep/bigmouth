@@ -157,6 +157,8 @@ export function createAiConfig(input: {
   name: string;
   provider: AiConfig["provider"];
   model: string;
+  thinking: boolean;
+  maxTokens: number;
   apiKey?: string;
 }): Promise<AiConfigsData> {
   return bridge().createAiConfig(requireWs(), input satisfies AiConfigInput);
@@ -168,6 +170,8 @@ export function updateAiConfig(
     name?: string;
     provider?: AiConfig["provider"];
     model?: string;
+    thinking?: boolean;
+    maxTokens?: number;
     /** Omit to preserve, "" to clear, non-empty to replace. */
     apiKey?: string;
   },
@@ -253,11 +257,14 @@ export function runAnalysisStream(
   options: {
     signal?: AbortSignal;
     onChunk: (delta: string) => void;
+    /** Reasoning summary, streamed only when the active AI config has thinking on. */
+    onThinking?: (delta: string) => void;
   },
 ): Promise<void> {
   const handle = bridge().runAnalysisStream(
     { wsId: requireWs(), postId, promptName, content },
     options.onChunk,
+    options.onThinking,
   );
   const { signal } = options;
   if (signal) {

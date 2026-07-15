@@ -122,7 +122,9 @@ export interface AiConfig {
   apiKey: string;    // resolved in memory (env or the secrets file); empty in the renderer-facing view, never persisted in the workspace
   hasApiKey?: boolean;   // renderer-facing flag: a key is stored for THIS config (env-independent)
   usingEnvKey?: boolean; // renderer-facing flag: the provider's env var is set, so it overrides any stored key
-  model: string;     // e.g., "claude-sonnet-5"
+  model: string;     // an id from @shared/types MODEL_DEFS
+  thinking: boolean; // adaptive thinking; always false on a model that rejects it
+  maxTokens: number; // within maxTokensRange() of the selected model
 }
 
 /**
@@ -138,6 +140,8 @@ export interface StoredAiConfig {
   name: string;
   provider: AiProvider;
   model: string;
+  thinking: boolean;
+  maxTokens: number;
 }
 
 export const CONFIG_SCHEMA_VERSION = 1;

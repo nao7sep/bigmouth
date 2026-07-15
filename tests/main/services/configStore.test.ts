@@ -106,6 +106,8 @@ describe("AI config API key handling", () => {
       name: "Claude",
       provider: "anthropic",
       model: "claude-opus-4-8",
+      thinking: false,
+      maxTokens: 12800,
       apiKey: "sk-ant-secret",
     });
 
@@ -132,6 +134,8 @@ describe("AI config API key handling", () => {
       name: "Claude",
       provider: "anthropic",
       model: "claude-opus-4-8",
+      thinking: false,
+      maxTokens: 12800,
       apiKey: "sk-ant-secret",
     });
     setActiveAiConfig(ws, "c1");
@@ -140,7 +144,7 @@ describe("AI config API key handling", () => {
   });
 
   it("preserves the key when apiKey is omitted from an update", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", apiKey: "sk-ant-secret" });
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-ant-secret" });
     setActiveAiConfig(ws, "c1");
 
     updateAiConfig(ws, "c1", { name: "Renamed" });
@@ -149,7 +153,7 @@ describe("AI config API key handling", () => {
   });
 
   it("clears the key when apiKey is blank", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", apiKey: "sk-ant-secret" });
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-ant-secret" });
     setActiveAiConfig(ws, "c1");
 
     updateAiConfig(ws, "c1", { apiKey: "" });
@@ -158,7 +162,7 @@ describe("AI config API key handling", () => {
   });
 
   it("a key-only update does not rewrite the git-versioned config.json", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", apiKey: "old" });
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "old" });
     setActiveAiConfig(ws, "c1");
     const configPath = path.join(dataDir, "config.json");
     const before = fs.readFileSync(configPath, "utf-8");
@@ -170,8 +174,8 @@ describe("AI config API key handling", () => {
   });
 
   it("deleteAiConfig also removes the stored key", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
-    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m", apiKey: "sk-c2" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
+    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-c2" });
     setActiveAiConfig(ws, "c1");
 
     deleteAiConfig(ws, "c2");
@@ -180,7 +184,7 @@ describe("AI config API key handling", () => {
   });
 
   it("hasApiKey is stored-only while usingEnvKey reflects the environment", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" }); // no stored key
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 }); // no stored key
     setActiveAiConfig(ws, "c1");
     process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
 
@@ -194,8 +198,8 @@ describe("AI config API key handling", () => {
     const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore2-"));
     try {
       const ws2 = workspaceAt("ws-2", otherDir);
-      createAiConfig(ws, { id: "shared", name: "A", provider: "anthropic", model: "m", apiKey: "key-ws1" });
-      createAiConfig(ws2, { id: "shared", name: "B", provider: "anthropic", model: "m", apiKey: "key-ws2" });
+      createAiConfig(ws, { id: "shared", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "key-ws1" });
+      createAiConfig(ws2, { id: "shared", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "key-ws2" });
       setActiveAiConfig(ws, "shared");
       setActiveAiConfig(ws2, "shared");
 
@@ -209,7 +213,7 @@ describe("AI config API key handling", () => {
 
 describe("AI config lifecycle guards", () => {
   it("deleting the active config falls the active back to the first remaining", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
     setActiveAiConfig(ws, "c1");
     const after = deleteAiConfig(ws, "c1");
     expect(after.configs.some((c) => c.id === "c1")).toBe(false);
@@ -217,8 +221,8 @@ describe("AI config lifecycle guards", () => {
   });
 
   it("deletes a non-active config", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
-    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
+    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
     setActiveAiConfig(ws, "c1");
 
     const ids = deleteAiConfig(ws, "c2").configs.map((c) => c.id);
@@ -227,9 +231,9 @@ describe("AI config lifecycle guards", () => {
   });
 
   it("rejects a duplicate config id", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
     expect(() =>
-      createAiConfig(ws, { id: "c1", name: "Dup", provider: "anthropic", model: "m" }),
+      createAiConfig(ws, { id: "c1", name: "Dup", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 }),
     ).toThrow(/already exists/i);
   });
 
@@ -242,7 +246,7 @@ describe("AI config lifecycle guards", () => {
   });
 
   it("an empty active id clears the session selection, falling back to the first config", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m" });
+    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
     setActiveAiConfig(ws, "c1");
     const after = setActiveAiConfig(ws, "");
     expect(after.activeId).toBe(after.configs[0].id); // back to the first config

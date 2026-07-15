@@ -5,19 +5,30 @@
 import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, WorkspaceConfig } from "./types.js";
 import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { nanoid } from "nanoid";
+import { DEFAULT_MODEL_ID, defaultMaxTokens, findModelDef } from "@shared/types";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
-
-// Model used for a Claude AI config that has no explicit model set. A current, capable default;
-// the user may set any model id per config, and a bad/retired one fails fast at the API call.
-export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5";
 
 /**
  * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
  * module constant) so every workspace gets a fresh default config id rather than
  * one frozen at import and shared by all — ids are unique by nature.
+ *
+ * The model, its thinking mode, and its budget all derive from the one MODEL_DEFS
+ * entry, so there is no literal here to drift from the table.
  */
 export function makeDefaultAiConfigs(): StoredAiConfig[] {
-  return [{ id: nanoid(), name: "Default", provider: "anthropic", model: DEFAULT_CLAUDE_MODEL }];
+  const model = findModelDef(DEFAULT_MODEL_ID);
+  if (!model) throw new Error(`DEFAULT_MODEL_ID is not in MODEL_DEFS: ${DEFAULT_MODEL_ID}`);
+  return [
+    {
+      id: nanoid(),
+      name: "Default",
+      provider: "anthropic",
+      model: model.id,
+      thinking: model.supportsAdaptiveThinking,
+      maxTokens: defaultMaxTokens(model),
+    },
+  ];
 }
 
 /**

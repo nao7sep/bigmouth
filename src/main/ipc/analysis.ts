@@ -76,11 +76,21 @@ export function registerAnalysisHandlers(): void {
 
     let wroteDelta = false;
     let aborted = false;
-    const stream = request.provider.generateTextStream(request.systemPrompt, request.userContent, (delta) => {
-      if (aborted || delta.length === 0) return;
-      wroteDelta = true;
-      send({ type: "delta", text: delta });
-    });
+    const stream = request.provider.generateTextStream(
+      request.systemPrompt,
+      request.userContent,
+      (delta) => {
+        if (aborted || delta.length === 0) return;
+        wroteDelta = true;
+        send({ type: "delta", text: delta });
+      },
+      (delta) => {
+        // Reasoning, not answer — deliberately not counted as wroteDelta, so a run that
+        // only ever thinks still takes the no-output path below.
+        if (aborted || delta.length === 0) return;
+        send({ type: "thinking", text: delta });
+      },
+    );
 
     activeStreams.set(requestId, {
       abort: () => {

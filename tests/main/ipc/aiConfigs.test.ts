@@ -69,6 +69,8 @@ describe("aiConfig IPC handlers", () => {
       name: "Claude",
       provider: "anthropic",
       model: "m",
+      thinking: false,
+      maxTokens: 12800,
       apiKey: "sk-secret",
     });
     const view = invoke(CHANNELS.listAiConfigs, wsId).configs.find((c) => c.id === "c1");
@@ -78,15 +80,15 @@ describe("aiConfig IPC handlers", () => {
   });
 
   it("validates create input", () => {
-    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "bad id!", name: "n", provider: "anthropic", model: "m" }))
+    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "bad id!", name: "n", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 }))
       .toThrow(/id is required/);
-    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "n", provider: "nope", model: "m" }))
+    expect(() => invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "n", provider: "nope", model: "m", thinking: false, maxTokens: 12800 }))
       .toThrow(/provider must be one of/);
   });
 
   it("updates, sets-active, and deletes through the store", () => {
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "anthropic", model: "m" });
-    invoke(CHANNELS.createAiConfig, wsId, { id: "c2", name: "B", provider: "anthropic", model: "m" });
+    invoke(CHANNELS.createAiConfig, wsId, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
+    invoke(CHANNELS.createAiConfig, wsId, { id: "c2", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
 
     const updated = invoke(CHANNELS.updateAiConfig, wsId, "c1", { name: "Renamed" });
     expect(updated.configs.find((c) => c.id === "c1")?.name).toBe("Renamed");

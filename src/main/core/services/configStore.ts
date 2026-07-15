@@ -16,6 +16,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { MODEL_DEFS, defaultMaxTokens, findModelDef } from "@shared/types";
 import type {
   Settings,
   Target,
@@ -84,13 +85,30 @@ function normalizeTargets(raw: unknown): Target[] {
 
 // Persist only the non-secret config shape; an `apiKey` (or any stray field) from
 // a legacy file is never written back into the git-versionable workspace.
+//
+// `thinking` and `maxTokens` are absent from a file written before they existed, so
+// they resolve to the selected model's own built-in defaults on read (storage-path's
+// rule for a key the user never had a value for) — not a migration, just a default.
+// The model id itself is passed through untouched: whether it is still one we offer
+// is not the store's judgment, and a stale one surfaces at the provider.
 function normalizeAiConfigs(raw: unknown): StoredAiConfig[] {
-  return (Array.isArray(raw) ? (raw as StoredAiConfig[]) : []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    provider: c.provider,
-    model: c.model,
-  }));
+  const entries = Array.isArray(raw) ? (raw as Partial<StoredAiConfig>[]) : [];
+  return entries.map((c) => {
+    const model = findModelDef(String(c.model ?? ""));
+    return {
+      id: c.id as string,
+      name: c.name as string,
+      provider: c.provider as StoredAiConfig["provider"],
+      model: c.model as string,
+      thinking:
+        typeof c.thinking === "boolean" ? c.thinking : (model?.supportsAdaptiveThinking ?? false),
+      // With an unknown model there is nothing to scale to, but the value is also
+      // never reached: the provider rejects the model before reading the budget.
+      maxTokens: Number.isInteger(c.maxTokens)
+        ? (c.maxTokens as number)
+        : defaultMaxTokens(model ?? MODEL_DEFS[0]),
+    };
+  });
 }
 
 function normalizeAnalysisPrompts(raw: unknown): AnalysisPrompt[] {
@@ -186,6 +204,8 @@ export function getActiveAiConfig(workspace: Workspace): AiConfig | null {
     name: stored.name,
     provider: stored.provider,
     model: stored.model,
+    thinking: stored.thinking,
+    maxTokens: stored.maxTokens,
     apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, stored.id, stored.provider) ?? "",
   };
 }
@@ -209,6 +229,8 @@ export function getAiConfigsForClient(workspace: Workspace): AiConfigsData {
       hasApiKey: storedIds.has(config.id),
       usingEnvKey: apiKeys.hasEnvApiKey(config.provider),
       model: config.model,
+      thinking: config.thinking,
+      maxTokens: config.maxTokens,
     })),
   };
 }
@@ -218,6 +240,8 @@ export type CreateAiConfigInput = {
   name: string;
   provider: AiProvider;
   model: string;
+  thinking: boolean;
+  maxTokens: number;
   apiKey?: string;
 };
 
@@ -233,7 +257,14 @@ export function createAiConfig(workspace: Workspace, input: CreateAiConfigInput)
   }
   config.aiConfigs = [
     ...config.aiConfigs,
-    { id: input.id, name: input.name, provider: input.provider, model: input.model },
+    {
+      id: input.id,
+      name: input.name,
+      provider: input.provider,
+      model: input.model,
+      thinking: input.thinking,
+      maxTokens: input.maxTokens,
+    },
   ];
   // Config first, then key: the key is only meaningful once its config exists, so
   // a failed key write at worst leaves a keyless config the user can re-key. (The
@@ -250,6 +281,8 @@ export type UpdateAiConfigPatch = {
   name?: string;
   provider?: AiProvider;
   model?: string;
+  thinking?: boolean;
+  maxTokens?: number;
   /**
    * Key handling (the key lives in the secrets file, not the workspace):
    *   - field omitted from patch → existing key is preserved

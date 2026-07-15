@@ -10,6 +10,7 @@ const ipc = vi.hoisted(() => ({
 
 const provider = vi.hoisted(() => ({
   onText: null as null | ((delta: string) => void),
+  onThinking: null as null | ((delta: string) => void),
   abort: null as null | (() => void),
   resolveFinished: null as null | ((text: string) => void),
   rejectFinished: null as null | ((err: unknown) => void),
@@ -48,8 +49,14 @@ vi.mock("@main/core/ai/factory.js", () => ({
   createProvider: () => ({
     generateText: () => Promise.resolve(""),
     generateJson: () => Promise.resolve({}),
-    generateTextStream: (_sys: string, _user: string, onText: (delta: string) => void) => {
+    generateTextStream: (
+      _sys: string,
+      _user: string,
+      onText: (delta: string) => void,
+      onThinking?: (delta: string) => void,
+    ) => {
       provider.onText = onText;
+      provider.onThinking = onThinking ?? null;
       provider.abort = vi.fn();
       return {
         abort: provider.abort,
@@ -102,6 +109,7 @@ beforeEach(() => {
   ipc.handlers.clear();
   ipc.listeners.clear();
   provider.onText = null;
+  provider.onThinking = null;
   provider.abort = null;
   provider.resolveFinished = null;
   provider.rejectFinished = null;
@@ -126,6 +134,57 @@ describe("analysis stream handlers", () => {
       { type: "delta", text: "world" },
       { type: "done" },
     ]);
+  });
+
+  // Reasoning and answer travel as different frame types. If they were merged, the
+  // model's thinking would be rendered as the analysis itself.
+  it("sends reasoning as thinking frames, never as answer deltas", async () => {
+    const event = makeEvent();
+    const channel = analysisStreamChannel("req-think");
+    start(event, "req-think", params);
+
+    provider.onThinking!("weighing ");
+    provider.onThinking!("the claim");
+    provider.onText!("Verdict");
+    provider.resolveFinished!("Verdict");
+    await tick();
+
+    expect(framesFor(event, channel)).toEqual([
+      { type: "thinking", text: "weighing " },
+      { type: "thinking", text: "the claim" },
+      { type: "delta", text: "Verdict" },
+      { type: "done" },
+    ]);
+  });
+
+  // Thinking is not output: a run that only ever reasoned produced no answer, and the
+  // final-text fallback below must still fire rather than treat the turn as answered.
+  it("does not count reasoning as having written an answer", async () => {
+    const event = makeEvent();
+    const channel = analysisStreamChannel("req-think-only");
+    start(event, "req-think-only", params);
+
+    provider.onThinking!("reasoned a lot");
+    provider.resolveFinished!("recovered text");
+    await tick();
+
+    expect(framesFor(event, channel)).toEqual([
+      { type: "thinking", text: "reasoned a lot" },
+      { type: "delta", text: "recovered text" },
+      { type: "done" },
+    ]);
+  });
+
+  it("drops reasoning that arrives after an abort", async () => {
+    const event = makeEvent();
+    const channel = analysisStreamChannel("req-think-abort");
+    start(event, "req-think-abort", params);
+
+    abort(null, "req-think-abort");
+    provider.onThinking!("late reasoning");
+    await tick();
+
+    expect(framesFor(event, channel)).toEqual([]);
   });
 
   it("aborting an active stream cancels the provider and suppresses later frames", async () => {

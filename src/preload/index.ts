@@ -121,7 +121,11 @@ const api = {
   // --- AI generation ---
   generateMetadata: (wsId: string, postId: string, fields: string[], content: string) =>
     ipcRenderer.invoke(CHANNELS.generateMetadata, wsId, postId, fields, content) as Promise<MetadataGenerationResults>,
-  runAnalysisStream: (params: AnalysisStreamParams, onDelta: (delta: string) => void): AnalysisStreamHandle => {
+  runAnalysisStream: (
+    params: AnalysisStreamParams,
+    onDelta: (delta: string) => void,
+    onThinking?: (delta: string) => void,
+  ): AnalysisStreamHandle => {
     const requestId = `astream-${nextStreamId++}`;
     const channel = analysisStreamChannel(requestId);
     let settled = false;
@@ -142,6 +146,7 @@ const api = {
     };
     function listener(_event: unknown, frame: AnalysisStreamFrame): void {
       if (frame.type === "delta") onDelta(frame.text);
+      else if (frame.type === "thinking") onThinking?.(frame.text);
       else if (frame.type === "done") finish(resolveDone);
       else if (frame.type === "error") finish(() => rejectDone(new Error(frame.message)));
     }

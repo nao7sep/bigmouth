@@ -19,6 +19,9 @@ export function AnalysisTab({
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
+  // The model's reasoning, when the active AI config has thinking on. It arrives
+  // before any answer text, so it is also what fills the wait.
+  const [thinking, setThinking] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptsError, setPromptsError] = useState<string | null>(null);
@@ -47,6 +50,7 @@ export function AnalysisTab({
     abortRef.current?.abort();
     abortRef.current = null;
     setResult(null);
+    setThinking(null);
     setError(null);
     setLoading(false);
   }, [postId]);
@@ -67,12 +71,17 @@ export function AnalysisTab({
     setLoading(true);
     setError(null);
     setResult("");
+    setThinking(null);
     try {
       await runAnalysisStream(postId, selectedPrompt, content, {
         signal: controller.signal,
         onChunk: (delta) => {
           if (runIdRef.current !== myId) return;
           setResult((prev) => (prev ?? "") + delta);
+        },
+        onThinking: (delta) => {
+          if (runIdRef.current !== myId) return;
+          setThinking((prev) => (prev ?? "") + delta);
         },
       });
     } catch (err) {
@@ -135,6 +144,15 @@ export function AnalysisTab({
       </div>
 
       {error && <div className="panel-error">{error}</div>}
+
+      {/* Open while it is the only thing to read, then collapsed once the answer
+          arrives — the reasoning is what fills the wait, not the deliverable. */}
+      {thinking && (
+        <details className="analysis-thinking" open={!result}>
+          <summary>Reasoning</summary>
+          <div className="analysis-thinking-body">{thinking}</div>
+        </details>
+      )}
 
       {html && (
         <div

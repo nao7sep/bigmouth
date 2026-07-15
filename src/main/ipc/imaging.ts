@@ -24,7 +24,6 @@ import { resolveWorkspace } from "./context.js";
 
 const IMAGING_GENERATION_TIMEOUT_MS = 60_000;
 const IMAGING_GENERATION_MAX_RETRIES = 1;
-const IMAGING_GENERATION_MAX_TOKENS = 4096;
 
 export function registerImagingHandlers(): void {
   ipcMain.handle(
@@ -82,7 +81,6 @@ export function registerImagingHandlers(): void {
         const raw = await provider.generateJson(systemPrompt, userContent, buildImagingSchema(options.count), {
           timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
           maxRetries: IMAGING_GENERATION_MAX_RETRIES,
-          maxTokens: IMAGING_GENERATION_MAX_TOKENS,
         });
         const items = normalizeImagingOutput(raw, options.count);
         logInfo("imaging completed", {

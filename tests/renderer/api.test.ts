@@ -84,9 +84,11 @@ describe("api bridge adapter", () => {
 
       const onChunk = vi.fn();
       const promise = runAnalysisStream("p1", "Prompt", "content", { onChunk });
+      // onThinking is optional; a caller that omits it forwards undefined.
       expect(runStream).toHaveBeenCalledWith(
         { wsId: "w1", postId: "p1", promptName: "Prompt", content: "content" },
         onChunk,
+        undefined,
       );
       resolveDone();
       await expect(promise).resolves.toBeUndefined();
@@ -294,7 +296,7 @@ describe("api wrappers — call-through and argument shape", () => {
     it("createAiConfig forwards ws + the AiConfigInput", () => {
       const b = bridge();
       installBridge(b);
-      const input = { id: "c1", name: "C", provider: "anthropic" as const, model: "m", apiKey: "k" };
+      const input = { id: "c1", name: "C", provider: "anthropic" as const, model: "m", thinking: false, maxTokens: 12800, apiKey: "k" };
       void createAiConfig(input);
       expect(b.createAiConfig).toHaveBeenCalledWith("w1", input);
     });

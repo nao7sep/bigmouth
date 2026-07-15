@@ -70,6 +70,8 @@ describe("safeAiConfigLogContext", () => {
       provider: "anthropic",
       apiKey: "sk-ant-super-secret",
       model: "claude-opus-4-8",
+      thinking: false,
+      maxTokens: 12800,
     };
     const ctx = safeAiConfigLogContext(config);
     expect(JSON.stringify(ctx)).not.toContain("sk-ant-super-secret");
@@ -83,6 +85,8 @@ describe("safeAiConfigLogContext", () => {
       provider: "anthropic",
       apiKey: "",
       model: "claude-opus-4-8",
+      thinking: false,
+      maxTokens: 12800,
     };
     expect(safeAiConfigLogContext(config).aiConfigName).toBe("(unnamed)");
   });

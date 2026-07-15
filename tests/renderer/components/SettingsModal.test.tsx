@@ -83,7 +83,7 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
   return {
     activeId: "c1",
     configs: [
-      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-4-6" },
+      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-4-6", thinking: false, maxTokens: 12800 },
     ],
     ...overrides,
   };
@@ -190,7 +190,7 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
     const { getByRole } = await renderModal(
       aiConfigs({
         configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m", usingEnvKey: true },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800, usingEnvKey: true },
         ],
       }),
     );
@@ -204,7 +204,7 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
     const { getByRole } = await renderModal(
       aiConfigs({
         configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m", hasApiKey: true },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800, hasApiKey: true },
         ],
       }),
     );
@@ -252,8 +252,8 @@ describe("SettingsModal — AI Configs add/edit/delete rows", () => {
       aiConfigs({
         activeId: "c1",
         configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m" },
-          { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "m" },
+          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
+          { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
         ],
       }),
     );
@@ -284,8 +284,8 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     const initial = aiConfigs({
       activeId: "c1",
       configs: [
-        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "m1" },
-        { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "m2" },
+        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-opus-4-8", thinking: false, maxTokens: 12800 },
+        { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: true, maxTokens: 12800 },
       ],
     });
     const { getByRole, onClose, onSettingsChanged } = await renderModal(initial);
@@ -302,23 +302,24 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
 
     const panel = openAiTab(getByRole);
 
-    // The API Key input is type="password", which has no textbox role, so the
-    // role="textbox" elements are only Name + Model per row: with two rows the
-    // order is [c1.name, c1.model, c2.name, c2.model].
+    // The API Key input is type="password" (no textbox role) and Model is a select,
+    // so the role="textbox" elements are Name only — one per row. Comboboxes are the
+    // "Active AI config" select first, then Provider + Model per row.
 
-    // 1. Add a new config; its Name/Model are textboxes 4 and 5.
+    // 1. Add a new config; with two existing rows its Name is textbox 2 and its
+    //    Model is combobox 6 ([active, c1.provider, c1.model, c2.provider, c2.model,
+    //    new.provider, new.model]).
     fireEvent.click(within(panel).getByText("+ Add AI Config"));
     let p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[4], { target: { value: "New" } });
+    fireEvent.change(within(p).getAllByRole("textbox")[2], { target: { value: "New" } });
     p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[5], { target: { value: "m3" } });
+    fireEvent.change(within(p).getAllByRole("combobox")[6], { target: { value: "claude-haiku-4-5" } });
 
-    // 2. Edit c1's model (an update) — textbox index 1.
+    // 2. Edit c1's model (an update) — combobox index 2.
     p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[1], { target: { value: "m1-edited" } });
+    fireEvent.change(within(p).getAllByRole("combobox")[2], { target: { value: "claude-sonnet-4-6" } });
 
-    // 3. Change the active config to c2. The first combobox is the "Active AI
-    //    config" select (the rest are per-row Provider selects).
+    // 3. Change the active config to c2 — the first combobox.
     p = getByRole("tabpanel");
     const activeSelect = within(p).getAllByRole("combobox")[0];
     fireEvent.change(activeSelect, { target: { value: "c2" } });
@@ -337,9 +338,16 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
       await Promise.resolve();
     });
 
-    // The new config was created.
+    // The new config was created — and picking Haiku re-derived the fields that
+    // belong to the model: thinking off (it rejects thinking) and its own budget.
     expect(mock.createAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "New", model: "m3", provider: "anthropic" }),
+      expect.objectContaining({
+        name: "New",
+        model: "claude-haiku-4-5",
+        provider: "anthropic",
+        thinking: false,
+        maxTokens: 6400,
+      }),
     );
     // The active swap was issued for c2.
     expect(mock.setActiveAiConfig).toHaveBeenCalledWith("c2");
@@ -362,12 +370,10 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     const panel = openAiTab(getByRole);
     fireEvent.click(within(panel).getByText("+ Add AI Config"));
 
-    // One existing row + the new row → textboxes [c1.name, c1.model, new.name,
-    // new.model]. Fill the new row's Name/Model, leave the API key blank.
-    let p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[2], { target: { value: "Fresh" } });
-    p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[3], { target: { value: "m2" } });
+    // One existing row + the new row → textboxes are [c1.name, new.name] (Model is a
+    // select). Fill the new row's Name, leave the API key blank.
+    const p = getByRole("tabpanel");
+    fireEvent.change(within(p).getAllByRole("textbox")[1], { target: { value: "Fresh" } });
 
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
@@ -375,9 +381,15 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
       await Promise.resolve();
     });
 
-    // apiKey omitted (undefined) because it was left blank.
+    // apiKey omitted (undefined) because it was left blank. The row was added without
+    // touching Model, so it carries the default model and that model's own budget.
     expect(mock.createAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Fresh", model: "m2", apiKey: undefined }),
+      expect.objectContaining({
+        name: "Fresh",
+        model: "claude-sonnet-5",
+        maxTokens: 12800,
+        apiKey: undefined,
+      }),
     );
   });
 

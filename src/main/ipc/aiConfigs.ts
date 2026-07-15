@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS, type AiConfigInput, type AiConfigPatch } from "@shared/ipc";
-import { AI_PROVIDERS, type AiProvider } from "@shared/types";
+import { AI_PROVIDERS, validateMaxTokens, type AiProvider } from "@shared/types";
 import {
   getAiConfigsForClient,
   createAiConfig,
@@ -36,6 +36,9 @@ export function registerAiConfigHandlers(): void {
     if (typeof input.name !== "string") throw new Error("name must be a string");
     if (!isAiProvider(input.provider)) throw new Error(`provider must be one of: ${AI_PROVIDERS.join(", ")}`);
     if (typeof input.model !== "string") throw new Error("model must be a string");
+    if (typeof input.thinking !== "boolean") throw new Error("thinking must be a boolean");
+    const budgetError = validateMaxTokens(input.maxTokens);
+    if (budgetError) throw new Error(budgetError);
     if (input.apiKey !== undefined && typeof input.apiKey !== "string") throw new Error("apiKey must be a string");
     try {
       const result = createAiConfig(ws, {
@@ -43,6 +46,8 @@ export function registerAiConfigHandlers(): void {
         name: input.name,
         provider: input.provider,
         model: input.model,
+        thinking: input.thinking,
+        maxTokens: input.maxTokens,
         apiKey: input.apiKey,
       });
       info("ai config created", { workspace: wsId, configId: input.id });
@@ -83,6 +88,15 @@ export function registerAiConfigHandlers(): void {
     if (body?.model !== undefined) {
       if (typeof body.model !== "string") throw new Error("model must be a string");
       patch.model = body.model;
+    }
+    if (body?.thinking !== undefined) {
+      if (typeof body.thinking !== "boolean") throw new Error("thinking must be a boolean");
+      patch.thinking = body.thinking;
+    }
+    if (body?.maxTokens !== undefined) {
+      const err = validateMaxTokens(body.maxTokens);
+      if (err) throw new Error(err);
+      patch.maxTokens = body.maxTokens;
     }
     if (body?.apiKey !== undefined) {
       if (typeof body.apiKey !== "string") throw new Error("apiKey must be a string");

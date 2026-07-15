@@ -4,6 +4,11 @@ import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, Generat
 import {
   AI_PROVIDERS,
   PROVIDER_LABELS,
+  MODEL_DEFS,
+  DEFAULT_MODEL_ID,
+  findModelDef,
+  defaultMaxTokens,
+  validateMaxTokens,
   CONTENT_FONT_SIZE_MAX,
   CONTENT_FONT_SIZE_MIN,
   CONTENT_LINE_HEIGHT_MAX,
@@ -224,6 +229,8 @@ export function SettingsModal({
           name: c.name,
           provider: c.provider,
           model: c.model,
+          thinking: c.thinking,
+          maxTokens: c.maxTokens,
           apiKey: c.apiKey.trim() ? c.apiKey : undefined,
         });
       }
@@ -235,6 +242,8 @@ export function SettingsModal({
         if (c.name !== prev.name) patch.name = c.name;
         if (c.provider !== prev.provider) patch.provider = c.provider;
         if (c.model !== prev.model) patch.model = c.model;
+        if (c.thinking !== prev.thinking) patch.thinking = c.thinking;
+        if (c.maxTokens !== prev.maxTokens) patch.maxTokens = c.maxTokens;
         // The UI keeps the apiKey input empty unless the user typed a new key,
         // so a non-empty value here always means "replace". There is no UI
         // for explicit clearing today.
@@ -685,13 +694,36 @@ function AiTab({
       ),
     });
 
+  // Switching model re-derives the fields that belong to it: a budget scaled to the
+  // old model is meaningless against the new one, and thinking a model rejects must
+  // never survive the swap.
+  const selectModel = (id: string, modelId: string) => {
+    const model = findModelDef(modelId);
+    if (!model) return;
+    updateConfig(id, {
+      model: model.id,
+      thinking: model.supportsAdaptiveThinking,
+      maxTokens: defaultMaxTokens(model),
+    });
+  };
+
   const addConfig = () => {
     const id = nanoid();
+    const model = findModelDef(DEFAULT_MODEL_ID) ?? MODEL_DEFS[0];
     onChange({
       ...aiConfigs,
       configs: [
         ...aiConfigs.configs,
-        { id, name: "", provider: "anthropic", apiKey: "", hasApiKey: false, model: "claude-sonnet-5" },
+        {
+          id,
+          name: "",
+          provider: "anthropic",
+          apiKey: "",
+          hasApiKey: false,
+          model: model.id,
+          thinking: model.supportsAdaptiveThinking,
+          maxTokens: defaultMaxTokens(model),
+        },
       ],
     });
   };
@@ -760,12 +792,60 @@ function AiTab({
             </div>
             <div className="form-field" style={{ flex: 2 }}>
               <label className="form-label">Model</label>
+              <select
+                className="form-select"
+                value={c.model}
+                onChange={(e) => selectModel(c.id, e.target.value)}
+              >
+                {MODEL_DEFS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+                {/* A model from an older version is shown rather than silently
+                    swapped, so the config still reads as what it is. */}
+                {!findModelDef(c.model) && (
+                  <option value={c.model}>{c.model} (not available)</option>
+                )}
+              </select>
+              {!findModelDef(c.model) && (
+                <FieldError msg="This model is no longer offered. Pick another." />
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label className="form-label">Max tokens</label>
               <input
                 className="form-input"
-                value={c.model}
-                onChange={(e) => updateConfig(c.id, { model: e.target.value })}
+                type="number"
+                min={1}
+                step={1}
+                value={c.maxTokens}
+                onChange={(e) =>
+                  updateConfig(c.id, { maxTokens: Number.parseInt(e.target.value, 10) })
+                }
               />
-              {!c.model.trim() && <FieldError msg="Model is required." />}
+              {validateMaxTokens(c.maxTokens) && (
+                <FieldError msg={validateMaxTokens(c.maxTokens) as string} />
+              )}
+            </div>
+            <div className="form-field" style={{ flex: 1 }}>
+              <label className="form-label">Thinking</label>
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={c.thinking}
+                  disabled={!findModelDef(c.model)?.supportsAdaptiveThinking}
+                  onChange={(e) => updateConfig(c.id, { thinking: e.target.checked })}
+                />
+                Adaptive thinking
+              </label>
+              {findModelDef(c.model) && !findModelDef(c.model)!.supportsAdaptiveThinking && (
+                <p className="settings-hint">
+                  {findModelDef(c.model)!.label} does not support thinking.
+                </p>
+              )}
             </div>
           </div>
           <div className="form-field">
