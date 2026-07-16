@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
-import type { Workspace } from "@shared/types";
+import { defaultUiState, type UiState, type Workspace } from "@shared/types";
 
-// App is the top-level shell. It only talks to the main process through these
-// two api calls; everything else it owns is routing + pane-width bookkeeping.
+// App is the top-level shell. It talks to the main process through these api
+// calls; everything else it owns is routing + pane-width bookkeeping. The view
+// state (pane widths + last workspace id) lives in the main process's state.json,
+// hydrated via getUiState and persisted via updateUiState.
 vi.mock("@renderer/api", () => ({
   listWorkspaces: vi.fn(),
   setActiveWorkspace: vi.fn(),
+  getUiState: vi.fn(),
+  updateUiState: vi.fn(),
 }));
 
 // The two heavy children are replaced with stand-ins so the tests assert App's
@@ -81,28 +85,18 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
 }));
 
 import { App } from "@renderer/App";
-import { listWorkspaces, setActiveWorkspace } from "@renderer/api";
+import { listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
 
 const mockList = vi.mocked(listWorkspaces);
 const mockSetActive = vi.mocked(setActiveWorkspace);
+const mockGetUiState = vi.mocked(getUiState);
+const mockUpdateUiState = vi.mocked(updateUiState);
 
 const WS1: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/d/a" };
 
-// jsdom serves App from an opaque (about:blank) origin, which has no usable
-// localStorage; App persists the active workspace id there. A tiny in-memory
-// Storage stand-in gives the bootstrap/persist paths a real store to read back.
-function createStorageStub(): Storage {
-  const map = new Map<string, string>();
-  return {
-    get length() {
-      return map.size;
-    },
-    clear: () => map.clear(),
-    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
-    setItem: (k: string, v: string) => void map.set(k, String(v)),
-    removeItem: (k: string) => void map.delete(k),
-    key: (i: number) => Array.from(map.keys())[i] ?? null,
-  };
+// Build a UiState with a given remembered workspace id (default pane widths).
+function uiState(activeWorkspaceId: string): UiState {
+  return { ...defaultUiState(), activeWorkspaceId };
 }
 
 // jsdom has no ResizeObserver; App's pane-measurement effect needs one. A no-op
@@ -116,7 +110,10 @@ beforeEach(() => {
       disconnect() {}
     }
   );
-  vi.stubGlobal("localStorage", createStorageStub());
+  // Default: no remembered workspace. Each test overrides as needed. updateUiState
+  // resolves with the merged state so the awaited persist paths settle.
+  mockGetUiState.mockResolvedValue(uiState(""));
+  mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
 });
 
@@ -125,6 +122,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   mockList.mockReset();
   mockSetActive.mockReset();
+  mockGetUiState.mockReset();
+  mockUpdateUiState.mockReset();
 });
 
 // Renders App and flushes the bootstrap effect's microtasks so the post-mount
@@ -149,10 +148,11 @@ describe("App bootstrap — no stored workspace", () => {
   });
 
   it("renders nothing while the stored-workspace check is still in flight", () => {
-    // A stored id with a never-resolving listWorkspaces keeps wsChecked false, so
+    // A stored id plus a never-resolving listWorkspaces keeps wsChecked false, so
     // App returns null and mounts neither child until the check settles. (No
-    // await — we inspect the pre-resolution frame.)
-    localStorage.setItem("bm-workspace-id", "ws1");
+    // await — we inspect the pre-resolution frame; the async state hydration has
+    // not run yet either.)
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockReturnValue(new Promise<Workspace[]>(() => {}));
     const { container } = render(<App />);
     expect(container.querySelector('[data-testid="ws-modal"]')).toBeNull();
@@ -162,7 +162,7 @@ describe("App bootstrap — no stored workspace", () => {
 
 describe("App bootstrap — stored workspace", () => {
   it("loads the stored workspace and renders the session", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId, queryByTestId } = await renderApp();
 
@@ -173,22 +173,22 @@ describe("App bootstrap — stored workspace", () => {
     expect(queryByTestId("ws-modal")).toBeNull();
   });
 
-  it("falls back to the picker and clears storage when the stored id is gone", async () => {
-    localStorage.setItem("bm-workspace-id", "missing");
+  it("falls back to the picker and clears the remembered id when the stored id is gone", async () => {
+    mockGetUiState.mockResolvedValue(uiState("missing"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId, queryByTestId } = await renderApp();
 
-    expect(localStorage.getItem("bm-workspace-id")).toBeNull();
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "" });
     expect(getByTestId("ws-modal")).toBeTruthy();
     expect(queryByTestId("session")).toBeNull();
   });
 
-  it("falls back to the picker and clears storage when the load rejects", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+  it("falls back to the picker and clears the remembered id when the load rejects", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockRejectedValue(new Error("disk gone"));
     const { getByTestId } = await renderApp();
 
-    expect(localStorage.getItem("bm-workspace-id")).toBeNull();
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "" });
     expect(getByTestId("ws-modal")).toBeTruthy();
   });
 });
@@ -204,14 +204,14 @@ describe("App workspace selection", () => {
     });
 
     expect(mockSetActive).toHaveBeenCalledWith("ws2");
-    expect(localStorage.getItem("bm-workspace-id")).toBe("ws2");
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "ws2" });
     expect(getByTestId("session-ws").textContent).toBe("ws2");
     // No active workspace existed before selecting, so the picker is replaced.
     expect(queryByTestId("ws-modal")).toBeNull();
   });
 
   it("aborts the switch when the live session refuses to flush", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     sessionFlush.mockResolvedValue(false);
     const { getByTestId, queryByTestId } = await renderApp();
@@ -225,9 +225,10 @@ describe("App workspace selection", () => {
       await Promise.resolve();
     });
 
-    // flush returned false: the original workspace stays active and selected.
+    // flush returned false: the original workspace stays active and selected, and
+    // the remembered id was never repointed to ws2.
     expect(sessionFlush).toHaveBeenCalled();
-    expect(localStorage.getItem("bm-workspace-id")).toBe("ws1");
+    expect(mockUpdateUiState).not.toHaveBeenCalledWith({ activeWorkspaceId: "ws2" });
     expect(getByTestId("session-ws").textContent).toBe("ws1");
     expect(queryByTestId("ws-modal")).toBeTruthy();
   });
@@ -235,7 +236,7 @@ describe("App workspace selection", () => {
 
 describe("App switch-workspace modal toggling", () => {
   it("opens the dismissable picker on demand and closes it again", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId, queryByTestId } = await renderApp();
 
@@ -254,7 +255,7 @@ describe("App switch-workspace modal toggling", () => {
 
 describe("App active-workspace deletion", () => {
   it("tears down the session and reopens the picker when the active ws is deleted", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId, queryByTestId } = await renderApp();
 
@@ -266,14 +267,14 @@ describe("App active-workspace deletion", () => {
 
     expect(sessionFlush).toHaveBeenCalled();
     expect(mockSetActive).toHaveBeenLastCalledWith("");
-    expect(localStorage.getItem("bm-workspace-id")).toBeNull();
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "" });
     expect(queryByTestId("session")).toBeNull();
     // Back to the non-dismissable picker (no active workspace remains).
     expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
   });
 
   it("leaves the session alone when a non-active workspace is deleted", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId } = await renderApp();
 
@@ -283,16 +284,17 @@ describe("App active-workspace deletion", () => {
       await Promise.resolve();
     });
 
-    // The deleted id wasn't the active one, so nothing tears down.
+    // The deleted id wasn't the active one, so nothing tears down and the
+    // remembered id is never cleared.
     expect(sessionFlush).not.toHaveBeenCalled();
     expect(getByTestId("session-ws").textContent).toBe("ws1");
-    expect(localStorage.getItem("bm-workspace-id")).toBe("ws1");
+    expect(mockUpdateUiState).not.toHaveBeenCalledWith({ activeWorkspaceId: "" });
   });
 });
 
 describe("App active-workspace rename", () => {
   it("threads an updated workspace through to the live session", async () => {
-    localStorage.setItem("bm-workspace-id", "ws1");
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     const { getByTestId } = await renderApp();
 

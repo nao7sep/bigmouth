@@ -2,8 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
-import { listWorkspaces, setActiveWorkspace } from "./api";
-import type { Workspace } from "@shared/types";
+import { getUiState, listWorkspaces, setActiveWorkspace, updateUiState } from "./api";
+import {
+  DEFAULT_PANE_LEFT_WIDTH,
+  DEFAULT_PANE_RIGHT_WIDTH,
+  type UiState,
+  type Workspace,
+} from "@shared/types";
 import {
   CENTER_MIN,
   DIVIDER,
@@ -13,10 +18,6 @@ import {
   clampPaneWidth,
 } from "./paneConstants";
 import "./App.css";
-
-const STORAGE_LEFT = "bm-pane-left-width";
-const STORAGE_RIGHT = "bm-pane-right-width";
-const STORAGE_WS = "bm-workspace-id";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
 // upper bound is the widest the pane can grow at all. The live splitter clamp
@@ -33,25 +34,24 @@ const RIGHT_MAX = 960;
 // clampPaneWidth); only a drag updates the intent and persists it. A viewport
 // resize re-derives the display from the unchanged intent and persists nothing,
 // so widening the window restores the pane to its intended width.
-function readStoredIntent(key: string, fallback: number, min: number, max: number) {
-  const v = localStorage.getItem(key);
-  return v ? clamp(+v, min, max) : fallback;
-}
+//
+// Intents live in the main process's state.json (view state), hydrated once on
+// mount via getUiState and persisted on drag-end via updateUiState — no longer in
+// renderer localStorage (persisted-store-separation-conventions).
 
 export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
 
-  // Intent widths (px): what the user dragged each side pane to. Loaded from
-  // storage clamped only to per-pane bounds — restoring keeps the persisted
-  // intent rather than overwriting it with a viewport-fitted value.
-  const [leftIntent, setLeftIntent] = useState(() =>
-    readStoredIntent(STORAGE_LEFT, 360, LEFT_MIN, LEFT_MAX)
-  );
-  const [rightIntent, setRightIntent] = useState(() =>
-    readStoredIntent(STORAGE_RIGHT, 480, RIGHT_MIN, RIGHT_MAX)
-  );
+  // Intent widths (px): what the user dragged each side pane to. Seeded with the
+  // shared defaults and replaced by the persisted intents once state.json is
+  // hydrated on mount (below), clamped only to per-pane bounds — restoring keeps
+  // the persisted intent rather than overwriting it with a viewport-fitted value.
+  // The whole app is gated behind `wsChecked`, which flips true only after hydration,
+  // so these seed values are never shown.
+  const [leftIntent, setLeftIntent] = useState(DEFAULT_PANE_LEFT_WIDTH);
+  const [rightIntent, setRightIntent] = useState(DEFAULT_PANE_RIGHT_WIDTH);
   // The measured pane-row width, used to derive the displayed pane widths from
   // the intents. Tracked in state (updated by a ResizeObserver) so a viewport
   // resize re-derives the display without ever touching the stored intent.
@@ -111,29 +111,56 @@ export function App() {
   }, [activeWorkspace]);
 
   useEffect(() => {
-    const storedId = localStorage.getItem(STORAGE_WS);
-    if (!storedId) {
-      setWorkspaceModalOpen(true);
-      setWsChecked(true);
-      return;
-    }
+    let cancelled = false;
+    void (async () => {
+      // Hydrate view state (pane intents + last workspace) from state.json before
+      // the app renders. The whole tree is gated on wsChecked, flipped true only at
+      // the end, so nothing paints with the seed pane widths or a stale workspace.
+      let state: UiState;
+      try {
+        state = await getUiState();
+      } catch {
+        // A failed state read is non-fatal: fall back to defaults and the picker.
+        if (!cancelled) {
+          setWorkspaceModalOpen(true);
+          setWsChecked(true);
+        }
+        return;
+      }
+      if (cancelled) return;
+      setLeftIntent(clamp(state.paneLeftWidth, LEFT_MIN, LEFT_MAX));
+      setRightIntent(clamp(state.paneRightWidth, RIGHT_MIN, RIGHT_MAX));
 
-    listWorkspaces()
-      .then((workspaces) => {
+      const storedId = state.activeWorkspaceId;
+      if (!storedId) {
+        setWorkspaceModalOpen(true);
+        setWsChecked(true);
+        return;
+      }
+
+      try {
+        const workspaces = await listWorkspaces();
+        if (cancelled) return;
         const ws = workspaces.find((workspace) => workspace.id === storedId);
         if (ws) {
           setActiveWorkspace(ws.id);
           setActiveWorkspaceState(ws);
         } else {
-          localStorage.removeItem(STORAGE_WS);
+          await updateUiState({ activeWorkspaceId: "" });
+          if (cancelled) return;
           setWorkspaceModalOpen(true);
         }
-      })
-      .catch(() => {
-        localStorage.removeItem(STORAGE_WS);
+      } catch {
+        await updateUiState({ activeWorkspaceId: "" });
+        if (cancelled) return;
         setWorkspaceModalOpen(true);
-      })
-      .finally(() => setWsChecked(true));
+      } finally {
+        if (!cancelled) setWsChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSelectWorkspace = useCallback(async (ws: Workspace) => {
@@ -142,7 +169,7 @@ export function App() {
 
     setActiveWorkspace(ws.id);
     setActiveWorkspaceState(ws);
-    localStorage.setItem(STORAGE_WS, ws.id);
+    void updateUiState({ activeWorkspaceId: ws.id });
     setWorkspaceModalOpen(false);
   }, []);
 
@@ -154,7 +181,7 @@ export function App() {
       if (!flushed) return false;
 
       setActiveWorkspace("");
-      localStorage.removeItem(STORAGE_WS);
+      void updateUiState({ activeWorkspaceId: "" });
       setActiveWorkspaceState(null);
       setWorkspaceModalOpen(true);
       return true;
@@ -174,7 +201,7 @@ export function App() {
       e: ReactMouseEvent,
       intentRef: MutableRefObject<number>,
       setIntent: (width: number) => void,
-      storageKey: string,
+      stateKey: "paneLeftWidth" | "paneRightWidth",
       sign: 1 | -1,
       min: number,
       max: number
@@ -195,9 +222,9 @@ export function App() {
       const onUp = () => {
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        // Only a drag persists, and it persists the INTENT (px). Resize and
-        // mount never reach here, so they never overwrite the stored value.
-        localStorage.setItem(storageKey, String(intentRef.current));
+        // Only a drag persists, and it persists the INTENT (px) to state.json.
+        // Resize and mount never reach here, so they never overwrite the stored value.
+        void updateUiState({ [stateKey]: intentRef.current });
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       };
@@ -234,10 +261,10 @@ export function App() {
         leftWidth={leftWidth}
         rightWidth={rightWidth}
         onStartLeftDrag={(e) =>
-          startDrag(e, leftIntentRef, setLeftIntent, STORAGE_LEFT, 1, LEFT_MIN, LEFT_MAX)
+          startDrag(e, leftIntentRef, setLeftIntent, "paneLeftWidth", 1, LEFT_MIN, LEFT_MAX)
         }
         onStartRightDrag={(e) =>
-          startDrag(e, rightIntentRef, setRightIntent, STORAGE_RIGHT, -1, RIGHT_MIN, RIGHT_MAX)
+          startDrag(e, rightIntentRef, setRightIntent, "paneRightWidth", -1, RIGHT_MIN, RIGHT_MAX)
         }
         onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
       />

@@ -23,6 +23,7 @@ import type {
   PostStatus,
   Settings,
   Target,
+  UiState,
   Workspace,
 } from "./types";
 
@@ -36,6 +37,10 @@ export const CHANNELS = {
   deleteWorkspace: "workspace:delete",
   revealCurrentLogFile: "log:revealCurrent",
   pickDirectory: "dialog:pickDirectory",
+
+  // UI state (state.json)
+  getUiState: "state:get",
+  updateUiState: "state:update",
 
   // Posts
   listPosts: "post:list",
@@ -196,6 +201,11 @@ export interface BigMouthApi {
   revealCurrentLogFile(): Promise<string>;
   /** Native folder picker for choosing a workspace directory; null if cancelled. */
   pickDirectory(): Promise<string | null>;
+
+  // UI state (state.json) — persisted view state: side-pane widths and the last
+  // active workspace id. Its own store, separate from workspace config.
+  getUiState(): Promise<UiState>;
+  updateUiState(patch: Partial<UiState>): Promise<UiState>;
 
   // Posts
   listPosts(wsId: string, publishedOffset: number, limit: number, expiredOffset: number): Promise<PostListResponse>;

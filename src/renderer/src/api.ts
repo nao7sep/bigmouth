@@ -11,6 +11,7 @@ import type {
   AiConfigsData,
   GenerationPromptsData,
   ImagingOptions,
+  UiState,
   Workspace,
   ImagingRelation,
   ImagingMood,
@@ -69,6 +70,18 @@ export function revealCurrentLogFile(): Promise<string> {
 
 export function pickWorkspaceDirectory(): Promise<string | null> {
   return bridge().pickDirectory();
+}
+
+// --- UI state (state.json) ---
+
+/** The persisted view state: side-pane intent widths + last active workspace id. */
+export function getUiState(): Promise<UiState> {
+  return bridge().getUiState();
+}
+
+/** Persist a partial UI-state change (a pane drag, or the active workspace id). */
+export function updateUiState(patch: Partial<UiState>): Promise<UiState> {
+  return bridge().updateUiState(patch);
 }
 
 // --- Posts ---

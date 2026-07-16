@@ -25,6 +25,7 @@ import type {
   PostStatus,
   Settings,
   Target,
+  UiState,
   Workspace,
 } from "@shared/types";
 
@@ -51,6 +52,11 @@ const api = {
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
   revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,
   pickDirectory: () => ipcRenderer.invoke(CHANNELS.pickDirectory) as Promise<string | null>,
+
+  // --- UI state (state.json) ---
+  getUiState: () => ipcRenderer.invoke(CHANNELS.getUiState) as Promise<UiState>,
+  updateUiState: (patch: Partial<UiState>) =>
+    ipcRenderer.invoke(CHANNELS.updateUiState, patch) as Promise<UiState>,
 
   // --- Posts ---
   listPosts: (wsId: string, publishedOffset: number, limit: number, expiredOffset: number) =>

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from "electron";
 
 import { initAppDir, getLogsDir } from "./core/services/workspaceStore.js";
+import { initStateStore } from "./core/services/stateStore.js";
 import {
   initLogger,
   closeLogger,
@@ -29,6 +30,10 @@ let shuttingDown = false;
 function bootstrap(): void {
   const appConfig = initAppDir();
   initLogger(getLogsDir());
+  // State store (view state: pane widths + last workspace) resolves state.json under
+  // the same storage root, so it must init after initAppDir(); after initLogger too,
+  // so a self-heal warning on an invalid file is actually logged.
+  initStateStore();
   info("app started", {
     version: app.getVersion(),
     workspaceCount: appConfig.workspaces.length,

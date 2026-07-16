@@ -110,6 +110,25 @@ export interface AppConfig {
   workspaces: Workspace[];
 }
 
+// --- UI state ---
+// Mirror of @shared/types UiState (the two type worlds can't import each other,
+// same as ContentFont below). Kept in sync by hand.
+
+/**
+ * Ephemeral UI state persisted to `~/.bigmouth/state.json` — saved by the app on
+ * the user's behalf, not authored as configuration. It lives in its own store,
+ * apart from the workspace registry (workspaces.json / AppConfig) and every
+ * per-workspace config.json, per persisted-store-separation-conventions: a settings
+ * reset must not touch it, and its splitter-drag churn must not rewrite a config
+ * file. Machine-/display-specific and disposable — losing it just reopens the
+ * workspace picker and restores default pane widths.
+ */
+export interface UiState {
+  paneLeftWidth: number;   // left side-pane INTENT width (px); display is clamped at render time
+  paneRightWidth: number;  // right side-pane INTENT width (px)
+  activeWorkspaceId: string; // last-selected workspace id; "" = none (open the picker)
+}
+
 // --- Settings ---
 
 export const AI_PROVIDERS = ["anthropic"] as const;

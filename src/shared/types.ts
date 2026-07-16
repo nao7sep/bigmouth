@@ -13,6 +13,42 @@ export interface Workspace {
   dataDirectory: string;
 }
 
+// --- UI state (state.json) ---
+
+// The side-pane INTENT defaults (px) — what a fresh install starts each pane at,
+// before the user drags. The single source for both the persisted default
+// (defaultUiState) and the renderer's in-memory seed (App.tsx), so the two can't
+// drift. The displayed width is derived by clamping the intent to the live
+// container (see paneConstants.clampPaneWidth); these are the intents, not the
+// display.
+export const DEFAULT_PANE_LEFT_WIDTH = 360;
+export const DEFAULT_PANE_RIGHT_WIDTH = 480;
+
+/**
+ * Ephemeral UI state persisted to `~/.bigmouth/state.json` — saved by the app on
+ * the user's behalf, not authored as configuration. It has its own store, apart
+ * from the workspace registry (workspaces.json) and each per-workspace config.json,
+ * per persisted-store-separation-conventions: a settings reset must not touch it,
+ * and its splitter-drag churn must not rewrite a config file. Machine-/display-
+ * specific and disposable — losing it just reopens the picker and restores default
+ * pane widths. (Was three keys in renderer localStorage: bm-pane-left-width,
+ * bm-pane-right-width, bm-workspace-id.)
+ */
+export interface UiState {
+  paneLeftWidth: number;   // left side-pane INTENT width (px); display is clamped at render time
+  paneRightWidth: number;  // right side-pane INTENT width (px)
+  activeWorkspaceId: string; // last-selected workspace id; "" = none (open the picker)
+}
+
+/** A fresh UI state: default pane widths and no remembered workspace. */
+export function defaultUiState(): UiState {
+  return {
+    paneLeftWidth: DEFAULT_PANE_LEFT_WIDTH,
+    paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
+    activeWorkspaceId: "",
+  };
+}
+
 // --- Post ---
 
 export type PostStatus = "draft" | "ready" | "published" | "expired";

@@ -1,4 +1,5 @@
 import { registerWorkspaceHandlers } from "./workspaces.js";
+import { registerStateHandlers } from "./state.js";
 import { registerLogHandlers } from "./logs.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerTargetHandlers } from "./targets.js";
@@ -18,6 +19,7 @@ import { registerDialogHandlers } from "./dialog.js";
  */
 export function registerIpcHandlers(): void {
   registerWorkspaceHandlers();
+  registerStateHandlers();
   registerLogHandlers();
   registerSettingsHandlers();
   registerTargetHandlers();
