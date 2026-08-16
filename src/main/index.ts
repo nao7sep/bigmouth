@@ -81,12 +81,12 @@ app.whenReady().then(bootstrap).catch((err: unknown) => {
     // The logger itself may be what failed; stderr above already carried it.
   }
   dialog.showErrorBox(
-    "bigmouth could not start",
-    "A settings file could not be read, and bigmouth could not set it aside either — so it has been " +
+    "BigMouth could not start",
+    "A settings file could not be read, and BigMouth could not set it aside either — so it has been " +
       "left exactly where it is rather than risk overwriting it.\n\n" +
       message +
-      "\n\nYour posts and workspaces are not affected. Repair or move the file under the bigmouth " +
-      "data folder, then start bigmouth again.",
+      "\n\nYour posts and workspaces are not affected. Repair or move the file under the BigMouth " +
+      "data folder, then start BigMouth again.",
   );
   app.exit(1);
 });
