@@ -67,10 +67,27 @@ function bootstrap(): void {
 }
 
 app.whenReady().then(bootstrap).catch((err: unknown) => {
-  // initAppDir / initLogger can throw before the logger exists (e.g. an unusable
-  // storage root) — fall back to stderr so the failure is still visible, then
-  // exit non-zero rather than leave a half-initialized window.
+  // Two failures land here. initAppDir / initLogger can throw before the logger
+  // exists (an unusable storage root), which is why stderr is still the floor. A
+  // store that is corrupt AND cannot be set aside also throws here, from
+  // initStateStore, which runs AFTER initLogger — so log it, and above all SAY so:
+  // exiting silently over a settings file is not a halt, it is a launch that does
+  // nothing (storage-path conventions: a halt names the store and reaches the user).
+  const message = err instanceof Error ? err.message : String(err);
   console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
+  try {
+    logError("bootstrap failed", { error: message });
+  } catch {
+    // The logger itself may be what failed; stderr above already carried it.
+  }
+  dialog.showErrorBox(
+    "bigmouth could not start",
+    "A settings file could not be read, and bigmouth could not set it aside either — so it has been " +
+      "left exactly where it is rather than risk overwriting it.\n\n" +
+      message +
+      "\n\nYour posts and workspaces are not affected. Repair or move the file under the bigmouth " +
+      "data folder, then start bigmouth again.",
+  );
   app.exit(1);
 });
 
