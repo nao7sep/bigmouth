@@ -1,7 +1,7 @@
 // state.json is the app's view-state store (side-pane widths + last workspace id),
 // kept separate from the workspace registry and each per-workspace config. These
 // tests cover the state semantics the persisted-store-separation convention asks
-// for: lazy first write, self-heal on corruption, and per-field normalization.
+// for: lazy first write, quarantine-then-reset on corruption, and per-field normalization.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";

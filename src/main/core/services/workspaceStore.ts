@@ -343,7 +343,7 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
     return existing;
   }
   if (!isWorkspaceDirectory(dir)) {
-    throw new Error("Choose an existing bigmouth workspace folder.");
+    throw new Error("Choose an existing BigMouth workspace folder.");
   }
 
   const workspace: Workspace = {
@@ -377,7 +377,7 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
       return openWorkspace(dir, name);
     }
     if (!isEmptyDirectory(dir)) {
-      throw new Error("Location must be empty or already contain a bigmouth workspace.");
+      throw new Error("Location must be empty or already contain a BigMouth workspace.");
     }
   }
 

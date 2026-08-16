@@ -16,7 +16,7 @@
  *     no-record sites each state their reason inline, as here).
  *   - Materialized lazily: a missing file returns defaults WITHOUT writing (the
  *     convention's "state is written only once there is something to record").
- *   - Self-healing: a present-but-invalid file falls back to defaults rather than
+ *   - Self-healing: a present-but-invalid file is quarantined aside and defaults take over rather than
  *     failing loud, because nothing here is worth preserving.
  */
 
@@ -69,7 +69,7 @@ function normalizeUiState(raw: unknown): UiState {
  * Resolves state.json under the storage root and loads it. Must run after
  * initAppDir() (it derives the path from getAppRoot()). A missing file leaves
  * defaults in memory without writing; an unreadable/invalid one self-heals to
- * defaults and is left on disk untouched (the next update overwrites it).
+ * defaults and is left in the .invalid copy (never overwritten in place).
  */
 export function initStateStore(): UiState {
   stateJsonPath = path.join(getAppRoot(), "state.json");
