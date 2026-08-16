@@ -25,6 +25,7 @@ import path from "node:path";
 import type { UiState } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { getAppRoot } from "./workspaceStore.js";
+import { formatForFilenameMs, utcNow } from "../shared/timestamps.js";
 import { warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
@@ -81,12 +82,46 @@ export function initStateStore(): UiState {
 
   try {
     const raw = fs.readFileSync(stateJsonPath, "utf-8");
-    uiState = normalizeUiState(JSON.parse(raw) as unknown);
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // Parses but does not fit its shape: corrupt, same branch as bad JSON
+      // (storage-path conventions) — never coerced and then overwritten by the
+      // first pane drag.
+      throw new Error("state.json does not contain a JSON object");
+    }
+    uiState = normalizeUiState(parsed);
   } catch (err) {
-    warn("state.json unreadable; using defaults", { error: String(err) });
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // Missing is the normal first-run case; state materializes on first use.
+      uiState = defaultUiState();
+      return uiState;
+    }
+    // Present but corrupt: quarantine aside — the rename either lands or its
+    // failure propagates (falling through to defaults would let the next pane
+    // drag overwrite the preserved bytes) — then continue on defaults and let
+    // the app edge report it (storage-path conventions).
+    const quarantinePath = path.join(
+      path.dirname(stateJsonPath),
+      `state-${formatForFilenameMs(utcNow())}.invalid`,
+    );
+    fs.renameSync(stateJsonPath, quarantinePath);
+    warn("state.json unreadable; quarantined and using defaults", {
+      error: String(err),
+      quarantinedTo: quarantinePath,
+    });
+    quarantineNotices.push(quarantinePath);
     uiState = defaultUiState();
   }
   return uiState;
+}
+
+// Quarantines performed before the window existed, journaled so the app edge
+// can report them once a surface exists (storage-path conventions: both
+// branches report).
+const quarantineNotices: string[] = [];
+
+export function drainStateQuarantineNotices(): string[] {
+  return quarantineNotices.splice(0);
 }
 
 function ensureLoaded(): UiState {

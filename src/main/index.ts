@@ -1,7 +1,7 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 
 import { initAppDir, getLogsDir } from "./core/services/workspaceStore.js";
-import { initStateStore } from "./core/services/stateStore.js";
+import { drainStateQuarantineNotices, initStateStore } from "./core/services/stateStore.js";
 import {
   initLogger,
   closeLogger,
@@ -45,6 +45,19 @@ function bootstrap(): void {
   registerIpcHandlers();
   installApplicationMenu();
   createMainWindow();
+
+  // Report any quarantine the startup loads performed: the store was set aside
+  // with its bytes preserved and defaults took over — the user hears it from a
+  // dialog, never only from the log (storage-path conventions).
+  const quarantined = drainStateQuarantineNotices();
+  if (quarantined.length > 0) {
+    dialog.showErrorBox(
+      "A settings file was reset",
+      "A file was unreadable and has been set aside so nothing is lost:\n\n" +
+        quarantined.join("\n") +
+        "\n\nbigmouth started with a default layout. Your posts and workspaces are untouched.",
+    );
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
