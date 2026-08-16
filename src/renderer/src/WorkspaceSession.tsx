@@ -21,6 +21,7 @@ import type { ContentFont, Post, PostMutationResult, PostSummary, Settings, Targ
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
+import { hasMod, isEditableTarget, shadowsMacTextBinding } from "./util/shortcuts";
 import { pickAdjacentPostId } from "./util/selection";
 import { applyPostMutationToBuckets } from "./util/postBuckets";
 import { isValidTimeZone } from "./util/timestamps";
@@ -289,12 +290,17 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         // convention is that chrome shortcuts stand down when it did.
         if (e.defaultPrevented) return;
 
-        const mod = e.metaKey || e.ctrlKey;
-        if (!mod) return;
+        if (!hasMod(e)) return;
 
         // While an IME candidate is pending, the chord belongs to the composition — even Cmd+N,
         // which otherwise fires inside an input, stands down until it commits (text-input-ime).
         if (isComposingEvent(e)) return;
+
+        // On macOS a bare-Ctrl chord on a Cocoa text-editing key (Ctrl+E =
+        // end-of-paragraph, Ctrl+N = next-line, Ctrl+Slash too) belongs to the
+        // text system while the caret is editable; the Cmd half always fires
+        // (keyboard-shortcut-conventions).
+        if (isEditableTarget(e.target) && shadowsMacTextBinding(e)) return;
 
         // App-level dialogs use their conventional chords and open from anywhere,
         // like menu accelerators (Cmd/Ctrl+, for Settings, Cmd/Ctrl+/ or ? for the
@@ -310,9 +316,13 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           return;
         }
 
+        // The walking editable predicate — the CodeMirror editor's target is a
+        // DIV inside its contenteditable, which the old tagName-only check
+        // missed and which stands down like a TEXTAREA. Only a small INPUT
+        // lets Cmd/Ctrl+N through (the deliberate new-post-from-anywhere case).
         const tag = (e.target as HTMLElement).tagName;
-        if (tag === "TEXTAREA" || tag === "SELECT") return;
-        if (tag === "INPUT" && e.key !== "n") return;
+        if (tag === "SELECT") return;
+        if (isEditableTarget(e.target) && (tag !== "INPUT" || e.key !== "n")) return;
 
         if (e.key === "n") {
           e.preventDefault();
