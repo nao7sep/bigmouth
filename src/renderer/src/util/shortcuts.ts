@@ -23,6 +23,9 @@ export function hasMod(e: KeyboardEvent): boolean {
 // next-line, and Ctrl+Slash is bound too).
 const COCOA_CTRL_TEXT_KEYS = new Set([
   "a", "b", "d", "e", "f", "h", "k", "l", "n", "o", "p", "t", "v", "y", "/",
+  // Ctrl+Return is insertLineBreak: — omitting it let Ctrl+Return in a text field
+  // both swallow the line break and fire the chord.
+  "Enter",
 ]);
 
 /**
