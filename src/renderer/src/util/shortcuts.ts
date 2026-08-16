@@ -1,32 +1,15 @@
-// The leaf home of the command-modifier predicate and the macOS text-editing
-// guards (keyboard-shortcut-conventions). Every accelerator site imports from
-// here; a per-file copy is what lets two chords disagree.
-
 // navigator.platform is deprecated but still reliable in Electron's renderer.
 const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 
-/**
- * The one shared command-modifier predicate: BOTH Cmd and Ctrl fire on every
- * platform, and Alt is excluded because Chromium delivers Windows AltGr as
- * Ctrl+Alt — an unguarded predicate would let an AltGr-typed character
- * (unmapped combos fall back to the base key) fire an accelerator and
- * swallow the character.
- */
+/** Alt is excluded because Chromium delivers Windows AltGr as Ctrl+Alt. */
 export function hasMod(e: KeyboardEvent): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey;
 }
 
-// Bare-Ctrl chords on these keys shadow Cocoa's text-editing keymap
-// (StandardKeyBinding.dict — Ctrl+E is move-to-end-of-paragraph, Ctrl+N
-// next-line, and Ctrl+Slash is bound too).
-const COCOA_CTRL_TEXT_KEYS = new Set([
-  "a", "b", "d", "e", "f", "h", "k", "l", "n", "o", "p", "t", "v", "y", "/",
-  // Ctrl+Return is insertLineBreak: — omitting it let Ctrl+Return in a text field
-  // both swallow the line break and fire the chord.
-  "Enter",
-]);
+// App chords that overlap Cocoa text editing while an editor has focus.
+const MAC_TEXT_BINDING_KEYS = new Set(["e", "n", "/", "Enter"]);
 
 /**
  * True when this chord shadows a macOS text-editing binding and must stand
@@ -37,7 +20,7 @@ export function shadowsMacTextBinding(e: KeyboardEvent): boolean {
   if (!isApplePlatform) return false;
   if (e.metaKey || !e.ctrlKey) return false;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  return COCOA_CTRL_TEXT_KEYS.has(key);
+  return MAC_TEXT_BINDING_KEYS.has(key);
 }
 
 /**

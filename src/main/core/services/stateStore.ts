@@ -16,8 +16,8 @@
  *     no-record sites each state their reason inline, as here).
  *   - Materialized lazily: a missing file returns defaults WITHOUT writing (the
  *     convention's "state is written only once there is something to record").
- *   - Self-healing: a present-but-invalid file is quarantined aside and defaults take over rather than
- *     failing loud, because nothing here is worth preserving.
+ *   - Self-healing: an invalid file falls back to defaults because nothing here
+ *     has recovery value.
  */
 
 import fs from "node:fs";
@@ -25,7 +25,6 @@ import path from "node:path";
 import type { UiState } from "../shared/types.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { getAppRoot } from "./workspaceStore.js";
-import { formatForFilenameMs, utcNow } from "../shared/timestamps.js";
 import { warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
@@ -69,7 +68,7 @@ function normalizeUiState(raw: unknown): UiState {
  * Resolves state.json under the storage root and loads it. Must run after
  * initAppDir() (it derives the path from getAppRoot()). A missing file leaves
  * defaults in memory without writing; an unreadable/invalid one self-heals to
- * defaults and is left in the .invalid copy (never overwritten in place).
+ * defaults; the next deliberate view-state update replaces it.
  */
 export function initStateStore(): UiState {
   stateJsonPath = path.join(getAppRoot(), "state.json");
@@ -96,32 +95,13 @@ export function initStateStore(): UiState {
       uiState = defaultUiState();
       return uiState;
     }
-    // Present but corrupt: quarantine aside — the rename either lands or its
-    // failure propagates (falling through to defaults would let the next pane
-    // drag overwrite the preserved bytes) — then continue on defaults and let
-    // the app edge report it (storage-path conventions).
-    const quarantinePath = path.join(
-      path.dirname(stateJsonPath),
-      `state-${formatForFilenameMs(utcNow())}.invalid`,
-    );
-    fs.renameSync(stateJsonPath, quarantinePath);
-    warn("state.json unreadable; quarantined and using defaults", {
+    warn("state.json unreadable; using defaults", {
       error: String(err),
-      quarantinedTo: quarantinePath,
+      path: stateJsonPath,
     });
-    quarantineNotices.push(quarantinePath);
     uiState = defaultUiState();
   }
   return uiState;
-}
-
-// Quarantines performed before the window existed, journaled so the app edge
-// can report them once a surface exists (storage-path conventions: both
-// branches report).
-const quarantineNotices: string[] = [];
-
-export function drainStateQuarantineNotices(): string[] {
-  return quarantineNotices.splice(0);
 }
 
 function ensureLoaded(): UiState {

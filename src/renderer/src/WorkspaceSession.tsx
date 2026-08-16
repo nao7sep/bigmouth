@@ -296,10 +296,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         // which otherwise fires inside an input, stands down until it commits (text-input-ime).
         if (isComposingEvent(e)) return;
 
-        // On macOS a bare-Ctrl chord on a Cocoa text-editing key (Ctrl+E =
-        // end-of-paragraph, Ctrl+N = next-line, Ctrl+Slash too) belongs to the
-        // text system while the caret is editable; the Cmd half always fires
-        // (keyboard-shortcut-conventions).
         if (isEditableTarget(e.target) && shadowsMacTextBinding(e)) return;
 
         // App-level dialogs use their conventional chords and open from anywhere,
