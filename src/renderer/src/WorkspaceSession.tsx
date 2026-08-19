@@ -7,9 +7,9 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, MouseEventHandler, RefObject } from "react";
-import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile } from "./api";
+import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile, onPostContentSaved } from "./api";
 import { LeftPane } from "./components/LeftPane";
-import { CenterPane, type CenterPaneHandle } from "./components/CenterPane";
+import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
 import { ExportModal } from "./components/ExportModal";
@@ -89,7 +89,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
     const [loadError, setLoadError] = useState<string | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
-    const centerPaneRef = useRef<CenterPaneHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
     const sessionAliveRef = useRef(true);
     const selectedPostIdRef = useRef<string | null>(null);
@@ -145,10 +144,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       []
     );
 
+    // Only metadata still flushes renderer-side; content edits stream to the
+    // main-process post store as they happen, so navigation cannot orphan them.
     const flushPendingChanges = useCallback(async () => {
-      const centerFlushed = (await centerPaneRef.current?.flushPendingChanges()) ?? true;
-      const rightFlushed = (await flushRightPaneChanges()) ?? true;
-      return centerFlushed && rightFlushed;
+      return (await flushRightPaneChanges()) ?? true;
     }, [flushRightPaneChanges]);
 
     useImperativeHandle(
@@ -467,6 +466,48 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       }
     }, []);
 
+    // Background content saves (the main process owns the write cadence) update
+    // the same list buckets; there is no full post payload and no need for one —
+    // the editor already shows the text, only the projection changed.
+    useEffect(() => {
+      const off = onPostContentSaved((event) => {
+        if (!sessionAliveRef.current) return;
+        const summary: PostSummary = { frontMatter: event.summary };
+        const openPostStatus =
+          currentPostRef.current?.frontMatter.id === event.postId
+            ? currentPostRef.current.frontMatter.status
+            : null;
+        const next = applyPostMutationToBuckets(
+          {
+            drafts: draftsRef.current,
+            ready: readyRef.current,
+            published: publishedRef.current,
+            publishedTotal: publishedTotalRef.current,
+            expired: expiredRef.current,
+            expiredTotal: expiredTotalRef.current,
+          },
+          summary,
+          event.summary.status,
+          openPostStatus
+        );
+        draftsRef.current = next.drafts;
+        readyRef.current = next.ready;
+        publishedRef.current = next.published;
+        publishedTotalRef.current = next.publishedTotal;
+        expiredRef.current = next.expired;
+        expiredTotalRef.current = next.expiredTotal;
+        setDrafts(next.drafts);
+        setReady(next.ready);
+        setPublished(next.published);
+        setPublishedTotal(next.publishedTotal);
+        setPublishedOffset(next.published.length);
+        setExpired(next.expired);
+        setExpiredTotal(next.expiredTotal);
+        setExpiredOffset(next.expired.length);
+      });
+      return off;
+    }, []);
+
     const handleNavigateToPost = useCallback(
       async (id: string) => {
         const previousId = selectedPostIdRef.current;
@@ -568,7 +609,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           {selectedPostId ? (
             <>
               <CenterPane
-                ref={centerPaneRef}
                 key={selectedPostId}
                 workspaceId={workspace.id}
                 postId={selectedPostId}

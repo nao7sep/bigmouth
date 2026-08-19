@@ -6,6 +6,16 @@
  * moving it. Every mutation writes the `.md` file (the source of truth) and
  * then updates the derived index. Listing reads from the index alone — no post
  * bodies are read to render a list, so the published archive stays cheap.
+ *
+ * Content edits stream through a write-behind buffer owned by this store: the
+ * renderer sends every editor change via queueContent, the store coalesces
+ * them into one disk write per debounce window, and getPost overlays the
+ * pending content so every reader — metadata patches, status changes, AI
+ * analysis, export — always sees the newest text without knowing the buffer
+ * exists. Because updatePost and changeStatus read through getPost, any full
+ * write persists the pending content as a side effect and clears the buffer.
+ * The main process therefore never depends on the renderer to flush: quit
+ * calls flushAllPendingContent and the newest keystroke is on disk.
  */
 
 import fs from "node:fs";
@@ -39,6 +49,117 @@ function postsDir(dataDir: string): string {
 
 function filePathFor(dataDir: string, entry: PostIndexEntry): string {
   return path.join(postsDir(dataDir), entry.fileName);
+}
+
+// --- Pending content (write-behind buffer) ---
+
+const PENDING_FLUSH_DELAY_MS = 750;
+const PENDING_RETRY_DELAY_MS = 5000;
+
+// dataDir -> post id -> newest content not yet on disk.
+const pendingContent = new Map<string, Map<string, string>>();
+const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
+
+export type ContentSaveEvent =
+  | { kind: "saved"; dataDir: string; id: string; summary: PostIndexEntry }
+  | { kind: "save-failed"; dataDir: string; id: string; message: string };
+
+// Single subscriber (the IPC layer), which broadcasts to windows. The store
+// stays free of Electron types.
+let contentSaveListener: ((event: ContentSaveEvent) => void) | null = null;
+
+export function setContentSaveListener(listener: ((event: ContentSaveEvent) => void) | null): void {
+  contentSaveListener = listener;
+}
+
+function getPending(dataDir: string, id: string): string | undefined {
+  return pendingContent.get(dataDir)?.get(id);
+}
+
+function clearPending(dataDir: string, id: string): void {
+  pendingContent.get(dataDir)?.delete(id);
+  const timers = pendingTimers.get(dataDir);
+  const timer = timers?.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    timers?.delete(id);
+  }
+}
+
+function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
+  let timers = pendingTimers.get(dataDir);
+  if (!timers) {
+    timers = new Map();
+    pendingTimers.set(dataDir, timers);
+  }
+  const existing = timers.get(id);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    timers.delete(id);
+    flushPostContent(dataDir, id);
+  }, delayMs);
+  // Never hold the process open for a debounce timer; quit flushes explicitly.
+  timer.unref();
+  timers.set(id, timer);
+}
+
+/**
+ * Buffer a content edit and (re)start its debounce. Content for a post that no
+ * longer exists is dropped — deleting a post deliberately discards its edits.
+ */
+export function queueContent(dataDir: string, id: string, content: string): void {
+  if (!index.getEntry(dataDir, id)) return;
+  let posts = pendingContent.get(dataDir);
+  if (!posts) {
+    posts = new Map();
+    pendingContent.set(dataDir, posts);
+  }
+  posts.set(id, content);
+  scheduleFlush(dataDir, id, PENDING_FLUSH_DELAY_MS);
+}
+
+/**
+ * Write a post's pending content to disk now. Returns true when nothing is
+ * left pending for the post (flushed, nothing to flush, or the post is gone).
+ * On failure the content stays buffered, a retry is scheduled, and the
+ * listener is told so the renderer can show the save error.
+ */
+export function flushPostContent(dataDir: string, id: string): boolean {
+  if (getPending(dataDir, id) === undefined) return true;
+  try {
+    // updatePost reads through the overlay, so an empty update persists the
+    // pending content and clears the buffer.
+    const post = updatePost(dataDir, id, {});
+    if (!post) {
+      clearPending(dataDir, id);
+      return true;
+    }
+    const summary = index.getEntry(dataDir, id);
+    if (summary) contentSaveListener?.({ kind: "saved", dataDir, id, summary });
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    scheduleFlush(dataDir, id, PENDING_RETRY_DELAY_MS);
+    contentSaveListener?.({ kind: "save-failed", dataDir, id, message });
+    return false;
+  }
+}
+
+/** Flush every buffered edit, everywhere. Used at quit. */
+export function flushAllPendingContent(): { id: string; message: string }[] {
+  const failures: { id: string; message: string }[] = [];
+  for (const [dataDir, posts] of pendingContent) {
+    for (const id of [...posts.keys()]) {
+      try {
+        if (!flushPostContent(dataDir, id)) {
+          failures.push({ id, message: "save failed" });
+        }
+      } catch (err) {
+        failures.push({ id, message: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  }
+  return failures;
 }
 
 // --- List ---
@@ -124,7 +245,12 @@ export function getPost(dataDir: string, id: string): Post | null {
     index.rebuild(dataDir);
     return null;
   }
-  return readPost(filePath);
+  const post = readPost(filePath);
+  // Read through the write-behind buffer: every reader sees the newest content,
+  // and any full write (updatePost, changeStatus) persists it as a side effect.
+  const pending = post ? getPending(dataDir, id) : undefined;
+  if (post && pending !== undefined) post.content = pending;
+  return post;
 }
 
 // --- Create ---
@@ -185,6 +311,9 @@ export function updatePost(
   writePost(post.filePath, fm, post.content);
   index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
+  // What was written is the newest content — either the overlay carried in by
+  // getPost or an explicit updates.content that supersedes it.
+  clearPending(dataDir, id);
   return post;
 }
 
@@ -204,6 +333,8 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
   writePost(post.filePath, fm, post.content);
   index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
+  // The write carried the overlay content (getPost applied it above).
+  clearPending(dataDir, id);
   return post;
 }
 
@@ -234,6 +365,9 @@ export function postExists(dataDir: string, id: string): boolean {
 export function deletePost(dataDir: string, id: string): boolean {
   const entry = index.getEntry(dataDir, id);
   if (!entry) return false;
+
+  // Deleting a post deliberately discards its edits, buffered ones included.
+  clearPending(dataDir, id);
 
   // Referential integrity: a post that links the deleted one as its source
   // would otherwise dangle, so clear that link. This is a system operation, not

@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, powerMonitor } from "electron";
 
 import { initAppDir, getLogsDir } from "./core/services/workspaceStore.js";
+import { flushAllPendingContent } from "./core/services/postStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import {
   initLogger,
@@ -22,6 +23,10 @@ app.setName("BigMouth");
 registerAssetScheme();
 
 let shuttingDown = false;
+
+// Set when the OS itself is going down: quit must then never block on a dialog
+// (modal-dialog-conventions) — flush best-effort and let the shutdown proceed.
+let systemShutdown = false;
 
 // Startup sequence: resolve the storage root, bring up file logging, register the
 // asset protocol and the IPC handlers the renderer calls, install the application
@@ -75,17 +80,47 @@ app.on("window-all-closed", () => {
   }
 });
 
-// Clean shutdown: hold the quit once, flush the log file by closing it, then exit
-// deterministically. A second quit during shutdown falls through (force-quit).
+// Clean shutdown: hold the quit once, write any buffered content edits, flush
+// the log file by closing it, then exit deterministically. The post store owns
+// pending content (write-behind), so this flush — not a renderer round-trip —
+// is what guarantees the newest keystroke is on disk. A second quit during
+// shutdown falls through (force-quit).
 app.on("before-quit", (event) => {
   if (shuttingDown) {
     return;
   }
   shuttingDown = true;
   event.preventDefault();
-  info("app shutting down", { reason: "before-quit" });
+
+  const failures = flushAllPendingContent();
+  if (failures.length > 0 && !systemShutdown) {
+    logError("pending content flush failed at quit", { failures });
+    const choice = dialog.showMessageBoxSync({
+      type: "warning",
+      title: "Unsaved changes",
+      message: "Some edits could not be saved.",
+      detail:
+        "BigMouth could not write your latest changes to disk. " +
+        "Quit anyway and lose them, or cancel and try again?",
+      // Cancel is the safest action, so it is the default and the Escape path.
+      buttons: ["Cancel", "Quit Anyway"],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (choice === 0) {
+      shuttingDown = false;
+      return;
+    }
+  }
+
+  info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
   closeLogger();
   app.exit(0);
+});
+
+// During OS shutdown or logout the app must not block: flush what it can and go.
+powerMonitor.on("shutdown", () => {
+  systemShutdown = true;
 });
 
 process.on("uncaughtException", (err) => {

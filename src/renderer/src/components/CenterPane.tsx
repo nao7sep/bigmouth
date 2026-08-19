@@ -1,13 +1,15 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContentFont, Post, PostMutationResult, PostStatus } from "@shared/types";
-import { getPost, updatePost, changePostStatus, deletePost, listReferrers } from "../api";
+import {
+  getPost,
+  updatePost,
+  changePostStatus,
+  deletePost,
+  listReferrers,
+  queuePostContent,
+  onPostContentSaved,
+  onPostContentSaveFailed,
+} from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
 import { useConfirm } from "./ConfirmHost";
@@ -32,12 +34,6 @@ interface CenterPaneProps {
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
-export interface CenterPaneHandle {
-  flushPendingChanges: () => Promise<boolean>;
-}
-
-const AUTO_SAVE_DELAY = 2_000;
-
 const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "ready", label: "Ready" },
@@ -53,25 +49,22 @@ function isLockedStatus(status: PostStatus): boolean {
   return status === "published" || status === "expired";
 }
 
-export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function CenterPane(
-  {
-    workspaceId,
-    postId,
-    onPostUpdated,
-    onPostDeleted,
-    onContentChange: notifyContentChange,
-    onPostLoaded,
-    onExport,
-    onSelectPost,
-    onGoBack,
-    onBeforeStatusChange,
-    pubBatchSize,
-    watermark,
-    contentFont,
-    editorRef,
-  },
-  ref
-) {
+export function CenterPane({
+  workspaceId,
+  postId,
+  onPostUpdated,
+  onPostDeleted,
+  onContentChange: notifyContentChange,
+  onPostLoaded,
+  onExport,
+  onSelectPost,
+  onGoBack,
+  onBeforeStatusChange,
+  pubBatchSize,
+  watermark,
+  contentFont,
+  editorRef,
+}: CenterPaneProps) {
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -80,91 +73,11 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
   const { copiedKey, copy: copyContent } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const confirm = useConfirm();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const contentRef = useRef("");
-  const savedContentRef = useRef("");
-  const pendingSaveRef = useRef(false);
-  const savePromiseRef = useRef<Promise<void> | null>(null);
   const onPostUpdatedRef = useRef(onPostUpdated);
 
   useEffect(() => {
     onPostUpdatedRef.current = onPostUpdated;
   }, [onPostUpdated]);
-
-  const save = useCallback((): Promise<void> => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    if (contentRef.current === savedContentRef.current) {
-      return savePromiseRef.current ?? Promise.resolve();
-    }
-
-    pendingSaveRef.current = true;
-    if (savePromiseRef.current) {
-      return savePromiseRef.current;
-    }
-
-    const promise = (async () => {
-      try {
-        while (pendingSaveRef.current) {
-          pendingSaveRef.current = false;
-          const current = contentRef.current;
-          if (current === savedContentRef.current) continue;
-
-          try {
-            const updated = await updatePost(postId, { content: current }, workspaceId);
-            savedContentRef.current = current;
-            setSaveError(null);
-            setPost(updated);
-            onPostUpdatedRef.current(updated);
-          } catch (err) {
-            setSaveError(
-              err instanceof Error
-                ? err.message
-                : "Autosave failed. Changes are still local until a save succeeds."
-            );
-            break;
-          }
-
-          if (contentRef.current !== savedContentRef.current) {
-            pendingSaveRef.current = true;
-          }
-        }
-      } finally {
-        savePromiseRef.current = null;
-      }
-    })();
-
-    savePromiseRef.current = promise;
-    return promise;
-  }, [postId, workspaceId]);
-
-  const flushPendingContent = useCallback(async () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    if (contentRef.current !== savedContentRef.current) {
-      await save();
-    } else if (savePromiseRef.current) {
-      await savePromiseRef.current;
-    }
-
-    const flushed = contentRef.current === savedContentRef.current;
-    if (!flushed) {
-      setSaveError("Autosave failed. Resolve it before leaving this post.");
-    }
-    return flushed;
-  }, [save]);
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      flushPendingChanges: flushPendingContent,
-    }),
-    [flushPendingContent]
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -175,8 +88,6 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
         if (cancelled) return;
         setPost(loaded);
         setContent(loaded.content);
-        contentRef.current = loaded.content;
-        savedContentRef.current = loaded.content;
         notifyContentChange(loaded.content);
         onPostLoaded(loaded);
         setStatusError(null);
@@ -193,38 +104,50 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Drop the pending debounce timer on unmount so a stray autosave never fires
-  // after the post is gone. Intentional teardowns (post switch, status change,
-  // workspace switch) flush explicitly via flushPendingChanges first; a delete
-  // deliberately discards unsaved edits.
+  // Content saves are owned by the main-process post store (write-behind):
+  // every edit streams there immediately, so navigating away, switching
+  // workspaces, or quitting can never orphan text in a renderer debounce.
+  // Save results come back as events; failures show inline and the store keeps
+  // retrying with the text safe in its buffer.
   useEffect(() => {
+    const offSaved = onPostContentSaved((event) => {
+      if (event.postId !== postId) return;
+      setSaveError(null);
+      // The summary carries the authoritative updatedAtUtc from the write, so
+      // the header timestamp stays honest without refetching the post.
+      setPost((prev) =>
+        prev
+          ? { ...prev, frontMatter: { ...prev.frontMatter, updatedAtUtc: event.summary.updatedAtUtc } }
+          : prev,
+      );
+    });
+    const offFailed = onPostContentSaveFailed((event) => {
+      if (event.postId !== postId) return;
+      setSaveError(
+        "Autosave failed and will retry. Your text is held in memory until it saves."
+      );
+    });
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      offSaved();
+      offFailed();
     };
-  }, []);
+  }, [postId]);
 
   const handleContentChange = (value: string) => {
     // Published and expired posts are locked; the editor is read-only, but guard
     // the save path too so a stray change can never autosave into a locked post.
     if (post && isLockedStatus(post.frontMatter.status)) return;
     setContent(value);
-    contentRef.current = value;
     notifyContentChange(value);
     setStatusError(null);
-
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void save(), AUTO_SAVE_DELAY);
+    queuePostContent(postId, value, workspaceId);
   };
 
   const applyStatusChange = async (newStatus: PostStatus) => {
     try {
       setStatusError(null);
-      const flushedContent = await flushPendingContent();
-      if (!flushedContent) {
-        setStatusError("Current content could not be saved. Resolve it before changing status.");
-        return;
-      }
-
+      // Content needs no renderer-side flush: the main-process store writes
+      // through its pending buffer as part of the status change itself.
       const flushedMetadata = (await onBeforeStatusChange?.()) ?? true;
       if (!flushedMetadata) {
         setStatusError("Metadata changes could not be saved. Resolve them before changing status.");
@@ -476,4 +399,4 @@ export const CenterPane = forwardRef<CenterPaneHandle, CenterPaneProps>(function
       )}
     </div>
   );
-});
+}

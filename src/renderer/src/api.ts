@@ -20,6 +20,8 @@ import type {
   ImagingStyle,
 } from "@shared/types";
 import {
+  type PostContentSavedEvent,
+  type PostContentSaveFailedEvent,
   assetUrl as buildAssetUrl,
   type AiConfigInput,
   type AiConfigPatch,
@@ -96,6 +98,22 @@ export function getPost(id: string, workspaceId?: string): Promise<Post> {
 
 export function createPost(target: string, language: string, sourceId?: string): Promise<Post> {
   return bridge().createPost(requireWs(), target, language, sourceId);
+}
+
+export function queuePostContent(id: string, content: string, workspaceId?: string): void {
+  bridge().queuePostContent(requireWs(workspaceId), id, content);
+}
+
+export function onPostContentSaved(
+  listener: (event: PostContentSavedEvent) => void,
+): () => void {
+  return bridge().onPostContentSaved(listener);
+}
+
+export function onPostContentSaveFailed(
+  listener: (event: PostContentSaveFailedEvent) => void,
+): () => void {
+  return bridge().onPostContentSaveFailed(listener);
 }
 
 export function updatePost(

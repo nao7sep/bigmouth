@@ -14,12 +14,19 @@ import { DEFAULT_CONTENT_FONT } from "@shared/types";
 // WorkspaceSession is the session orchestrator. It reaches the main process only
 // through these five api calls; everything else it owns is state, routing, and
 // the callbacks it threads down to the panes.
+// Content-save events from the main-process saver; the captured listeners let
+// tests play the main process's part.
+const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: unknown }) => void>());
 vi.mock("@renderer/api", () => ({
   listPosts: vi.fn(),
   createPost: vi.fn(),
   listTargets: vi.fn(),
   getSettings: vi.fn(),
   revealCurrentLogFile: vi.fn(),
+  onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
+    savedListeners.add(cb);
+    return () => savedListeners.delete(cb);
+  },
 }));
 
 // The modal-stack hook decides whether global shortcuts are live. Drive it from a
@@ -40,7 +47,6 @@ vi.mock("@renderer/hooks/useModalStack", () => ({
 type AnyProps = Record<string, unknown>;
 const props: Record<string, AnyProps> = {};
 
-const centerFlush = vi.fn<() => Promise<boolean>>();
 const rightFlush = vi.fn<() => Promise<boolean>>();
 const insertAtCursor = vi.fn();
 
@@ -98,11 +104,9 @@ vi.mock("@renderer/components/LeftPane", () => ({
 }));
 
 vi.mock("@renderer/components/CenterPane", () => {
-  const { forwardRef, useImperativeHandle } = require("react") as typeof import("react");
   return {
-    CenterPane: forwardRef(function MockCenter(p: AnyProps, ref: React.Ref<unknown>) {
+    CenterPane: function MockCenter(p: AnyProps) {
       props.center = p;
-      useImperativeHandle(ref, () => ({ flushPendingChanges: centerFlush }), []);
       return (
         <div data-testid="center">
           <span data-testid="center-postid">{String(p.postId)}</span>
@@ -149,7 +153,7 @@ vi.mock("@renderer/components/CenterPane", () => {
           ) : null}
         </div>
       );
-    }),
+    },
   };
 });
 
@@ -331,7 +335,6 @@ beforeEach(() => {
   mockListTargets.mockReset().mockResolvedValue(TARGETS);
   mockGetSettings.mockReset().mockResolvedValue(SETTINGS);
   mockRevealLog.mockReset().mockResolvedValue("/path/to/log");
-  centerFlush.mockReset().mockResolvedValue(true);
   rightFlush.mockReset().mockResolvedValue(true);
   insertAtCursor.mockReset();
   onSwitchWorkspace.mockReset();
@@ -402,14 +405,13 @@ describe("WorkspaceSession post selection", () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
-    centerFlush.mockClear();
     rightFlush.mockClear();
-    // Switching away from an open post flushes both of its panes first.
+    // Switching away from an open post flushes its metadata pane first; content
+    // needs no renderer flush — it streams to the main-process saver as typed.
     await act(async () => {
       fireEvent.click(getByTestId("left-select-b"));
       await Promise.resolve();
     });
-    expect(centerFlush).toHaveBeenCalled();
     expect(rightFlush).toHaveBeenCalled();
     expect(getByTestId("center-postid").textContent).toBe("b");
   });
@@ -447,14 +449,13 @@ describe("WorkspaceSession post selection", () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
-    centerFlush.mockClear();
     rightFlush.mockClear();
     // Re-selecting the same id short-circuits before flushing.
     await act(async () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
-    expect(centerFlush).not.toHaveBeenCalled();
+    expect(rightFlush).not.toHaveBeenCalled();
   });
 
   it("keeps the current post when the flush refuses on a switch", async () => {
@@ -463,7 +464,7 @@ describe("WorkspaceSession post selection", () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
-    centerFlush.mockResolvedValue(false); // dirty + save failed → block the switch
+    rightFlush.mockResolvedValue(false); // dirty metadata + save failed → block the switch
     await act(async () => {
       fireEvent.click(getByTestId("left-select-b"));
       await Promise.resolve();
@@ -781,14 +782,13 @@ describe("WorkspaceSession keyboard shortcuts", () => {
 });
 
 describe("WorkspaceSession imperative flush handle", () => {
-  it("exposes flushPendingChanges that fans out to both panes", async () => {
+  it("exposes flushPendingChanges that flushes the metadata pane", async () => {
     const ref = { current: null } as React.RefObject<WorkspaceSessionHandle | null>;
     const { getByTestId } = await mountLoaded(ref as React.Ref<WorkspaceSessionHandle>);
     await act(async () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
-    centerFlush.mockClear();
     rightFlush.mockClear();
 
     let result: boolean | undefined;
@@ -796,7 +796,6 @@ describe("WorkspaceSession imperative flush handle", () => {
       result = await ref.current!.flushPendingChanges();
     });
     expect(result).toBe(true);
-    expect(centerFlush).toHaveBeenCalled();
     expect(rightFlush).toHaveBeenCalled();
   });
 

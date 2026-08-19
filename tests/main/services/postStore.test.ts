@@ -6,6 +6,11 @@ import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import {
   createPost,
   getPost,
+  queueContent,
+  flushPostContent,
+  flushAllPendingContent,
+  setContentSaveListener,
+  type ContentSaveEvent,
   updatePost,
   changeStatus,
   deletePost,
@@ -291,5 +296,114 @@ describe("renameTarget", () => {
     // surviving post (no all-or-nothing failure leaving some posts behind).
     expect(() => renameTarget(dataDir, "blogger", "journal")).not.toThrow();
     expect(getPost(dataDir, keep.frontMatter.id)?.frontMatter.target).toBe("journal");
+  });
+});
+
+// The write-behind buffer is a safety surface: the renderer streams every
+// content edit here, and these invariants — readers see the newest text, any
+// full write persists it, quit's flushAll leaves nothing behind — are what
+// make losing typed text structurally impossible. A wrong answer here is
+// silent data loss, so the rules are pinned.
+describe("pending content (write-behind buffer)", () => {
+  afterEach(() => {
+    setContentSaveListener(null);
+    flushAllPendingContent();
+  });
+
+  function diskContent(filePath: string): string {
+    // Raw file read, bypassing the store: asserts what is durable, not what
+    // the overlay reports.
+    return fs.readFileSync(filePath, "utf8");
+  }
+
+  it("getPost reads through the buffer while the disk still has the old content", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "typed but not yet flushed");
+    expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("typed but not yet flushed");
+    expect(diskContent(post.filePath)).not.toContain("typed but not yet flushed");
+  });
+
+  it("flushPostContent writes the buffered content and empties the buffer", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "now durable");
+    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+    expect(diskContent(post.filePath)).toContain("now durable");
+    // A second flush has nothing to do and must not rewrite.
+    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+  });
+
+  it("a metadata update persists the buffered content as a side effect", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "carried by the metadata write");
+    updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "T" } });
+    expect(diskContent(post.filePath)).toContain("carried by the metadata write");
+  });
+
+  it("a status change persists the buffered content as a side effect", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "published text");
+    changeStatus(dataDir, post.frontMatter.id, "ready");
+    expect(diskContent(post.filePath)).toContain("published text");
+  });
+
+  it("an explicit content update supersedes the buffer", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "older keystrokes");
+    updatePost(dataDir, post.frontMatter.id, { content: "explicit wins" });
+    expect(diskContent(post.filePath)).toContain("explicit wins");
+    expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("explicit wins");
+  });
+
+  it("deletePost discards the post's buffered content", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "doomed");
+    deletePost(dataDir, post.frontMatter.id);
+    expect(flushAllPendingContent()).toEqual([]);
+  });
+
+  it("content queued for an unknown post is dropped", () => {
+    queueContent(dataDir, "no-such-post", "into the void");
+    expect(flushAllPendingContent()).toEqual([]);
+  });
+
+  it("flushAllPendingContent flushes every buffered post (the quit path)", () => {
+    const a = createPost(dataDir, "blogger", "en");
+    const b = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, a.frontMatter.id, "post a text");
+    queueContent(dataDir, b.frontMatter.id, "post b text");
+    expect(flushAllPendingContent()).toEqual([]);
+    expect(diskContent(a.filePath)).toContain("post a text");
+    expect(diskContent(b.filePath)).toContain("post b text");
+  });
+
+  it("notifies saved with the canonical summary after a flush", () => {
+    const events: ContentSaveEvent[] = [];
+    setContentSaveListener((e) => events.push(e));
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "listened");
+    flushPostContent(dataDir, post.frontMatter.id);
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("saved");
+    expect(events[0].id).toBe(post.frontMatter.id);
+  });
+
+  it("keeps the buffer and notifies save-failed when the write cannot land", () => {
+    const events: ContentSaveEvent[] = [];
+    setContentSaveListener((e) => events.push(e));
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "held through failure");
+
+    const postsDir = path.dirname(post.filePath);
+    fs.chmodSync(postsDir, 0o555);
+    try {
+      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+    } finally {
+      fs.chmodSync(postsDir, 0o755);
+    }
+    expect(events.some((e) => e.kind === "save-failed")).toBe(true);
+    // The text was never dropped: it is still readable and now flushable.
+    expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("held through failure");
+    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+    expect(diskContent(post.filePath)).toContain("held through failure");
   });
 });

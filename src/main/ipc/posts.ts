@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 
 import { CHANNELS, type PostUpdate } from "@shared/ipc";
 import type { PostStatus } from "@shared/types";
@@ -18,6 +18,8 @@ import {
   postExists,
   listReferrers,
   getPostSummary,
+  queueContent,
+  setContentSaveListener,
 } from "../core/services/postStore.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
 import { validatePostUpdate } from "../core/shared/postUpdate.js";
@@ -28,6 +30,35 @@ import { resolveWorkspace } from "./context.js";
 const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
 
 export function registerPostHandlers(): void {
+  // The write-behind buffer's save events, broadcast to every window. Post ids
+  // are unique nanoids, so the renderer matches by post id alone.
+  setContentSaveListener((event) => {
+    const channel =
+      event.kind === "saved" ? CHANNELS.postContentSaved : CHANNELS.postContentSaveFailed;
+    const payload =
+      event.kind === "saved"
+        ? { postId: event.id, summary: event.summary }
+        : { postId: event.id, message: event.message };
+    if (event.kind === "save-failed") {
+      logError("post content save failed", { postId: event.id, message: event.message });
+    }
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+    }
+  });
+
+  // One-way: buffer a content edit. Never throws back to the renderer — the
+  // channel is fire-and-forget, and failures surface through the save events.
+  ipcMain.on(CHANNELS.queuePostContent, (_event, wsId: string, id: string, content: string) => {
+    try {
+      if (typeof wsId !== "string" || typeof id !== "string" || typeof content !== "string") return;
+      const dir = resolveWorkspace(wsId).dataDirectory;
+      queueContent(dir, id, content);
+    } catch (err) {
+      logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
+    }
+  });
+
   ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, publishedOffset: number, limit: number, expiredOffset: number) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
     // Clamp to >= 0: a negative offset would slice from the end of the list.

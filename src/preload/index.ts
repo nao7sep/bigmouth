@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import {
+  type PostContentSavedEvent,
+  type PostContentSaveFailedEvent,
   CHANNELS,
   analysisStreamChannel,
   type AiConfigInput,
@@ -73,6 +75,21 @@ const api = {
     ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,
   rebuildPostIndex: (wsId: string) =>
     ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{ count: number }>,
+  // Content streaming: fire-and-forget send; the main-process post store owns
+  // the debounce, the disk write, and the flush at quit.
+  queuePostContent: (wsId: string, id: string, content: string) => {
+    ipcRenderer.send(CHANNELS.queuePostContent, wsId, id, content);
+  },
+  onPostContentSaved: (listener: (event: PostContentSavedEvent) => void) => {
+    const wrapped = (_event: unknown, payload: PostContentSavedEvent): void => listener(payload);
+    ipcRenderer.on(CHANNELS.postContentSaved, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.postContentSaved, wrapped);
+  },
+  onPostContentSaveFailed: (listener: (event: PostContentSaveFailedEvent) => void) => {
+    const wrapped = (_event: unknown, payload: PostContentSaveFailedEvent): void => listener(payload);
+    ipcRenderer.on(CHANNELS.postContentSaveFailed, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.postContentSaveFailed, wrapped);
+  },
 
   // --- Targets ---
   listTargets: (wsId: string) => ipcRenderer.invoke(CHANNELS.listTargets, wsId) as Promise<Target[]>,

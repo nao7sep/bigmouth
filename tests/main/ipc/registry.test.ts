@@ -23,9 +23,13 @@ vi.mock("electron", () => ({
 import { registerIpcHandlers } from "@main/ipc/index.js";
 
 describe("registerIpcHandlers", () => {
-  it("registers a handler for every IPC channel", () => {
+  it("registers a handler for every inbound IPC channel", () => {
+    // Outbound event channels (main -> renderer sends) have no main-process
+    // handler to register; everything else must have one.
+    const outbound = new Set<string>([CHANNELS.postContentSaved, CHANNELS.postContentSaveFailed]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {
+      if (outbound.has(channel)) continue;
       expect(registered.has(channel), `no handler registered for ${channel}`).toBe(true);
     }
   });

@@ -18,6 +18,7 @@ import type {
   GenerationPromptsData,
   ImagingOptions,
   Post,
+  PostFrontMatter,
   PostListResponse,
   PostMutationResult,
   PostStatus,
@@ -51,6 +52,11 @@ export const CHANNELS = {
   deletePost: "post:delete",
   listReferrers: "post:referrers",
   rebuildPostIndex: "post:rebuildIndex",
+  // Content streaming: renderer fires every editor change at the main process,
+  // which owns coalescing and disk writes (write-behind in the post store).
+  queuePostContent: "post:queueContent",
+  postContentSaved: "post:contentSaved",
+  postContentSaveFailed: "post:contentSaveFailed",
 
   // Targets
   listTargets: "target:list",
@@ -89,6 +95,19 @@ export const CHANNELS = {
   analysisStreamAbort: "analysis:stream:abort",
   generateImaging: "imaging:generate",
 } as const;
+
+// --- Content-save events (main -> renderer) ---
+
+export interface PostContentSavedEvent {
+  postId: string;
+  /** The canonical list projection, same shape as PostMutationResult.summary. */
+  summary: PostFrontMatter;
+}
+
+export interface PostContentSaveFailedEvent {
+  postId: string;
+  message: string;
+}
 
 /** The per-request event channel main pushes analysis-stream frames on. */
 export function analysisStreamChannel(requestId: string): string {
@@ -212,6 +231,12 @@ export interface BigMouthApi {
   getPost(wsId: string, id: string): Promise<Post>;
   createPost(wsId: string, target: string, language: string, sourceId?: string): Promise<Post>;
   updatePost(wsId: string, id: string, updates: PostUpdate): Promise<PostMutationResult>;
+  /** Fire-and-forget: buffer a content edit in the main process, which owns the
+   *  debounce, the disk write, and the flush at quit. Post ids are unique
+   *  nanoids, so saved/failed events are matched by post id alone. */
+  queuePostContent(wsId: string, id: string, content: string): void;
+  onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
+  onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<void>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;

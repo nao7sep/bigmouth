@@ -1,16 +1,28 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import { createRef } from "react";
 import type { Post, PostMutationResult, PostFrontMatter } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
-// CenterPane's only backend seam is these api calls; mock the lot.
+// CenterPane's only backend seam is these api calls; mock the lot. Content
+// saves stream through queuePostContent (fire-and-forget) and come back as
+// events; the captured listeners let tests play the main process's part.
+const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: PostFrontMatter }) => void>());
+const failedListeners = vi.hoisted(() => new Set<(e: { postId: string; message: string }) => void>());
 vi.mock("@renderer/api", () => ({
   getPost: vi.fn(),
   updatePost: vi.fn(),
   changePostStatus: vi.fn(),
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
+  queuePostContent: vi.fn(),
+  onPostContentSaved: (cb: (e: { postId: string; summary: PostFrontMatter }) => void) => {
+    savedListeners.add(cb);
+    return () => savedListeners.delete(cb);
+  },
+  onPostContentSaveFailed: (cb: (e: { postId: string; message: string }) => void) => {
+    failedListeners.add(cb);
+    return () => failedListeners.delete(cb);
+  },
 }));
 
 // The CodeMirror editor and the source-picker modal are heavy children; replace
@@ -39,7 +51,7 @@ vi.mock("@renderer/components/SourcePickerModal", () => ({
   ),
 }));
 
-import { CenterPane, type CenterPaneHandle } from "@renderer/components/CenterPane";
+import { CenterPane } from "@renderer/components/CenterPane";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import {
   getPost,
@@ -47,6 +59,7 @@ import {
   changePostStatus,
   deletePost,
   listReferrers,
+  queuePostContent,
 } from "@renderer/api";
 
 const mockGetPost = vi.mocked(getPost);
@@ -54,6 +67,7 @@ const mockUpdatePost = vi.mocked(updatePost);
 const mockChangeStatus = vi.mocked(changePostStatus);
 const mockDeletePost = vi.mocked(deletePost);
 const mockListReferrers = vi.mocked(listReferrers);
+const mockQueueContent = vi.mocked(queuePostContent);
 
 function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {
@@ -93,14 +107,11 @@ function baseProps() {
   };
 }
 
-async function renderPane(
-  over: Partial<ReturnType<typeof baseProps>> = {},
-  ref?: React.Ref<CenterPaneHandle>
-) {
+async function renderPane(over: Partial<ReturnType<typeof baseProps>> = {}) {
   const props = { ...baseProps(), ...over };
   const utils = render(
     <ConfirmProvider>
-      <CenterPane ref={ref} {...props} />
+      <CenterPane {...props} />
     </ConfirmProvider>
   );
   // Loading resolves asynchronously; wait for the toolbar to appear.
@@ -114,6 +125,9 @@ beforeEach(() => {
   mockChangeStatus.mockReset();
   mockDeletePost.mockReset();
   mockListReferrers.mockReset();
+  mockQueueContent.mockReset();
+  savedListeners.clear();
+  failedListeners.clear();
   mockGetPost.mockResolvedValue(post());
 });
 
@@ -176,80 +190,46 @@ describe("CenterPane toolbar metadata", () => {
   });
 });
 
-describe("CenterPane content autosave", () => {
-  it("debounces an edit and saves the new content after the delay", async () => {
-    vi.useFakeTimers();
-    try {
-      mockGetPost.mockResolvedValue(post());
-      const onPostUpdated = vi.fn();
-      render(
-        <ConfirmProvider>
-          <CenterPane {...baseProps()} onPostUpdated={onPostUpdated} />
-        </ConfirmProvider>
-      );
-      // Flush the load promise.
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-      const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
-      mockUpdatePost.mockResolvedValue(mutationResult(post({}, "edited body")));
-      fireEvent.change(editor, { target: { value: "edited body" } });
-      // Not yet saved before the 2s debounce.
-      expect(mockUpdatePost).not.toHaveBeenCalled();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2000);
-      });
-      expect(mockUpdatePost).toHaveBeenCalledWith("p1", { content: "edited body" }, "w1");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("flushPendingChanges persists a pending edit immediately and reports success", async () => {
-    const ref = createRef<CenterPaneHandle>();
-    await renderPane({}, ref);
+describe("CenterPane content saves (streamed to the main process)", () => {
+  it("streams every edit to the main-process saver immediately", async () => {
+    await renderPane();
     const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
-    mockUpdatePost.mockResolvedValue(mutationResult(post({}, "flushed body")));
-    fireEvent.change(editor, { target: { value: "flushed body" } });
-    let flushed: boolean | undefined;
-    await act(async () => {
-      flushed = await ref.current!.flushPendingChanges();
-    });
-    expect(flushed).toBe(true);
-    expect(mockUpdatePost).toHaveBeenCalledWith("p1", { content: "flushed body" }, "w1");
-  });
-
-  it("flushPendingChanges resolves true with nothing to save", async () => {
-    const ref = createRef<CenterPaneHandle>();
-    await renderPane({}, ref);
-    let flushed: boolean | undefined;
-    await act(async () => {
-      flushed = await ref.current!.flushPendingChanges();
-    });
-    expect(flushed).toBe(true);
+    fireEvent.change(editor, { target: { value: "edited body" } });
+    expect(mockQueueContent).toHaveBeenCalledWith("p1", "edited body", "w1");
+    // No renderer-side save round-trip: content never goes through updatePost.
     expect(mockUpdatePost).not.toHaveBeenCalled();
   });
 
-  it("surfaces a save error and reports flush failure when updatePost rejects", async () => {
-    const ref = createRef<CenterPaneHandle>();
-    const { container } = await renderPane({}, ref);
-    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
-    mockUpdatePost.mockRejectedValue(new Error("save broke"));
-    fireEvent.change(editor, { target: { value: "doomed body" } });
-    let flushed: boolean | undefined;
-    await act(async () => {
-      flushed = await ref.current!.flushPendingChanges();
+  it("shows the save error when the saver reports a failure for this post", async () => {
+    const { container } = await renderPane();
+    act(() => {
+      failedListeners.forEach((cb) => cb({ postId: "p1", message: "disk broke" }));
     });
-    expect(flushed).toBe(false);
-    // The save loop records the underlying error, but flush then sees the content
-    // still unsaved and overwrites the toolbar with its own "resolve before
-    // leaving" message — that is the final visible error.
     await waitFor(() =>
       expect(container.querySelector(".toolbar-error")?.textContent).toContain(
-        "Autosave failed. Resolve it before leaving this post."
+        "Autosave failed and will retry."
       )
     );
+  });
+
+  it("ignores save events for other posts", async () => {
+    const { container } = await renderPane();
+    act(() => {
+      failedListeners.forEach((cb) => cb({ postId: "other", message: "disk broke" }));
+    });
+    expect(container.querySelector(".toolbar-error")).toBeFalsy();
+  });
+
+  it("clears the save error once a save lands", async () => {
+    const { container } = await renderPane();
+    act(() => {
+      failedListeners.forEach((cb) => cb({ postId: "p1", message: "disk broke" }));
+    });
+    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
+    act(() => {
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: fm() }));
+    });
+    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
   });
 });
 
@@ -317,28 +297,20 @@ describe("CenterPane locked posts", () => {
     expect(container.querySelector(".toolbar-notice")?.textContent).toContain("Expired posts are locked");
   });
 
-  it("does not autosave edits attempted on a locked post", async () => {
-    vi.useFakeTimers();
-    try {
-      mockGetPost.mockResolvedValue(post({ status: "published" }));
-      render(
-        <ConfirmProvider>
-          <CenterPane {...baseProps()} />
-        </ConfirmProvider>
-      );
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-      const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
-      fireEvent.change(editor, { target: { value: "sneaky edit" } });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2000);
-      });
-      expect(mockUpdatePost).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("does not stream edits attempted on a locked post", async () => {
+    mockGetPost.mockResolvedValue(post({ status: "published" }));
+    render(
+      <ConfirmProvider>
+        <CenterPane {...baseProps()} />
+      </ConfirmProvider>
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "sneaky edit" } });
+    expect(mockQueueContent).not.toHaveBeenCalled();
   });
 });
 
