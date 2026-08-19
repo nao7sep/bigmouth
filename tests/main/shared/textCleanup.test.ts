@@ -71,7 +71,7 @@ describe("truncate", () => {
   });
 
   it("never splits a ZWJ family emoji", () => {
-    const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
     const result = truncate(family + "x", 1);
     expect(result).toEqual({ text: family, truncated: true });
     expect([...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(result.text)]).toHaveLength(1);

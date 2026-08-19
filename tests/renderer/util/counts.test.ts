@@ -13,7 +13,7 @@ describe("graphemeCount", () => {
 
   it("counts an emoji with a ZWJ sequence as one grapheme", () => {
     // Family emoji (man+woman+girl+boy joined) is a single grapheme cluster.
-    expect(graphemeCount("👨‍👩‍👧‍👦")).toBe(1);
+    expect(graphemeCount("👨\u200D👩\u200D👧\u200D👦")).toBe(1);
   });
 
   it("returns 0 for empty string", () => {
