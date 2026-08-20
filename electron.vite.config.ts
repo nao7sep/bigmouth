@@ -4,9 +4,21 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 
+import { withCspMeta } from "./src/shared/csp";
+
 // Single source of truth for the app version: package.json. Injected into the
 // renderer as __APP_VERSION__ so the About modal never drifts from the release.
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
+// Build only: the packaged renderer loads over file://, where a response-header
+// CSP cannot apply, so the policy has to be in the document. Dev is left alone —
+// it is served over http, and Vite's HMR client and React Fast Refresh need the
+// looser policy the dev server already applies.
+const contentSecurityPolicy = {
+  name: "bigmouth-csp-meta",
+  apply: "build",
+  transformIndexHtml: { order: "post", handler: withCspMeta },
+} as const;
 
 export default defineConfig({
   main: {
@@ -48,7 +60,7 @@ export default defineConfig({
         "@shared": resolve("src/shared"),
       },
     },
-    plugins: [react()],
+    plugins: [react(), contentSecurityPolicy],
     define: {
       __APP_VERSION__: JSON.stringify(version),
     },

@@ -42,7 +42,10 @@ export default defineConfig({
         test: {
           name: "main",
           environment: "node",
-          include: ["tests/main/**/*.test.ts"],
+          // tests/shared covers src/shared — the environment-neutral modules both
+          // processes import. It runs under Node with the main-process project
+          // because those modules must hold there too, and nothing in them is DOM.
+          include: ["tests/main/**/*.test.ts", "tests/shared/**/*.test.ts"],
           // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_HOME root
           // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
           setupFiles: ["tests/main/setup.ts"],

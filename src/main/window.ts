@@ -13,27 +13,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // else a renderer asks to open (file:, custom handlers, …) is ignored.
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
 
-// Packaged-build Content-Security-Policy (defense-in-depth on top of context
-// isolation). The dev server needs inline/eval and a websocket for HMR, so this
-// is applied only to the built app. style-src allows 'unsafe-inline' because
-// CodeMirror injects its editor theme as runtime <style> elements; img-src allows
-// data: for inline image URIs that sanitized markdown may carry. The
-// `bigmouth-asset:` custom scheme is allowed in img-src / connect-src so the
-// renderer can load uploaded asset files.
-const PRODUCTION_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: bigmouth-asset:",
-  "font-src 'self'",
-  "connect-src 'self' bigmouth-asset:",
-  "media-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
-
 // Whether a URL may be handed to the OS browser. Exported so the allowlist is
 // covered without driving a real BrowserWindow.
 export function isAllowedExternalUrl(rawUrl: string): boolean {
@@ -42,18 +21,6 @@ export function isAllowedExternalUrl(rawUrl: string): boolean {
   } catch {
     return false;
   }
-}
-
-// The response-header transform applied in the packaged build: stamp the CSP on
-// without disturbing headers already present. Exported so the exact policy is
-// verified in a unit test (the runtime path can't be exercised headlessly).
-export function withContentSecurityPolicy(
-  responseHeaders: Record<string, string[]> | undefined,
-): Record<string, string[]> {
-  return {
-    ...(responseHeaders ?? {}),
-    "Content-Security-Policy": [PRODUCTION_CSP],
-  };
 }
 
 function openExternalIfAllowed(rawUrl: string): void {
@@ -155,11 +122,8 @@ export function createMainWindow(): BrowserWindow {
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    // Packaged build only: enforce the CSP via a response header. (Re-registering
-    // on a subsequent window replaces the single handler, which is harmless.)
-    window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      callback({ responseHeaders: withContentSecurityPolicy(details.responseHeaders) });
-    });
+    // The Content-Security-Policy travels in the HTML, not a response header:
+    // this is a file:// load, which a header CSP cannot reach. See src/shared/csp.ts.
     void window.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
