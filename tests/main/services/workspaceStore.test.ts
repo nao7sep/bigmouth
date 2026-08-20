@@ -44,6 +44,64 @@ afterEach(() => {
   }
 });
 
+// One folder must never register as two workspaces. Two registrations mean two
+// ids, two in-memory indexes keyed by different strings writing over a single
+// posts/index.json, and two separate API-key sets for one folder.
+describe("workspace identity", () => {
+  it("rejects the same folder reached with a trailing separator", () => {
+    const dir = tempDir("dupe");
+    createWorkspace("A", dir);
+
+    expect(() => createWorkspace("B", `${dir}${path.sep}`)).toThrow(/already registered as workspace "A"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("rejects the same folder reached with different case on a case-insensitive volume", () => {
+    const parent = tempDir("case");
+    const dir = path.join(parent, "MyWorkspace");
+    fs.mkdirSync(dir);
+    createWorkspace("A", dir);
+
+    // Only meaningful where the volume actually folds case; on a case-sensitive
+    // one these are genuinely two folders and registering both would be correct.
+    const variant = path.join(parent, "myworkspace");
+    if (!fs.existsSync(variant)) return;
+
+    expect(() => createWorkspace("B", variant)).toThrow(/already registered as workspace "A"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("rejects the same folder named in a different Unicode form", () => {
+    // macOS hands back NFD from a file dialog where the user typed NFC.
+    const parent = tempDir("nfc");
+    const nfc = path.join(parent, "caf\u00e9");
+    fs.mkdirSync(nfc);
+    createWorkspace("A", nfc);
+
+    const nfd = path.join(parent, "cafe\u0301");
+    expect(() => createWorkspace("B", nfd)).toThrow(/already registered as workspace "A"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("rejects the same folder reached through a symlink", () => {
+    const parent = tempDir("link");
+    const real = path.join(parent, "real");
+    fs.mkdirSync(real);
+    createWorkspace("A", real);
+
+    const link = path.join(parent, "link");
+    fs.symlinkSync(real, link, "dir");
+    expect(() => createWorkspace("B", link)).toThrow(/already registered as workspace "A"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("still registers two genuinely different folders", () => {
+    createWorkspace("A", tempDir("one"));
+    createWorkspace("B", tempDir("two"));
+    expect(listWorkspaces()).toHaveLength(2);
+  });
+});
+
 describe("createWorkspace gating", () => {
   it("rejects a non-empty folder that is not a workspace", () => {
     const dir = tempDir("nonempty");

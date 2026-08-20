@@ -77,7 +77,34 @@ function expandAndResolve(input: string, base: string, label: string): string {
     );
   }
 
-  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(base, value);
+  // path.resolve rather than path.normalize: normalize keeps a trailing
+  // separator, and the registry compares dataDirectory as a plain string, so
+  // "…/blog" and "…/blog/" registered the same folder twice.
+  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(base, value);
+}
+
+/**
+ * Whether two paths name the same folder.
+ *
+ * String equality is not enough, and the registry used to rely on it: macOS
+ * hands back NFD from a file dialog where the user typed NFC, its default volume
+ * is case-insensitive, and either can be reached through a symlink. Each of
+ * those slipped past the "already registered as workspace X" guard and
+ * registered ONE folder twice — two ids, two in-memory indexes keyed by
+ * different strings writing over a single posts/index.json, and two separate
+ * API-key sets for one workspace.
+ */
+function sameDirectory(a: string, b: string): boolean {
+  if (a.normalize("NFC") === b.normalize("NFC")) return true;
+  try {
+    // The filesystem's own answer folds case on a case-insensitive volume and
+    // resolves symlinks; no amount of string work can do either. A path that
+    // does not exist cannot be a folder already registered, so a throw here is
+    // simply "not the same".
+    return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -271,7 +298,9 @@ function isEmptyDirectory(dir: string): boolean {
 
 function findWorkspaceByDirectory(dir: string): Workspace | undefined {
   const normalized = expandPath(dir);
-  return ensureLoaded().workspaces.find((workspace) => workspace.dataDirectory === normalized);
+  return ensureLoaded().workspaces.find((workspace) =>
+    sameDirectory(workspace.dataDirectory, normalized),
+  );
 }
 
 function nextWorkspaceName(): string {
