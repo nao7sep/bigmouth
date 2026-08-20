@@ -78,10 +78,9 @@ export interface PostFrontMatter {
 
 /**
  * One row of the derived post index — the canonical list projection the main
- * process sends for a post. Mirrors the main-process PostIndexEntry (the two
- * type worlds cannot import each other, same as UiState/ContentFont below).
- * Deliberately carries NO updatedAtUtc: the index excludes the one field every
- * content save changes, so a projection must never be read as an edit time.
+ * process sends for a post, and the definition both processes use. Deliberately
+ * carries NO updatedAtUtc: the index excludes the one field every content save
+ * changes, so a projection must never be read as an edit time.
  * A type alias, not an interface, so it stays assignable where the looser
  * PostFrontMatter (with its index signature) is expected.
  */
@@ -324,9 +323,9 @@ export const CONTENT_LINE_HEIGHT_MAX = 3;
 export const CONTENT_PADDING_MIN = 0;
 export const CONTENT_PADDING_MAX = 64;
 
-// The renderer's pre-load placeholder for the content font. Mirrors
-// DEFAULT_SETTINGS.contentFont in the main core (the two type worlds can't import
-// each other); keep them in sync.
+// The one content-font default: the renderer's pre-load placeholder AND what
+// DEFAULT_SETTINGS in the main core materializes at first run, which imports it
+// from here rather than restating it.
 export const DEFAULT_CONTENT_FONT: ContentFont = {
   family: "",
   size: 14,

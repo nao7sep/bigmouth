@@ -1,13 +1,61 @@
-// --- Post ---
+/**
+ * The core's view of the app's data shapes.
+ *
+ * Most of them ARE the shared shapes and are re-exported from `@shared/types`
+ * rather than restated here. The file used to declare its own copy of every one,
+ * on the stated premise that "the two type worlds can't import each other" —
+ * which was never true: `tsconfig.node.json` includes `src/shared/**`, the alias
+ * is configured for main, and files in this very directory already import from
+ * it. The copies had begun to drift, and nothing could catch them.
+ *
+ * What remains below is what genuinely differs, and the difference is the point:
+ * the core deals in what a `.md` file holds and where it lives, while the shared
+ * shapes describe what crosses the IPC boundary — where a "post" may equally be
+ * a list summary.
+ */
 
-export type PostStatus = "draft" | "ready" | "published" | "expired";
+export type {
+  AiConfig,
+  AiConfigsData,
+  AiProvider,
+  AnalysisPrompt,
+  ContentFont,
+  EditablePostMetadata,
+  GenerationPromptsData,
+  PostIndexEntry,
+  PostStatus,
+  Settings,
+  Target,
+  UiState,
+  Workspace,
+} from "@shared/types";
+
+export { AI_PROVIDERS } from "@shared/types";
+
+import type {
+  AiProvider,
+  AnalysisPrompt,
+  GenerationPromptsData,
+  PostIndexEntry,
+  PostStatus,
+  Settings,
+  Target,
+  Workspace,
+} from "@shared/types";
+
+// --- Post: the on-disk shapes ---
 
 /**
- * Front matter fields stored in each post's Markdown file.
- * Base fields (title, tags, metaDescription) are always in the post's native language.
- * When the content language is not English, fixed *En variants (titleEn, tagsEn,
- * metaDescriptionEn) hold the English supplements.
- * When the content language is English, only base fields are used.
+ * Front matter as a post FILE holds it.
+ *
+ * Distinct from the shared `PostFrontMatter`, which also has to describe a list
+ * summary: there, `updatedAtUtc` is optional (the index projection omits it) and
+ * `excerpt` exists (the index derives it). On disk neither is true — every post
+ * file carries an update time, and no file carries an excerpt.
+ *
+ * Base fields (title, tags, metaDescription) are always in the post's native
+ * language. When the content language is not English, fixed *En variants hold
+ * the English supplements; when it is English, only base fields are used.
  */
 export interface PostFrontMatter {
   id: string; // nanoid, stable identity, never changes
@@ -31,6 +79,7 @@ export interface PostFrontMatter {
   [key: string]: unknown;
 }
 
+/** A post as the core holds it: the file's contents plus where the file is. */
 export interface Post {
   frontMatter: PostFrontMatter;
   content: string; // Markdown body (everything after the front matter)
@@ -38,120 +87,27 @@ export interface Post {
 }
 
 /**
- * One row of the derived post index (posts/index.json). A fixed projection of a
- * post's front matter — the catalog used for list views, id→file resolution,
- * and search. Deliberately excludes updatedAtUtc (the one field that changes on
- * every content save) so a content edit never churns the index, and excludes
- * the body and the *En/metaDescription/extra fields, which the list does not need.
- */
-export interface PostIndexEntry {
-  id: string;
-  fileName: string; // basename of the .md file, stable for the post's lifetime
-  status: PostStatus;
-  target: string;
-  language: string;
-  slug?: string;
-  title?: string;
-  titleEn?: string;
-  excerpt?: string; // body-derived preview; present only when title and titleEn are both absent
-  tags?: string[];
-  sourceId?: string;
-  createdAtUtc: string;
-  readyAtUtc?: string;
-  publishedAtUtc?: string;
-  expiredAtUtc?: string;
-}
-
-/**
- * Lightweight version of Post for list views — the index projection, no content.
+ * A post in a list view. The core answers with the index projection, which is
+ * what a list needs and nothing more — the shared `PostSummary` carries the
+ * looser boundary front matter instead.
  */
 export interface PostSummary {
   frontMatter: PostIndexEntry;
 }
 
-/**
- * The subset of front matter the renderer may edit through the update operation.
- * Identity (id) and lifecycle fields (status, createdAtUtc, updatedAtUtc,
- * readyAtUtc, publishedAtUtc, expiredAtUtc) are intentionally absent: identity
- * never changes and lifecycle moves only through the status-change operation. A
- * null value clears the field.
- */
-export interface EditablePostMetadata {
-  target?: string | null;
-  language?: string | null;
-  title?: string | null;
-  titleEn?: string | null;
-  slug?: string | null;
-  tags?: string[] | null;
-  tagsEn?: string[] | null;
-  metaDescription?: string | null;
-  metaDescriptionEn?: string | null;
-  extra?: string | null;
-  sourceId?: string | null;
-}
-
-// --- Target ---
-
-export interface Target {
-  name: string; // slug-ish display name (e.g., "blogger", "x-company")
-  defaultLanguage: string; // two-letter code
-  requiresMetadata: boolean;
-}
-
-// --- Workspace ---
-
-export interface Workspace {
-  id: string;            // nanoid, stable identity
-  name: string;          // user-defined label
-  dataDirectory: string; // absolute path to the workspace data directory
-}
+// --- Workspace registry ---
 
 export interface AppConfig {
   workspaces: Workspace[];
 }
 
-// --- UI state ---
-// Mirror of @shared/types UiState (the two type worlds can't import each other,
-// same as ContentFont below). Kept in sync by hand.
-
-/**
- * Ephemeral UI state persisted to `~/.bigmouth/state.json` — saved by the app on
- * the user's behalf, not authored as configuration. It lives in its own store,
- * apart from the workspace registry (workspaces.json / AppConfig) and every
- * per-workspace config.json, per persisted-store-separation-conventions: a settings
- * reset must not touch it, and its splitter-drag churn must not rewrite a config
- * file. Machine-/display-specific and disposable — losing it just reopens the
- * workspace picker and restores default pane widths.
- */
-export interface UiState {
-  paneLeftWidth: number;   // left side-pane INTENT width (px); display is clamped at render time
-  paneRightWidth: number;  // right side-pane INTENT width (px)
-  activeWorkspaceId: string; // last-selected workspace id; "" = none (open the picker)
-}
-
-// --- Settings ---
-
-export const AI_PROVIDERS = ["anthropic"] as const;
-export type AiProvider = (typeof AI_PROVIDERS)[number];
-
-export interface AiConfig {
-  id: string;        // nanoid, stable identity
-  name: string;      // user-defined label (e.g., "Claude Sonnet")
-  provider: AiProvider;
-  apiKey: string;    // resolved in memory (env or the secrets file); empty in the renderer-facing view, never persisted in the workspace
-  hasApiKey?: boolean;   // renderer-facing flag: a key is stored for THIS config (env-independent)
-  usingEnvKey?: boolean; // renderer-facing flag: the provider's env var is set, so it overrides any stored key
-  model: string;     // an id from @shared/types MODEL_DEFS
-  thinking: boolean; // adaptive thinking; always false on a model that rejects it
-  maxTokens: number; // within maxTokensRange() of the selected model
-}
+// --- Config file ---
 
 /**
  * The persisted shape of an AI config in the workspace's `config.json` (the
  * `aiConfigs` section). The API key is deliberately absent — it lives in the
- * storage-root secrets file
- * (`~/.bigmouth/api-keys.json`), keyed by (workspace id, config id), so a
- * git-versioned workspace never carries a secret (storage-path-conventions). The
+ * storage-root secrets file, keyed by (workspace id, config id), so a
+ * git-versioned workspace never carries a secret (storage-path conventions). The
  * config id is the link between the committed config and the local key.
  */
 export interface StoredAiConfig {
@@ -179,44 +135,4 @@ export interface WorkspaceConfig extends Settings {
   aiConfigs: StoredAiConfig[];
   analysisPrompts: AnalysisPrompt[];
   generationPrompts: GenerationPromptsData;
-}
-
-// Mirror of @shared/types ContentFont (the two type worlds can't import each
-// other). The editor content font: family ("" = inherit the UI font), size,
-// line-height, and weight/style/decoration toggles.
-export interface ContentFont {
-  family: string;
-  size: number;
-  lineHeight: number;
-  padding: number;
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-}
-
-export interface Settings {
-  timezone: string;                // IANA timezone (e.g., "Asia/Tokyo")
-  supportedLanguages: string[];    // ISO 639-1 codes shown in language selects (e.g., ["en", "es", "ja"])
-  publishedPostsPerLoad: number;   // batch size for the published posts list (default: 50)
-  maxUploadMb: number;             // max asset upload size in MB (default: 500)
-  editorWatermark: string;         // placeholder text in the empty editor
-  extraFieldWatermark: string;     // placeholder text in the extra textarea
-  uiFontFamily: string;            // UI font family; "" = built-in default stack (App.css --bm-font-ui)
-  contentFont: ContentFont;        // markdown editor content font (independent of the UI font)
-}
-
-export interface AiConfigsData {
-  activeId: string;
-  configs: AiConfig[];
-}
-
-export interface GenerationPromptsData {
-  prompts: Record<string, string>;
-}
-
-// --- Analysis Prompt ---
-
-export interface AnalysisPrompt {
-  name: string; // display label
-  text: string; // full prompt text, {content} is replaced with post content
 }

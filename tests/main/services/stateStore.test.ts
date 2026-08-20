@@ -2,6 +2,7 @@
 // kept separate from the workspace registry and each per-workspace config. These
 // Tests cover lazy first write, corrupt-state fallback, and per-field normalization.
 
+import { defaultUiState } from "@shared/types";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,7 +39,7 @@ afterEach(() => {
 describe("stateStore — first run", () => {
   it("returns defaults and does NOT materialize state.json on init", () => {
     initStateStore();
-    expect(getUiState()).toEqual({ paneLeftWidth: 360, paneRightWidth: 480, activeWorkspaceId: "" });
+    expect(getUiState()).toEqual(defaultUiState());
     // Lazy: nothing written until there is real state to record.
     expect(fs.existsSync(statePath())).toBe(false);
   });
@@ -54,7 +55,7 @@ describe("stateStore — persistence", () => {
 
     // A fresh store (simulating the next launch) rehydrates the persisted state.
     const reloaded = initStateStore();
-    expect(reloaded).toEqual({ paneLeftWidth: 500, paneRightWidth: 480, activeWorkspaceId: "ws-42" });
+    expect(reloaded).toEqual({ ...defaultUiState(), paneLeftWidth: 500, activeWorkspaceId: "ws-42" });
   });
 
   it("merges a partial patch without disturbing the other fields", () => {
@@ -69,7 +70,7 @@ describe("stateStore — self-healing", () => {
   it("falls back to defaults when state.json is unparseable, without throwing", () => {
     fs.writeFileSync(statePath(), "{ not valid json");
     expect(() => initStateStore()).not.toThrow();
-    expect(getUiState()).toEqual({ paneLeftWidth: 360, paneRightWidth: 480, activeWorkspaceId: "" });
+    expect(getUiState()).toEqual(defaultUiState());
   });
 
   it("replaces a non-finite or wrong-typed field with its default on load", () => {
@@ -79,7 +80,7 @@ describe("stateStore — self-healing", () => {
     );
     initStateStore();
     // Bad number/string fields heal to defaults; a numeric id is not a string, so it heals too.
-    expect(getUiState()).toEqual({ paneLeftWidth: 360, paneRightWidth: 480, activeWorkspaceId: "" });
+    expect(getUiState()).toEqual(defaultUiState());
   });
 
   it("keeps the valid fields of a partially-bad file", () => {
@@ -88,6 +89,6 @@ describe("stateStore — self-healing", () => {
       JSON.stringify({ paneLeftWidth: 520, paneRightWidth: null, activeWorkspaceId: "ws-keep" }),
     );
     initStateStore();
-    expect(getUiState()).toEqual({ paneLeftWidth: 520, paneRightWidth: 480, activeWorkspaceId: "ws-keep" });
+    expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
   });
 });

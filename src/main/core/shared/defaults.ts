@@ -5,7 +5,7 @@
 import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, WorkspaceConfig } from "./types.js";
 import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { nanoid } from "nanoid";
-import { DEFAULT_MODEL_ID, defaultMaxTokens, findModelDef } from "@shared/types";
+import { DEFAULT_CONTENT_FONT, DEFAULT_MODEL_ID, defaultMaxTokens, findModelDef } from "@shared/types";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
 /**
@@ -60,19 +60,9 @@ export const DEFAULT_SETTINGS: Settings = {
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:
     "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://...",
-  // UI font empty = the built-in default stack. Editor content font mirrors
-  // @shared/types DEFAULT_CONTENT_FONT (inherit UI family, 14px, 1.6 line-height)
-  // — the editor's prior hard-coded values, now configurable.
+  // UI font empty = the built-in default stack.
   uiFontFamily: "",
-  contentFont: {
-    family: "",
-    size: 14,
-    lineHeight: 1.6,
-    padding: 16,
-    bold: false,
-    italic: false,
-    underline: false,
-  },
+  contentFont: DEFAULT_CONTENT_FONT,
 };
 
 export const DEFAULT_ANALYSIS_PROMPTS: AnalysisPrompt[] = [

@@ -23,22 +23,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { UiState } from "../shared/types.js";
+import { defaultUiState } from "@shared/types";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { getAppRoot } from "./workspaceStore.js";
 import { warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
 let uiState: UiState | null = null;
-
-function defaultUiState(): UiState {
-  // Mirrors @shared/types defaultUiState / DEFAULT_PANE_*_WIDTH (the two type
-  // worlds can't import each other). Kept in sync by hand.
-  return {
-    paneLeftWidth: 360,
-    paneRightWidth: 480,
-    activeWorkspaceId: "",
-  };
-}
 
 /**
  * Coerces an arbitrary parsed value into a valid UiState, replacing any bad or

@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Workspace } from "@shared/types";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir, getApiKeysPath } from "@main/core/services/workspaceStore.js";
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { DEFAULT_SETTINGS } from "@main/core/shared/defaults.js";
 import {
   getSettings,
@@ -131,7 +132,9 @@ describe("settings", () => {
     );
     const loaded = getSettings(dataDir);
     expect(loaded.uiFontFamily).toBe("");
-    expect(loaded.contentFont).toEqual({ family: "", size: 14, lineHeight: 1.6, padding: 16, bold: false, italic: false, underline: false });
+    // The shared default, not a copy of its values: main materializes what
+    // @shared/types declares, so an edit there must not leave this test passing.
+    expect(loaded.contentFont).toEqual(DEFAULT_CONTENT_FONT);
   });
 
   it("round-trips the UI font and content font", () => {
