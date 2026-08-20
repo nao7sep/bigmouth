@@ -21,6 +21,7 @@ vi.mock("electron", () => ({
 const logged = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 
 vi.mock("@main/core/services/logger.js", () => ({
+  debug: () => {},
   info: () => {},
   warn: logged.warn,
   error: logged.error,

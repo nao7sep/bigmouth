@@ -81,6 +81,7 @@ vi.mock("@main/core/shared/logSummaries.js", () => ({
 }));
 
 vi.mock("@main/core/services/logger.js", () => ({
+  debug: () => {},
   info: () => {},
   warn: () => {},
   error: () => {},

@@ -102,26 +102,3 @@ export function typeAheadMatch(
   return -1;
 }
 
-/** One section of a grouped list: its items, in display order, plus whether it
- * is currently expanded. */
-export interface CompositeGroup<T> {
-  items: readonly T[];
-  open: boolean;
-}
-
-/**
- * Flattens a grouped list into the single continuous sequence the arrow keys
- * navigate. A collapsed group contributes nothing (its items are not rendered,
- * so they are not navigable); expanded groups contribute their items in order,
- * and the groups keep their declared order. This is what makes several visual
- * sections behave as one composite control: navigation flows across group
- * boundaries over exactly the currently-rendered options.
- */
-export function flatPostListIds<T>(groups: readonly CompositeGroup<T>[]): T[] {
-  const flat: T[] = [];
-  for (const group of groups) {
-    if (!group.open) continue;
-    for (const item of group.items) flat.push(item);
-  }
-  return flat;
-}

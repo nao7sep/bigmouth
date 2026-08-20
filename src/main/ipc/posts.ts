@@ -31,7 +31,7 @@ import { getSettings, getTargets } from "../core/services/configStore.js";
 import { validatePostUpdate } from "../core/shared/postUpdate.js";
 import { isPostStatus } from "../core/shared/postLifecycle.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
-import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
+import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
 
@@ -87,6 +87,10 @@ export function registerPostHandlers(): void {
     if (typeof wsId !== "string" || typeof id !== "string" || typeof content !== "string") return;
     try {
       const dir = resolveWorkspace(wsId).dataDirectory;
+      // Per keystroke, so `debug` by the logging conventions' frequency rule —
+      // never on a user's disk, and exactly the trail wanted when chasing a save
+      // that did not land.
+      logDebug("post content queued", { workspace: wsId, postId: id, length: content.length });
       queueContent(dir, id, content);
     } catch (err) {
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });

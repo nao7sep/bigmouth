@@ -8,7 +8,10 @@
   // available as one of @types/node's web globals.
   "compilerOptions": {
     "composite": true,
-    "outDir": "./out/tsbuild-node",
+    // Not under out/: electron-builder packages `out/**`, so composite's
+    // .tsbuildinfo shipped inside the released app.asar — ~125 KB of dead
+    // typecheck state, and a product tree that quietly absorbs tool droppings.
+    "tsBuildInfoFile": "./node_modules/.cache/ts/node.tsbuildinfo",
     "noEmit": true,
     "target": "ES2022",
     "module": "ESNext",

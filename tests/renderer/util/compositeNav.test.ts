@@ -5,7 +5,6 @@ import {
   currentCompositeIndex,
   removalFocusTargetId,
   typeAheadMatch,
-  flatPostListIds,
 } from "@renderer/util/compositeNav";
 
 // These are the pure navigation helpers behind every composite control. The
@@ -141,44 +140,3 @@ describe("typeAheadMatch", () => {
   });
 });
 
-describe("flatPostListIds", () => {
-  it("flattens expanded groups in declared order, crossing group boundaries", () => {
-    expect(
-      flatPostListIds([
-        { open: true, items: ["d1", "d2"] },
-        { open: true, items: ["c1"] },
-        { open: true, items: ["p1", "p2"] },
-      ]),
-    ).toEqual(["d1", "d2", "c1", "p1", "p2"]);
-  });
-
-  it("drops the items of a collapsed group entirely", () => {
-    expect(
-      flatPostListIds([
-        { open: true, items: ["d1"] },
-        { open: false, items: ["c1", "c2"] }, // collapsed → contributes nothing
-        { open: true, items: ["p1"] },
-      ]),
-    ).toEqual(["d1", "p1"]);
-  });
-
-  it("returns an empty sequence when every group is collapsed or empty", () => {
-    expect(
-      flatPostListIds([
-        { open: false, items: ["a"] },
-        { open: true, items: [] },
-      ]),
-    ).toEqual([]);
-  });
-
-  it("works on object items, preserving identity", () => {
-    const a = { id: "a" };
-    const b = { id: "b" };
-    expect(
-      flatPostListIds([
-        { open: true, items: [a] },
-        { open: false, items: [b] },
-      ]),
-    ).toEqual([a]);
-  });
-});

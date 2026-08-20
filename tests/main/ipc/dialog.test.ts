@@ -29,6 +29,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@main/core/services/logger.js", () => ({
+  debug: () => {},
   info: () => {},
   warn: () => {},
   error: () => {},

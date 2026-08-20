@@ -162,12 +162,12 @@ describe("WorkspaceModal — loading and empty states", () => {
     let resolve!: (ws: Workspace[]) => void;
     mockListWorkspaces.mockReturnValue(new Promise<Workspace[]>((r) => (resolve = r)));
     const { getByText, queryByText } = await renderWith();
-    expect(getByText("Loading...")).toBeTruthy();
+    expect(getByText("Loading…")).toBeTruthy();
     await act(async () => {
       resolve([WORKSPACE]);
       await Promise.resolve();
     });
-    expect(queryByText("Loading...")).toBeNull();
+    expect(queryByText("Loading…")).toBeNull();
     expect(getByText("Alpha")).toBeTruthy();
   });
 
@@ -184,7 +184,7 @@ describe("WorkspaceModal — loading and empty states", () => {
       await Promise.resolve();
     });
     // The empty-state shows once loading settles via the catch branch.
-    expect(queryByText("Loading...")).toBeNull();
+    expect(queryByText("Loading…")).toBeNull();
   });
 });
 

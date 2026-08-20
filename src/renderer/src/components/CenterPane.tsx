@@ -293,9 +293,9 @@ export function CenterPane({
           </button>
         )}
         <span className="toolbar-label">{fm.target}</span>
-        <span className="toolbar-sep">|</span>
+        <span className="toolbar-sep" aria-hidden="true" />
         <span className="toolbar-label">{fm.language}</span>
-        <span className="toolbar-sep">|</span>
+        <span className="toolbar-sep" aria-hidden="true" />
         <div className="status-radios" aria-label="Post status" {...radioGroupProps}>
           {STATUS_OPTIONS.map(({ value, label }) => (
             <button
@@ -308,7 +308,7 @@ export function CenterPane({
             </button>
           ))}
         </div>
-        <span className="toolbar-sep">|</span>
+        <span className="toolbar-sep" aria-hidden="true" />
         {fm.sourceId ? (
           <>
             <span

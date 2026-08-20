@@ -359,8 +359,17 @@ body {
   color: var(--bm-text-soft);
 }
 
+/* Drawn geometry, not a typed `|`. The character's height, weight and vertical
+   position are whatever U+007C happens to be in the resolved UI font, which
+   differs between SF and Segoe UI — the cross-platform drift the fleet's
+   drawn-not-typed icon rule exists to prevent. It slipped the non-ASCII sweep
+   because a pipe is ASCII. */
 .toolbar-sep {
-  color: var(--bm-border-strong);
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--bm-border-strong);
+  vertical-align: -3px;
 }
 
 .status-radios {

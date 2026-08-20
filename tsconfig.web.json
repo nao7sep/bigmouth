@@ -7,7 +7,10 @@
   // @types/node back into this program.
   "compilerOptions": {
     "composite": true,
-    "outDir": "./out/tsbuild-web",
+    // Not under out/: electron-builder packages `out/**`, so composite's
+    // .tsbuildinfo shipped inside the released app.asar — ~125 KB of dead
+    // typecheck state, and a product tree that quietly absorbs tool droppings.
+    "tsBuildInfoFile": "./node_modules/.cache/ts/web.tsbuildinfo",
     "noEmit": true,
     "target": "ES2022",
     "module": "ESNext",

@@ -8,7 +8,7 @@ import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
 import { safeAiConfigLogContext, safePostLogContext } from "../core/shared/logSummaries.js";
-import { info as logInfo, warn as logWarn, error as logError } from "../core/services/logger.js";
+import { debug as logDebug, info as logInfo, warn as logWarn, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
 // In-flight streams keyed by the renderer-supplied request id, so an abort
@@ -82,6 +82,9 @@ export function registerAnalysisHandlers(): void {
       (delta) => {
         if (aborted || delta.length === 0) return;
         wroteDelta = true;
+        // Per chunk: `debug` by the frequency rule, and the only record of how a
+        // stream actually arrived when one stalls or ends early.
+        logDebug("analysis delta", { requestId, length: delta.length });
         send({ type: "delta", text: delta });
       },
       (delta) => {

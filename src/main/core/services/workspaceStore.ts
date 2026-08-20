@@ -340,7 +340,10 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
         throw new Error("Location must be a directory.");
       }
       if (isWorkspaceDirectory(dir)) {
-        throw new Error("That folder already contains a workspace. Use Open instead.");
+        // The UI has one "Open or Create" control, so there is no "Open" to point at
+    // — and openOrCreateWorkspace already routes this case to openWorkspace, so
+    // this is reached only by a direct createWorkspace call.
+    throw new Error("That folder already contains a workspace.");
       }
       if (!isEmptyDirectory(dir)) {
         throw new Error("New workspaces can only be created in an empty folder.");

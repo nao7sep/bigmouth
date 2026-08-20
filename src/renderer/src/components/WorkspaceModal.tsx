@@ -217,7 +217,7 @@ export function WorkspaceModal({
     >
       <div className="modal-body">
         {loading ? (
-          <p className="modal-empty-message">Loading...</p>
+          <p className="modal-empty-message">Loading…</p>
         ) : sorted.length === 0 ? (
           <p className="modal-empty-message">
             No workspaces yet. Open or create one to get started.
@@ -377,7 +377,7 @@ export function WorkspaceModal({
             onClick={() => void handleSubmit()}
             disabled={submitting}
           >
-            {submitting ? "Opening..." : "Open or Create"}
+            {submitting ? "Opening…" : "Open or Create"}
           </button>
         </div>
       </div>

@@ -238,7 +238,7 @@ describe("LeftPane load-more affordance", () => {
       h.textContent?.includes("Published")
     )!;
     fireEvent.click(publishedHeader);
-    const loadMore = screen.getByRole("button", { name: "Load more..." });
+    const loadMore = screen.getByRole("button", { name: "Load more…" });
     expect(loadMore.getAttribute("tabindex")).toBe("-1");
   });
 
@@ -253,7 +253,7 @@ describe("LeftPane load-more affordance", () => {
       h.textContent?.includes("Published")
     )!;
     fireEvent.click(publishedHeader);
-    fireEvent.click(screen.getByRole("button", { name: "Load more..." }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more…" }));
     expect(onLoadMorePublished).toHaveBeenCalledTimes(1);
   });
 
@@ -266,7 +266,7 @@ describe("LeftPane load-more affordance", () => {
       h.textContent?.includes("Published")
     )!;
     fireEvent.click(publishedHeader);
-    expect(screen.queryByRole("button", { name: "Load more..." })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more…" })).toBeNull();
   });
 });
 

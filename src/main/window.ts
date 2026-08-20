@@ -13,8 +13,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // else a renderer asks to open (file:, custom handlers, …) is ignored.
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
 
-// Whether a URL may be handed to the OS browser. Exported so the allowlist is
-// covered without driving a real BrowserWindow.
+// Whether a URL may be handed to the OS browser. Exported so the allowlist can
+// be covered without driving a real BrowserWindow — see tests/main/window.test.ts.
 export function isAllowedExternalUrl(rawUrl: string): boolean {
   try {
     return ALLOWED_EXTERNAL_PROTOCOLS.has(new URL(rawUrl).protocol);
@@ -30,8 +30,8 @@ function openExternalIfAllowed(rawUrl: string): void {
 }
 
 // The BrowserWindow construction options. Exported as a pure helper so the
-// default size and the derived minimums are verified in a unit test without
-// driving a real window. The minimum size is the pane-row minimum plus chrome,
+// hardening flags and the derived minimums are verified without driving a real
+// window — see tests/main/window.test.ts. The minimum size is the pane-row plus chrome,
 // sourced from @shared/layout (app-chrome-conventions) — never hand-typed, so it
 // can never disagree with the renderer's pane minimums.
 export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {

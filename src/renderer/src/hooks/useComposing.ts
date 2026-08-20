@@ -9,10 +9,12 @@
 // Three-layer detection strategy (all checked by isComposingKeyboardEvent):
 //
 //   1. compositionstart/compositionend events set a ref flag. The compositionend
-//      handler delays clearing via requestAnimationFrame because Safari/WebKit
-//      fires compositionend BEFORE the final keydown event — without the delay,
-//      the flag would already be false when the keydown handler runs. This
-//      matters here because Bigmouth is a web app that may load in Safari.
+//      handler delays clearing via requestAnimationFrame because some engines
+//      fire compositionend BEFORE the final keydown event — without the delay,
+//      the flag would already be false when the keydown handler runs. The
+//      text-input-ime-conventions require this layer as a cross-engine contract,
+//      and state plainly that an audit must not clean it up: BigMouth ships on
+//      one Chromium, but the rule is the fleet's, not this renderer's.
 //
 //   2. KeyboardEvent.isComposing — broadly supported in modern browsers but
 //      unreliable in some WebKit builds (see above), so it serves as fallback.
@@ -62,9 +64,10 @@ export function isComposingEvent(e: React.KeyboardEvent | KeyboardEvent): boolea
   const nativeEvent = "nativeEvent" in e ? e.nativeEvent : e;
   if (nativeEvent.isComposing) return true;
 
-  // Legacy fallback for older IME implementations. Confirmed empirically
-  // necessary during dropkick's implementation — without this layer, IME
-  // Enter still triggered handlers in some test runs.
+  // Legacy fallback for older IME implementations, mandated by the
+  // text-input-ime-conventions alongside the layer above. It looks removable and
+  // is not: the conventions say so explicitly, and dropping it let IME Enter
+  // through in the fleet's earlier implementations.
   //
   // keyCode is deprecated and may eventually be removed from TypeScript's DOM
   // types; the cast below lets the build keep working in that case. At runtime

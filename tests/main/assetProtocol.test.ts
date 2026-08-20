@@ -27,6 +27,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@main/core/services/logger.js", () => ({
+  debug: () => {},
   error: () => {},
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
 }));

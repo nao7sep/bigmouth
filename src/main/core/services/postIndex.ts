@@ -7,10 +7,8 @@
  * to (1) serve the published archive cheaply, (2) resolve id → file, and
  * (3) back search — all without reading thousands of bodies.
  *
- * Every mutation is a single row operation (`upsertEntry`, `removeEntry`).
- * Today they are backed by an in-memory map plus a canonical JSON file; the
- * same operations map directly onto SQLite UPSERT/DELETE, so swapping the
- * backend is mechanical and leaves callers untouched.
+ * Every mutation is a single row operation (`upsertEntry`, `removeEntry`),
+ * backed by an in-memory map plus a canonical JSON file.
  *
  * `upsertEntry` is write-gated: an entry equal to the stored one is a no-op, so
  * a content-only autosave (which changes only updatedAtUtc, not the projection)

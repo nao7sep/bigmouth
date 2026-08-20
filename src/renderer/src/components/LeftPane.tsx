@@ -303,7 +303,7 @@ function Section({
                 fontSize: 13,
               }}
             >
-              Load more...
+              Load more…
             </button>
           )}
         </div>
