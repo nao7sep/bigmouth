@@ -70,13 +70,6 @@ export function registerAssetHandlers(): void {
     if (!pid) throw new Error("Invalid postId");
     if (!file || typeof file.name !== "string" || !file.data) throw new Error("No file provided");
 
-    const post = getPost(dir, pid);
-    if (!post) throw new Error("Post not found");
-    if (isEditLocked(post.frontMatter.status)) {
-      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
-      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
-    }
-
     const buffer = Buffer.from(file.data);
     const limitMb = getSettings(dir).maxUploadMb ?? 500;
     if (buffer.length > limitMb * 1024 * 1024) {
@@ -113,6 +106,17 @@ export function registerAssetHandlers(): void {
       ...(hasMetadata && { hasMetadata }),
       uploadedAt: formatUtcIso(utcNow()),
     };
+
+    // The lock is read HERE, with nothing awaited between it and the write. It
+    // used to be checked at the top of the handler, before the exifr parse above
+    // — and a publish landing inside that await then wrote an asset into a post
+    // the app had already locked. Do not hoist this back up for a faster refusal.
+    const post = getPost(dir, pid);
+    if (!post) throw new Error("Post not found");
+    if (isEditLocked(post.frontMatter.status)) {
+      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
+      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
+    }
 
     let storedMeta: AssetMeta;
     try {

@@ -193,6 +193,53 @@ describe("uploadAsset", () => {
     );
   });
 
+  it("refuses an upload when the post is published while the handler is awaiting metadata", async () => {
+    // The lock used to be read at the top of the handler, before the exifr parse.
+    // Calling the handler runs it synchronously up to that await and hands control
+    // back here, so publishing now lands inside the window - and an asset was
+    // written into a post the app had already locked.
+    const id = createDraft();
+    const pending = invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("late.png", PNG_1x1));
+    changeStatus(dataDir, id, "published");
+
+    await expect(pending).rejects.toThrow(/Published posts are locked/);
+    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
+  });
+
+  // The reader has always filtered these names out of every listing, so storing
+  // one meant bytes that were written, reported as saved, and then unreachable -
+  // and "meta.json" was worse: the sidecar write on the next line landed on the
+  // same path, destroying the user's file and the whole asset list with it.
+  it.each(["meta.json", "notes.tmp", ".env"])(
+    "refuses to store %s rather than losing it",
+    async (name) => {
+      const id = createDraft();
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("keep.png", PNG_1x1));
+
+      await expect(
+        invokeAsync(CHANNELS.uploadAsset, wsId, id, upload(name, Buffer.from("USER-PAYLOAD"))),
+      ).rejects.toThrow(/keeps for its own bookkeeping/);
+
+      // The asset that was already there is untouched.
+      expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual([
+        "keep.png",
+      ]);
+    },
+  );
+
+  it("keeps two non-ASCII names apart instead of collapsing them onto one file", async () => {
+    // Both names used to sanitize to "_.png", which the collision check then read
+    // as a re-upload of the same asset - so the second silently replaced the
+    // first. This app ships `ja` as a first-class post language.
+    const id = createDraft();
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("桜.png", PNG_1x1));
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("梅.png", PNG_1x1));
+
+    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename).sort()).toEqual(
+      ["梅.png", "桜.png"].sort(),
+    );
+  });
+
   it("refuses to upload to an expired (locked) post", async () => {
     const id = createDraft();
     changeStatus(dataDir, id, "expired");

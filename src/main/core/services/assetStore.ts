@@ -68,6 +68,9 @@ export function listAssets(dataDir: string, postId: string): AssetMeta[] {
  * on Linux must not collide on case-insensitive macOS/Windows). A re-upload with
  * the exact same name replaces in place; a name that differs ONLY in case from a
  * DIFFERENT existing asset is disambiguated with a numeric suffix ("photo (1).png").
+ *
+ * A name this directory reserves is refused outright rather than stored, because
+ * a stored one could never be listed again — see isReservedAssetName.
  */
 export function saveAssetFile(
   dataDir: string,
@@ -76,6 +79,12 @@ export function saveAssetFile(
   buffer: Buffer,
   meta: AssetMeta
 ): AssetMeta {
+  if (isReservedAssetName(filename)) {
+    throw new Error(
+      `"${filename}" is a name BigMouth keeps for its own bookkeeping. Rename the file and try again.`,
+    );
+  }
+
   const dir = ensureAssetDir(dataDir, postId);
   const siblings = reconcileAssets(dir);
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
@@ -145,19 +154,13 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * Merges the cached `meta.json` (if any) with the asset files on disk: keeps
  * cached entries whose file still exists, in their stored order, then appends a
  * projected entry for any asset file the cache doesn't know about (sorted by
- * name for determinism). Dotfiles and `*.tmp` atomic-write temporaries (an
- * in-flight or crash-orphaned upload, per `tempName` below) and `meta.json`
- * are ignored.
+ * name for determinism). The names the directory reserves for itself are
+ * ignored — see isReservedAssetName, which saveAssetFile refuses to store.
  */
 function reconcileAssets(dir: string): AssetMeta[] {
   if (!fs.existsSync(dir)) return [];
 
-  const onDisk = new Set(
-    fs.readdirSync(dir).filter(
-      (entry) =>
-        entry !== META_FILENAME && !entry.startsWith(".") && !entry.toLowerCase().endsWith(".tmp"),
-    ),
-  );
+  const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
   const cached = readAssetMeta(path.join(dir, META_FILENAME));
   const result: AssetMeta[] = [];
@@ -196,13 +199,53 @@ function projectAssetFile(dir: string, filename: string): AssetMeta {
   };
 }
 
+// Characters no filename may carry: C0/C7F controls, and the set Windows
+// forbids outright. Everything else is kept — letters and digits in any script,
+// spaces, parentheses — because an allowlist of `[a-zA-Z0-9._-]` mapped every
+// non-ASCII name to the same string of underscores, and the collision check
+// downstream then read two different files as one re-upload and overwrote.
+const FORBIDDEN_IN_FILENAME = /[\u0000-\u001f\u007f<>:"/\\|?*]/g;
+
+// Windows refuses these stems whatever the extension, so a file named CON.png
+// could not be written there at all.
+const WINDOWS_DEVICE_NAMES = new Set([
+  "con", "prn", "aux", "nul",
+  "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+  "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+]);
+
 /**
- * Sanitizes an uploaded filename: keeps the basename, replaces any character
- * that isn't alphanumeric, dot, underscore, or hyphen with an underscore.
+ * Sanitizes an uploaded filename into one that is storable on every platform
+ * the app ships to, changing as little as possible: the basename only, with
+ * forbidden characters replaced, a Windows device stem escaped, and the
+ * trailing dots and spaces Windows silently strips removed here instead — so
+ * `meta.json` can never disagree with what is actually on disk.
  */
 export function sanitizeFilename(raw: string): string {
-  const base = path.basename(raw);
-  return base.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const cleaned = path.basename(raw).replace(FORBIDDEN_IN_FILENAME, "_");
+  // A name that is only dots and spaces leaves nothing behind.
+  const trimmed = cleaned.replace(/[. ]+$/, "");
+  if (trimmed === "") return "asset";
+
+  const ext = path.extname(trimmed);
+  const stem = trimmed.slice(0, trimmed.length - ext.length);
+  return WINDOWS_DEVICE_NAMES.has(stem.toLowerCase()) ? `_${trimmed}` : trimmed;
+}
+
+/**
+ * Names the asset directory keeps for its own bookkeeping, and therefore never
+ * lists: the metadata sidecar, the in-flight temp files `tempName` produces,
+ * and hidden files such as `.DS_Store`.
+ *
+ * The reader and the writer share this one predicate because they must agree.
+ * They did not: `reconcileAssets` filtered these out while `saveAssetFile`
+ * happily stored them, so an upload named `notes.tmp` or `.env` was written,
+ * reported as saved, and then invisible for ever — and one named `meta.json`
+ * was worse still, overwritten by the sidecar write on the next line, taking
+ * the whole asset list with it.
+ */
+export function isReservedAssetName(name: string): boolean {
+  return name === META_FILENAME || name.startsWith(".") || name.toLowerCase().endsWith(".tmp");
 }
 
 /**
