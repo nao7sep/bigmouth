@@ -1,8 +1,10 @@
 /**
  * Post lifecycle state machine.
  *
- * The four states form a strict order: draft < ready < published < expired,
- * with `expired` the terminal "aged out" state.
+ * The four states are unordered: any state can move directly to any other, and
+ * `published → ready` (the in-place typo fix) and `published → draft` (the
+ * rewrite-and-repost lane) are ordinary moves, not exceptions. Only the
+ * timestamps below are monotone.
  *
  * Three lifecycle timestamps track how far a post has advanced:
  *   - readyAtUtc   — the post has been reviewed ("ready")
@@ -31,12 +33,13 @@
 import type { PostStatus, PostFrontMatter } from "./types.js";
 import { formatUtcIso } from "./timestamps.js";
 
-export const STATUS_ORDER: Record<PostStatus, number> = {
-  draft: 0,
-  ready: 1,
-  published: 2,
-  expired: 3,
-};
+/** The four states, in the order the UI presents them. The one enumeration. */
+export const POST_STATUSES: readonly PostStatus[] = ["draft", "ready", "published", "expired"];
+
+/** Whether an arbitrary value — a hand-edited front-matter field, an IPC argument — is a status. */
+export function isPostStatus(value: unknown): value is PostStatus {
+  return typeof value === "string" && (POST_STATUSES as readonly string[]).includes(value);
+}
 
 /**
  * Published and expired posts are locked: their content, metadata, and assets

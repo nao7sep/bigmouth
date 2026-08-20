@@ -194,6 +194,66 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
   });
 });
 
+// A rebuild is the remedy the app offers for a workspace edited outside it, so
+// what it could NOT use is the part the user needs to hear. Reporting only the
+// indexed count let a post the user had hand-edited into something unreadable
+// disappear from every list under a success message, with the file intact on
+// disk and nothing to say so.
+describe("a rebuild says what it left behind", () => {
+  function postsPath(name: string): string {
+    return path.join(dataDir, "posts", name);
+  }
+
+  it("reports nothing skipped for a healthy workspace", () => {
+    createPost(dataDir, "blogger", "en");
+    createPost(dataDir, "blogger", "en");
+
+    expect(rebuildIndex(dataDir)).toEqual({ indexed: 2, skipped: [] });
+  });
+
+  it("names a file whose front matter cannot be read", () => {
+    const good = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(postsPath("20260101-000000-utc-bad.md"), "---\nnot: [valid\n---\n\nIRREPLACEABLE BODY\n");
+
+    const result = rebuildIndex(dataDir);
+
+    expect(result.indexed).toBe(1);
+    expect(result.skipped.map((s) => s.fileName)).toEqual(["20260101-000000-utc-bad.md"]);
+    expect(result.skipped[0].reason).toBeTruthy();
+    // The good post is unaffected, and the bad file is still on disk.
+    expect(getPost(dataDir, good.frontMatter.id)).not.toBeNull();
+    expect(fs.readFileSync(postsPath("20260101-000000-utc-bad.md"), "utf-8")).toContain(
+      "IRREPLACEABLE BODY",
+    );
+  });
+
+  it("names a file whose status is not one of the four", () => {
+    // Previously copied straight through, so the row existed but matched no
+    // bucket: counted as indexed, invisible in the app.
+    const good = createPost(dataDir, "blogger", "en");
+    const raw = fs.readFileSync(good.filePath, "utf-8").replace("status: draft", "status: Draft");
+    fs.writeFileSync(postsPath("20260101-000000-utc-odd.md"), raw.replace(good.frontMatter.id, "other-id"));
+
+    const result = rebuildIndex(dataDir);
+
+    expect(result.indexed).toBe(1);
+    expect(result.skipped).toEqual([
+      { fileName: "20260101-000000-utc-odd.md", reason: 'unknown status "Draft"' },
+    ]);
+  });
+
+  it("names the loser of a duplicated post id", () => {
+    const original = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(postsPath("20260101-000000-utc-copy.md"), fs.readFileSync(original.filePath, "utf-8"));
+
+    const result = rebuildIndex(dataDir);
+
+    expect(result.indexed).toBe(1);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0].reason).toContain("duplicate post id");
+  });
+});
+
 describe("reconcile", () => {
   it("drops an entry whose file disappeared out of band", () => {
     const keep = createPost(dataDir, "blogger", "en");

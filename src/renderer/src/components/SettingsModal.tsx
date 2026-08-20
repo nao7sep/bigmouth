@@ -653,8 +653,15 @@ function RebuildIndexSection() {
     setMessage(null);
     setError(null);
     try {
-      const { count } = await rebuildPostIndex();
-      setMessage(`Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`);
+      const { count, skipped } = await rebuildPostIndex();
+      const indexed = `Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`;
+      // A skipped file is a post the app can no longer show. Saying only what
+      // was indexed let one vanish under a success message.
+      setMessage(
+        skipped === 0
+          ? indexed
+          : `${indexed} ${skipped} file${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out — see the log.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Index rebuild failed.");
     } finally {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { applyStatusTransition, isEditLocked, STATUS_ORDER } from "@main/core/shared/postLifecycle.js";
+import {
+  applyStatusTransition,
+  isEditLocked,
+  isPostStatus,
+  POST_STATUSES,
+} from "@main/core/shared/postLifecycle.js";
 import type { PostFrontMatter, PostStatus } from "@main/core/shared/types.js";
 
 const NOW = new Date("2026-04-05T14:30:22Z");
@@ -33,11 +38,17 @@ describe("isEditLocked", () => {
   });
 });
 
-describe("STATUS_ORDER", () => {
-  it("orders draft < ready < published < expired", () => {
-    expect(STATUS_ORDER.draft).toBeLessThan(STATUS_ORDER.ready);
-    expect(STATUS_ORDER.ready).toBeLessThan(STATUS_ORDER.published);
-    expect(STATUS_ORDER.published).toBeLessThan(STATUS_ORDER.expired);
+describe("POST_STATUSES", () => {
+  it("is the one enumeration of the four states, and recognizes nothing else", () => {
+    // The list is what the app enumerates; the ordering it used to encode was
+    // never consulted, and the spec is explicit that any state may move directly
+    // to any other.
+    expect(POST_STATUSES).toEqual(["draft", "ready", "published", "expired"]);
+    expect(isPostStatus("published")).toBe(true);
+    // A hand-edited front matter can carry anything at all.
+    expect(isPostStatus("Draft")).toBe(false);
+    expect(isPostStatus("archived")).toBe(false);
+    expect(isPostStatus(undefined)).toBe(false);
   });
 });
 

@@ -499,7 +499,7 @@ describe("SettingsModal — General tab validation", () => {
 describe("SettingsModal — RebuildIndexSection", () => {
   it("rebuilds the index and reports the post count", async () => {
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({ count: 3 });
+    mockRebuildPostIndex.mockResolvedValue({ count: 3, skipped: 0 });
 
     await act(async () => {
       fireEvent.click(getByText("Rebuild index"));
@@ -511,13 +511,29 @@ describe("SettingsModal — RebuildIndexSection", () => {
 
   it("uses the singular noun for a one-post rebuild", async () => {
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({ count: 1 });
+    mockRebuildPostIndex.mockResolvedValue({ count: 1, skipped: 0 });
     await act(async () => {
       fireEvent.click(getByText("Rebuild index"));
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(getByText("Rebuilt the index from 1 post.")).toBeTruthy();
+  });
+
+  it("says how many files it could not read, rather than reporting plain success", async () => {
+    // A skipped file is a post the app can no longer show. Reporting only the
+    // indexed count let one vanish under a success message.
+    const { getByText } = await renderModal();
+    mockRebuildPostIndex.mockResolvedValue({ count: 2, skipped: 1 });
+
+    await act(async () => {
+      fireEvent.click(getByText("Rebuild index"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(
+      getByText(/Rebuilt the index from 2 posts\. 1 file could not be read and was left out/),
+    ).toBeTruthy();
   });
 
   it("surfaces a rebuild failure", async () => {

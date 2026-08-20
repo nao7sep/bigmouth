@@ -24,6 +24,7 @@ import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { compareInstants } from "../shared/timestamps.js";
 import { warn as logWarn } from "./logger.js";
+import { isPostStatus } from "../shared/postLifecycle.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
@@ -80,15 +81,27 @@ export function removeEntry(dataDir: string, id: string): void {
   persist(dataDir, map);
 }
 
+/** What a rebuild found: how many posts are indexed, and every file it could not use. */
+export interface RebuildResult {
+  indexed: number;
+  skipped: { fileName: string; reason: string }[];
+}
+
 /**
  * Rebuilds the entire index from the `.md` files on disk and persists it.
  * Deterministic: the same set of files always yields a byte-identical file.
+ *
+ * Returns what it skipped as well as what it indexed. It used to return only a
+ * count, so a post whose front matter had been hand-edited into something
+ * unreadable simply vanished from every list while the rebuild reported success
+ * — and the rebuild is offered to the user precisely because the app invites
+ * editing those files outside it.
  */
-export function rebuild(dataDir: string): number {
-  const map = buildFromDisk(dataDir);
+export function rebuild(dataDir: string): RebuildResult {
+  const { map, skipped } = buildFromDisk(dataDir);
   indexes.set(dataDir, map);
   persist(dataDir, map);
-  return map.size;
+  return { indexed: map.size, skipped };
 }
 
 // --- Internal ---
@@ -119,7 +132,7 @@ function load(dataDir: string): Map<string, PostIndexEntry> {
 }
 
 function buildAndPersist(dataDir: string): Map<string, PostIndexEntry> {
-  const map = buildFromDisk(dataDir);
+  const { map } = buildFromDisk(dataDir);
   persist(dataDir, map);
   return map;
 }
@@ -141,13 +154,23 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
   }
 }
 
-function buildFromDisk(dataDir: string): Map<string, PostIndexEntry> {
+function buildFromDisk(dataDir: string): {
+  map: Map<string, PostIndexEntry>;
+  skipped: { fileName: string; reason: string }[];
+} {
   const map = new Map<string, PostIndexEntry>();
+  const skipped: { fileName: string; reason: string }[] = [];
   for (const fileName of postFileNames(dataDir)) {
-    const entry = tryEntryFromFile(dataDir, fileName);
-    if (entry) insertUnique(map, entry);
+    const result = tryEntryFromFile(dataDir, fileName);
+    if ("reason" in result) {
+      skipped.push({ fileName, reason: result.reason });
+      continue;
+    }
+    if (!insertUnique(map, result.entry)) {
+      skipped.push({ fileName, reason: `duplicate post id ${result.entry.id}` });
+    }
   }
-  return map;
+  return { map, skipped };
 }
 
 /**
@@ -165,8 +188,8 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
 
   for (const fileName of onDisk) {
     if (indexed.has(fileName)) continue;
-    const entry = tryEntryFromFile(dataDir, fileName);
-    if (entry && insertUnique(map, entry)) changed = true;
+    const result = tryEntryFromFile(dataDir, fileName);
+    if ("entry" in result && insertUnique(map, result.entry)) changed = true;
   }
 
   for (const [id, entry] of [...map.entries()]) {
@@ -180,27 +203,38 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
 }
 
 /**
- * Reads one post file into an index entry, or returns null when the file cannot
- * contribute a valid row — unreadable, malformed front matter, or no id. A bad
- * source file is skipped and logged, never thrown: the index is a derived cache
- * and must tolerate a corrupt or half-written `.md` the same way `readIndexFile`
- * tolerates a corrupt `index.json`, rather than letting one bad file make the
- * whole workspace unreadable.
+ * Reads one post file into an index entry, or says why it cannot contribute one
+ * — unreadable, malformed front matter, no id, or a status outside the four. A
+ * bad source file is skipped and logged, never thrown: the index is a derived
+ * cache and must tolerate a corrupt or half-written `.md` the same way
+ * `readIndexFile` tolerates a corrupt `index.json`, rather than letting one bad
+ * file make the whole workspace unreadable. The REASON travels back so a
+ * rebuild the user asked for can say what it left behind.
  */
-function tryEntryFromFile(dataDir: string, fileName: string): PostIndexEntry | null {
+function tryEntryFromFile(
+  dataDir: string,
+  fileName: string,
+): { entry: PostIndexEntry } | { reason: string } {
   try {
     const post = readPost(path.join(postsDir(dataDir), fileName));
     if (!post.frontMatter.id) {
-      logWarn("post file skipped: missing front matter id", { fileName });
-      return null;
+      const reason = "no id in its front matter";
+      logWarn("post file skipped", { fileName, reason });
+      return { reason };
     }
-    return projectIndexEntry(post.frontMatter, fileName, post.content);
+    // A status outside the four reaches no bucket, so an entry built from it
+    // would sit in the index describing a post no list can show — indexed by
+    // the count, invisible in the app.
+    if (!isPostStatus(post.frontMatter.status)) {
+      const reason = `unknown status ${JSON.stringify(post.frontMatter.status)}`;
+      logWarn("post file skipped", { fileName, reason });
+      return { reason };
+    }
+    return { entry: projectIndexEntry(post.frontMatter, fileName, post.content) };
   } catch (err) {
-    logWarn("post file skipped: unreadable or malformed", {
-      fileName,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
+    const reason = err instanceof Error ? err.message : String(err);
+    logWarn("post file skipped", { fileName, reason });
+    return { reason };
   }
 }
 

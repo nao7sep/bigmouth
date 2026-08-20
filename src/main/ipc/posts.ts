@@ -26,13 +26,15 @@ import {
   queueContent,
   setContentSaveListener,
 } from "../core/services/postStore.js";
+import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
 import { validatePostUpdate } from "../core/shared/postUpdate.js";
+import { isPostStatus } from "../core/shared/postLifecycle.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
-const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
+
 
 // The terminal save failures, worded as complete sentences: the renderer
 // prefixes them to its "your text is still here" line, so what the user reads
@@ -135,15 +137,23 @@ export function registerPostHandlers(): void {
 
   ipcMain.handle(CHANNELS.rebuildPostIndex, (_event, wsId: string) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    let count: number;
+    let result: RebuildResult;
     try {
-      count = rebuildIndex(dir);
+      result = rebuildIndex(dir);
     } catch (err) {
       logError("post index rebuild failed", { workspace: wsId, error: serializeError(err) });
       throw err instanceof Error ? err : new Error("Index rebuild failed");
     }
-    info("post index rebuilt", { workspace: wsId, count });
-    return { count };
+    // Every skipped file is named in the log, and the count of them goes back to
+    // the caller: a rebuild that reported only what it indexed let a post the
+    // user had hand-edited into something unreadable vanish under a success
+    // message.
+    info("post index rebuilt", {
+      workspace: wsId,
+      indexed: result.indexed,
+      skipped: result.skipped,
+    });
+    return { count: result.indexed, skipped: result.skipped.length };
   });
 
   ipcMain.handle(CHANNELS.getPost, (_event, wsId: string, id: string) => {
@@ -265,7 +275,7 @@ export function registerPostHandlers(): void {
 
   ipcMain.handle(CHANNELS.changePostStatus, (_event, wsId: string, id: string, status: PostStatus) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    if (!STATUSES.includes(status)) {
+    if (!isPostStatus(status)) {
       throw new Error("Invalid status");
     }
     const before = getPost(dir, id);

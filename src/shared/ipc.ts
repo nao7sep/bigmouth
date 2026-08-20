@@ -252,7 +252,8 @@ export interface BigMouthApi {
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<void>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
-  rebuildPostIndex(wsId: string): Promise<{ count: number }>;
+  /** `count` is what is now indexed; `skipped` is how many files could not be read. */
+  rebuildPostIndex(wsId: string): Promise<{ count: number; skipped: number }>;
 
   // Targets
   listTargets(wsId: string): Promise<Target[]>;

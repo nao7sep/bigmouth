@@ -44,7 +44,7 @@ export function clearCache(dataDir: string): void {
   index.clearCache(dataDir);
 }
 
-export function rebuildIndex(dataDir: string): number {
+export function rebuildIndex(dataDir: string): index.RebuildResult {
   return index.rebuild(dataDir);
 }
 
