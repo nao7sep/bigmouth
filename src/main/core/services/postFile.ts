@@ -53,14 +53,20 @@ const CANONICAL_KEY_SET = new Set<string>(CANONICAL_KEYS);
 /**
  * Parses raw file text into an owned front matter object and trimmed content.
  *
- * gray-matter caches parsed results by input string, so `parsed.data` is a
- * shared reference; we deep-clone it so callers own their copy and can mutate
- * it without corrupting another reader of an identical file.
+ * The `{}` is not decoration: called with no options, gray-matter memoizes every
+ * parse in a module-global cache keyed by the whole input string, and never
+ * evicts. Every autosave flush parses the post again, so a writing session
+ * retains every intermediate version of every post it has touched for the life
+ * of the process. Passing an options object opts out of the cache — which also
+ * makes `parsed.data` freshly built per call, so callers own it outright and
+ * the defensive deep-clone this used to need is gone with it.
  */
 export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; content: string } {
-  const parsed = matter(raw);
-  const frontMatter = structuredClone(parsed.data) as PostFrontMatter;
-  return { frontMatter, content: multiline(parsed.content, BODY_MULTILINE_OPTS) };
+  const parsed = matter(raw, {});
+  return {
+    frontMatter: parsed.data as PostFrontMatter,
+    content: multiline(parsed.content, BODY_MULTILINE_OPTS),
+  };
 }
 
 export function readPost(filePath: string): Post {
@@ -71,7 +77,16 @@ export function readPost(filePath: string): Post {
 
 export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
   const cleanFm = canonicalizeFrontMatter(frontMatter);
-  const output = matter.stringify(multiline(content, BODY_MULTILINE_OPTS), cleanFm);
+  // The body goes in as `{ content }`, never as a bare string. Handed a string,
+  // gray-matter re-parses it as a document first and writes back only what it
+  // considers the body — so a post opening with `---` (a thematic break, or
+  // Markdown pasted with front matter of its own) had its text taken as YAML:
+  // the body was erased from disk and its characters written out as numbered
+  // front-matter keys. The object form treats the body as the opaque data it is.
+  const output = matter.stringify(
+    { content: multiline(content, BODY_MULTILINE_OPTS) },
+    cleanFm,
+  );
   // recorded: a post .md file is the primary user-authored durable text this app owns — the very thing
   // the backup exists for. `filePath` is the full absolute path whether the workspace lives internally
   // under ~/.bigmouth/workspaces/ or at a user-chosen external location; either way the same managed-
