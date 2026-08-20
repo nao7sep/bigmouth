@@ -211,6 +211,9 @@ body {
 }
 
 .btn-new-post-icon {
+  /* No adjacent text to match, and the icon fills its box, so this IS the mark's
+     size — the CSS-drawn plus it replaces was 12px. */
+  font-size: 12px;
   background: var(--bm-accent);
   border: none;
   cursor: pointer;
@@ -494,7 +497,8 @@ body {
   background: none;
   border: none;
   color: var(--bm-danger);
-  font-size: 16px;
+  /* Sized to the banner text it sits in, so the icon matches its cap height. */
+  font-size: 13px;
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;
@@ -617,6 +621,9 @@ body {
 
 /* Hamburger menu */
 .btn-hamburger {
+  /* The mark's size directly, the icon filling its box — the CSS-drawn hamburger
+     it replaces was 18px wide. */
+  font-size: 18px;
   background: none;
   border: none;
   cursor: pointer;
@@ -843,7 +850,8 @@ body {
   background: none;
   border: none;
   color: var(--bm-danger);
-  font-size: 16px;
+  /* Sized to the banner text it sits in, so the icon matches its cap height. */
+  font-size: 12px;
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;
@@ -990,10 +998,15 @@ body {
 .modal-close {
   background: none;
   border: none;
-  font-size: 22px;
+  /* Matches the modal title beside it. Was 22px, inflated because the × glyph it
+     used to hold renders at 0.468em; a drawn icon fills 0.696em, so the same
+     22px put a 15px mark against an 11px title. */
+  font-size: 16px;
   cursor: pointer;
   color: var(--bm-text-muted);
-  padding: 0 4px;
+}
+
+  padding: 4px 6px;
 }
 
 .modal-close:hover:not(:disabled) {
@@ -1354,7 +1367,8 @@ body {
   background: none;
   border: none;
   color: var(--bm-danger);
-  font-size: 16px;
+  /* Sized to the banner text it sits in, so the icon matches its cap height. */
+  font-size: 12px;
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;

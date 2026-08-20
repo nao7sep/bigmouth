@@ -19,8 +19,11 @@ import type { ReactElement, SVGProps } from "react";
  * that needs adjusting at the call site has failed its metrics; fix the art.
  *
  * `plus` and `menu` stand alone in icon-only buttons, so they are centred in the em box
- * rather than baseline-anchored. Both buttons are flex containers, where `vertical-align`
- * is inert — so one component serves inline and standalone use without a variant.
+ * rather than baseline-anchored, and they FILL it rather than carrying side bearings: a
+ * bearing spaces an icon from adjacent text, and with none it is dead margin that adds to
+ * the button's padding. Their button's font-size is therefore the mark's size directly.
+ * Both buttons are flex containers, where `vertical-align` is inert — so one component
+ * serves inline and standalone use without a variant.
  *
  * `data-icon` names the shape in the DOM. It is what tells a test which chevron a
  * disclosure toggle is showing, since the art itself is `aria-hidden`.
@@ -113,8 +116,8 @@ export function ExternalLinkIcon(props: IconProps): ReactElement {
 export function PlusIcon(props: IconProps): ReactElement {
   return (
     <IconBase data-icon="plus" {...props}>
-      <path d="M5.25 11.54L18.75 11.54" />
-      <path d="M12.00 4.79L12.00 18.29" />
+      <path d="M1.00 12.00L23.00 12.00" />
+      <path d="M12.00 1.00L12.00 23.00" />
     </IconBase>
   );
 }
@@ -122,9 +125,9 @@ export function PlusIcon(props: IconProps): ReactElement {
 export function MenuIcon(props: IconProps): ReactElement {
   return (
     <IconBase data-icon="menu" {...props}>
-      <path d="M4.55 6.88L19.45 6.88" />
-      <path d="M4.55 11.54L19.45 11.54" />
-      <path d="M4.55 16.20L19.45 16.20" />
+      <path d="M1.00 6.00L23.00 6.00" />
+      <path d="M1.00 12.00L23.00 12.00" />
+      <path d="M1.00 18.00L23.00 18.00" />
     </IconBase>
   );
 }
