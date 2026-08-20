@@ -7,6 +7,37 @@ import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import type { AiProvider } from "./provider.js";
 
 /**
+ * How long a stream may go with NO output at all before it is abandoned.
+ *
+ * A stream is bounded by inactivity rather than by total time: analysing a long
+ * post legitimately runs for minutes, so a whole-operation deadline would cut
+ * off work that is going fine. A gap with no delta whatsoever is the shape a
+ * stalled connection takes — a dropped VPN, a sleeping laptop, a proxy that
+ * stops forwarding — where the socket stays open and nothing ever settles.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * The signal that actually bounds a call.
+ *
+ * The SDK's own `timeout` option is NOT an operation bound: it is armed around
+ * fetch and cleared the moment the response headers arrive, so it guards
+ * time-to-first-byte and nothing after it. Measured against a stalling server, a
+ * request carrying `timeout: 3000` was still pending past 15 seconds after a
+ * mid-stream stall, while the same request given a signal gave up at 3.0.
+ * `signal` is the only option the SDK applies to the body, so every call here
+ * carries one.
+ */
+function operationBound(
+  timeoutMs: number | undefined,
+  caller: AbortSignal | undefined,
+): AbortSignal | undefined {
+  if (timeoutMs === undefined) return caller;
+  const budget = AbortSignal.timeout(timeoutMs);
+  return caller ? AbortSignal.any([caller, budget]) : budget;
+}
+
+/**
  * The model fields of an AI config, resolved against MODEL_DEFS by the factory. A
  * request is built from these alone, so the provider never guesses a capability.
  */
@@ -49,8 +80,19 @@ export class ClaudeProvider implements AiProvider {
     };
   }
 
-  async generateText(systemPrompt: string, userContent: string): Promise<string> {
-    const message = await this.client.messages.create(this.baseParams(systemPrompt, userContent));
+  async generateText(
+    systemPrompt: string,
+    userContent: string,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<string> {
+    const signal = operationBound(options.timeoutMs, options.signal);
+    const message = await this.client.messages.create(
+      this.baseParams(systemPrompt, userContent),
+      {
+        ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+        ...(signal !== undefined ? { signal } : {}),
+      },
+    );
 
     // Surface a truncated/refused response as an error rather than returning a
     // partial result the caller would treat as complete (the same contract as
@@ -81,6 +123,11 @@ export class ClaudeProvider implements AiProvider {
       signal?: AbortSignal;
     } = {}
   ): Promise<unknown> {
+    // timeoutMs becomes BOTH: the SDK's connect-phase timeout, which produces a
+    // retryable connection error, and a real deadline on the whole call. Before
+    // this it was only the first, so a stall after the headers arrived hung the
+    // caller for ever while the log recorded a timeout that had never applied.
+    const signal = operationBound(options.timeoutMs, options.signal);
     const stream = this.client.messages.stream(
       {
         ...this.baseParams(systemPrompt, userContent),
@@ -99,7 +146,7 @@ export class ClaudeProvider implements AiProvider {
         // because a fake SDK validates nothing.
         ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
         ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
-        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        ...(signal !== undefined ? { signal } : {}),
       }
     );
 
@@ -129,29 +176,76 @@ export class ClaudeProvider implements AiProvider {
     abort: () => void;
     finished: Promise<string>;
   } {
-    const stream = this.client.messages.stream(this.baseParams(systemPrompt, userContent));
+    // The inactivity watchdog. Every delta — answer text OR reasoning — is
+    // progress and restarts it; only total silence trips it. It has to exist
+    // because nothing else bounds a stream: the SDK's timeout is spent once the
+    // headers land, so a connection that goes quiet afterwards leaves
+    // finalMessage() pending for ever, and with it the caller's whole feature.
+    const idle = new AbortController();
+    let idleTripped = false;
+    let idleTimer: NodeJS.Timeout | undefined;
+
+    const stopWatchdog = (): void => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = undefined;
+    };
+
+    const restartWatchdog = (): void => {
+      stopWatchdog();
+      idleTimer = setTimeout(() => {
+        idleTripped = true;
+        idle.abort();
+      }, STREAM_IDLE_TIMEOUT_MS);
+      // Never hold the process open waiting to give up on a stream.
+      idleTimer.unref();
+    };
+
+    const stream = this.client.messages.stream(this.baseParams(systemPrompt, userContent), {
+      signal: idle.signal,
+    });
+    restartWatchdog();
 
     stream.on("text", (delta) => {
+      restartWatchdog();
       onText(delta);
     });
 
     // Only fires when thinking is on AND display is "summarized"; with thinking off
-    // there is nothing to report and the callback is simply never called.
-    if (onThinking) {
-      stream.on("thinking", (delta) => {
-        onThinking(delta);
-      });
-    }
+    // there is nothing to report and the callback is simply never called. Still
+    // counts as progress: a model can reason for a long time before its first
+    // answer token, and that is a working stream, not a stalled one.
+    stream.on("thinking", (delta) => {
+      restartWatchdog();
+      onThinking?.(delta);
+    });
 
     // `finished` rejects on a truncated/refused completion so the caller can tell
     // a complete analysis from one cut short — even after deltas have streamed.
-    const finished = stream.finalMessage().then((message) => {
-      assertCompleteStop(message.stop_reason);
-      return textOf(message);
-    });
+    const finished = stream.finalMessage().then(
+      (message) => {
+        stopWatchdog();
+        assertCompleteStop(message.stop_reason);
+        return textOf(message);
+      },
+      (err: unknown) => {
+        stopWatchdog();
+        // The SDK reports the watchdog's abort the same way it reports the
+        // user's, so say which one it was — otherwise a stall reads to the user
+        // as though they cancelled.
+        if (idleTripped) {
+          throw new Error(
+            `Claude stopped sending output for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s, so the analysis was abandoned.`,
+          );
+        }
+        throw err;
+      },
+    );
 
     return {
-      abort: () => stream.abort(),
+      abort: () => {
+        stopWatchdog();
+        stream.abort();
+      },
       finished,
     };
   }

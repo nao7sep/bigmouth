@@ -11,7 +11,7 @@
 // regression back to parse fails here loudly rather than silently capping the
 // user's budget.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // The fake SDK surface. Hoisted so the vi.mock factory can close over it.
 const sdk = vi.hoisted(() => ({
@@ -232,7 +232,13 @@ describe("generateJson", () => {
     expect(body.system).toBe("sys");
     // The schema is wrapped by the (mocked) jsonSchemaOutputFormat helper.
     expect(body.output_config).toEqual({ format: { __outputFormat: schema } });
-    expect(requestOptions).toEqual({ timeout: 1234, maxRetries: 2, signal: undefined });
+    // timeoutMs travels as BOTH the SDK's connect-phase timeout and a real
+    // deadline on the whole call. The SDK's own `timeout` is cleared the moment
+    // the response headers arrive, so without the signal a stall after that hung
+    // the caller for ever while the log recorded a timeout that never applied.
+    expect(requestOptions.timeout).toBe(1234);
+    expect(requestOptions.maxRetries).toBe(2);
+    expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("takes its budget from the config rather than a per-call default", async () => {
@@ -374,14 +380,120 @@ describe("generateTextStream", () => {
     expect(text).toEqual(["answer"]);
   });
 
-  it("subscribes to thinking only when a caller asked for it", () => {
+  it("subscribes to thinking even when the caller does not display it", () => {
+    // Reasoning is progress. A model can think for minutes before its first
+    // answer token, and the inactivity watchdog must see that as a working
+    // stream rather than a stalled one — so the subscription is unconditional
+    // and the caller's optional callback is what is conditional.
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
     const provider = new ClaudeProvider("k", req());
 
-    provider.generateTextStream("s", "u", () => {});
+    expect(() => provider.generateTextStream("s", "u", () => {})).not.toThrow();
+    expect(f.thinkingListenerCount()).toBe(1);
+    expect(() => f.emitThinking("no listener supplied")).not.toThrow();
+  });
 
-    expect(f.thinkingListenerCount()).toBe(0);
+  // The inactivity watchdog. Nothing else bounds a stream: the SDK's `timeout`
+  // is armed around fetch and cleared the moment the response headers arrive, so
+  // a connection that goes quiet afterwards leaves finalMessage() pending for
+  // ever — and with it the whole Analysis feature, which has no cancel control.
+  describe("inactivity watchdog", () => {
+    const IDLE_MS = 120_000;
+
+    /**
+     * Wires the fake to the SDK's actual contract: an aborted request rejects.
+     * Without this the fake would sit pending for ever and the test would be
+     * asserting nothing.
+     */
+    function rejectOnAbort(f: ReturnType<typeof fakeStream>): void {
+      const [, options] = sdk.stream.mock.calls[0] as [unknown, { signal: AbortSignal }];
+      options.signal.addEventListener("abort", () => f.rejectFinal(new Error("Request was aborted.")));
+    }
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("abandons a stream that goes silent, and says so", async () => {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("k", req());
+
+      const { finished } = provider.generateTextStream("s", "u", () => {});
+      rejectOnAbort(f);
+
+      // Assert before advancing: the rejection lands inside the timer advance,
+      // and an expectation attached afterwards leaves it briefly unhandled.
+      const rejection = expect(finished).rejects.toThrow(/stopped sending output for 120s/);
+      await vi.advanceTimersByTimeAsync(IDLE_MS);
+      await rejection;
+    });
+
+    it("treats every delta as progress and starts the clock over", async () => {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("k", req());
+
+      const { finished } = provider.generateTextStream("s", "u", () => {});
+      rejectOnAbort(f);
+
+      // Three quarters of the budget, a delta, then three quarters again: a
+      // fixed deadline would have fired, an inactivity bound must not.
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 0.75);
+      f.emitText("still working");
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 0.75);
+
+      f.resolveFinal(message({ text: "still working", stop_reason: "end_turn" }));
+      await expect(finished).resolves.toBe("still working");
+    });
+
+    it("counts reasoning as progress, even with no thinking callback", async () => {
+      // A model can reason for longer than the whole budget before its first
+      // answer token. That is a working stream.
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+
+      const { finished } = provider.generateTextStream("s", "u", () => {});
+      rejectOnAbort(f);
+
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 0.75);
+      f.emitThinking("weighing it up");
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 0.75);
+
+      f.resolveFinal(message({ text: "answer", stop_reason: "end_turn" }));
+      await expect(finished).resolves.toBe("answer");
+    });
+
+    it("stops watching once the stream has finished", async () => {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("k", req());
+
+      const { finished } = provider.generateTextStream("s", "u", () => {});
+      rejectOnAbort(f);
+      f.resolveFinal(message({ text: "done", stop_reason: "end_turn" }));
+      await expect(finished).resolves.toBe("done");
+
+      // A timer left running would abort a request that already completed.
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
+      expect(f.abort).not.toHaveBeenCalled();
+    });
+
+    it("reports a user abort as itself, not as a stall", async () => {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("k", req());
+
+      const { finished, abort } = provider.generateTextStream("s", "u", () => {});
+      const rejection = expect(finished).rejects.toThrow(/Request was aborted/);
+      abort();
+      f.rejectFinal(new Error("Request was aborted."));
+
+      await rejection;
+      // And the watchdog is not left running behind it.
+      await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
+    });
   });
 
   it("omits the system parameter when the system prompt is empty", () => {
