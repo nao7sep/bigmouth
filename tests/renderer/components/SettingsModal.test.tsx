@@ -474,6 +474,44 @@ describe("SettingsModal — General tab validation", () => {
     ).toBeUndefined();
   });
 
+  it("lets a language be typed in, one character at a time", async () => {
+    // The field rendered supportedLanguages.join(", ") and re-parsed on every
+    // keystroke, so the comma and the space were dropped before they reached the
+    // screen: typing ", fr" after "en, ja" produced "en, jafr", which then failed
+    // the field's own validator with no way to fix it from the keyboard.
+    const { getByDisplayValue } = await renderModal();
+    const langs = getByDisplayValue("en, ja") as HTMLInputElement;
+
+    for (const next of ["en, ja,", "en, ja, ", "en, ja, f", "en, ja, fr"]) {
+      fireEvent.change(langs, { target: { value: next } });
+      expect(langs.value).toBe(next);
+    }
+  });
+
+  it("lets a number field be cleared without refilling itself", async () => {
+    const { getByRole } = await renderModal();
+    const panel = getByRole("tabpanel");
+    const numbers = panel.querySelectorAll('input[type="number"]');
+    const perLoad = numbers[0] as HTMLInputElement;
+
+    fireEvent.change(perLoad, { target: { value: "" } });
+    // It used to snap to 50 — a value the user never chose, applied under the caret.
+    expect(perLoad.value).toBe("");
+
+    fireEvent.change(perLoad, { target: { value: "0" } });
+    expect(perLoad.value).toBe("0");
+  });
+
+  it("flags a cleared numeric field rather than substituting a default", async () => {
+    const { getByRole, getByText } = await renderModal();
+    const panel = getByRole("tabpanel");
+    const numbers = panel.querySelectorAll('input[type="number"]');
+
+    fireEvent.change(numbers[0], { target: { value: "0" } });
+    expect(getByText("Must be a positive integer.")).toBeTruthy();
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("flags non-positive numeric fields", async () => {
     const { getByRole, getByText } = await renderModal();
     const panel = getByRole("tabpanel");

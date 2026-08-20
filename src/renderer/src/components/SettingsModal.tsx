@@ -422,6 +422,42 @@ function FieldError({ msg }: { msg: string }) {
 
 // --- General ---
 
+/**
+ * Keeps a field's text under the user's control while they are typing.
+ *
+ * A controlled input rendered from a PARSED model re-formats itself on every
+ * keystroke: the comma you just typed is dropped by the parse and so never
+ * reaches the screen — typing "fr" after "en, ja" produced "en, jafr" — and a
+ * cleared number field refills from the model under the caret. The draft is
+ * what the input shows; the model is still derived from it on every keystroke,
+ * so validation and the Save gate see each edit as it happens.
+ *
+ * `stillMine` says whether the draft still represents the incoming value. It
+ * re-syncs only when the model changed from OUTSIDE the field — a reload or a
+ * reset — never on the user's own keystrokes.
+ */
+function useFieldDraft(
+  persisted: string,
+  stillMine: (draft: string) => boolean,
+): [string, (text: string) => void] {
+  const [draft, setDraft] = useState(persisted);
+  useEffect(() => {
+    setDraft((current) => (stillMine(current) ? current : persisted));
+    // stillMine closes over this render's props, which is exactly the comparison
+    // wanted: has the value arriving now diverged from what the field shows?
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persisted]);
+  return [draft, setDraft];
+}
+
+/** The comma-separated language list, as the model holds it. */
+function parseLanguages(text: string): string[] {
+  return text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function GeneralTab({
   settings,
   onChange,
@@ -435,6 +471,20 @@ function GeneralTab({
   // The same per-field messages the Save gate and the IPC boundary read, so a
   // message can never appear beside a value one of them would accept.
   const errors = settingsFieldErrors(settings);
+
+  const persistedLanguages = settings.supportedLanguages.join(", ");
+  const [languagesText, setLanguagesText] = useFieldDraft(
+    persistedLanguages,
+    (draft) => parseLanguages(draft).join(", ") === persistedLanguages,
+  );
+  const [perLoadText, setPerLoadText] = useFieldDraft(
+    String(settings.publishedPostsPerLoad),
+    (draft) => Number(draft) === settings.publishedPostsPerLoad,
+  );
+  const [maxUploadText, setMaxUploadText] = useFieldDraft(
+    String(settings.maxUploadMb),
+    (draft) => Number(draft) === settings.maxUploadMb,
+  );
 
   return (
     <div className="settings-section">
@@ -451,15 +501,11 @@ function GeneralTab({
         <label className="form-label">Supported languages</label>
         <input
           className="form-input"
-          value={settings.supportedLanguages.join(", ")}
-          onChange={(e) =>
-            update({
-              supportedLanguages: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
+          value={languagesText}
+          onChange={(e) => {
+            setLanguagesText(e.target.value);
+            update({ supportedLanguages: parseLanguages(e.target.value) });
+          }}
           placeholder="en, ja, es, fr, de"
         />
         {errors.supportedLanguages && <FieldError msg={errors.supportedLanguages} />}
@@ -469,10 +515,15 @@ function GeneralTab({
         <input
           className="form-input"
           type="number"
-          value={settings.publishedPostsPerLoad}
-          onChange={(e) =>
-            update({ publishedPostsPerLoad: parseInt(e.target.value) || 50 })
-          }
+          value={perLoadText}
+          onChange={(e) => {
+            setPerLoadText(e.target.value);
+            // An emptied field is NaN, which the validator calls out and the
+            // Save gate refuses. It used to become 50 — a magic number the user
+            // never chose, applied under the caret — and a typed 0 became 50 too,
+            // because `parseInt(...) || 50` cannot tell zero from nothing.
+            update({ publishedPostsPerLoad: Number.parseInt(e.target.value, 10) });
+          }}
         />
         {errors.publishedPostsPerLoad && <FieldError msg={errors.publishedPostsPerLoad} />}
       </div>
@@ -481,10 +532,11 @@ function GeneralTab({
         <input
           className="form-input"
           type="number"
-          value={settings.maxUploadMb}
-          onChange={(e) =>
-            update({ maxUploadMb: parseInt(e.target.value) || 500 })
-          }
+          value={maxUploadText}
+          onChange={(e) => {
+            setMaxUploadText(e.target.value);
+            update({ maxUploadMb: Number.parseInt(e.target.value, 10) });
+          }}
         />
         {errors.maxUploadMb && <FieldError msg={errors.maxUploadMb} />}
       </div>
