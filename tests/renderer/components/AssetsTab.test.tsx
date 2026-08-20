@@ -4,6 +4,7 @@ import type { AssetMeta } from "@shared/types";
 
 // AssetsTab reaches the backend through these four api calls.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listAssets: vi.fn(),
   uploadAsset: vi.fn(),
   deleteAsset: vi.fn(),

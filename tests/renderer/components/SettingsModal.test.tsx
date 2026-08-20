@@ -13,6 +13,7 @@ import { settingsFieldErrors } from "@shared/settingsValidation";
 // SettingsModal reaches the main process only through these api functions; mock
 // the whole module so the dialog renders against in-memory fixtures.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   listTargets: vi.fn(),

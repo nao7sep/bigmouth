@@ -5,6 +5,7 @@ import type { Workspace } from "@shared/types";
 // WorkspaceModal talks to the main process through these api calls (the list is
 // a listbox, so pickWorkspaceDirectory backs the Browse button too).
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listWorkspaces: vi.fn(),
   openOrCreateWorkspace: vi.fn(),
   updateWorkspace: vi.fn(),

@@ -5,6 +5,7 @@ import {
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
+  reportProblem,
 } from "../api";
 import type { Workspace } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
@@ -98,7 +99,12 @@ export function WorkspaceModal({
         setWorkspaces(ws);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err: unknown) => {
+        // The list simply comes back empty, which reads as "no workspaces yet"
+        // rather than "the registry could not be read".
+        reportProblem("could not list workspaces", err);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {

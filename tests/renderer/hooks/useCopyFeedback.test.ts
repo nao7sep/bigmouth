@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { useCopyFeedback } from "@renderer/hooks/useCopyFeedback";
+import { reportProblem } from "@renderer/api";
+
+vi.mock("@renderer/api", () => ({ reportProblem: vi.fn() }));
 
 // The hook writes to navigator.clipboard and arms a reset timer. Stub the
 // clipboard and drive the timer with fake timers; restore both afterwards.
@@ -28,11 +31,11 @@ afterEach(() => {
 });
 
 describe("useCopyFeedback", () => {
-  it("writes to the clipboard and flags the copied key, then clears after the duration", () => {
+  it("writes to the clipboard and flags the copied key, then clears after the duration", async () => {
     const { result } = renderHook(() => useCopyFeedback(1500));
     expect(result.current.copiedKey).toBeNull();
 
-    act(() => result.current.copy("hello", "k1"));
+    await act(async () => result.current.copy("hello", "k1"));
     expect(writeText).toHaveBeenCalledWith("hello");
     expect(result.current.copiedKey).toBe("k1");
 
@@ -48,22 +51,22 @@ describe("useCopyFeedback", () => {
     expect(result.current.copiedKey).toBeNull();
   });
 
-  it("defaults the key to \"default\"", () => {
+  it("defaults the key to \"default\"", async () => {
     const { result } = renderHook(() => useCopyFeedback());
-    act(() => result.current.copy("text"));
+    await act(async () => result.current.copy("text"));
     expect(result.current.copiedKey).toBe("default");
   });
 
-  it("a second copy of a different key restarts the window and does not clear the newer key", () => {
+  it("a second copy of a different key restarts the window and does not clear the newer key", async () => {
     const { result } = renderHook(() => useCopyFeedback(1000));
 
-    act(() => result.current.copy("a", "k1"));
+    await act(async () => result.current.copy("a", "k1"));
     act(() => {
       vi.advanceTimersByTime(800);
     });
     // Copy a different key before the first timer fires; the first timer is
     // cleared so it can never reset the now-current key.
-    act(() => result.current.copy("b", "k2"));
+    await act(async () => result.current.copy("b", "k2"));
     expect(result.current.copiedKey).toBe("k2");
 
     // Past the first timer's original deadline: still k2 (its timer is cleared).
@@ -79,21 +82,21 @@ describe("useCopyFeedback", () => {
     expect(result.current.copiedKey).toBeNull();
   });
 
-  it("the reset only clears when the current key still matches", () => {
+  it("the reset only clears when the current key still matches", async () => {
     // copy k1, then copy k2; when k1's (cleared) timer would have fired it must
     // not clear k2 even via the functional-update guard. Covered above; here we
     // assert the guard directly by re-copying the same key to refresh it.
     const { result } = renderHook(() => useCopyFeedback(1000));
-    act(() => result.current.copy("a", "k1"));
+    await act(async () => result.current.copy("a", "k1"));
     act(() => {
       vi.advanceTimersByTime(1000);
     });
     expect(result.current.copiedKey).toBeNull();
   });
 
-  it("uses a custom duration", () => {
+  it("uses a custom duration", async () => {
     const { result } = renderHook(() => useCopyFeedback(500));
-    act(() => result.current.copy("x", "k"));
+    await act(async () => result.current.copy("x", "k"));
     act(() => {
       vi.advanceTimersByTime(499);
     });
@@ -104,22 +107,28 @@ describe("useCopyFeedback", () => {
     expect(result.current.copiedKey).toBeNull();
   });
 
-  it("swallows a clipboard write rejection without throwing", async () => {
+  it("does not report a copy that failed", async () => {
+    // "Copied" used to be set before the write resolved, with the rejection
+    // swallowed — so a denied clipboard flashed success and the user pasted
+    // whatever was there before. The feedback now follows the write.
     writeText.mockRejectedValueOnce(new Error("denied"));
     const { result } = renderHook(() => useCopyFeedback());
-    act(() => result.current.copy("x"));
-    // The feedback flag is still set even though the write failed.
-    expect(result.current.copiedKey).toBe("default");
-    // Flush the rejected promise's catch; no unhandled rejection.
-    await act(async () => {
-      await Promise.resolve();
-    });
+
+    await act(async () => result.current.copy("x"));
+
+    expect(result.current.copiedKey).toBeNull();
+    expect(reportProblem).toHaveBeenCalledWith(
+      "clipboard write failed",
+      expect.any(Error),
+      { key: "default" },
+    );
   });
 
-  it("clears the pending reset timer on unmount", () => {
+  it("clears the pending reset timer on unmount", async () => {
     const clearSpy = vi.spyOn(globalThis, "clearTimeout");
     const { result, unmount } = renderHook(() => useCopyFeedback());
-    act(() => result.current.copy("x", "k"));
+    // Awaited: the timer is armed when the write resolves, not when copy is called.
+    await act(async () => result.current.copy("x", "k"));
     unmount();
     expect(clearSpy).toHaveBeenCalled();
   });

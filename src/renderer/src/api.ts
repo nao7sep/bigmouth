@@ -339,3 +339,43 @@ export function generateImaging(
 export function assetUrl(postId: string, filename: string, workspaceId?: string): string {
   return buildAssetUrl(requireWs(workspaceId), postId, filename);
 }
+
+// --- Diagnostics ---
+
+/**
+ * Records a renderer-side failure in the session log.
+ *
+ * The renderer is sandboxed and opens no log file, so everything it recovers
+ * from used to leave no trace anywhere — a failed `listReferrers` silently
+ * downgraded a delete confirmation from naming the posts that would be unlinked
+ * to a bare "cannot be undone", and a failed clipboard write still flashed
+ * "copied". A user reporting either left nothing to reconstruct.
+ *
+ * Never throws: a failure to record something must not become a second failure
+ * the caller has to handle. That is also why it is a `send`, not an `invoke`.
+ */
+export function reportProblem(
+  message: string,
+  err?: unknown,
+  detail?: Record<string, unknown>,
+): void {
+  try {
+    bridge().writeRendererLog({
+      level: "error",
+      message,
+      detail: { ...(detail ?? {}), ...describeError(err) },
+    });
+  } catch {
+    // The bridge itself is gone (teardown, or a test with no window.bigmouth).
+    // There is nowhere left to report to, and throwing here would replace the
+    // caller's recovered failure with an unrecovered one.
+  }
+}
+
+function describeError(err: unknown): Record<string, unknown> {
+  if (err === undefined) return {};
+  if (err instanceof Error) {
+    return { error: { name: err.name, message: err.message, stack: err.stack } };
+  }
+  return { error: String(err) };
+}

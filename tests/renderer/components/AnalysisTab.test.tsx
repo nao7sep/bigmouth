@@ -4,6 +4,7 @@ import type { AnalysisPrompt } from "@shared/types";
 
 // AnalysisTab reaches the main process through these two api calls only.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listAnalysisPrompts: vi.fn(),
   runAnalysisStream: vi.fn(),
 }));

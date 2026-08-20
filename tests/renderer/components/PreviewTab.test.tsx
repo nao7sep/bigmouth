@@ -7,6 +7,7 @@ import { render, cleanup } from "@testing-library/react";
 // allowlisted — so the mock returns a sanitizer-safe relative URL, letting the
 // test assert the rewrite survives all the way to the rendered <img>.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   assetUrl: vi.fn(
     (postId: string, filename: string, workspaceId?: string) =>
       `resolved/${workspaceId ?? "ws"}/${postId}/${encodeURIComponent(filename)}`

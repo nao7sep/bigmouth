@@ -28,6 +28,17 @@ import type {
   Workspace,
 } from "./types";
 
+/**
+ * One renderer-side event for the session log. `detail` carries whatever the
+ * call site knows — a serialized error, an id, a count; main redacts it like any
+ * other log field before writing.
+ */
+export interface RendererLogEntry {
+  level: "warn" | "error";
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
 // --- Channel names ---
 
 export const CHANNELS = {
@@ -37,6 +48,11 @@ export const CHANNELS = {
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
   revealCurrentLogFile: "log:revealCurrent",
+  // The renderer's only way into the session log: it is sandboxed and opens no
+  // file of its own, so it forwards a structured record to main (logging
+  // conventions, "Multi-process apps"). One-way and fire-and-forget — a failure
+  // to log must never become a second failure the caller has to handle.
+  writeRendererLog: "log:write",
   pickDirectory: "dialog:pickDirectory",
 
   // UI state (state.json)
@@ -254,6 +270,9 @@ export interface BigMouthApi {
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
   /** `count` is what is now indexed; `skipped` is how many files could not be read. */
   rebuildPostIndex(wsId: string): Promise<{ count: number; skipped: number }>;
+
+  /** Records a renderer-side warning or error in the session log. Fire-and-forget. */
+  writeRendererLog(entry: RendererLogEntry): void;
 
   // Targets
   listTargets(wsId: string): Promise<Target[]>;

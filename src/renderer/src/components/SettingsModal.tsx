@@ -35,6 +35,7 @@ import {
   getGenerationPromptDefaults,
   saveGenerationPrompts,
   rebuildPostIndex,
+  reportProblem,
 } from "../api";
 import {
   GENERATION_PROMPT_KEYS,
@@ -270,8 +271,10 @@ export function SettingsModal({
     } catch (err) {
       try {
         initialAiConfigs.current = await listAiConfigs();
-      } catch {
-        // Best-effort resync; fall through and surface the original error.
+      } catch (resyncErr) {
+        // Best-effort resync; the original error is what the user sees, so this
+        // one would otherwise leave no trace at all.
+        reportProblem("could not resync AI configs after a failed save", resyncErr);
       }
       throw err;
     }

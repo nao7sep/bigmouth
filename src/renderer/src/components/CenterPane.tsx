@@ -9,6 +9,7 @@ import {
   queuePostContent,
   onPostContentSaved,
   onPostContentSaveFailed,
+  reportProblem,
 } from "../api";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
@@ -200,7 +201,10 @@ export function CenterPane({
     try {
       const { count } = await listReferrers(postId, workspaceId);
       referrerCount = count;
-    } catch {
+    } catch (err) {
+      // The confirmation silently loses the "N posts link to this" clause, so a
+      // destructive prompt gets weaker without anyone knowing why.
+      reportProblem("referrer count unavailable for the delete confirmation", err, { postId });
       referrerCount = 0;
     }
 

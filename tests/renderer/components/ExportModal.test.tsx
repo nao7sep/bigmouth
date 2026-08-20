@@ -66,9 +66,13 @@ describe("ExportModal — render and format selection", () => {
 });
 
 describe("ExportModal — copy", () => {
-  it("writes the current output to the clipboard and flashes confirmation", () => {
+  it("writes the current output to the clipboard and flashes confirmation", async () => {
     const { getByText } = renderExport();
-    fireEvent.click(getByText("Copy"));
+    // Awaited: the confirmation follows the clipboard write rather than
+    // preceding it, so a denied copy never claims success.
+    await act(async () => {
+      fireEvent.click(getByText("Copy"));
+    });
 
     // The HTML output was copied.
     expect(writeText).toHaveBeenCalledTimes(1);

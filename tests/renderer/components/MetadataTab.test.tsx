@@ -4,6 +4,7 @@ import { createRef } from "react";
 
 // MetadataTab only talks to the main process through these three api calls.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   updatePost: vi.fn(),
   generateMetadataField: vi.fn(),
   generateMetadataFields: vi.fn(),

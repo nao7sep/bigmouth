@@ -6,6 +6,7 @@ import type { PostListResponse, PostSummary } from "@shared/types";
 // only backend touch is listPosts; mock the seam so the modal loads against an
 // in-memory page.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listPosts: vi.fn(),
 }));
 

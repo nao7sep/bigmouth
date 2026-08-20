@@ -18,6 +18,7 @@ import { DEFAULT_CONTENT_FONT } from "@shared/types";
 // tests play the main process's part.
 const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: unknown }) => void>());
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listPosts: vi.fn(),
   createPost: vi.fn(),
   listTargets: vi.fn(),

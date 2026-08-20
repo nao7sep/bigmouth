@@ -7,6 +7,7 @@ import { defaultUiState, type UiState, type Workspace } from "@shared/types";
 // state (pane widths + last workspace id) lives in the main process's state.json,
 // hydrated via getUiState and persisted via updateUiState.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listWorkspaces: vi.fn(),
   setActiveWorkspace: vi.fn(),
   getUiState: vi.fn(),

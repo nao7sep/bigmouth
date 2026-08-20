@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
-import { getUiState, listWorkspaces, setActiveWorkspace, updateUiState } from "./api";
+import { getUiState, listWorkspaces, reportProblem, setActiveWorkspace, updateUiState } from "./api";
 import {
   DEFAULT_PANE_LEFT_WIDTH,
   DEFAULT_PANE_RIGHT_WIDTH,
@@ -119,8 +119,9 @@ export function App() {
       let state: UiState;
       try {
         state = await getUiState();
-      } catch {
+      } catch (err) {
         // A failed state read is non-fatal: fall back to defaults and the picker.
+        reportProblem("could not read the saved UI state", err);
         if (!cancelled) {
           setWorkspaceModalOpen(true);
           setWsChecked(true);
@@ -150,7 +151,10 @@ export function App() {
           if (cancelled) return;
           setWorkspaceModalOpen(true);
         }
-      } catch {
+      } catch (err) {
+        // The user sees the picker with no explanation of why their workspace
+        // did not reopen; the log is the only place that can say.
+        reportProblem("could not list workspaces at startup", err, { storedId });
         await updateUiState({ activeWorkspaceId: "" });
         if (cancelled) return;
         setWorkspaceModalOpen(true);

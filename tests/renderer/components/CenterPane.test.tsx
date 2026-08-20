@@ -11,6 +11,7 @@ const failedListeners = vi.hoisted(
   () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable"; message: string }) => void>()
 );
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   getPost: vi.fn(),
   updatePost: vi.fn(),
   changePostStatus: vi.fn(),

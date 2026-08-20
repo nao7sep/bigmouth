@@ -4,6 +4,7 @@ import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 // The hook's only dependency is listPosts; mock it so the tests drive the
 // load/pagination/error logic without real data.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listPosts: vi.fn(),
 }));
 

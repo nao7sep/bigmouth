@@ -6,6 +6,7 @@ import type { PostListResponse, PostSummary, Target } from "@shared/types";
 // the dirty close through the app-wide host; mock the seam and wrap in a
 // ConfirmProvider.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   listPosts: vi.fn(),
 }));
 

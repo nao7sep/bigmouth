@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { reportProblem } from "../api";
 
 export function useCopyFeedback(duration = 1500) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -6,13 +7,22 @@ export function useCopyFeedback(duration = 1500) {
 
   const copy = useCallback(
     (text: string, key = "default") => {
-      navigator.clipboard.writeText(text).catch(() => {});
-      setCopiedKey(key);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(
-        () => setCopiedKey((current) => (current === key ? null : current)),
-        duration
-      );
+      // "Copied" was shown before the write resolved and the rejection was
+      // swallowed, so a failed copy still reported success and the user pasted
+      // whatever was on the clipboard before.
+      void navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopiedKey(key);
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(
+            () => setCopiedKey((current) => (current === key ? null : current)),
+            duration
+          );
+        })
+        .catch((err: unknown) => {
+          reportProblem("clipboard write failed", err, { key });
+        });
     },
     [duration]
   );

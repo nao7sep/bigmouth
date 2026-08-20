@@ -14,6 +14,7 @@ import {
   type BigMouthApi,
   type MetadataGenerationResults,
   type PostUpdate,
+  type RendererLogEntry,
 } from "@shared/ipc";
 import type {
   AiConfigsData,
@@ -53,6 +54,9 @@ const api = {
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
   revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,
+  // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
+  // something can never turn into a second failure the caller has to handle.
+  writeRendererLog: (entry: RendererLogEntry) => ipcRenderer.send(CHANNELS.writeRendererLog, entry),
   pickDirectory: () => ipcRenderer.invoke(CHANNELS.pickDirectory) as Promise<string | null>,
 
   // --- UI state (state.json) ---

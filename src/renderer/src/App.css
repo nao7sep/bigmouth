@@ -1736,3 +1736,23 @@ body {
   margin-bottom: 10px;
   color: var(--bm-text);
 }
+
+/* The error boundary's last-resort screen. Deliberately plain: it renders when
+   the app could not, so it leans on nothing the failure might have taken with
+   it. */
+.fatal-error {
+  max-width: 640px;
+  margin: 64px auto;
+  padding: 0 24px;
+  color: var(--bm-text);
+}
+
+.fatal-error h1 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+.fatal-error p {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}

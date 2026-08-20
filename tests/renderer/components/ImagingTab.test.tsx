@@ -4,6 +4,7 @@ import type { ImagingOptions } from "@shared/types";
 
 // ImagingTab only calls generateImaging on the backend.
 vi.mock("@renderer/api", () => ({
+  reportProblem: vi.fn(),
   generateImaging: vi.fn(),
 }));
 
