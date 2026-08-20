@@ -742,9 +742,10 @@ body {
 }
 
 /* Preview tab */
+/* Size, line-height, padding and family all come from the content-font setting
+   (see PreviewTab) — the preview shows the user's own document, so it is content
+   rather than chrome. */
 .preview-content {
-  font-size: 14px;
-  line-height: 1.7;
   overflow-wrap: break-word;
 }
 

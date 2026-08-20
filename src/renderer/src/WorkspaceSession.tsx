@@ -656,6 +656,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 analysisPromptsVersion={analysisPromptsVersion}
                 onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
                 maxUploadMb={maxUploadMb}
+                contentFont={contentFont}
                 loading={postLoading}
               />
             </>

@@ -1,3 +1,4 @@
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 
@@ -25,7 +26,7 @@ afterEach(() => {
 });
 
 function renderPreview(content: string) {
-  return render(<PreviewTab workspaceId="w1" content={content} postId="p1" />);
+  return render(<PreviewTab workspaceId="w1" content={content} postId="p1" contentFont={DEFAULT_CONTENT_FONT} />);
 }
 
 describe("PreviewTab", () => {
@@ -65,7 +66,61 @@ describe("PreviewTab", () => {
   it("recomputes the rendered HTML when the content prop changes", () => {
     const { container, rerender } = renderPreview("first body");
     expect(container.querySelector(".preview-content")?.textContent).toContain("first body");
-    rerender(<PreviewTab workspaceId="w1" content="second body" postId="p1" />);
+    rerender(<PreviewTab workspaceId="w1" content="second body" postId="p1" contentFont={DEFAULT_CONTENT_FONT} />);
     expect(container.querySelector(".preview-content")?.textContent).toContain("second body");
+  });
+});
+
+// The rewrite used to exclude only a leading `/` and run to the closing paren,
+// so it swallowed the whole rest of the reference: a hosted image, a data: URI
+// and an image with a title all became broken asset URLs — in the tab whose
+// entire job is showing what the post will look like.
+describe("PreviewTab — image destinations it must not touch", () => {
+  function renderWith(content: string) {
+    return render(
+      <PreviewTab
+        workspaceId="ws1"
+        content={content}
+        postId="p1"
+        contentFont={DEFAULT_CONTENT_FONT}
+      />,
+    );
+  }
+
+  it.each([
+    ["a hosted image", "https://example.com/x.png"],
+    ["a protocol-relative image", "//example.com/x.png"],
+    ["a data URI", "data:image/png;base64,AAAA"],
+    ["a rooted path", "/img/x.png"],
+  ])("leaves %s alone", (_name, dest) => {
+    const { container } = renderWith(`![a](${dest})`);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(dest);
+  });
+
+  it("rewrites a bare filename and keeps its title", () => {
+    const { container } = renderWith('![a](photo.png "A caption")');
+    const img = container.querySelector("img");
+
+    // The mock stands in for the custom-protocol URL (DOMPurify strips the real
+    // scheme from an img src), so the assertion is that the rewrite happened.
+    expect(img?.getAttribute("src")).toBe("resolved/ws1/p1/photo.png");
+    // The title used to be encoded into the filename.
+    expect(img?.getAttribute("src")).not.toContain("caption");
+    expect(img?.getAttribute("title")).toBe("A caption");
+  });
+
+  it("applies the content font, so reading and writing share a family", () => {
+    const { container } = render(
+      <PreviewTab
+        workspaceId="ws1"
+        content="body"
+        postId="p1"
+        contentFont={{ ...DEFAULT_CONTENT_FONT, family: "Georgia", size: 20 }}
+      />,
+    );
+    const body = container.querySelector(".preview-content") as HTMLElement;
+
+    expect(body.style.fontFamily).toBe("Georgia");
+    expect(body.style.fontSize).toBe("20px");
   });
 });

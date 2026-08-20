@@ -5,7 +5,7 @@ import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
-import type { PostFrontMatter, PostMutationResult, Target } from "@shared/types";
+import type { ContentFont, PostFrontMatter, PostMutationResult, Target } from "@shared/types";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
@@ -24,6 +24,7 @@ interface RightPaneProps {
   analysisPromptsVersion: number;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
+  contentFont: ContentFont;
   loading?: boolean;
 }
 
@@ -46,6 +47,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
     analysisPromptsVersion,
     onInsertAtCursor,
     maxUploadMb,
+    contentFont,
     loading = false,
   },
   ref
@@ -129,7 +131,12 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
           {loading ? (
             <RightPanePlaceholder message="Loading post…" />
           ) : (
-            <PreviewTab workspaceId={workspaceId} content={content} postId={postId} />
+            <PreviewTab
+              workspaceId={workspaceId}
+              content={content}
+              postId={postId}
+              contentFont={contentFont}
+            />
           )}
         </div>
         {showMetadata && (

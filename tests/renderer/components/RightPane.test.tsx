@@ -1,3 +1,4 @@
+import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { createRef, forwardRef, useImperativeHandle } from "react";
@@ -86,6 +87,7 @@ function baseProps() {
     onInsertAtCursor: vi.fn(),
     maxUploadMb: 10,
     loading: false,
+    contentFont: DEFAULT_CONTENT_FONT,
   };
 }
 
