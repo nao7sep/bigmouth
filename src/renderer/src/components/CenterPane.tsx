@@ -107,24 +107,22 @@ export function CenterPane({
   // Content saves are owned by the main-process post store (write-behind):
   // every edit streams there immediately, so navigating away, switching
   // workspaces, or quitting can never orphan text in a renderer debounce.
-  // Save results come back as events; failures show inline and the store keeps
-  // retrying with the text safe in its buffer.
+  // Save results come back as events; failures show inline. A retryable failure
+  // keeps the text safe in the store's buffer, while a terminal one says so
+  // plainly — the editor's copy is then the one the user must rescue.
   useEffect(() => {
     const offSaved = onPostContentSaved((event) => {
       if (event.postId !== postId) return;
+      // The event carries only the list projection (no updatedAtUtc — the index
+      // excludes it), so there is nothing here to fold into the open post.
       setSaveError(null);
-      // The summary carries the authoritative updatedAtUtc from the write, so
-      // the header timestamp stays honest without refetching the post.
-      setPost((prev) =>
-        prev
-          ? { ...prev, frontMatter: { ...prev.frontMatter, updatedAtUtc: event.summary.updatedAtUtc } }
-          : prev,
-      );
     });
     const offFailed = onPostContentSaveFailed((event) => {
       if (event.postId !== postId) return;
       setSaveError(
-        "Autosave failed and will retry. Your text is held in memory until it saves."
+        event.kind === "unsaveable"
+          ? `${event.message} BigMouth cannot save your changes. Your text is still here — copy it somewhere safe.`
+          : "Autosave failed and will retry. Your text is held in memory until it saves."
       );
     });
     return () => {

@@ -16,6 +16,11 @@
  * write persists the pending content as a side effect and clears the buffer.
  * The main process therefore never depends on the renderer to flush: quit
  * calls flushAllPendingContent and the newest keystroke is on disk.
+ *
+ * The rule the buffer is built on: the store never reports success for text it
+ * did not persist. Text that is not on disk is either retried (a failed write)
+ * or reported as terminal (the post is gone from the index, so no retry can
+ * land) — and in both cases the buffer is kept, never discarded.
  */
 
 import fs from "node:fs";
@@ -56,13 +61,31 @@ function filePathFor(dataDir: string, entry: PostIndexEntry): string {
 const PENDING_FLUSH_DELAY_MS = 750;
 const PENDING_RETRY_DELAY_MS = 5000;
 
+/**
+ * One post's newest text not yet on disk. `missingReported` records the
+ * terminal outcome: the post is gone from the index, so no write can land. The
+ * text is kept anyway — it is the user's work — but nothing is scheduled for it
+ * and the failure is announced once instead of on every keystroke.
+ */
+interface PendingEdit {
+  content: string;
+  missingReported: boolean;
+}
+
 // dataDir -> post id -> newest content not yet on disk.
-const pendingContent = new Map<string, Map<string, string>>();
+const pendingContent = new Map<string, Map<string, PendingEdit>>();
 const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
 
+/**
+ * What became of a buffered edit. The two failures are deliberately distinct:
+ * `save-failed` is retryable (the same write can land later), while
+ * `post-missing` is terminal — retrying cannot bring a deleted file back, so
+ * folding it into the retry loop would spin forever. Neither is ever silent.
+ */
 export type ContentSaveEvent =
   | { kind: "saved"; dataDir: string; id: string; summary: PostIndexEntry }
-  | { kind: "save-failed"; dataDir: string; id: string; message: string };
+  | { kind: "save-failed"; dataDir: string; id: string; message: string }
+  | { kind: "post-missing"; dataDir: string; id: string };
 
 // Single subscriber (the IPC layer), which broadcasts to windows. The store
 // stays free of Electron types.
@@ -73,17 +96,51 @@ export function setContentSaveListener(listener: ((event: ContentSaveEvent) => v
 }
 
 function getPending(dataDir: string, id: string): string | undefined {
-  return pendingContent.get(dataDir)?.get(id);
+  return pendingContent.get(dataDir)?.get(id)?.content;
 }
 
-function clearPending(dataDir: string, id: string): void {
-  pendingContent.get(dataDir)?.delete(id);
+function setPending(dataDir: string, id: string, content: string): PendingEdit {
+  let posts = pendingContent.get(dataDir);
+  if (!posts) {
+    posts = new Map();
+    pendingContent.set(dataDir, posts);
+  }
+  const existing = posts.get(id);
+  if (existing) {
+    existing.content = content;
+    return existing;
+  }
+  const created: PendingEdit = { content, missingReported: false };
+  posts.set(id, created);
+  return created;
+}
+
+function cancelFlush(dataDir: string, id: string): void {
   const timers = pendingTimers.get(dataDir);
   const timer = timers?.get(id);
   if (timer) {
     clearTimeout(timer);
     timers?.delete(id);
   }
+}
+
+function clearPending(dataDir: string, id: string): void {
+  pendingContent.get(dataDir)?.delete(id);
+  cancelFlush(dataDir, id);
+}
+
+/**
+ * The terminal outcome: the post is no longer in the index (its file vanished
+ * out of band), so no write can land. The buffered text stays — it is the
+ * user's work, and getPost keeps overlaying it for as long as the post reads —
+ * nothing is retried, and the listener hears about it once.
+ */
+function reportPostMissing(dataDir: string, id: string): void {
+  const pending = pendingContent.get(dataDir)?.get(id);
+  if (!pending || pending.missingReported) return;
+  pending.missingReported = true;
+  cancelFlush(dataDir, id);
+  contentSaveListener?.({ kind: "post-missing", dataDir, id });
 }
 
 function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
@@ -104,25 +161,28 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
 }
 
 /**
- * Buffer a content edit and (re)start its debounce. Content for a post that no
- * longer exists is dropped — deleting a post deliberately discards its edits.
+ * Buffer a content edit and (re)start its debounce. The text is buffered first,
+ * unconditionally: when the post is no longer in the index the edit can never
+ * be saved, but it is still the user's work, so it is kept and the terminal
+ * failure is reported — never dropped in silence.
  */
 export function queueContent(dataDir: string, id: string, content: string): void {
-  if (!index.getEntry(dataDir, id)) return;
-  let posts = pendingContent.get(dataDir);
-  if (!posts) {
-    posts = new Map();
-    pendingContent.set(dataDir, posts);
+  const pending = setPending(dataDir, id, content);
+  if (!index.getEntry(dataDir, id)) {
+    reportPostMissing(dataDir, id);
+    return;
   }
-  posts.set(id, content);
+  // The post is there (or back): a later disappearance is reported anew.
+  pending.missingReported = false;
   scheduleFlush(dataDir, id, PENDING_FLUSH_DELAY_MS);
 }
 
 /**
- * Write a post's pending content to disk now. Returns true when nothing is
- * left pending for the post (flushed, nothing to flush, or the post is gone).
- * On failure the content stays buffered, a retry is scheduled, and the
- * listener is told so the renderer can show the save error.
+ * Write a post's pending content to disk now. Returns true only when the text
+ * is durable — flushed, or nothing was pending — so `true` can be trusted to
+ * mean saved. A failed write keeps the buffer and schedules a retry; a post
+ * that left the index keeps the buffer with no retry (terminal). Both tell the
+ * listener, and both return false.
  */
 export function flushPostContent(dataDir: string, id: string): boolean {
   if (getPending(dataDir, id) === undefined) return true;
@@ -131,8 +191,10 @@ export function flushPostContent(dataDir: string, id: string): boolean {
     // pending content and clears the buffer.
     const post = updatePost(dataDir, id, {});
     if (!post) {
-      clearPending(dataDir, id);
-      return true;
+      // The post's file vanished out of band. Retrying cannot bring it back, so
+      // the text is kept and reported rather than discarded as if it saved.
+      reportPostMissing(dataDir, id);
+      return false;
     }
     const summary = index.getEntry(dataDir, id);
     if (summary) contentSaveListener?.({ kind: "saved", dataDir, id, summary });
@@ -145,15 +207,22 @@ export function flushPostContent(dataDir: string, id: string): boolean {
   }
 }
 
-/** Flush every buffered edit, everywhere. Used at quit. */
+/**
+ * Flush every buffered edit, everywhere. Used at quit: the returned failures
+ * are every post whose text is still only in memory — a write that failed and a
+ * post whose file is gone alike — so the quit path can never exit silently on
+ * either.
+ */
 export function flushAllPendingContent(): { id: string; message: string }[] {
   const failures: { id: string; message: string }[] = [];
   for (const [dataDir, posts] of pendingContent) {
     for (const id of [...posts.keys()]) {
       try {
-        if (!flushPostContent(dataDir, id)) {
-          failures.push({ id, message: "save failed" });
-        }
+        if (flushPostContent(dataDir, id)) continue;
+        failures.push({
+          id,
+          message: posts.get(id)?.missingReported ? "post file is missing" : "save failed",
+        });
       } catch (err) {
         failures.push({ id, message: err instanceof Error ? err.message : String(err) });
       }

@@ -12,15 +12,27 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CHANNELS, type PostUpdate } from "@shared/ipc";
+import { CHANNELS, type PostContentSavedEvent, type PostUpdate } from "@shared/ipc";
 import type { Post, PostListResponse, PostMutationResult, PostStatus, Target } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+// Every main -> renderer send, in order: the far side of the content-save seam.
+const sent = vi.hoisted(() => [] as { channel: string; payload: unknown }[]);
 
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (ch: string, cb: (...args: unknown[]) => unknown) => handlers.set(ch, cb),
     on: (ch: string, cb: (...args: unknown[]) => unknown) => handlers.set(ch, cb),
+  },
+  BrowserWindow: {
+    getAllWindows: () => [
+      {
+        webContents: {
+          isDestroyed: () => false,
+          send: (channel: string, payload: unknown) => sent.push({ channel, payload }),
+        },
+      },
+    ],
   },
 }));
 
@@ -58,6 +70,7 @@ beforeEach(() => {
   process.env.BIGMOUTH_HOME = home;
   initAppDir();
   handlers.clear();
+  sent.length = 0;
   registerPostHandlers();
   const ws = createWorkspace("WS");
   wsId = ws.id;
@@ -318,6 +331,84 @@ describe("listReferrers", () => {
     const res = invoke<{ count: number; ids: string[] }>(CHANNELS.listReferrers, wsId, lonely);
     expect(res.count).toBe(0);
     expect(res.ids).toEqual([]);
+  });
+});
+
+// The content stream, end to end through the handler: the renderer's keystrokes
+// go in one side and either land on disk or come back as a failure event. The
+// store's own tests stop at its API; these assert what actually reaches a window
+// — the seam where a save that never happened used to look like a save.
+describe("queuePostContent (the content stream)", () => {
+  function postFilePath(id: string): string {
+    const dir = path.join(dataDir, "posts");
+    const fileName = fs.readdirSync(dir).find((f) => f.includes(id));
+    return path.join(dir, fileName ?? id);
+  }
+
+  function sends(channel: string): unknown[] {
+    return sent.filter((s) => s.channel === channel).map((s) => s.payload);
+  }
+
+  it("writes the streamed text and broadcasts the canonical list projection", () => {
+    vi.useFakeTimers();
+    try {
+      const id = createDraft();
+      const file = postFilePath(id);
+      sent.length = 0;
+
+      invoke(CHANNELS.queuePostContent, wsId, id, "streamed from the editor");
+      // The store owns the debounce; let it elapse.
+      vi.advanceTimersByTime(1_000);
+
+      // Durability first: a raw read, bypassing the store entirely.
+      expect(fs.readFileSync(file, "utf8")).toContain("streamed from the editor");
+
+      const saved = sends(CHANNELS.postContentSaved) as PostContentSavedEvent[];
+      expect(saved).toHaveLength(1);
+      expect(saved[0].postId).toBe(id);
+      expect(saved[0].summary.id).toBe(id);
+      expect(saved[0].summary.fileName).toBe(path.basename(file));
+      // The payload is the index projection, which excludes updatedAtUtc — a
+      // consumer must never be able to read an edit time off it.
+      expect(saved[0].summary).not.toHaveProperty("updatedAtUtc");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports an unsaveable failure when the post's file vanished, and never a save", () => {
+    vi.useFakeTimers();
+    try {
+      const id = createDraft();
+      const file = postFilePath(id);
+      invoke(CHANNELS.queuePostContent, wsId, id, "typed after the file was gone");
+      fs.unlinkSync(file);
+      sent.length = 0;
+
+      vi.advanceTimersByTime(1_000);
+
+      expect(sends(CHANNELS.postContentSaved)).toEqual([]);
+      expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
+        { postId: id, kind: "unsaveable", message: expect.stringContaining("file is missing") },
+      ]);
+      // The store did not quietly recreate the file the user's sync client removed.
+      expect(fs.existsSync(file)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports an unsaveable failure when the workspace cannot be resolved", () => {
+    invoke(CHANNELS.queuePostContent, "nope", "p1", "text with nowhere to go");
+    expect(sends(CHANNELS.postContentSaved)).toEqual([]);
+    expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
+      { postId: "p1", kind: "unsaveable", message: expect.stringContaining("workspace") },
+    ]);
+  });
+
+  it("ignores a malformed queue call (nothing to attribute a failure to)", () => {
+    invoke(CHANNELS.queuePostContent, wsId, 42, "not a post id");
+    expect(sent).toEqual([]);
   });
 });
 

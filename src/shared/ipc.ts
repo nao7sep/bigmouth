@@ -18,7 +18,7 @@ import type {
   GenerationPromptsData,
   ImagingOptions,
   Post,
-  PostFrontMatter,
+  PostIndexEntry,
   PostListResponse,
   PostMutationResult,
   PostStatus,
@@ -100,12 +100,24 @@ export const CHANNELS = {
 
 export interface PostContentSavedEvent {
   postId: string;
-  /** The canonical list projection, same shape as PostMutationResult.summary. */
-  summary: PostFrontMatter;
+  /**
+   * The canonical list projection (one index row). It carries no updatedAtUtc —
+   * the index deliberately excludes it — so this is a list summary, never a
+   * source for the post's edit time.
+   */
+  summary: PostIndexEntry;
 }
 
 export interface PostContentSaveFailedEvent {
   postId: string;
+  /**
+   * Which failure this is. "retrying": a write failed, the text is still
+   * buffered in the main process and the store will try again. "unsaveable":
+   * terminal — the post's file (or its workspace) is gone, so no retry can land
+   * and the only copies left are the buffer and what the editor shows.
+   */
+  kind: "retrying" | "unsaveable";
+  /** Why the save failed; a complete sentence for the terminal kind. */
   message: string;
 }
 

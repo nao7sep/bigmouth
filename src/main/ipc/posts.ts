@@ -1,6 +1,11 @@
 import { BrowserWindow, ipcMain } from "electron";
 
-import { CHANNELS, type PostUpdate } from "@shared/ipc";
+import {
+  CHANNELS,
+  type PostContentSavedEvent,
+  type PostContentSaveFailedEvent,
+  type PostUpdate,
+} from "@shared/ipc";
 import type { PostStatus } from "@shared/types";
 import {
   listDrafts,
@@ -29,33 +34,60 @@ import { resolveWorkspace } from "./context.js";
 
 const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
 
+// The terminal save failures, worded as complete sentences: the renderer
+// prefixes them to its "your text is still here" line, so what the user reads
+// is why the save is impossible, not a retry that will never happen.
+const POST_MISSING_DETAIL = "This post's file is missing.";
+const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
+
+/** Sends a main -> renderer event to every live window. */
+function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
 export function registerPostHandlers(): void {
   // The write-behind buffer's save events, broadcast to every window. Post ids
   // are unique nanoids, so the renderer matches by post id alone.
   setContentSaveListener((event) => {
-    const channel =
-      event.kind === "saved" ? CHANNELS.postContentSaved : CHANNELS.postContentSaveFailed;
-    const payload =
-      event.kind === "saved"
-        ? { postId: event.id, summary: event.summary }
-        : { postId: event.id, message: event.message };
-    if (event.kind === "save-failed") {
-      logError("post content save failed", { postId: event.id, message: event.message });
+    if (event.kind === "saved") {
+      const saved: PostContentSavedEvent = { postId: event.id, summary: event.summary };
+      broadcast(CHANNELS.postContentSaved, saved);
+      return;
     }
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload);
-    }
+    // Both failures ride the one failure channel, told apart by `kind`: a write
+    // failure is retried from the buffer, a missing post never can be.
+    const failure: PostContentSaveFailedEvent =
+      event.kind === "post-missing"
+        ? { postId: event.id, kind: "unsaveable", message: POST_MISSING_DETAIL }
+        : { postId: event.id, kind: "retrying", message: event.message };
+    logError("post content save failed", {
+      postId: failure.postId,
+      kind: failure.kind,
+      message: failure.message,
+    });
+    broadcast(CHANNELS.postContentSaveFailed, failure);
   });
 
   // One-way: buffer a content edit. Never throws back to the renderer — the
   // channel is fire-and-forget, and failures surface through the save events.
+  // A workspace that no longer resolves is one of those failures: the text
+  // never reached the buffer, so it is reported on the same channel instead of
+  // being logged away while the editor still looks saved.
   ipcMain.on(CHANNELS.queuePostContent, (_event, wsId: string, id: string, content: string) => {
+    if (typeof wsId !== "string" || typeof id !== "string" || typeof content !== "string") return;
     try {
-      if (typeof wsId !== "string" || typeof id !== "string" || typeof content !== "string") return;
       const dir = resolveWorkspace(wsId).dataDirectory;
       queueContent(dir, id, content);
     } catch (err) {
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
+      const failure: PostContentSaveFailedEvent = {
+        postId: id,
+        kind: "unsaveable",
+        message: WORKSPACE_UNRESOLVED_DETAIL,
+      };
+      broadcast(CHANNELS.postContentSaveFailed, failure);
     }
   });
 

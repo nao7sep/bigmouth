@@ -76,6 +76,33 @@ export interface PostFrontMatter {
   [key: string]: unknown;
 }
 
+/**
+ * One row of the derived post index — the canonical list projection the main
+ * process sends for a post. Mirrors the main-process PostIndexEntry (the two
+ * type worlds cannot import each other, same as UiState/ContentFont below).
+ * Deliberately carries NO updatedAtUtc: the index excludes the one field every
+ * content save changes, so a projection must never be read as an edit time.
+ * A type alias, not an interface, so it stays assignable where the looser
+ * PostFrontMatter (with its index signature) is expected.
+ */
+export type PostIndexEntry = {
+  id: string;
+  fileName: string; // basename of the .md file, stable for the post's lifetime
+  status: PostStatus;
+  target: string;
+  language: string;
+  slug?: string;
+  title?: string;
+  titleEn?: string;
+  excerpt?: string; // body-derived preview; present only when both titles are absent
+  tags?: string[];
+  sourceId?: string;
+  createdAtUtc: string;
+  readyAtUtc?: string;
+  publishedAtUtc?: string;
+  expiredAtUtc?: string;
+};
+
 export interface PostSummary {
   frontMatter: PostFrontMatter;
 }

@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import type { Post, PostMutationResult, PostFrontMatter } from "@shared/types";
+import type { Post, PostIndexEntry, PostMutationResult, PostFrontMatter } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 // CenterPane's only backend seam is these api calls; mock the lot. Content
 // saves stream through queuePostContent (fire-and-forget) and come back as
 // events; the captured listeners let tests play the main process's part.
-const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: PostFrontMatter }) => void>());
-const failedListeners = vi.hoisted(() => new Set<(e: { postId: string; message: string }) => void>());
+const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: PostIndexEntry }) => void>());
+const failedListeners = vi.hoisted(
+  () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable"; message: string }) => void>()
+);
 vi.mock("@renderer/api", () => ({
   getPost: vi.fn(),
   updatePost: vi.fn(),
@@ -15,11 +17,13 @@ vi.mock("@renderer/api", () => ({
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
   queuePostContent: vi.fn(),
-  onPostContentSaved: (cb: (e: { postId: string; summary: PostFrontMatter }) => void) => {
+  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
   },
-  onPostContentSaveFailed: (cb: (e: { postId: string; message: string }) => void) => {
+  onPostContentSaveFailed: (
+    cb: (e: { postId: string; kind: "retrying" | "unsaveable"; message: string }) => void
+  ) => {
     failedListeners.add(cb);
     return () => failedListeners.delete(cb);
   },
@@ -74,6 +78,23 @@ function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
     id: "p1",
     target: "blog",
     status: "draft",
+    language: "en",
+    createdAtUtc: "2024-01-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+/**
+ * What main actually sends on a background save: the index projection. It has a
+ * fileName and deliberately no updatedAtUtc, so the test plays the real payload
+ * rather than a full front matter the channel never carries.
+ */
+function indexEntry(over: Partial<PostIndexEntry> = {}): PostIndexEntry {
+  return {
+    id: "p1",
+    fileName: "20240101-000000-utc-p1.md",
+    status: "draft",
+    target: "blog",
     language: "en",
     createdAtUtc: "2024-01-01T00:00:00.000Z",
     ...over,
@@ -203,7 +224,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("shows the save error when the saver reports a failure for this post", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "p1", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying", message: "disk broke" }));
     });
     await waitFor(() =>
       expect(container.querySelector(".toolbar-error")?.textContent).toContain(
@@ -215,7 +236,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("ignores save events for other posts", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "other", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "other", kind: "retrying", message: "disk broke" }));
     });
     expect(container.querySelector(".toolbar-error")).toBeFalsy();
   });
@@ -223,13 +244,38 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("clears the save error once a save lands", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "p1", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying", message: "disk broke" }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
     act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: fm() }));
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry() }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
+  });
+
+  it("says a terminal failure cannot be saved, and keeps the text on screen", async () => {
+    const { container } = await renderPane();
+    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "work that can never be saved" } });
+
+    act(() => {
+      failedListeners.forEach((cb) =>
+        cb({ postId: "p1", kind: "unsaveable", message: "This post's file is missing." })
+      );
+    });
+
+    const error = await waitFor(() => {
+      const node = container.querySelector(".toolbar-error");
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    // Why we cannot save, and that the text is still here — never a promise to
+    // retry, which for a missing post would be a lie.
+    expect(error.textContent).toContain("This post's file is missing.");
+    expect(error.textContent).toContain("copy it somewhere safe");
+    expect(error.textContent).not.toContain("will retry");
+    // The editor still holds the user's work, which is the only copy left.
+    expect(editor.value).toBe("work that can never be saved");
   });
 });
 

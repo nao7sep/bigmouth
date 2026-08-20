@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,6 +21,7 @@ import {
   listExpired,
   countExpired,
   clearCache,
+  rebuildIndex,
   renameTarget,
 } from "@main/core/services/postStore.js";
 
@@ -316,6 +317,15 @@ describe("pending content (write-behind buffer)", () => {
     return fs.readFileSync(filePath, "utf8");
   }
 
+  /**
+   * The quit-path failures for the given posts. Text that can never be saved
+   * stays buffered by design, so the process-wide buffer can still hold an
+   * earlier test's unsaveable post; scoping by id keeps each test honest.
+   */
+  function quitFailures(...ids: string[]): { id: string; message: string }[] {
+    return flushAllPendingContent().filter((failure) => ids.includes(failure.id));
+  }
+
   it("getPost reads through the buffer while the disk still has the old content", () => {
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "typed but not yet flushed");
@@ -361,17 +371,12 @@ describe("pending content (write-behind buffer)", () => {
     expect(flushAllPendingContent()).toEqual([]);
   });
 
-  it("content queued for an unknown post is dropped", () => {
-    queueContent(dataDir, "no-such-post", "into the void");
-    expect(flushAllPendingContent()).toEqual([]);
-  });
-
   it("flushAllPendingContent flushes every buffered post (the quit path)", () => {
     const a = createPost(dataDir, "blogger", "en");
     const b = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, a.frontMatter.id, "post a text");
     queueContent(dataDir, b.frontMatter.id, "post b text");
-    expect(flushAllPendingContent()).toEqual([]);
+    expect(quitFailures(a.frontMatter.id, b.frontMatter.id)).toEqual([]);
     expect(diskContent(a.filePath)).toContain("post a text");
     expect(diskContent(b.filePath)).toContain("post b text");
   });
@@ -405,5 +410,88 @@ describe("pending content (write-behind buffer)", () => {
     expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("held through failure");
     expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
     expect(diskContent(post.filePath)).toContain("held through failure");
+  });
+
+  // A post's file can disappear under the app — a workspace may live in a
+  // user-chosen external directory, so a sync client, a Finder move or a git
+  // checkout is enough. Saving is then impossible, which is exactly why it must
+  // never be reported as a save: that is how typed text disappears in silence.
+  describe("a post whose file vanished out of band (terminal, not retryable)", () => {
+    it("reports the failure and never claims the write landed", () => {
+      const events: ContentSaveEvent[] = [];
+      setContentSaveListener((e) => events.push(e));
+      const post = createPost(dataDir, "blogger", "en");
+      const id = post.frontMatter.id;
+      queueContent(dataDir, id, "typed after the file was gone");
+
+      fs.unlinkSync(post.filePath);
+      expect(flushPostContent(dataDir, id)).toBe(false);
+
+      expect(events).toContainEqual({ kind: "post-missing", dataDir, id });
+      expect(events.some((e) => e.kind === "saved")).toBe(false);
+      // Nothing was written: the store does not resurrect a file the user (or
+      // their sync client) removed.
+      expect(fs.existsSync(post.filePath)).toBe(false);
+      // And the quit path still sees unsaved text, so it cannot exit silently.
+      expect(quitFailures(id)).toEqual([{ id, message: "post file is missing" }]);
+    });
+
+    it("keeps the newest keystrokes buffered instead of discarding them", () => {
+      const post = createPost(dataDir, "blogger", "en");
+      const id = post.frontMatter.id;
+      const onDisk = fs.readFileSync(post.filePath, "utf8");
+
+      queueContent(dataDir, id, "first burst");
+      fs.unlinkSync(post.filePath);
+      flushPostContent(dataDir, id);
+      // The editor keeps streaming; the newest text must still be taken in.
+      queueContent(dataDir, id, "the newest keystrokes");
+
+      // The file comes back (the sync client catches up) — the buffered text is
+      // still there to be written, which is only true if it was never dropped.
+      fs.writeFileSync(post.filePath, onDisk);
+      rebuildIndex(dataDir);
+      expect(flushPostContent(dataDir, id)).toBe(true);
+      expect(diskContent(post.filePath)).toContain("the newest keystrokes");
+    });
+
+    it("reports once and schedules no retry (a retry could never land)", () => {
+      const events: ContentSaveEvent[] = [];
+      setContentSaveListener((e) => events.push(e));
+      vi.useFakeTimers();
+      try {
+        const post = createPost(dataDir, "blogger", "en");
+        const id = post.frontMatter.id;
+        queueContent(dataDir, id, "streamed");
+        fs.unlinkSync(post.filePath);
+
+        // The store's own debounce reaches the failure — not just a manual flush.
+        vi.advanceTimersByTime(1_000);
+        expect(events.filter((e) => e.kind === "post-missing")).toHaveLength(1);
+        // Nothing is armed afterwards: a retry loop here would spin forever.
+        expect(vi.getTimerCount()).toBe(0);
+
+        // Further keystrokes keep the text without re-reporting or re-arming.
+        queueContent(dataDir, id, "streamed more");
+        vi.advanceTimersByTime(60_000);
+        expect(events.filter((e) => e.kind === "post-missing")).toHaveLength(1);
+        expect(events.some((e) => e.kind === "saved" || e.kind === "save-failed")).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps and reports content queued for a post that is no longer indexed", () => {
+      const events: ContentSaveEvent[] = [];
+      setContentSaveListener((e) => events.push(e));
+      // The index dropped the entry before the keystroke arrived (a rebuild ran
+      // first). The queue path must not swallow the text either.
+      queueContent(dataDir, "no-such-post", "typed into a post that is gone");
+      expect(events).toEqual([{ kind: "post-missing", dataDir, id: "no-such-post" }]);
+      expect(quitFailures("no-such-post")).toEqual([
+        { id: "no-such-post", message: "post file is missing" },
+      ]);
+    });
   });
 });

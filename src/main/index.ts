@@ -49,12 +49,23 @@ function bootstrap(): void {
   handleAssetProtocol();
   registerIpcHandlers();
   installApplicationMenu();
-  createMainWindow();
+  openMainWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      openMainWindow();
     }
+  });
+}
+
+// Opens the window and subscribes to the platform's session-end signal. Windows
+// raises "session-end" on the window (Electron has no app-level equivalent);
+// macOS and Linux raise powerMonitor "shutdown" below. Both set the same flag,
+// so a logoff on any platform takes the never-block path at quit.
+function openMainWindow(): void {
+  const window = createMainWindow();
+  window.on("session-end", () => {
+    systemShutdown = true;
   });
 }
 
@@ -101,7 +112,8 @@ app.on("before-quit", (event) => {
       message: "Some edits could not be saved.",
       detail:
         "BigMouth could not write your latest changes to disk. " +
-        "Quit anyway and lose them, or cancel and try again?",
+        "Quit anyway and lose them, or cancel and copy your text somewhere safe? " +
+        "The editor shows why each post could not be saved.",
       // Cancel is the safest action, so it is the default and the Escape path.
       buttons: ["Cancel", "Quit Anyway"],
       defaultId: 0,
@@ -119,6 +131,8 @@ app.on("before-quit", (event) => {
 });
 
 // During OS shutdown or logout the app must not block: flush what it can and go.
+// macOS and Linux only — Windows has no powerMonitor "shutdown"; its signal is
+// the window's "session-end", wired in openMainWindow.
 powerMonitor.on("shutdown", () => {
   systemShutdown = true;
 });
