@@ -22,7 +22,7 @@ import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
-import { compareInstants } from "../shared/timestamps.js";
+import { compareInstants } from "@shared/postOrder";
 import { warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
 

@@ -68,24 +68,6 @@ export function formatUtcIso(date: Date): string {
   return date.toISOString();
 }
 
-/**
- * Compares two UTC ISO timestamp strings by the instant they denote, ascending
- * (earliest first). Parses rather than comparing code units, so it orders any
- * valid form correctly regardless of fractional-digit count or `Z`/`+00:00`,
- * and an absent/unparseable value sorts earliest. Use swapped args for
- * descending (newest first).
- */
-export function compareInstants(a: string, b: string): number {
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
-  if (Number.isNaN(ta)) return -1;
-  if (Number.isNaN(tb)) return 1;
-  if (ta < tb) return -1;
-  if (ta > tb) return 1;
-  return 0;
-}
-
 function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }

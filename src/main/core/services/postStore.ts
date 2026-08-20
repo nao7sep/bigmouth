@@ -34,7 +34,8 @@ import type {
   PostStatus,
   EditablePostMetadata,
 } from "../shared/types.js";
-import { utcNow, formatUtcIso, compareInstants } from "../shared/timestamps.js";
+import { utcNow, formatUtcIso } from "../shared/timestamps.js";
+import { byCreatedDesc, byExpiredDesc, byPublishedDesc } from "@shared/postOrder";
 import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry } from "./postFile.js";
 import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js";
@@ -317,32 +318,6 @@ function summaries(
     .listByStatus(dataDir, status)
     .sort(compare)
     .map((entry) => ({ frontMatter: entry }));
-}
-
-function byCreatedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
-  return compareInstants(b.createdAtUtc, a.createdAtUtc) || compareDesc(a.id, b.id);
-}
-
-function byPublishedDesc(a: PostIndexEntry, b: PostIndexEntry): number {
-  return (
-    compareInstants(b.publishedAtUtc ?? "", a.publishedAtUtc ?? "") ||
-    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
-    compareDesc(a.id, b.id)
-  );
-}
-
-function byExpiredDesc(a: PostIndexEntry, b: PostIndexEntry): number {
-  return (
-    compareInstants(b.expiredAtUtc ?? "", a.expiredAtUtc ?? "") ||
-    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
-    compareDesc(a.id, b.id)
-  );
-}
-
-function compareDesc(a: string, b: string): number {
-  if (a < b) return 1;
-  if (a > b) return -1;
-  return 0;
 }
 
 // --- Read ---

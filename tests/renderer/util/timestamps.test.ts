@@ -1,35 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { compareInstants, formatLocalDateTime, isValidTimeZone } from "@renderer/util/timestamps";
+import { formatLocalDateTime, isValidTimeZone } from "@renderer/util/timestamps";
 
 // Display formatting takes an explicit IANA zone, so its output depends on the
 // passed zone, never on the host machine's local zone.
-
-describe("compareInstants", () => {
-  it("orders mixed-precision timestamps chronologically, not lexicographically", () => {
-    // Lexicographically "…22.500Z" < "…22Z", but 22.000 < 22.500 chronologically.
-    expect(compareInstants("2026-04-05T14:30:22Z", "2026-04-05T14:30:22.500Z")).toBeLessThan(0);
-  });
-
-  it("treats different string forms of the same instant as equal", () => {
-    expect(compareInstants("2026-04-05T14:30:22Z", "2026-04-05T14:30:22.000Z")).toBe(0);
-  });
-
-  it("sorts an absent value earliest", () => {
-    expect(compareInstants("", "2026-04-05T14:30:22.000Z")).toBeLessThan(0);
-    expect(compareInstants("", "")).toBe(0);
-  });
-
-  it("sorts the second value earliest when only it is unparseable", () => {
-    // Mirror of the absent-first case for the right-hand operand, exercising the
-    // `Number.isNaN(tb)` branch.
-    expect(compareInstants("2026-04-05T14:30:22.000Z", "")).toBeGreaterThan(0);
-  });
-
-  it("orders a strictly later instant after an earlier one", () => {
-    // The `ta > tb` branch: the earlier-first contract means later sorts after.
-    expect(compareInstants("2026-04-05T14:30:23Z", "2026-04-05T14:30:22Z")).toBeGreaterThan(0);
-  });
-});
 
 describe("formatLocalDateTime", () => {
   it("renders the instant in the given zone as yyyy-mm-dd HH:mm, no localization", () => {

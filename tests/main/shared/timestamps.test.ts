@@ -3,7 +3,6 @@ import {
   formatForFilename,
   formatForFilenameMs,
   formatUtcIso,
-  compareInstants,
 } from "@main/core/shared/timestamps.js";
 
 describe("formatForFilename", () => {
@@ -53,27 +52,3 @@ describe("formatUtcIso", () => {
   });
 });
 
-describe("compareInstants", () => {
-  it("orders by the instant, ascending", () => {
-    expect(compareInstants("2026-04-05T14:30:22.000Z", "2026-04-05T14:30:23.000Z")).toBeLessThan(0);
-    expect(compareInstants("2026-04-05T14:30:23.000Z", "2026-04-05T14:30:22.000Z")).toBeGreaterThan(0);
-    expect(compareInstants("2026-04-05T14:30:22.000Z", "2026-04-05T14:30:22.000Z")).toBe(0);
-  });
-
-  it("treats different string forms of the same instant as equal (parse-liberal)", () => {
-    expect(compareInstants("2026-04-05T14:30:22Z", "2026-04-05T14:30:22.000Z")).toBe(0);
-    expect(compareInstants("2026-04-05T14:30:22+00:00", "2026-04-05T14:30:22.000Z")).toBe(0);
-  });
-
-  it("orders mixed-precision timestamps chronologically, not lexicographically", () => {
-    // Lexicographically "…22.500Z" < "…22Z" ('.' < 'Z'), but chronologically
-    // 22.000 < 22.500 — the instant comparator must get this right.
-    expect(compareInstants("2026-04-05T14:30:22Z", "2026-04-05T14:30:22.500Z")).toBeLessThan(0);
-  });
-
-  it("sorts an absent/unparseable value earliest", () => {
-    expect(compareInstants("", "2026-04-05T14:30:22.000Z")).toBeLessThan(0);
-    expect(compareInstants("2026-04-05T14:30:22.000Z", "")).toBeGreaterThan(0);
-    expect(compareInstants("", "")).toBe(0);
-  });
-});

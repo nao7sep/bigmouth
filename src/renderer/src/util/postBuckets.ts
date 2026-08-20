@@ -1,5 +1,5 @@
 import type { PostStatus, PostSummary } from "@shared/types";
-import { compareInstants } from "./timestamps";
+import { comparatorFor, type OrderablePost } from "@shared/postOrder";
 
 /** The four post-list buckets plus the two paginated-archive totals. */
 export interface PostBuckets {
@@ -97,22 +97,13 @@ export function nextSummariesForStatus(
   return [...filtered, summary].sort((a, b) => compareSummaries(status, a, b));
 }
 
+/**
+ * Orders two summaries within a bucket, by the same rules the main process uses
+ * — the comparators live in `@shared/postOrder` because both sides sort the
+ * same list and used to disagree on every tie-breaker.
+ */
 export function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): number {
-  if (status === "published") {
-    return (
-      compareInstants(b.frontMatter.publishedAtUtc ?? "", a.frontMatter.publishedAtUtc ?? "") ||
-      (b.frontMatter.slug ?? "").localeCompare(a.frontMatter.slug ?? "")
-    );
-  }
-
-  if (status === "expired") {
-    return (
-      compareInstants(b.frontMatter.expiredAtUtc ?? "", a.frontMatter.expiredAtUtc ?? "") ||
-      (b.frontMatter.slug ?? "").localeCompare(a.frontMatter.slug ?? "")
-    );
-  }
-
-  // Drafts and ready posts are ordered newest-created first. The index
-  // summaries carry no updatedAtUtc, so creation time is the stable key.
-  return compareInstants(b.frontMatter.createdAtUtc ?? "", a.frontMatter.createdAtUtc ?? "");
+  // A summary's front matter carries id, createdAtUtc and the lifecycle stamps,
+  // which is everything an OrderablePost needs.
+  return comparatorFor(status)(a.frontMatter as OrderablePost, b.frontMatter as OrderablePost);
 }

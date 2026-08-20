@@ -1,21 +1,4 @@
 /**
- * Compares two UTC ISO timestamp strings by the instant they denote, ascending
- * (earliest first). Parses rather than comparing code units, so any valid form
- * orders correctly regardless of fractional-digit count or `Z`/`+00:00`, and an
- * absent/unparseable value sorts earliest. Use swapped args for descending.
- */
-export function compareInstants(a: string, b: string): number {
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
-  if (Number.isNaN(ta)) return -1;
-  if (Number.isNaN(tb)) return 1;
-  if (ta < tb) return -1;
-  if (ta > tb) return 1;
-  return 0;
-}
-
-/**
  * Whether a string is an IANA time zone the runtime accepts. Used to clamp a
  * stored timezone to the default before it reaches the formatter, so a corrupt
  * or hand-edited setting degrades gracefully instead of throwing per row.
