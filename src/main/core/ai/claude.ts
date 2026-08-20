@@ -89,9 +89,17 @@ export class ClaudeProvider implements AiProvider {
         },
       },
       {
-        timeout: options.timeoutMs,
-        maxRetries: options.maxRetries,
-        signal: options.signal,
+        // An omitted option must be an omitted KEY, not a key set to undefined. The SDK
+        // validates request options on the way in and rejects `timeout: undefined` outright
+        // ("timeout must be an integer") instead of reading it as absent — so spreading
+        // conditionally is what keeps this signature's optionality honest. Before this,
+        // `generateJson(system, user, schema)` with no options threw before a request ever
+        // left the process, while both shipping callers happened to pass all three and never
+        // met it. Surfaced by the 0.111 -> 0.120 bump; the mocked suite could not see it,
+        // because a fake SDK validates nothing.
+        ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+        ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
       }
     );
 

@@ -297,6 +297,35 @@ describe("generateJson", () => {
   });
 });
 
+// The SDK validates request options on the way in: a key present-but-undefined is an error,
+// not an absence. Asserting the KEYS we send (rather than a mocked outcome) is the only way a
+// fake SDK can catch this — the fake validates nothing, so a wrong shape passes silently and
+// only fails against the real client.
+describe("generateJson request options", () => {
+  function streamReturning(parsed: unknown) {
+    return { finalMessage: async () => ({ stop_reason: "end_turn", parsed_output: parsed }) };
+  }
+
+  it("omits the KEY for an option the caller did not give", async () => {
+    sdk.stream.mockReturnValue(streamReturning({ ok: true }));
+    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 });
+    await provider.generateJson("sys", "user", { type: "object" });
+    const opts = sdk.stream.mock.calls[0]?.[1] ?? {};
+    expect("timeout" in opts).toBe(false);
+    expect("maxRetries" in opts).toBe(false);
+    expect("signal" in opts).toBe(false);
+  });
+
+  it("passes each option through when the caller does give it", async () => {
+    sdk.stream.mockReturnValue(streamReturning({ ok: true }));
+    const controller = new AbortController();
+    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 });
+    await provider.generateJson("sys", "user", { type: "object" },
+      { timeoutMs: 12_345, maxRetries: 2, signal: controller.signal });
+    expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ timeout: 12_345, maxRetries: 2, signal: controller.signal });
+  });
+});
+
 describe("generateTextStream", () => {
   it("maps the request, forwards text deltas, and resolves with the final text", async () => {
     const f = fakeStream();
