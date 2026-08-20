@@ -277,6 +277,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* An icon plus its words is one label: never break between them. */
+  white-space: nowrap;
 }
 
 .section-header:hover {
@@ -405,6 +407,8 @@ body {
   color: var(--bm-text);
   font-size: 12px;
   cursor: pointer;
+  /* An icon plus its words is one label: never break between them. */
+  white-space: nowrap;
 }
 
 .btn-toolbar:hover {
@@ -896,6 +900,8 @@ body {
   border-radius: 3px;
   color: var(--bm-text-muted);
   cursor: pointer;
+  /* An icon plus its words is one label: never break between them. */
+  white-space: nowrap;
 }
 
 .meta-field-copy:hover,
@@ -1110,6 +1116,8 @@ body {
   background: var(--bm-surface);
   cursor: pointer;
   font-size: 13px;
+  /* An icon plus its words is one label: never break between them. */
+  white-space: nowrap;
 }
 
 .btn-export:hover {

@@ -23,7 +23,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             href={GITHUB_URL}
             target="_blank"
             rel="noreferrer"
-            style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
+            style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none", whiteSpace: "nowrap" }}
           >
             GitHub <ExternalLinkIcon />
           </a>
@@ -31,7 +31,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             href={`${GITHUB_URL}/issues`}
             target="_blank"
             rel="noreferrer"
-            style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
+            style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none", whiteSpace: "nowrap" }}
           >
             Report Issue <ExternalLinkIcon />
           </a>
