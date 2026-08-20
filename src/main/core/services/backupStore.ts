@@ -25,14 +25,14 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { getAppRoot } from "./workspaceStore.js";
+import { getBackupsDbPath } from "./storagePaths.js";
 import { warn as logWarn, serializeError } from "./logger.js";
 
 /** The store file under the resolved storage root. Computed lazily (not frozen into a module constant
  *  at import time) so `BIGMOUTH_HOME` is read after initAppDir() has resolved the root, per the
  *  storage-path convention's caution against import-time resolution. */
 function storeFile(): string {
-  return path.join(getAppRoot(), "backups.sqlite3");
+  return getBackupsDbPath();
 }
 
 /**

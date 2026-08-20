@@ -21,11 +21,10 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
 import type { UiState } from "../shared/types.js";
 import { defaultUiState } from "@shared/types";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
-import { getAppRoot } from "./workspaceStore.js";
+import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
@@ -62,7 +61,7 @@ function normalizeUiState(raw: unknown): UiState {
  * defaults; the next deliberate view-state update replaces it.
  */
 export function initStateStore(): UiState {
-  stateJsonPath = path.join(getAppRoot(), "state.json");
+  stateJsonPath = getStateJsonPath();
 
   if (!fs.existsSync(stateJsonPath)) {
     // First run (or the user cleared it): defaults, written lazily on first update.

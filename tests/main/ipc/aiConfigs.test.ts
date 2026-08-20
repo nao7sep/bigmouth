@@ -27,7 +27,8 @@ vi.mock("@main/core/services/logger.js", () => ({
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
 }));
 
-import { initAppDir, createWorkspace, getApiKeysPath } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { registerAiConfigHandlers } from "@main/ipc/aiConfigs.js";
 
 let home: string;

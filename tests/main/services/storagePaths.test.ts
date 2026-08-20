@@ -1,4 +1,4 @@
-// Proves the single storage-root resolution in workspaceStore.ts:
+// Proves the single storage-root resolution in storagePaths.ts:
 //   - BIGMOUTH_HOME set   → the whole ~/.bigmouth root relocates under it
 //   - BIGMOUTH_HOME unset → the root defaults to <home>/.bigmouth
 //   - a relative BIGMOUTH_HOME resolves against the home directory, never the cwd
@@ -9,7 +9,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, getLogsDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import {
+  getApiKeysPath,
+  getAppRoot,
+  getBackupsDbPath,
+  getLogsDir,
+  getStateJsonPath,
+  getWorkspacesJsonPath,
+  initStorageRoot,
+} from "@main/core/services/storagePaths.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
@@ -216,5 +225,43 @@ describe("workspace paths are cwd-independent", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// The module owns every standard subpath name, so two derivations of one file
+// cannot drift. state.json and backups.sqlite3 used to be joined onto the root
+// at their own call sites instead.
+describe("standard subpaths", () => {
+  it("names every store under the resolved root", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
+    process.env.BIGMOUTH_HOME = home;
+
+    initStorageRoot();
+
+    expect(getAppRoot()).toBe(home);
+    expect(getWorkspacesJsonPath()).toBe(path.join(home, "workspaces.json"));
+    expect(getLogsDir()).toBe(path.join(home, "logs"));
+    expect(getApiKeysPath()).toBe(path.join(home, "api-keys.json"));
+    expect(getStateJsonPath()).toBe(path.join(home, "state.json"));
+    expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
+
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("resolves without the workspace registry, which is what broke the import cycle", () => {
+    // core/shared/atomicWrite reaches into backupStore, which used to reach into
+    // the REGISTRY for the root, which reached back into atomicWrite. The cycle
+    // survived only because ESM hoists function declarations. initStorageRoot
+    // standing alone — no initAppDir, no workspaces.json — is that cycle's
+    // absence, stated as a behaviour.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
+    process.env.BIGMOUTH_HOME = home;
+
+    initStorageRoot();
+
+    expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
+    expect(fs.existsSync(path.join(home, "workspaces.json"))).toBe(false);
+
+    fs.rmSync(home, { recursive: true, force: true });
   });
 });

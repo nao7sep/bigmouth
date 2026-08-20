@@ -1,13 +1,14 @@
 /**
  * Workspace registry I/O.
  *
- * Manages ~/.bigmouth/workspaces.json which contains the workspace list.
- * Each workspace entry has an id, name, and absolute dataDirectory path.
+ * Manages `workspaces.json` under the storage root: which workspaces exist,
+ * where each one lives, and the create/open/update/delete decisions around
+ * that. WHERE the app keeps its data is a separate concern with a separate
+ * reason to change, and lives in storagePaths.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
@@ -15,114 +16,14 @@ import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { forgetWorkspace } from "./activeConfig.js";
-
-const APP_NAME = "bigmouth";
-const HOME_ENV_VAR = "BIGMOUTH_HOME";
-
-// The single storage root and the paths derived from it. Resolved once, lazily,
-// in initAppDir() rather than frozen at import time — so a BIGMOUTH_HOME set
-// just before startup (e.g. by a test) is honored, and the resolver never
-// captures a half-set environment.
-let appDir: string | null = null;
-let workspacesJsonPath: string | null = null;
-let logsDir: string | null = null;
-let apiKeysPath: string | null = null;
-let defaultWorkspacesDir: string | null = null;
-
-/**
- * Expands `$VAR` / `%VAR%` environment references against the current
- * environment. An unset (or empty-string) reference expands to nothing,
- * matching shell behavior, rather than being left as a literal `$VAR` that
- * would otherwise become a path segment — this is what lets expandAndResolve
- * detect the collapsed-to-empty case below instead of silently threading a
- * literal `$VAR` into a directory name.
- */
-function expandEnvReferences(value: string): string {
-  return value
-    .replace(/\$(\w+)/g, (_match, name: string) => process.env[name] ?? "")
-    .replace(/%([^%]+)%/g, (_match, name: string) => process.env[name] ?? "");
-}
-
-/**
- * The single path-expansion pipeline for the app. Expands a leading ~ / ~/ / ~\
- * to `base`, substitutes $VAR / %VAR% environment references, and resolves the
- * result to an absolute path against `base` — never against the working
- * directory, so a relative value can never be interpreted relative to how the
- * app happened to be launched.
- *
- * Both the BIGMOUTH_HOME storage root and every user-supplied workspace
- * directory resolve through this one function, so the two cannot diverge in how
- * they expand ~, $VAR, or %VAR%, and neither can fall through to process.cwd().
- *
- * An input whose env references leave it expanding to nothing (an unset or
- * empty-string $VAR/%VAR%) is a hard error, never a silent fallback: without
- * this guard, path.resolve(base, "") collapses onto the bare `base` directory,
- * which for BIGMOUTH_HOME would materialize workspaces.json, logs/, and the
- * backups.sqlite3 store directly in $HOME. `label` names the setting that
- * was being expanded (e.g. "BIGMOUTH_HOME") in the thrown message.
- */
-function expandAndResolve(input: string, base: string, label: string): string {
-  let value = input.trim();
-  if (value === "~") {
-    value = base;
-  } else if (value.startsWith("~/") || value.startsWith("~\\")) {
-    value = path.join(base, value.slice(2));
-  }
-  value = expandEnvReferences(value).trim();
-
-  if (value.length === 0) {
-    throw new Error(
-      `${label} is set to "${input}" but expands to an empty path (an unset or empty $VAR/%VAR%?). ` +
-        "Set it to a usable directory.",
-    );
-  }
-
-  // path.resolve rather than path.normalize: normalize keeps a trailing
-  // separator, and the registry compares dataDirectory as a plain string, so
-  // "…/blog" and "…/blog/" registered the same folder twice.
-  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(base, value);
-}
-
-/**
- * Whether two paths name the same folder.
- *
- * String equality is not enough, and the registry used to rely on it: macOS
- * hands back NFD from a file dialog where the user typed NFC, its default volume
- * is case-insensitive, and either can be reached through a symlink. Each of
- * those slipped past the "already registered as workspace X" guard and
- * registered ONE folder twice — two ids, two in-memory indexes keyed by
- * different strings writing over a single posts/index.json, and two separate
- * API-key sets for one workspace.
- */
-function sameDirectory(a: string, b: string): boolean {
-  if (a.normalize("NFC") === b.normalize("NFC")) return true;
-  try {
-    // The filesystem's own answer folds case on a case-insensitive volume and
-    // resolves symlinks; no amount of string work can do either. A path that
-    // does not exist cannot be a folder already registered, so a throw here is
-    // simply "not the same".
-    return fs.realpathSync.native(a) === fs.realpathSync.native(b);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Resolves the single storage root: BIGMOUTH_HOME when set and non-empty,
- * otherwise ~/.bigmouth. The root is derived from the home-directory API and
- * never from the working directory or the running code's location, so the same
- * root is used however the app is launched. The override is expanded and made
- * absolute against the home directory by the shared pipeline above; an override
- * that expands to nothing is a startup error there, not a silent fallback.
- */
-function resolveAppDir(): string {
-  const home = os.homedir();
-  const override = process.env[HOME_ENV_VAR];
-  if (override === undefined || override.trim() === "") {
-    return path.join(home, `.${APP_NAME}`);
-  }
-  return expandAndResolve(override, home, HOME_ENV_VAR);
-}
+import {
+  expandWorkspacePath,
+  getApiKeysPath,
+  getDefaultWorkspacesDir,
+  getWorkspacesJsonPath,
+  initStorageRoot,
+  sameDirectory,
+} from "./storagePaths.js";
 
 let appConfig: AppConfig | null = null;
 
@@ -164,50 +65,13 @@ function parseAppConfig(raw: unknown): AppConfig {
   return { workspaces };
 }
 
-/**
- * Expands and absolutizes a user-supplied workspace directory through the shared
- * pipeline (see expandAndResolve): a leading ~ / ~/ / ~\, $VAR, and %VAR% are
- * expanded, and a relative value resolves against the home directory — never the
- * working directory, which on a double-clicked or service launch is unrelated to
- * where the user meant the folder to be. A directory that expands to nothing
- * (an unset or empty-string $VAR/%VAR%) is rejected rather than silently
- * resolved onto the bare home directory, same as the BIGMOUTH_HOME override.
- */
-function expandPath(p: string): string {
-  return expandAndResolve(p, os.homedir(), "Workspace directory");
-}
-
-/**
- * Ensures ~/.bigmouth/ and logs/ exist. Loads or creates workspaces.json.
- * Must be called once at startup.
- */
+/** Resolves the storage root, then loads (or materializes) the registry in it. */
 export function initAppDir(): AppConfig {
-  // Resolve the root and its derived paths here (not at import) so BIGMOUTH_HOME
-  // is read at a defined startup point with the environment fully known.
-  appDir = resolveAppDir();
-  workspacesJsonPath = path.join(appDir, "workspaces.json");
-  logsDir = path.join(appDir, "logs");
-  apiKeysPath = path.join(appDir, "api-keys.json");
-  defaultWorkspacesDir = path.join(appDir, "workspaces");
+  initStorageRoot();
+  const registryPath = getWorkspacesJsonPath();
 
-  // Create the root + standard subdirs on first use. If the root cannot be
-  // created or is not a usable directory, fail loudly — never silently fall
-  // back to the default.
-  try {
-    fs.mkdirSync(appDir, { recursive: true });
-    fs.mkdirSync(logsDir, { recursive: true });
-    if (!fs.statSync(appDir).isDirectory()) {
-      throw new Error("not a directory");
-    }
-  } catch (cause) {
-    throw new Error(
-      `Cannot use the ${APP_NAME} storage root "${appDir}". Set ${HOME_ENV_VAR} to a writable directory.`,
-      { cause }
-    );
-  }
-
-  if (fs.existsSync(workspacesJsonPath)) {
-    const raw = fs.readFileSync(workspacesJsonPath, "utf-8");
+  if (fs.existsSync(registryPath)) {
+    const raw = fs.readFileSync(registryPath, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
     appConfig = parseAppConfig(parsed);
   } else {
@@ -219,34 +83,15 @@ export function initAppDir(): AppConfig {
 }
 
 function writeAppConfig(): void {
-  if (!workspacesJsonPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
   // folders themselves survive, so it is exactly the managed text the backup exists to protect.
-  writeManagedText(workspacesJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
+  writeManagedText(getWorkspacesJsonPath(), JSON.stringify(appConfig, null, 2) + "\n");
 }
 
 function ensureLoaded(): AppConfig {
   if (!appConfig) throw new Error("workspaceStore not initialized — call initAppDir() first");
   return appConfig;
-}
-
-export function getLogsDir(): string {
-  if (!logsDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
-  return logsDir;
-}
-
-/** The storage-root secrets file (`~/.bigmouth/api-keys.json`) — outside any workspace. */
-export function getApiKeysPath(): string {
-  if (!apiKeysPath) throw new Error("workspaceStore not initialized — call initAppDir() first");
-  return apiKeysPath;
-}
-
-/** The storage root (`~/.bigmouth/`). Resolves `BIGMOUTH_HOME`/`~/.bigmouth` once at startup; the
- *  write-through data-backup store derives `backups.sqlite3` under it (data-backup conventions). */
-export function getAppRoot(): string {
-  if (!appDir) throw new Error("workspaceStore not initialized — call initAppDir() first");
-  return appDir;
 }
 
 export function listWorkspaces(): Workspace[] {
@@ -297,7 +142,7 @@ function isEmptyDirectory(dir: string): boolean {
 }
 
 function findWorkspaceByDirectory(dir: string): Workspace | undefined {
-  const normalized = expandPath(dir);
+  const normalized = expandWorkspacePath(dir);
   return ensureLoaded().workspaces.find((workspace) =>
     sameDirectory(workspace.dataDirectory, normalized),
   );
@@ -329,7 +174,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
 
   let dir: string;
   if (dataDirectory) {
-    dir = expandPath(dataDirectory);
+    dir = expandWorkspacePath(dataDirectory);
     const existing = findWorkspaceByDirectory(dir);
     if (existing) {
       throw new Error(`That folder is already registered as workspace "${existing.name}".`);
@@ -350,10 +195,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
       }
     }
   } else {
-    if (!defaultWorkspacesDir) {
-      throw new Error("workspaceStore not initialized — call initAppDir() first");
-    }
-    dir = path.join(defaultWorkspacesDir, id);
+    dir = path.join(getDefaultWorkspacesDir(), id);
   }
 
   const workspace: Workspace = { id, name, dataDirectory: dir };
@@ -369,7 +211,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
 
 export function openWorkspace(dataDirectory: string, name?: string): Workspace {
   const config = ensureLoaded();
-  const dir = expandPath(dataDirectory);
+  const dir = expandWorkspacePath(dataDirectory);
   const existing = findWorkspaceByDirectory(dir);
   if (existing) {
     return existing;
@@ -395,7 +237,7 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
     return createWorkspace(resolveWorkspaceName(name, undefined));
   }
 
-  const dir = expandPath(trimmedDir);
+  const dir = expandWorkspacePath(trimmedDir);
   const existing = findWorkspaceByDirectory(dir);
   if (existing) {
     return existing;
@@ -426,7 +268,7 @@ export function updateWorkspace(id: string, updates: { name?: string; dataDirect
   // untouched rather than half-applied and out of sync with what is on disk.
   let nextDir: string | undefined;
   if (updates.dataDirectory !== undefined) {
-    nextDir = expandPath(updates.dataDirectory);
+    nextDir = expandWorkspacePath(updates.dataDirectory);
     const existing = findWorkspaceByDirectory(nextDir);
     if (existing && existing.id !== id) {
       throw new Error(`That folder is already registered as workspace "${existing.name}".`);

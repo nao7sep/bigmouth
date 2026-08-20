@@ -7,17 +7,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  initAppDir,
-  createWorkspace,
-  openWorkspace,
-  openOrCreateWorkspace,
-  updateWorkspace,
-  deleteWorkspace,
-  getWorkspace,
-  getApiKeysPath,
-  listWorkspaces,
-} from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js";
 

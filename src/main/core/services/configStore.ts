@@ -35,7 +35,7 @@ import { writeManagedText } from "../shared/atomicWrite.js";
 import { DEFAULT_SETTINGS } from "../shared/defaults.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
 import * as apiKeys from "./apiKeys.js";
-import { getApiKeysPath } from "./workspaceStore.js";
+import { getApiKeysPath } from "./storagePaths.js";
 import { resolveActiveConfigId, setActiveConfigId } from "./activeConfig.js";
 
 const CONFIG_FILE = "config.json";

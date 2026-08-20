@@ -7,7 +7,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, getAppRoot } from "@main/core/services/workspaceStore.js";
+import { initAppDir } from "@main/core/services/workspaceStore.js";
+import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { initStateStore, getUiState, updateUiState } from "@main/core/services/stateStore.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;

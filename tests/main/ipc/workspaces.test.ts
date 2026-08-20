@@ -29,7 +29,8 @@ vi.mock("@main/core/services/logger.js", () => ({
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
 }));
 
-import { initAppDir, getApiKeysPath, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js";
 import { registerWorkspaceHandlers } from "@main/ipc/workspaces.js";
 

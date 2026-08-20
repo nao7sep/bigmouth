@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, powerMonitor } from "electron";
 
-import { initAppDir, getLogsDir } from "./core/services/workspaceStore.js";
+import { initAppDir } from "./core/services/workspaceStore.js";
+import { getLogsDir } from "./core/services/storagePaths.js";
 import { flushAllPendingContent } from "./core/services/postStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import {

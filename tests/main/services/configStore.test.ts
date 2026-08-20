@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import type { Workspace } from "@shared/types";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import { initAppDir, getApiKeysPath } from "@main/core/services/workspaceStore.js";
+import { initAppDir } from "@main/core/services/workspaceStore.js";
+import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { DEFAULT_SETTINGS } from "@main/core/shared/defaults.js";
 import {
