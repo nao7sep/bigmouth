@@ -69,7 +69,7 @@ describe("safeAiConfigLogContext", () => {
       name: "Claude",
       provider: "anthropic",
       apiKey: "sk-ant-super-secret",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       thinking: false,
       maxTokens: 12800,
     };
@@ -84,7 +84,7 @@ describe("safeAiConfigLogContext", () => {
       name: "",
       provider: "anthropic",
       apiKey: "",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5",
       thinking: false,
       maxTokens: 12800,
     };

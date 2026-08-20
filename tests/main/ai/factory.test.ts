@@ -9,7 +9,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     name: "Claude",
     provider: "anthropic",
     apiKey: "sk-ant-test",
-    model: "claude-opus-4-8",
+    model: "claude-opus-5",
     thinking: false,
     maxTokens: 12800,
     ...overrides,

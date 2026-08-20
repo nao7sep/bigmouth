@@ -83,7 +83,7 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
   return {
     activeId: "c1",
     configs: [
-      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-4-6", thinking: false, maxTokens: 12800 },
+      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
     ],
     ...overrides,
   };
@@ -284,7 +284,7 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     const initial = aiConfigs({
       activeId: "c1",
       configs: [
-        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-opus-4-8", thinking: false, maxTokens: 12800 },
+        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-opus-5", thinking: false, maxTokens: 12800 },
         { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: true, maxTokens: 12800 },
       ],
     });
@@ -317,7 +317,7 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
 
     // 2. Edit c1's model (an update) — combobox index 2.
     p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("combobox")[2], { target: { value: "claude-sonnet-4-6" } });
+    fireEvent.change(within(p).getAllByRole("combobox")[2], { target: { value: "claude-sonnet-5" } });
 
     // 3. Change the active config to c2 — the first combobox.
     p = getByRole("tabpanel");
