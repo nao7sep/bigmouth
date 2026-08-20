@@ -401,7 +401,7 @@ describe("CenterPane toolbar actions", () => {
   it("renders a Back button only when onGoBack is provided and fires it", async () => {
     const onGoBack = vi.fn();
     const { container, rerender } = await renderPane({ onGoBack });
-    fireEvent.click(screen.getByRole("button", { name: "◀ Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(onGoBack).toHaveBeenCalledTimes(1);
     // Without onGoBack, no Back button.
     rerender(
@@ -409,7 +409,7 @@ describe("CenterPane toolbar actions", () => {
         <CenterPane {...baseProps()} />
       </ConfirmProvider>
     );
-    expect(container.querySelector(".btn-toolbar")?.textContent).not.toBe("◀ Back");
+    expect(container.querySelector(".btn-toolbar")?.textContent?.trim()).not.toBe("Back");
   });
 });
 

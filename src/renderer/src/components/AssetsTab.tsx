@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
+import { XIcon } from "./Icon";
 
 interface AssetsTabProps {
   workspaceId: string;
@@ -187,7 +188,7 @@ export function AssetsTab({
       {uploadError && (
         <div className="assets-error">
           <span>{uploadError}</span>
-          <button className="assets-error-dismiss" onClick={() => setUploadError(null)}>&times;</button>
+          <button className="assets-error-dismiss" onClick={() => setUploadError(null)}><XIcon /></button>
         </div>
       )}
 

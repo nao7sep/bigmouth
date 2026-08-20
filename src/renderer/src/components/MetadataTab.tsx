@@ -12,6 +12,7 @@ import { updatePost, generateMetadataField, generateMetadataFields } from "../ap
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue } from "../util/metadataFields";
 import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
+import { CheckIcon, XIcon } from "./Icon";
 
 interface MetadataTabProps {
   workspaceId: string;
@@ -312,7 +313,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           <div className="metadata-error">
             {genError}
             <button className="metadata-error-dismiss" onClick={clearGenError}>
-              ×
+              <XIcon />
             </button>
           </div>
         )}
@@ -489,7 +490,9 @@ function MetaField({
           )}
           <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
             {copied ? (
-              "✓ Copied"
+              <>
+                <CheckIcon /> Copied
+              </>
             ) : (
               "Copy"
             )}

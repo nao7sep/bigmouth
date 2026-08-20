@@ -2,13 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import type { PostSummary } from "@shared/types";
 import { getPostTitle } from "../util/postTitle";
 import { formatLocalDateTime } from "../util/timestamps";
+import { ChevronDownIcon, ChevronRightIcon, MenuIcon, PlusIcon } from "./Icon";
 import { useComposing } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
-import { flatPostListIds } from "../util/compositeNav";
 import { Menu, MenuItem } from "./Menu";
 
 // One viewport's worth of rows for PageUp/PageDown. The list scrolls but rows
 // are a fixed-ish height; a constant step is the conventional approximation.
+/** Row id for a section's summary row, namespaced away from post ids. */
+function sectionRowId(key: string): string {
+  return `section:${key}`;
+}
+
 const PAGE_SIZE = 10;
 
 interface LeftPaneProps {
@@ -116,21 +121,35 @@ export function LeftPane({
   ];
 
   // The four sections are ONE listbox: arrow navigation flows continuously
-  // across them over exactly the currently-rendered rows. Collapsed sections
-  // contribute no navigable rows.
+  // across them over exactly the currently-rendered rows. Each section's summary
+  // row is part of that sequence — carrying `expanded`, toggled with Enter/Space
+  // or Right/Left — which is the only keyboard route into a collapsed section. A
+  // collapsed section still contributes no post rows.
   const rows: PostListRow[] = useMemo(
     () =>
-      flatPostListIds(
-        sections.map((s) => ({ open: s.open, items: s.posts })),
-      ).map((p) => ({ id: p.frontMatter.id, label: getPostTitle(p.frontMatter) })),
+      sections.flatMap((s) => [
+        { id: sectionRowId(s.key), label: s.label, expanded: s.open },
+        ...(s.open
+          ? s.posts.map((p) => ({
+              id: p.frontMatter.id,
+              label: getPostTitle(p.frontMatter),
+            }))
+          : []),
+      ]),
     // sections is rebuilt each render from these inputs; depend on the inputs.
     [drafts, ready, published, expired, draftsOpen, readyOpen, publishedOpen, expiredOpen],
+  );
+
+  const toggleByRowId = useMemo(
+    () => new Map(sections.map((s) => [sectionRowId(s.key), s.toggle])),
+    [draftsOpen, readyOpen, publishedOpen, expiredOpen],
   );
 
   const { listboxProps, getRowProps, activeId } = usePostListbox({
     rows,
     selectedId: selectedPostId,
     onActivate: onSelectPost,
+    onToggleRow: (id) => toggleByRowId.get(id)?.(),
     pageSize: PAGE_SIZE,
     composingRef,
   });
@@ -168,15 +187,13 @@ export function LeftPane({
           BigMouth
           <div className="left-header-actions">
             <button className="btn-new-post-icon" title="New Post" onClick={onNewPost}>
-              <span className="plus-icon"><span /><span /></span>
+              <PlusIcon />
             </button>
             <Menu
               label="Menu"
               trigger={(props) => (
                 <button className="btn-hamburger" title="Menu" {...props}>
-                  <span className="hamburger-icon">
-                    <span /><span /><span />
-                  </span>
+                  <MenuIcon />
                 </button>
               )}
             >
@@ -229,18 +246,23 @@ function Section({
   composing: ReturnType<typeof useComposing>["handlers"];
   timezone: string;
 }) {
-  const { label, posts, open, toggle, emptyText, timestampField, totalCount, onLoadMore } =
+  const { key: sectionKey, label, posts, open, emptyText, timestampField, totalCount, onLoadMore } =
     section;
   const displayCount =
     totalCount !== undefined ? `${posts.length}/${totalCount}` : String(posts.length);
 
   return (
     <>
-      {/* Group header: a non-interactive label, not a tab stop. The collapse
-          toggle is pointer-only (click the header). */}
-      <div className="section-header" role="group" onClick={toggle}>
+      {/* The section's summary row: part of the listbox's row sequence, never a
+          tab stop of its own. Arrowing onto it and pressing Enter/Space (or
+          Right/Left) toggles the section, which is the only keyboard route into
+          a collapsed one. */}
+      <div
+        className={`section-header${activeId === sectionRowId(sectionKey) ? " active" : ""}`}
+        {...getRowProps(sectionRowId(sectionKey))}
+      >
         <span>
-          {open ? "▼" : "▶"} {label}
+          {open ? <ChevronDownIcon /> : <ChevronRightIcon />} {label}
         </span>
         <span className="section-count">{displayCount}</span>
       </div>

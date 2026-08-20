@@ -224,37 +224,12 @@ body {
   flex-shrink: 0;
 }
 
+.btn-new-post-icon {
+  color: var(--bm-on-accent);
+}
+
 .btn-new-post-icon:hover {
   background: var(--bm-accent-hover);
-}
-
-.plus-icon {
-  position: relative;
-  display: block;
-  width: 12px;
-  height: 12px;
-}
-
-.plus-icon span {
-  position: absolute;
-  background: var(--bm-on-accent);
-  border-radius: 1px;
-}
-
-.plus-icon span:first-child {
-  width: 100%;
-  height: 2px;
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%);
-}
-
-.plus-icon span:last-child {
-  width: 2px;
-  height: 100%;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
 }
 
 .btn-new-post,
@@ -334,7 +309,8 @@ body {
    state. With aria-activedescendant the rows are not focusable, so the cursor is
    shown via the .active class the listbox sets (as on the picker and workspace
    lists). Inset so the scroll container never clips it. */
-.post-item.active {
+.post-item.active,
+.section-header.active {
   outline: 2px solid var(--bm-accent);
   outline-offset: -2px;
 }
@@ -653,21 +629,6 @@ body {
 
 .btn-hamburger:hover {
   color: var(--bm-text);
-}
-
-.hamburger-icon {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 18px;
-}
-
-.hamburger-icon span {
-  display: block;
-  height: 2px;
-  width: 100%;
-  background: currentColor;
-  border-radius: 1px;
 }
 
 /* In-app menu (popup): trigger + roving-focus list of commands. */

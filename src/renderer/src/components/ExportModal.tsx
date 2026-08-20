@@ -3,6 +3,7 @@ import { Marked } from "marked";
 import removeMd from "remove-markdown";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { ModalShell } from "./ModalShell";
+import { CheckIcon } from "./Icon";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -81,7 +82,9 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         </button>
         <button className="btn-export" onClick={handleCopy}>
           {copiedKey === "copy" ? (
-            "✓ Copied"
+            <>
+              <CheckIcon /> Copied
+            </>
           ) : (
             "Copy"
           )}

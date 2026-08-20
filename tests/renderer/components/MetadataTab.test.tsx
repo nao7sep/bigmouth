@@ -453,7 +453,8 @@ describe("MetadataTab copy and error dismiss", () => {
       fireEvent.click(copyBtn);
     });
     expect(clipboardWrite).toHaveBeenCalledWith("Copy me");
-    expect(copyBtn.textContent).toBe("✓ Copied");
+    expect(copyBtn.textContent?.trim()).toBe("Copied");
+    expect(copyBtn.querySelector("svg")?.dataset.icon).toBe("check");
   });
 
   it("dismisses the generation error banner", async () => {

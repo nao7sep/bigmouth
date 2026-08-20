@@ -9,6 +9,7 @@ import {
 import type { CSSProperties, MouseEventHandler, RefObject } from "react";
 import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile, onPostContentSaved } from "./api";
 import { LeftPane } from "./components/LeftPane";
+import { XIcon } from "./components/Icon";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
@@ -571,7 +572,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
               className="toolbar-error-dismiss"
               onClick={() => setLoadError(null)}
             >
-              ×
+              <XIcon />
             </button>
           </div>
         )}

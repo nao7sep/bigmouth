@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useModalLayer } from "../hooks/useModalStack";
+import { XIcon } from "./Icon";
 
 interface ModalShellProps {
   title: string;
@@ -108,7 +109,7 @@ export function ModalShell({
               autoFocus={autoFocusClose}
               aria-label="Close"
             >
-              &times;
+              <XIcon />
             </button>
           )}
         </div>

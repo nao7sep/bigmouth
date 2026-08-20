@@ -1,4 +1,5 @@
 import { ModalShell } from "./ModalShell";
+import { ExternalLinkIcon } from "./Icon";
 
 interface AboutModalProps {
   onClose: () => void;
@@ -24,7 +25,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             rel="noreferrer"
             style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
           >
-            GitHub ↗
+            GitHub <ExternalLinkIcon />
           </a>
           <a
             href={`${GITHUB_URL}/issues`}
@@ -32,7 +33,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             rel="noreferrer"
             style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none" }}
           >
-            Report Issue ↗
+            Report Issue <ExternalLinkIcon />
           </a>
         </div>
         <p style={{ marginTop: 16, fontSize: 12, color: "var(--bm-text-faint)" }}>

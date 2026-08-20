@@ -201,7 +201,8 @@ describe("ImagingTab copy", () => {
       fireEvent.click(copyButtons[0]);
     });
     expect(writeText).toHaveBeenCalledWith("one");
-    expect(copyButtons[0].textContent).toBe("✓ Copied");
+    expect(copyButtons[0].textContent?.trim()).toBe("Copied");
+    expect(copyButtons[0].querySelector("svg")?.dataset.icon).toBe("check");
   });
 
   it("copies all prompts joined by blank lines", async () => {
@@ -216,6 +217,7 @@ describe("ImagingTab copy", () => {
       fireEvent.click(copyAll);
     });
     expect(writeText).toHaveBeenCalledWith("one\n\ntwo");
-    expect(copyAll.textContent).toBe("✓ Copied");
+    expect(copyAll.textContent?.trim()).toBe("Copied");
+    expect(copyAll.querySelector("svg")?.dataset.icon).toBe("check");
   });
 });

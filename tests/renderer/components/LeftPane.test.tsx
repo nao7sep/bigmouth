@@ -66,10 +66,18 @@ describe("LeftPane structure", () => {
     });
     const headers = container.querySelectorAll(".section-header");
     expect(Array.from(headers).map((h) => h.querySelector("span")?.textContent?.trim())).toEqual([
-      "▼ Drafts",
-      "▼ Ready",
-      "▶ Published",
-      "▶ Expired",
+      "Drafts",
+      "Ready",
+      "Published",
+      "Expired",
+    ]);
+    // Open versus collapsed is carried by which chevron renders, the icons being
+    // aria-hidden and so invisible to a text assertion.
+    expect(Array.from(headers).map((h) => h.querySelector("svg")?.dataset.icon)).toEqual([
+      "chevron-down",
+      "chevron-down",
+      "chevron-right",
+      "chevron-right",
     ]);
     // Open sections render their rows; collapsed ones do not.
     expect(screen.getByText("Draft One")).toBeTruthy();
@@ -168,10 +176,9 @@ describe("LeftPane listbox keyboard navigation", () => {
       onSelectPost,
     });
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
-    // First ArrowDown enters the list on the first row (drafts/d1).
-    fireEvent.keyDown(listbox, { key: "ArrowDown" });
-    // A second ArrowDown crosses into the Ready section (r1) — one continuous list.
-    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    // Each section's summary row is part of the sequence, so the rows here are
+    // [Drafts] d1 [Ready] r1 — one continuous list crossing group boundaries.
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(listbox, { key: "ArrowDown" });
     fireEvent.keyDown(listbox, { key: "Enter" });
     expect(onSelectPost).toHaveBeenCalledWith("r1");
   });
@@ -282,9 +289,10 @@ describe("LeftPane auto-load on cursor reaching the archive end", () => {
     fireEvent.click(publishedHeader);
 
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
-    // End jumps to the last row in the whole list (p2 is the last published, and
-    // Expired is empty), which is the last loaded published row -> auto-load.
+    // End lands on the Expired summary row — the genuine end of the list — so
+    // step up once onto p2, the last loaded published row, to trigger auto-load.
     fireEvent.keyDown(listbox, { key: "End" });
+    fireEvent.keyDown(listbox, { key: "ArrowUp" });
     expect(onLoadMorePublished).toHaveBeenCalled();
   });
 
@@ -303,5 +311,75 @@ describe("LeftPane auto-load on cursor reaching the archive end", () => {
     // Cursor enters on the first draft row; not a published archive tail.
     fireEvent.keyDown(listbox, { key: "ArrowDown" });
     expect(onLoadMorePublished).not.toHaveBeenCalled();
+  });
+});
+
+describe("LeftPane collapsed sections are reachable by keyboard", () => {
+  // A collapsed section renders none of its posts, so if its summary row could
+  // not be reached and toggled from the keyboard, those posts would be
+  // unreachable entirely — not merely unannounced.
+  const findHeader = (container: HTMLElement, name: string) =>
+    Array.from(container.querySelectorAll(".section-header")).find((h) =>
+      h.textContent?.includes(name),
+    )!;
+
+  it("announces collapsed and expanded state on each summary row", () => {
+    const { container } = renderPane({
+      published: [summary({ id: "p1", status: "published" })],
+      publishedTotal: 1,
+    });
+    expect(findHeader(container, "Drafts").getAttribute("aria-expanded")).toBe("true");
+    expect(findHeader(container, "Published").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(findHeader(container, "Published"));
+    expect(findHeader(container, "Published").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("expands a collapsed section with Enter on its summary row", () => {
+    const { container } = renderPane({
+      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
+      publishedTotal: 1,
+    });
+    expect(screen.queryByText("Pub One")).toBeNull();
+    const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
+    // Rows: [Drafts] [Ready] [Published] [Expired] — all four sections empty or
+    // collapsed, so End lands on Expired and one step up is Published.
+    fireEvent.keyDown(listbox, { key: "End" });
+    fireEvent.keyDown(listbox, { key: "ArrowUp" });
+    fireEvent.keyDown(listbox, { key: "Enter" });
+    expect(screen.getByText("Pub One")).toBeTruthy();
+  });
+
+  it("expands with Right and collapses with Left, and leaves post rows alone", () => {
+    const { container } = renderPane({
+      drafts: [summary({ id: "d1", title: "Draft One" })],
+      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
+      publishedTotal: 1,
+    });
+    const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
+    fireEvent.keyDown(listbox, { key: "End" });
+    fireEvent.keyDown(listbox, { key: "ArrowUp" });
+    fireEvent.keyDown(listbox, { key: "ArrowRight" });
+    expect(screen.getByText("Pub One")).toBeTruthy();
+    fireEvent.keyDown(listbox, { key: "ArrowLeft" });
+    expect(screen.queryByText("Pub One")).toBeNull();
+
+    // Right on a post row is inert: it neither toggles nor moves the cursor.
+    fireEvent.keyDown(listbox, { key: "Home" });
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "ArrowRight" });
+    expect(screen.getByText("Draft One")).toBeTruthy();
+  });
+
+  it("toggles rather than selecting when Enter lands on a summary row", () => {
+    const onSelectPost = vi.fn();
+    const { container } = renderPane({
+      drafts: [summary({ id: "d1", title: "Draft One" })],
+      onSelectPost,
+    });
+    const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
+    fireEvent.keyDown(listbox, { key: "Home" });
+    fireEvent.keyDown(listbox, { key: "Enter" });
+    expect(onSelectPost).not.toHaveBeenCalled();
+    expect(screen.queryByText("Draft One")).toBeNull();
   });
 });

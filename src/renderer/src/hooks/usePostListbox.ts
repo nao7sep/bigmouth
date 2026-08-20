@@ -39,19 +39,35 @@ import { isComposingKeyboardEvent } from "./useComposing";
 //     the surviving neighbour. No focus juggling is needed — focus never left
 //     the container.
 //
-// Group headers, collapse toggles, and "load more" are not the listbox's
-// concern — the caller renders them outside the row sequence (see LeftPane).
+// A collapsible section's SUMMARY ROW is part of the row sequence, carrying
+// `expanded`. It is reached by arrowing like any other row and toggled with
+// Enter/Space, or Right to expand and Left to collapse — the composite-control
+// conventions' rule for collapsible sections. The toggle is never a focusable
+// child and never its own tab stop, which is what rules out making the header a
+// button: the listbox is one tab stop and a collapsed section would otherwise be
+// unreachable by keyboard entirely.
+//
+// "Load more" remains outside the row sequence, loading automatically as the
+// cursor reaches the end of a loaded archive.
 
 const TYPE_AHEAD_RESET_MS = 700;
 
 export interface PostListRow {
   id: string;
   label: string;
+  /**
+   * Present only on a collapsible section's summary row, holding its current
+   * state. Rows without it are ordinary options; rows with it toggle rather than
+   * commit a selection.
+   */
+  expanded?: boolean;
 }
 
 export interface PostRowProps {
   role: "option";
   "aria-selected": boolean;
+  /** Set only on a summary row, so a screen reader announces collapsed/expanded. */
+  "aria-expanded"?: boolean;
   id: string;
   ref: (el: HTMLElement | null) => void;
   onClick: () => void;
@@ -82,6 +98,7 @@ export function usePostListbox({
   rows,
   selectedId,
   onActivate,
+  onToggleRow,
   pageSize,
   composingRef,
   autoActivateFirst = false,
@@ -89,6 +106,8 @@ export function usePostListbox({
   rows: readonly PostListRow[];
   selectedId: string | null;
   onActivate: (id: string) => void;
+  /** Toggles a summary row. Required if any row carries `expanded`. */
+  onToggleRow?: (id: string) => void;
   pageSize: number;
   composingRef: RefObject<boolean>;
   /**
@@ -108,6 +127,9 @@ export function usePostListbox({
 
   const ids = rows.map((r) => r.id);
   const labels = rows.map((r) => r.label);
+  const expandedById = new Map(
+    rows.filter((r) => r.expanded !== undefined).map((r) => [r.id, r.expanded as boolean]),
+  );
 
   // The cursor index, resolved from the hook's own active id, falling back to
   // the committed selection so Tab into the list lands on the selected row.
@@ -200,13 +222,30 @@ export function usePostListbox({
           e.preventDefault();
           moveTo(Math.max(0, Math.max(0, activeIndex) - pageSize));
           return;
+        case "ArrowRight":
+          // Right expands a collapsed section; on any other row it is inert, so
+          // the key stays free for whatever else the app binds it to.
+          if (resolvedActiveId != null && expandedById.get(resolvedActiveId) === false) {
+            e.preventDefault();
+            onToggleRow?.(resolvedActiveId);
+          }
+          return;
+        case "ArrowLeft":
+          if (resolvedActiveId != null && expandedById.get(resolvedActiveId) === true) {
+            e.preventDefault();
+            onToggleRow?.(resolvedActiveId);
+          }
+          return;
         case "Enter":
         case " ":
           // Manual activation: commit the cursor row. Guard IME so the Enter
-          // that confirms a composition does not also activate.
+          // that confirms a composition does not also activate. On a summary row
+          // this toggles instead — a section is not a selectable post.
           if (isComposingKeyboardEvent(composingRef, e)) return;
           e.preventDefault();
-          if (resolvedActiveId != null) onActivate(resolvedActiveId);
+          if (resolvedActiveId == null) return;
+          if (expandedById.has(resolvedActiveId)) onToggleRow?.(resolvedActiveId);
+          else onActivate(resolvedActiveId);
           return;
         default:
           break;
@@ -239,6 +278,8 @@ export function usePostListbox({
       pageSize,
       moveTo,
       onActivate,
+      onToggleRow,
+      expandedById,
       composingRef,
     ],
   );
@@ -247,6 +288,7 @@ export function usePostListbox({
     (id: string): PostRowProps => ({
       role: "option",
       "aria-selected": id === selectedId,
+      ...(expandedById.has(id) ? { "aria-expanded": expandedById.get(id) } : {}),
       // A stable DOM id so the container's aria-activedescendant can point here.
       id: rowDomId(id),
       ref: (el) => {
@@ -254,16 +296,17 @@ export function usePostListbox({
         else rowRefs.current.delete(id);
       },
       onClick: () => {
-        // Pointer parity: clicking sets the cursor and commits, mirroring Enter
-        // on a row. Focus moves to the container so subsequent arrows continue.
+        // Pointer parity: clicking sets the cursor and does what Enter would on
+        // that row. Focus moves to the container so subsequent arrows continue.
         setActiveId(id);
         listboxRef.current?.focus();
-        onActivate(id);
+        if (expandedById.has(id)) onToggleRow?.(id);
+        else onActivate(id);
       },
       // Key handling lives on the container (listboxProps.onKeyDown), which is
       // the focus holder; rows are not focusable.
     }),
-    [selectedId, rowDomId, onActivate],
+    [selectedId, rowDomId, onActivate, onToggleRow, expandedById],
   );
 
   return {

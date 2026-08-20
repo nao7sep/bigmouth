@@ -9,6 +9,7 @@ import {
   type ImagingStyle,
 } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { CheckIcon } from "./Icon";
 
 const COUNT_OPTIONS = [3, 5, 10] as const;
 const RELATION_OPTIONS: Array<{ value: ImagingRelation; label: string }> = [
@@ -238,7 +239,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
               title="Copy all prompts"
             >
               {copiedKey === "all" ? (
-                "✓ Copied"
+                <>
+                  <CheckIcon /> Copied
+                </>
               ) : (
                 "Copy All"
               )}
@@ -254,7 +257,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
                   title="Copy prompt"
                 >
                   {copiedKey === `prompt-${index}` ? (
-                    "✓ Copied"
+                    <>
+                      <CheckIcon /> Copied
+                    </>
                   ) : (
                     "Copy"
                   )}

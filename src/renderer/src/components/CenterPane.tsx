@@ -16,6 +16,7 @@ import { useConfirm } from "./ConfirmHost";
 import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useRadioGroup } from "../hooks/useRadioGroup";
+import { CheckIcon, ChevronLeftIcon, XIcon } from "./Icon";
 
 interface CenterPaneProps {
   workspaceId: string;
@@ -284,7 +285,7 @@ export function CenterPane({
       <div className="center-toolbar">
         {onGoBack && (
           <button className="btn-toolbar" onClick={() => void onGoBack()}>
-            ◀ Back
+            <ChevronLeftIcon /> Back
           </button>
         )}
         <span className="toolbar-label">{fm.target}</span>
@@ -328,7 +329,9 @@ export function CenterPane({
         <span style={{ flex: 1 }} />
         <button className="btn-toolbar" onClick={handleCopyContent}>
           {copiedKey === "content" ? (
-            "✓ Copied"
+            <>
+              <CheckIcon /> Copied
+            </>
           ) : (
             "Copy"
           )}
@@ -350,7 +353,7 @@ export function CenterPane({
               setSaveError(null);
             }}
           >
-            ×
+            <XIcon />
           </button>
         </div>
       )}

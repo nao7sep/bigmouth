@@ -74,7 +74,7 @@ describe("ExportModal — copy", () => {
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText.mock.calls[0][0]).toContain("<h1>Heading</h1>");
     // The button flips to the copied state...
-    expect(getByText("✓ Copied")).toBeTruthy();
+    expect(getByText("Copied")).toBeTruthy();
     // ...and reverts after the feedback window elapses.
     act(() => {
       vi.advanceTimersByTime(1500);
