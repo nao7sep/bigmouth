@@ -381,6 +381,78 @@ describe("pending content (write-behind buffer)", () => {
     expect(diskContent(b.filePath)).toContain("post b text");
   });
 
+  // The lock boundary, enforced where the write happens. Editing a published or
+  // expired post must be a deliberate act, never an autosave accident — and the
+  // renderer's readOnly cannot be that boundary, because it is derived from post
+  // state that refreshes only after a status change has already resolved.
+  describe("a locked post is not written by the content stream", () => {
+    it("refuses a queued edit and reports it as unsaveable, keeping the text", () => {
+      const events: ContentSaveEvent[] = [];
+      const post = createPost(dataDir, "blogger", "en");
+      changeStatus(dataDir, post.frontMatter.id, "published");
+      const before = diskContent(post.filePath);
+
+      setContentSaveListener((e) => events.push(e));
+      queueContent(dataDir, post.frontMatter.id, "TAMPERED VIA THE CONTENT STREAM");
+
+      expect(events).toEqual([
+        { kind: "locked", dataDir, id: post.frontMatter.id, status: "published" },
+      ]);
+      expect(diskContent(post.filePath)).toBe(before);
+      // The text is the user's work: kept and readable, just never written.
+      expect(getPost(dataDir, post.frontMatter.id)?.content).toBe(
+        "TAMPERED VIA THE CONTENT STREAM",
+      );
+    });
+
+    it("refuses at flush time a post that was published after the edit was queued", () => {
+      // The real window: the debounce is long enough for a publish to land
+      // between a keystroke and its write, so a queue-time check alone would
+      // still rewrite published history.
+      const events: ContentSaveEvent[] = [];
+      const post = createPost(dataDir, "blogger", "en");
+      queueContent(dataDir, post.frontMatter.id, "typed just before publishing");
+      changeStatus(dataDir, post.frontMatter.id, "published");
+
+      // The status change persisted what was buffered, as it should — that text
+      // was typed while the post was still editable. What must not land is what
+      // comes after.
+      expect(diskContent(post.filePath)).toContain("typed just before publishing");
+      const published = diskContent(post.filePath);
+
+      setContentSaveListener((e) => events.push(e));
+      queueContent(dataDir, post.frontMatter.id, "typed one keystroke too late");
+      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+
+      expect(diskContent(post.filePath)).toBe(published);
+      expect(events.map((e) => e.kind)).toEqual(["locked"]);
+    });
+
+    it("reports the locked post at quit rather than writing it", () => {
+      const post = createPost(dataDir, "blogger", "en");
+      changeStatus(dataDir, post.frontMatter.id, "expired");
+      const before = diskContent(post.filePath);
+      queueContent(dataDir, post.frontMatter.id, "late night second thoughts");
+
+      expect(quitFailures(post.frontMatter.id)).toEqual([
+        { id: post.frontMatter.id, message: "post is expired and locked" },
+      ]);
+      expect(diskContent(post.filePath)).toBe(before);
+    });
+
+    it("saves again once the post is moved back to an editable status", () => {
+      const post = createPost(dataDir, "blogger", "en");
+      changeStatus(dataDir, post.frontMatter.id, "published");
+      queueContent(dataDir, post.frontMatter.id, "refused while published");
+      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+
+      changeStatus(dataDir, post.frontMatter.id, "draft");
+      queueContent(dataDir, post.frontMatter.id, "allowed once back in draft");
+      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+      expect(diskContent(post.filePath)).toContain("allowed once back in draft");
+    });
+  });
+
   it("notifies saved with the canonical summary after a flush", () => {
     const events: ContentSaveEvent[] = [];
     setContentSaveListener((e) => events.push(e));

@@ -37,7 +37,7 @@ import type {
 import { utcNow, formatUtcIso, compareInstants } from "../shared/timestamps.js";
 import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry } from "./postFile.js";
-import { applyStatusTransition } from "../shared/postLifecycle.js";
+import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
 
 export function clearCache(dataDir: string): void {
@@ -62,14 +62,23 @@ const PENDING_FLUSH_DELAY_MS = 750;
 const PENDING_RETRY_DELAY_MS = 5000;
 
 /**
- * One post's newest text not yet on disk. `missingReported` records the
- * terminal outcome: the post is gone from the index, so no write can land. The
- * text is kept anyway — it is the user's work — but nothing is scheduled for it
- * and the failure is announced once instead of on every keystroke.
+ * One post's newest text not yet on disk.
+ *
+ * `terminal` is why no write from this path can land — the post is gone from
+ * the index, or it is locked — and null while the edit is still savable. The
+ * text is kept either way (it is the user's work), but a terminal edit is never
+ * scheduled, and setting the reason is also what makes the failure announce
+ * once rather than on every keystroke.
  */
 interface PendingEdit {
   content: string;
-  missingReported: boolean;
+  terminal: string | null;
+}
+
+const POST_MISSING_REASON = "post file is missing";
+
+function lockedReason(status: PostStatus): string {
+  return `post is ${status} and locked`;
 }
 
 // dataDir -> post id -> newest content not yet on disk.
@@ -77,15 +86,17 @@ const pendingContent = new Map<string, Map<string, PendingEdit>>();
 const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
 
 /**
- * What became of a buffered edit. The two failures are deliberately distinct:
- * `save-failed` is retryable (the same write can land later), while
- * `post-missing` is terminal — retrying cannot bring a deleted file back, so
- * folding it into the retry loop would spin forever. Neither is ever silent.
+ * What became of a buffered edit. Retryable and terminal are deliberately
+ * distinct: `save-failed` is retryable (the same write can land later), while
+ * `post-missing` and `locked` are terminal — no retry can bring a deleted file
+ * back or unlock a published post, so folding either into the retry loop would
+ * spin forever. None is ever silent.
  */
 export type ContentSaveEvent =
   | { kind: "saved"; dataDir: string; id: string; summary: PostIndexEntry }
   | { kind: "save-failed"; dataDir: string; id: string; message: string }
-  | { kind: "post-missing"; dataDir: string; id: string };
+  | { kind: "post-missing"; dataDir: string; id: string }
+  | { kind: "locked"; dataDir: string; id: string; status: PostStatus };
 
 // Single subscriber (the IPC layer), which broadcasts to windows. The store
 // stays free of Electron types.
@@ -110,7 +121,7 @@ function setPending(dataDir: string, id: string, content: string): PendingEdit {
     existing.content = content;
     return existing;
   }
-  const created: PendingEdit = { content, missingReported: false };
+  const created: PendingEdit = { content, terminal: null };
   posts.set(id, created);
   return created;
 }
@@ -130,17 +141,22 @@ function clearPending(dataDir: string, id: string): void {
 }
 
 /**
- * The terminal outcome: the post is no longer in the index (its file vanished
- * out of band), so no write can land. The buffered text stays — it is the
- * user's work, and getPost keeps overlaying it for as long as the post reads —
+ * A terminal outcome: no write from this path can land — the post is no longer
+ * in the index, or it is locked. The buffered text stays (it is the user's
+ * work, and getPost keeps overlaying it for as long as the post reads),
  * nothing is retried, and the listener hears about it once.
  */
-function reportPostMissing(dataDir: string, id: string): void {
+function reportTerminal(
+  dataDir: string,
+  id: string,
+  reason: string,
+  event: ContentSaveEvent,
+): void {
   const pending = pendingContent.get(dataDir)?.get(id);
-  if (!pending || pending.missingReported) return;
-  pending.missingReported = true;
+  if (!pending || pending.terminal !== null) return;
+  pending.terminal = reason;
   cancelFlush(dataDir, id);
-  contentSaveListener?.({ kind: "post-missing", dataDir, id });
+  contentSaveListener?.(event);
 }
 
 function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
@@ -168,12 +184,23 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
  */
 export function queueContent(dataDir: string, id: string, content: string): void {
   const pending = setPending(dataDir, id, content);
-  if (!index.getEntry(dataDir, id)) {
-    reportPostMissing(dataDir, id);
+  const entry = index.getEntry(dataDir, id);
+  if (!entry) {
+    reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
     return;
   }
-  // The post is there (or back): a later disappearance is reported anew.
-  pending.missingReported = false;
+  if (isEditLocked(entry.status)) {
+    reportTerminal(dataDir, id, lockedReason(entry.status), {
+      kind: "locked",
+      dataDir,
+      id,
+      status: entry.status,
+    });
+    return;
+  }
+  // The post is there (or back, or unlocked): a later terminal state is
+  // reported anew.
+  pending.terminal = null;
   scheduleFlush(dataDir, id, PENDING_FLUSH_DELAY_MS);
 }
 
@@ -186,6 +213,22 @@ export function queueContent(dataDir: string, id: string, content: string): void
  */
 export function flushPostContent(dataDir: string, id: string): boolean {
   if (getPending(dataDir, id) === undefined) return true;
+
+  // Re-checked at write time, not only when the edit was queued. The debounce
+  // window is exactly long enough for the post to be published between a
+  // keystroke and its write, and the quit flush runs later still — so queue
+  // time alone would leave the autosave accident the lock exists to prevent.
+  const entry = index.getEntry(dataDir, id);
+  if (entry && isEditLocked(entry.status)) {
+    reportTerminal(dataDir, id, lockedReason(entry.status), {
+      kind: "locked",
+      dataDir,
+      id,
+      status: entry.status,
+    });
+    return false;
+  }
+
   try {
     // updatePost reads through the overlay, so an empty update persists the
     // pending content and clears the buffer.
@@ -193,7 +236,7 @@ export function flushPostContent(dataDir: string, id: string): boolean {
     if (!post) {
       // The post's file vanished out of band. Retrying cannot bring it back, so
       // the text is kept and reported rather than discarded as if it saved.
-      reportPostMissing(dataDir, id);
+      reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
       return false;
     }
     const summary = index.getEntry(dataDir, id);
@@ -221,7 +264,7 @@ export function flushAllPendingContent(): { id: string; message: string }[] {
         if (flushPostContent(dataDir, id)) continue;
         failures.push({
           id,
-          message: posts.get(id)?.missingReported ? "post file is missing" : "save failed",
+          message: posts.get(id)?.terminal ?? "save failed",
         });
       } catch (err) {
         failures.push({ id, message: err instanceof Error ? err.message : String(err) });

@@ -39,6 +39,8 @@ const STATUSES: PostStatus[] = ["draft", "ready", "published", "expired"];
 // is why the save is impossible, not a retry that will never happen.
 const POST_MISSING_DETAIL = "This post's file is missing.";
 const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
+const lockedDetail = (status: PostStatus): string =>
+  `This post is ${status}, so it is locked against edits.`;
 
 /** Sends a main -> renderer event to every live window. */
 function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent): void {
@@ -56,12 +58,15 @@ export function registerPostHandlers(): void {
       broadcast(CHANNELS.postContentSaved, saved);
       return;
     }
-    // Both failures ride the one failure channel, told apart by `kind`: a write
-    // failure is retried from the buffer, a missing post never can be.
+    // Every failure rides the one failure channel, told apart by `kind`: a
+    // write failure is retried from the buffer, while a missing post and a
+    // locked one never can be.
     const failure: PostContentSaveFailedEvent =
       event.kind === "post-missing"
         ? { postId: event.id, kind: "unsaveable", message: POST_MISSING_DETAIL }
-        : { postId: event.id, kind: "retrying", message: event.message };
+        : event.kind === "locked"
+          ? { postId: event.id, kind: "unsaveable", message: lockedDetail(event.status) }
+          : { postId: event.id, kind: "retrying", message: event.message };
     logError("post content save failed", {
       postId: failure.postId,
       kind: failure.kind,
