@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Workspace } from "@shared/types";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir, getApiKeysPath } from "@main/core/services/workspaceStore.js";
+import { DEFAULT_SETTINGS } from "@main/core/shared/defaults.js";
 import {
   getSettings,
   saveSettings,
@@ -54,6 +55,43 @@ describe("corrupt config files", () => {
     fs.writeFileSync(path.join(dataDir, "config.json"), "{ not valid json", "utf-8");
     expect(() => getSettings(dataDir)).toThrow(/config\.json is not valid JSON/);
   });
+
+  // A file that parses but does not fit the shape is corrupt too, and it used to
+  // take a different, destructive branch: the section normalizers coerced the
+  // damaged sections to empty, and because every save reads-spreads-writes, the
+  // next Settings save persisted that emptiness over the user's authored targets,
+  // AI configs and prompts.
+  it("refuses a config whose shape is damaged, instead of coercing it to defaults", () => {
+    const configPath = path.join(dataDir, "config.json");
+    const healthy = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const authoredTargets = [{ rowId: "r1", name: "blog", defaultLanguage: "en", requiresMetadata: false }];
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ ...healthy, targets: authoredTargets, analysisPrompts: "not an array" }),
+      "utf-8",
+    );
+
+    expect(() => getSettings(dataDir)).toThrow(/not a BigMouth workspace config/);
+    expect(() => saveSettings(dataDir, DEFAULT_SETTINGS)).toThrow(/not a BigMouth workspace config/);
+
+    // Nothing was written: the authored targets are still on disk.
+    const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    expect(afterwards.targets).toEqual(authoredTargets);
+    expect(afterwards.analysisPrompts).toBe("not an array");
+  });
+
+  it("leaves a config written by a newer build exactly where it is", () => {
+    // Not corrupt — intact data this build cannot read. Reported by name, never
+    // written to, which the throw is what guarantees since every save reads first.
+    const configPath = path.join(dataDir, "config.json");
+    const healthy = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    fs.writeFileSync(configPath, JSON.stringify({ ...healthy, schemaVersion: 99 }), "utf-8");
+
+    expect(() => getSettings(dataDir)).toThrow(/written by a newer version of BigMouth/);
+
+    const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    expect(afterwards.schemaVersion).toBe(99);
+  });
 });
 
 describe("settings", () => {
@@ -69,15 +107,25 @@ describe("settings", () => {
   it("backfills fields absent from an older settings file with their defaults", () => {
     // A config.json written before uiFontFamily/contentFont existed: the read
     // must fill them from defaults rather than yield undefined (no migration code).
+    // The structural sections are present because every build that has ever
+    // shipped wrote them — isWorkspaceConfig has required all five since v0.1.0,
+    // and a folder whose config lacks them does not register as a workspace at
+    // all. What this test is actually about is the SETTINGS fields, which a file
+    // written before a setting existed genuinely will not carry.
     fs.writeFileSync(
       path.join(dataDir, "config.json"),
       JSON.stringify({
+        schemaVersion: 1,
         timezone: "UTC",
         supportedLanguages: ["en"],
         publishedPostsPerLoad: 50,
         maxUploadMb: 500,
         editorWatermark: "",
         extraFieldWatermark: "",
+        targets: [],
+        aiConfigs: [],
+        analysisPrompts: [],
+        generationPrompts: { prompts: {} },
       }),
       "utf-8",
     );

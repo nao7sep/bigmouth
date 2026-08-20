@@ -30,6 +30,7 @@ import type {
   Workspace,
 } from "../shared/types.js";
 import { CONFIG_SCHEMA_VERSION } from "../shared/types.js";
+import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { DEFAULT_SETTINGS } from "../shared/defaults.js";
 import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
@@ -140,15 +141,60 @@ function normalizeConfig(raw: unknown): WorkspaceConfig {
 
 // --- the single config file ---------------------------------------------------
 
+/**
+ * Reads a workspace's config, refusing anything this build cannot faithfully
+ * read back.
+ *
+ * The section normalizers below coerce silently — a `targets` that is not an
+ * array becomes `[]`, and so on. That is right for a value inside a config this
+ * build owns, and wrong for deciding whether the file is one at all: every
+ * caller that saves goes `readConfig` → spread → `writeConfig`, so a file whose
+ * shape was damaged read as empty sections and the next Settings save persisted
+ * that emptiness over the user's authored targets, AI configs and prompts.
+ *
+ * So the shape is checked BEFORE normalizing, and a failure takes the same
+ * branch as unparseable JSON: throw, touch nothing. The sibling state store
+ * already does exactly this, and says why — "never coerced and then
+ * overwritten". The difference here is that `config.json` is authored work
+ * rather than view state, so there is not even a defaults path to fall back to.
+ */
 function readConfig(dataDir: string): WorkspaceConfig {
-  const raw = fs.readFileSync(path.join(dataDir, CONFIG_FILE), "utf-8");
+  const filePath = path.join(dataDir, CONFIG_FILE);
+  const raw = fs.readFileSync(filePath, "utf-8");
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (cause) {
-    throw new Error(`${CONFIG_FILE} is not valid JSON.`, { cause });
+    throw new Error(`${CONFIG_FILE} is not valid JSON. It was left unchanged at ${filePath}`, {
+      cause,
+    });
   }
+
+  // A store written by a newer build is not corrupt: it is intact data this
+  // build cannot read. Named, left exactly in place, never written to — which
+  // is what the throw guarantees, since every save path reads first.
+  const recorded = recordedSchemaVersion(parsed);
+  if (recorded !== null && recorded > CONFIG_SCHEMA_VERSION) {
+    throw new Error(
+      `${CONFIG_FILE} was written by a newer version of BigMouth (schema ${recorded}, this build reads ${CONFIG_SCHEMA_VERSION}). It was left unchanged at ${filePath}`,
+    );
+  }
+
+  if (!isWorkspaceConfig(parsed)) {
+    throw new Error(
+      `${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`,
+    );
+  }
+
   return normalizeConfig(parsed);
+}
+
+/** The schema version the file records, or null if it records none usable. */
+function recordedSchemaVersion(parsed: unknown): number | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const value = (parsed as { schemaVersion?: unknown }).schemaVersion;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function writeConfig(dataDir: string, config: WorkspaceConfig): void {
