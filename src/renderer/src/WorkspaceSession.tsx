@@ -93,6 +93,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const rightPaneRef = useRef<RightPaneHandle>(null);
     const sessionAliveRef = useRef(true);
     const selectedPostIdRef = useRef<string | null>(null);
+    // Whether the open post's target asks for a Metadata tab, read by the global
+    // key handler — which is registered once and so cannot see current props.
+    const metadataTabRef = useRef(false);
     const currentPostRef = useRef<Post | null>(null);
     const draftsRef = useRef<PostSummary[]>([]);
     const readyRef = useRef<PostSummary[]>([]);
@@ -312,13 +315,17 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           return;
         }
 
-        // The walking editable predicate — the CodeMirror editor's target is a
-        // DIV inside its contenteditable, which the old tagName-only check
-        // missed and which stands down like a TEXTAREA. Only a small INPUT
-        // lets Cmd/Ctrl+N through (the deliberate new-post-from-anywhere case).
-        const tag = (e.target as HTMLElement).tagName;
-        if (tag === "SELECT") return;
-        if (isEditableTarget(e.target) && (tag !== "INPUT" || e.key !== "n")) return;
+        // A SELECT owns its own type-ahead, so a bare letter belongs to it.
+        if ((e.target as HTMLElement).tagName === "SELECT") return;
+
+        // No blanket stand-down inside a text field. There used to be one, and
+        // it made every chord below dead exactly where the user is: the
+        // CodeMirror editor's event target is a DIV inside its contenteditable,
+        // so reaching for "Run analysis" or a tab while writing did nothing, with
+        // no indication why — while the shortcuts modal documented them all
+        // unconditionally. None of these chords shadows a text-field binding a
+        // web view actually implements; the one rule that does bite, macOS's
+        // Ctrl half belonging to the text system, is applied above.
 
         if (e.key === "n") {
           e.preventDefault();
@@ -338,6 +345,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         }
         const tab = TAB_KEYS[e.key];
         if (tab && selectedPostIdRef.current) {
+          // Metadata is only a tab when the post's target asks for it. Without
+          // this the chord fell through to the pane, which quietly redirected to
+          // Analysis — a documented shortcut landing somewhere else entirely.
+          if (tab === "Metadata" && !metadataTabRef.current) return;
           e.preventDefault();
           setRightTab(tab);
         }
@@ -559,6 +570,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       currentPost && currentPost.frontMatter.id === selectedPostId
         ? targets.find((target) => target.name === currentPost.frontMatter.target) ?? null
         : null;
+    metadataTabRef.current = currentTarget?.requiresMetadata ?? false;
     const postLoading =
       Boolean(selectedPostId) &&
       currentPost?.frontMatter.id !== selectedPostId;

@@ -761,24 +761,50 @@ describe("WorkspaceSession keyboard shortcuts", () => {
     expect(queryByTestId("newpost-modal")).toBeNull();
   });
 
-  it("ignores Cmd+N originating from a TEXTAREA", async () => {
-    const { getByTestId, queryByTestId } = await mountLoaded();
-    const textarea = document.createElement("textarea");
-    document.body.appendChild(textarea);
-    act(() => chord("n", textarea));
-    // TEXTAREA targets bail before the new-post branch.
-    expect(queryByTestId("newpost-modal")).toBeNull();
-    textarea.remove();
-    void getByTestId; // keep the destructure shape consistent with siblings
+  // A blanket stand-down inside text fields used to make every one of these dead
+  // exactly where the user is - the editor's event target is a DIV inside its
+  // contenteditable - while the shortcuts modal documented them unconditionally.
+  // None of them shadows a text-field binding a web view actually implements.
+  it.each([
+    ["a TEXTAREA", () => document.createElement("textarea")],
+    ["an INPUT", () => document.createElement("input")],
+    ["the markdown editor's contenteditable", () => {
+      // jsdom implements neither the contentEditable setter nor
+      // isContentEditable, so the flag has to be defined outright — without it
+      // isEditableTarget's parentElement walk returns false and this case
+      // asserts nothing at all.
+      const host = document.createElement("div");
+      Object.defineProperty(host, "isContentEditable", { value: true });
+      const inner = document.createElement("div");
+      host.appendChild(inner);
+      return host;
+    }],
+  ])("opens new-post from %s", async (_name, make) => {
+    const { getByTestId } = await mountLoaded();
+    const host = make();
+    document.body.appendChild(host);
+
+    act(() => chord("n", host.lastElementChild ?? host));
+
+    expect(getByTestId("newpost-modal")).toBeTruthy();
+    host.remove();
   });
 
-  it("still opens new-post from an INPUT (the one allowed input chord)", async () => {
-    const { getByTestId } = await mountLoaded();
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    act(() => chord("n", input));
-    expect(getByTestId("newpost-modal")).toBeTruthy();
-    input.remove();
+  it("leaves the Ctrl half alone inside a text field on macOS", async () => {
+    // The one rule that genuinely bites: on macOS Ctrl inside a text field
+    // belongs to the text system whatever the key is.
+    const { queryByTestId } = await mountLoaded();
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+
+    const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+    act(() => {
+      fireEvent.keyDown(textarea, { key: "n", ctrlKey: true });
+    });
+
+    if (isApple) expect(queryByTestId("newpost-modal")).toBeNull();
+    else expect(queryByTestId("newpost-modal")).toBeTruthy();
+    textarea.remove();
   });
 });
 

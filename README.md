@@ -1,10 +1,10 @@
 # BigMouth
 
-BigMouth is a local-first **desktop app** (Electron — a React renderer over a Node main process) for writers who want a deliberate, staged review before anything goes out. You draft blog posts and social-media content in Markdown, run Claude-backed quality and safety checks, generate metadata, and export when ready — all on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to the platform of your choice). Data lives in plain per-post Markdown files you can point at any folder and version with git. Single-user, and in early development (0.x), so data formats and features may change without notice before 1.0.
+BigMouth is a local-first **desktop app** for writers who want a deliberate, staged review before anything goes out. You draft blog posts and social-media content in Markdown, run Claude-backed quality and safety checks, generate metadata, and export when ready — all on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to the platform of your choice). Data lives in plain per-post Markdown files you can point at any folder and version with git. Single-user; the AI features are Claude (Anthropic) only, and the macOS build is Apple Silicon only.
 
 ## Features
 
-- **Workspaces** — multiple isolated workspaces (posts, assets, settings, AI config), each pointable at any folder for easy git versioning. API keys are kept outside the workspace, so committing one never leaks a secret.
+- **Workspaces** — multiple isolated workspaces (posts, assets, settings, AI config). API keys are kept outside the workspace, so committing one never leaks a secret.
 - **Markdown editor** with autosave and a Draft → Ready → Published → Expired lifecycle; published and expired posts are locked (move back to Draft or Ready to edit).
 - **AI analysis** — run named prompts against a draft to catch issues before publishing, streamed as the model responds.
 - **AI metadata & imaging** — generate title/slug/tags/SEO description, and temporary English image-prompt variants.
@@ -16,7 +16,7 @@ BigMouth is a local-first **desktop app** (Electron — a React renderer over a 
 
 - macOS or Windows.
 - A Claude (Anthropic) API key for the AI features (analysis, metadata, imaging). Everything else works without one.
-- Node.js 22+ and npm, to build or run from source.
+- Node.js 22.12+ and npm, to build or run from source.
 
 ## Download
 
@@ -34,7 +34,11 @@ npm install
 npm run dev
 ```
 
-The Electron window opens; create a workspace to begin. `scripts/rebuild` produces a packaged build and `scripts/run-built` launches it.
+The Electron window opens; create a workspace to begin. `scripts/rebuild.command` / `.ps1` builds, packages and launches the app; `scripts/run-built.command` / `.ps1` relaunches the existing build without rebuilding.
+
+## Development
+
+`npm run check` is the gate: it typechecks all three environments and runs the suite. The three `tsconfig.*.json` files split the environments — `node` (main + preload + shared), `web` (renderer + shared), and `test` (both). Tests live under `tests/`, mirroring `src/`, and run under Vitest in two projects: `main` on Node and `renderer` on jsdom. `npm run test:coverage` writes a report to the gitignored `coverage/`; it is not a gate and has no threshold.
 
 ## License
 
