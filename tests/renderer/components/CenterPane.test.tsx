@@ -135,8 +135,15 @@ async function renderPane(over: Partial<ReturnType<typeof baseProps>> = {}) {
       <CenterPane {...props} />
     </ConfirmProvider>
   );
-  // Loading resolves asynchronously; wait for the toolbar to appear.
-  await waitFor(() => expect(utils.container.querySelector(".center-toolbar")).toBeTruthy());
+  // Wait for the LOADED state, not merely for the toolbar element. `.center-toolbar`
+  // also renders while loading (it holds the "Loading…" label), so gating on it let this
+  // helper return with the placeholder still on screen — after which every synchronous
+  // getByRole below queries a DOM that has no controls in it yet. That is a race in every
+  // test using this helper, not just the one that happened to lose it (~1 run in 30).
+  // `.center-loading` is present in exactly the not-yet-loaded states and gone once the
+  // post renders, so its absence is the real signal. The error path never uses this
+  // helper — it renders inline and asserts on `.center-loading` itself.
+  await waitFor(() => expect(utils.container.querySelector(".center-loading")).toBeNull());
   return { ...utils, props };
 }
 
@@ -350,11 +357,9 @@ describe("CenterPane locked posts", () => {
         <CenterPane {...baseProps()} />
       </ConfirmProvider>
     );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
+    // Not a fixed number of microtask ticks: how many the load takes is an implementation
+    // detail of the hook, and guessing it is the same race renderPane above just lost.
+    const editor = (await screen.findByTestId("editor")) as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: "sneaky edit" } });
     expect(mockQueueContent).not.toHaveBeenCalled();
   });
