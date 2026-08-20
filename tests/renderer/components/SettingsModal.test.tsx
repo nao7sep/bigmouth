@@ -8,6 +8,7 @@ import type {
   GenerationPromptsData,
 } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
+import { settingsFieldErrors } from "@shared/settingsValidation";
 
 // SettingsModal reaches the main process only through these api functions; mock
 // the whole module so the dialog renders against in-memory fixtures.
@@ -449,7 +450,7 @@ describe("SettingsModal — General tab validation", () => {
     expect(queryByText("Timezone is required.")).toBeNull();
   });
 
-  it("validates the supported-languages list: empty, bad code, and duplicates", async () => {
+  it("validates the supported-languages list: empty and bad code", async () => {
     const { getByDisplayValue, getByText, queryByText } = await renderModal();
     const langs = getByDisplayValue("en, ja");
 
@@ -459,11 +460,18 @@ describe("SettingsModal — General tab validation", () => {
     fireEvent.change(langs, { target: { value: "eng" } });
     expect(getByText("Each language must be a 2-letter lowercase code (e.g. en, ja).")).toBeTruthy();
 
-    fireEvent.change(langs, { target: { value: "en, en" } });
-    expect(getByText("Languages must not contain duplicates.")).toBeTruthy();
-
     fireEvent.change(langs, { target: { value: "en, ja" } });
-    expect(queryByText("Languages must not contain duplicates.")).toBeNull();
+    expect(queryByText("Each language must be a 2-letter lowercase code (e.g. en, ja).")).toBeNull();
+  });
+
+  it("does not treat a duplicate language as an error, because the store folds it away", () => {
+    // The modal used to call duplicates invalid and block Save on them, while
+    // the IPC boundary accepted them and the store de-duplicated and sorted on
+    // save. Commit-time cleanup is the app's answer here, so there is nothing
+    // for the user to fix.
+    expect(
+      settingsFieldErrors({ ...settings(), supportedLanguages: ["en", "en"] }).supportedLanguages,
+    ).toBeUndefined();
   });
 
   it("flags non-positive numeric fields", async () => {

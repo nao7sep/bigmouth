@@ -16,6 +16,7 @@ import {
   CONTENT_PADDING_MAX,
   CONTENT_PADDING_MIN,
 } from "@shared/types";
+import { firstSettingsError, settingsFieldErrors } from "@shared/settingsValidation";
 import {
   getSettings,
   saveSettings,
@@ -169,17 +170,22 @@ export function SettingsModal({
 
   const isValid = (): boolean => {
     if (!settings) return false;
-    if (!Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1) return false;
-    if (!Number.isInteger(settings.maxUploadMb) || settings.maxUploadMb < 1) return false;
-    const langs = settings.supportedLanguages;
-    if (langs.length === 0 || langs.some((l) => !/^[a-z]{2}$/.test(l)) || new Set(langs).size !== langs.length) return false;
-    if (!settings.timezone.trim()) return false;
-    try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); } catch { return false; }
-    const cf = settings.contentFont;
-    if (!Number.isFinite(cf.size) || cf.size < CONTENT_FONT_SIZE_MIN || cf.size > CONTENT_FONT_SIZE_MAX) return false;
-    if (!Number.isFinite(cf.lineHeight) || cf.lineHeight < CONTENT_LINE_HEIGHT_MIN || cf.lineHeight > CONTENT_LINE_HEIGHT_MAX) return false;
-    if (!Number.isFinite(cf.padding) || cf.padding < CONTENT_PADDING_MIN || cf.padding > CONTENT_PADDING_MAX) return false;
-    if (aiConfigs?.configs.some((c) => !c.name.trim() || !c.model.trim())) return false;
+    // The settings fields answer from the one module the inputs render their
+    // messages from, so an inline error can never sit beside an enabled Save.
+    if (firstSettingsError(settings) !== null) return false;
+    if (
+      aiConfigs?.configs.some(
+        (c) =>
+          !c.name.trim() ||
+          !c.model.trim() ||
+          // Rendered under the input at :836 but never gated on, so clearing Max
+          // tokens showed the error AND left Save clickable, writing NaN.
+          validateMaxTokens(c.maxTokens) !== null ||
+          !findModelDef(c.model),
+      )
+    ) {
+      return false;
+    }
     const tNames = targets.map((t) => t.name.trim());
     if (tNames.some((n) => !n) || new Set(tNames).size !== tNames.length) return false;
     if (prompts.some((p) => !p.name.trim() || !p.text.trim())) return false;
@@ -426,22 +432,9 @@ function GeneralTab({
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
-  let timezoneError = "";
-  if (!settings.timezone.trim()) {
-    timezoneError = "Timezone is required.";
-  } else {
-    try { Intl.DateTimeFormat(undefined, { timeZone: settings.timezone }); }
-    catch { timezoneError = `"${settings.timezone}" is not a valid IANA timezone.`; }
-  }
-
-  const langs = settings.supportedLanguages;
-  let langsError = "";
-  if (langs.length === 0) langsError = "At least one language is required.";
-  else if (langs.some((l) => !/^[a-z]{2}$/.test(l))) langsError = "Each language must be a 2-letter lowercase code (e.g. en, ja).";
-  else if (new Set(langs).size !== langs.length) langsError = "Languages must not contain duplicates.";
-
-  const pplInvalid = !Number.isInteger(settings.publishedPostsPerLoad) || settings.publishedPostsPerLoad < 1;
-  const mbInvalid = !Number.isInteger(settings.maxUploadMb) || settings.maxUploadMb < 1;
+  // The same per-field messages the Save gate and the IPC boundary read, so a
+  // message can never appear beside a value one of them would accept.
+  const errors = settingsFieldErrors(settings);
 
   return (
     <div className="settings-section">
@@ -452,7 +445,7 @@ function GeneralTab({
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
         />
-        {timezoneError && <FieldError msg={timezoneError} />}
+        {errors.timezone && <FieldError msg={errors.timezone} />}
       </div>
       <div className="form-field">
         <label className="form-label">Supported languages</label>
@@ -469,7 +462,7 @@ function GeneralTab({
           }
           placeholder="en, ja, es, fr, de"
         />
-        {langsError && <FieldError msg={langsError} />}
+        {errors.supportedLanguages && <FieldError msg={errors.supportedLanguages} />}
       </div>
       <div className="form-field">
         <label className="form-label">Published posts per load</label>
@@ -481,7 +474,7 @@ function GeneralTab({
             update({ publishedPostsPerLoad: parseInt(e.target.value) || 50 })
           }
         />
-        {pplInvalid && <FieldError msg="Must be a positive integer." />}
+        {errors.publishedPostsPerLoad && <FieldError msg={errors.publishedPostsPerLoad} />}
       </div>
       <div className="form-field">
         <label className="form-label">Max upload size (MB)</label>
@@ -493,7 +486,7 @@ function GeneralTab({
             update({ maxUploadMb: parseInt(e.target.value) || 500 })
           }
         />
-        {mbInvalid && <FieldError msg="Must be a positive integer." />}
+        {errors.maxUploadMb && <FieldError msg={errors.maxUploadMb} />}
       </div>
       <div className="form-field">
         <label className="form-label">Editor watermark</label>
@@ -538,14 +531,8 @@ function FontsSection({
   const updateContentFont = (patch: Partial<Settings["contentFont"]>) =>
     update({ contentFont: { ...cf, ...patch } });
 
-  const sizeInvalid =
-    !Number.isFinite(cf.size) || cf.size < CONTENT_FONT_SIZE_MIN || cf.size > CONTENT_FONT_SIZE_MAX;
-  const lineHeightInvalid =
-    !Number.isFinite(cf.lineHeight) ||
-    cf.lineHeight < CONTENT_LINE_HEIGHT_MIN ||
-    cf.lineHeight > CONTENT_LINE_HEIGHT_MAX;
-  const paddingInvalid =
-    !Number.isFinite(cf.padding) || cf.padding < CONTENT_PADDING_MIN || cf.padding > CONTENT_PADDING_MAX;
+  // The same per-field messages the Save gate and the IPC boundary read.
+  const errors = settingsFieldErrors(settings);
 
   const checkboxStyle = { display: "inline-flex", alignItems: "center", gap: 6 } as const;
 
@@ -583,7 +570,7 @@ function FontsSection({
             value={cf.size}
             onChange={(e) => updateContentFont({ size: parseInt(e.target.value) || cf.size })}
           />
-          {sizeInvalid && <FieldError msg={`Must be ${CONTENT_FONT_SIZE_MIN}–${CONTENT_FONT_SIZE_MAX}.`} />}
+          {errors["contentFont.size"] && <FieldError msg={errors["contentFont.size"]} />}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
           <label className="form-label">Line height</label>
@@ -596,8 +583,8 @@ function FontsSection({
             value={cf.lineHeight}
             onChange={(e) => updateContentFont({ lineHeight: parseFloat(e.target.value) || cf.lineHeight })}
           />
-          {lineHeightInvalid && (
-            <FieldError msg={`Must be ${CONTENT_LINE_HEIGHT_MIN}–${CONTENT_LINE_HEIGHT_MAX}.`} />
+          {errors["contentFont.lineHeight"] && (
+            <FieldError msg={errors["contentFont.lineHeight"]} />
           )}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
@@ -613,7 +600,7 @@ function FontsSection({
               updateContentFont({ padding: Number.isNaN(next) ? cf.padding : next });
             }}
           />
-          {paddingInvalid && <FieldError msg={`Must be ${CONTENT_PADDING_MIN}–${CONTENT_PADDING_MAX}.`} />}
+          {errors["contentFont.padding"] && <FieldError msg={errors["contentFont.padding"]} />}
         </div>
       </div>
       <div className="form-field">

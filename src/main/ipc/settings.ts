@@ -2,19 +2,21 @@ import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 import type { ContentFont, Settings } from "@shared/types";
-import {
-  CONTENT_FONT_SIZE_MAX,
-  CONTENT_FONT_SIZE_MIN,
-  CONTENT_LINE_HEIGHT_MAX,
-  CONTENT_LINE_HEIGHT_MIN,
-  CONTENT_PADDING_MAX,
-  CONTENT_PADDING_MIN,
-} from "@shared/types";
+import { firstSettingsError } from "@shared/settingsValidation";
 import { getSettings, saveSettings } from "../core/services/configStore.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
-// Validates the settings payload; throws on the first invalid field.
+/**
+ * Validates the settings payload; throws on the first invalid field.
+ *
+ * TYPE narrowing only — the payload arrives from the renderer as `unknown`, so
+ * something has to establish that it is a Settings at all. The VALUE rules
+ * (which timezones resolve, which language codes are legal, which numbers are
+ * in range) live in `@shared/settingsValidation` and are applied by the handler,
+ * so the modal's messages and this gate cannot disagree. They had: maxUploadMb
+ * was "integer >= 1" on screen and "> 0" here.
+ */
 function validateSettings(body: unknown): asserts body is Settings {
   const s = body as Partial<Record<keyof Settings, unknown>>;
   if (typeof s.timezone !== "string" || !s.timezone.trim()) {
@@ -23,15 +25,11 @@ function validateSettings(body: unknown): asserts body is Settings {
   if (!Array.isArray(s.supportedLanguages) || !s.supportedLanguages.every((l) => typeof l === "string")) {
     throw new Error("supportedLanguages must be an array of strings");
   }
-  if (
-    typeof s.publishedPostsPerLoad !== "number" ||
-    !Number.isInteger(s.publishedPostsPerLoad) ||
-    s.publishedPostsPerLoad < 1
-  ) {
-    throw new Error("publishedPostsPerLoad must be a positive integer");
+  if (typeof s.publishedPostsPerLoad !== "number") {
+    throw new Error("publishedPostsPerLoad must be a number");
   }
-  if (typeof s.maxUploadMb !== "number" || !(s.maxUploadMb > 0)) {
-    throw new Error("maxUploadMb must be a positive number");
+  if (typeof s.maxUploadMb !== "number") {
+    throw new Error("maxUploadMb must be a number");
   }
   if (typeof s.editorWatermark !== "string") {
     throw new Error("editorWatermark must be a string");
@@ -53,31 +51,8 @@ function validateContentFont(value: unknown): asserts value is ContentFont {
   if (typeof f.family !== "string") {
     throw new Error("contentFont.family must be a string");
   }
-  if (
-    typeof f.size !== "number" ||
-    !Number.isFinite(f.size) ||
-    f.size < CONTENT_FONT_SIZE_MIN ||
-    f.size > CONTENT_FONT_SIZE_MAX
-  ) {
-    throw new Error(`contentFont.size must be a number between ${CONTENT_FONT_SIZE_MIN} and ${CONTENT_FONT_SIZE_MAX}`);
-  }
-  if (
-    typeof f.lineHeight !== "number" ||
-    !Number.isFinite(f.lineHeight) ||
-    f.lineHeight < CONTENT_LINE_HEIGHT_MIN ||
-    f.lineHeight > CONTENT_LINE_HEIGHT_MAX
-  ) {
-    throw new Error(
-      `contentFont.lineHeight must be a number between ${CONTENT_LINE_HEIGHT_MIN} and ${CONTENT_LINE_HEIGHT_MAX}`
-    );
-  }
-  if (
-    typeof f.padding !== "number" ||
-    !Number.isFinite(f.padding) ||
-    f.padding < CONTENT_PADDING_MIN ||
-    f.padding > CONTENT_PADDING_MAX
-  ) {
-    throw new Error(`contentFont.padding must be a number between ${CONTENT_PADDING_MIN} and ${CONTENT_PADDING_MAX}`);
+  if (typeof f.size !== "number" || typeof f.lineHeight !== "number" || typeof f.padding !== "number") {
+    throw new Error("contentFont.size, .lineHeight, and .padding must be numbers");
   }
   if (typeof f.bold !== "boolean" || typeof f.italic !== "boolean" || typeof f.underline !== "boolean") {
     throw new Error("contentFont.bold, .italic, and .underline must be booleans");
@@ -95,6 +70,10 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle(CHANNELS.saveSettings, (_event, wsId: string, body: unknown) => {
     const ws = resolveWorkspace(wsId);
     validateSettings(body);
+    // The value rules, from the same module the modal renders its messages from.
+    const invalid = firstSettingsError(body);
+    if (invalid) throw new Error(`${invalid.field}: ${invalid.message}`);
+
     const settings = saveSettings(ws.dataDirectory, body);
     info("settings saved", {
       workspace: ws.id,
