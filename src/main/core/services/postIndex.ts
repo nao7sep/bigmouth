@@ -23,7 +23,7 @@ import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { compareInstants } from "@shared/postOrder";
-import { warn as logWarn } from "./logger.js";
+import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
 
 // One map per workspace data directory, keyed by post id.
@@ -148,8 +148,15 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
       if (item && typeof item.id === "string") map.set(item.id, item);
     }
     return map;
-  } catch {
+  } catch (err) {
     // Corrupt index — treat as absent and rebuild from the source of truth.
+    // The file existed and failed to parse, which is corruption rather than a
+    // cache miss, so it gets a line: without one, a workspace silently rebuilt
+    // its whole index on every launch with nothing to say the file was bad.
+    logWarn("post index unreadable; rebuilding from the post files", {
+      path: indexPath(dataDir),
+      error: serializeError(err),
+    });
     return null;
   }
 }
@@ -232,8 +239,10 @@ function tryEntryFromFile(
     }
     return { entry: projectIndexEntry(post.frontMatter, fileName, post.content) };
   } catch (err) {
+    // `reason` is what the user is shown; the serialized error is what makes the
+    // line diagnosable, and the two are not interchangeable.
     const reason = err instanceof Error ? err.message : String(err);
-    logWarn("post file skipped", { fileName, reason });
+    logWarn("post file skipped", { fileName, reason, error: serializeError(err) });
     return { reason };
   }
 }

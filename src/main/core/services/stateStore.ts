@@ -26,7 +26,7 @@ import type { UiState } from "../shared/types.js";
 import { defaultUiState } from "@shared/types";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { getAppRoot } from "./workspaceStore.js";
-import { warn } from "./logger.js";
+import { serializeError, warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
 let uiState: UiState | null = null;
@@ -87,7 +87,7 @@ export function initStateStore(): UiState {
       return uiState;
     }
     warn("state.json unreadable; using defaults", {
-      error: String(err),
+      error: serializeError(err),
       path: stateJsonPath,
     });
     uiState = defaultUiState();

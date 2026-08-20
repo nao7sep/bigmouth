@@ -103,11 +103,16 @@ function redactInner(value: unknown, seen: WeakSet<object>): unknown {
     return value.map((item) => redactInner(item, seen));
   }
 
-  // Only recurse into plain objects. Exotic objects (Date, etc.) are passed
-  // through so the serializer renders them faithfully instead of flattening
-  // them to `{}`.
-  const proto = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) return value;
+  // A Date is passed through whole so the serializer renders it faithfully
+  // rather than flattening it to `{}`. Everything else is walked.
+  //
+  // This used to pass through EVERY object with a non-plain prototype, which
+  // meant a class instance in a log field was serialized by its own enumerable
+  // properties with nothing redacted — so an `apiKey` on one would have been
+  // written verbatim. Nothing carries a key through that path today, but the
+  // redactor exists as the backstop for the case nobody foresaw, and that is
+  // exactly where an unforeseen object lands.
+  if (value instanceof Date) return value;
 
   const out: Record<string, unknown> = {};
   for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {

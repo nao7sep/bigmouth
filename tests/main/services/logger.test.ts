@@ -230,3 +230,29 @@ describe("durability and fallback", () => {
     initLogger(logsDir);
   });
 });
+
+// The redactor is the backstop for the field nobody thought about, so it has to
+// walk whatever it is handed. It used to pass through every object with a
+// non-plain prototype untouched, and JSON.stringify then wrote that object's own
+// enumerable properties out unredacted.
+describe("redact walks objects that are not plain", () => {
+  it("redacts a denied key on a class instance", () => {
+    class ProviderError extends Error {
+      apiKey = "sk-ant-should-never-be-written";
+      status = 401;
+    }
+
+    const redacted = redact({ cause: new ProviderError("denied") }) as {
+      cause: { apiKey: string; status: number };
+    };
+
+    expect(redacted.cause.apiKey).not.toContain("sk-ant");
+    // Everything else is untouched.
+    expect(redacted.cause.status).toBe(401);
+  });
+
+  it("still renders a Date faithfully rather than flattening it", () => {
+    const when = new Date("2026-08-21T00:00:00.000Z");
+    expect(redact({ when })).toEqual({ when });
+  });
+});

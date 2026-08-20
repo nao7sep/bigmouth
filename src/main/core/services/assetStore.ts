@@ -23,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { serializeError, warn as logWarn } from "./logger.js";
 
 export interface AssetMeta {
   filename: string;
@@ -183,8 +184,15 @@ function readAssetMeta(metaPath: string): AssetMeta[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
     return Array.isArray(parsed) ? (parsed as AssetMeta[]) : [];
-  } catch {
-    // Corrupt cache — treat as absent and rebuild from the files on disk.
+  } catch (err) {
+    // Corrupt cache — treat as absent and rebuild from the files on disk. The
+    // file existed and failed to parse, which is corruption rather than a cache
+    // miss, so it gets a line rather than silence; the dimensions and metadata
+    // flags it held are gone until each asset is re-read.
+    logWarn("asset metadata cache unreadable; rebuilding from the files on disk", {
+      path: metaPath,
+      error: serializeError(err),
+    });
     return [];
   }
 }

@@ -73,6 +73,7 @@ export function registerPostHandlers(): void {
       postId: failure.postId,
       kind: failure.kind,
       message: failure.message,
+      ...(event.kind === "save-failed" ? { error: serializeError(event.error) } : {}),
     });
     broadcast(CHANNELS.postContentSaveFailed, failure);
   });

@@ -203,6 +203,26 @@ describe("AI config API key handling", () => {
     expect(getAiConfigsForClient(ws).configs.find((c) => c.id === "c1")?.name).toBe("Renamed");
   });
 
+  it("applies every editable field, not just the three it used to", () => {
+    // thinking and maxTokens were declared on the patch type, validated by the
+    // IPC handler and logged as changed, then dropped: the store applied only
+    // name/provider/model. The user toggled Thinking or edited Max tokens, the
+    // modal repainted from the returned view with the old values, and every AI
+    // call kept the previous budget.
+    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "k" });
+
+    const returned = updateAiConfig(ws, "c1", { thinking: true, maxTokens: 32000 });
+
+    const applied = returned.configs.find((c) => c.id === "c1");
+    expect(applied?.thinking).toBe(true);
+    expect(applied?.maxTokens).toBe(32000);
+
+    // And it reached disk, not just the returned view.
+    const onDisk = getAiConfigsForClient(ws).configs.find((c) => c.id === "c1");
+    expect(onDisk?.thinking).toBe(true);
+    expect(onDisk?.maxTokens).toBe(32000);
+  });
+
   it("clears the key when apiKey is blank", () => {
     createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-ant-secret" });
     setActiveAiConfig(ws, "c1");

@@ -74,7 +74,7 @@ app.whenReady().then(bootstrap).catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
   console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
   try {
-    logError("bootstrap failed", { error: message });
+    logError("bootstrap failed", { error: serializeError(err) });
   } catch {
     // The logger itself may be what failed; stderr above already carried it.
   }

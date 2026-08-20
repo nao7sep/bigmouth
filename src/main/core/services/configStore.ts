@@ -352,11 +352,21 @@ export function updateAiConfig(
   if (!target) {
     throw new Error(`AI config with id "${id}" not found`);
   }
-  const metadataChanged =
-    patch.name !== undefined || patch.provider !== undefined || patch.model !== undefined;
-  if (patch.name !== undefined) target.name = patch.name;
-  if (patch.provider !== undefined) target.provider = patch.provider;
-  if (patch.model !== undefined) target.model = patch.model;
+  // Applied by walking the editable keys rather than one `if` per field. The
+  // field list was written twice — once in UpdateAiConfigPatch, once here — and
+  // had fallen out of sync: `thinking` and `maxTokens` were declared, validated
+  // by the IPC handler and logged as changed, then dropped on the floor. The
+  // user toggled Thinking or edited Max tokens, saw the modal repaint from the
+  // returned view with the old values, and every AI call kept the old budget.
+  const editable = ["name", "provider", "model", "thinking", "maxTokens"] as const;
+  let metadataChanged = false;
+  for (const key of editable) {
+    if (patch[key] === undefined) continue;
+    // Each key's value type matches the field it is assigned to; the cast is
+    // only because TypeScript cannot see that through a union of keys.
+    Object.assign(target, { [key]: patch[key] });
+    metadataChanged = true;
+  }
   // Key to the secrets file first, so a failure there leaves the workspace file
   // untouched. Rewrite the workspace file only when a non-secret field changed —
   // a key-only edit must not dirty the git-versioned config.json.

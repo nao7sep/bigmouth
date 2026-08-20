@@ -37,7 +37,7 @@ import type { AiProvider } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { utcNow, formatForFilenameMs } from "../shared/timestamps.js";
-import { warn as logWarn } from "./logger.js";
+import { serializeError, warn as logWarn } from "./logger.js";
 
 const SECRETS_FILE_MODE = 0o600;
 const ENFORCE_FILE_MODE = process.platform !== "win32";
@@ -148,7 +148,7 @@ function readFile(filePath: string): ApiKeysFile {
     logWarn("api-keys.json was unreadable; set aside and treating as empty", {
       path: filePath,
       movedTo,
-      error: (err as Error).message,
+      error: serializeError(err),
     });
     return { workspaces: {} };
   }
@@ -159,7 +159,7 @@ function readFile(filePath: string): ApiKeysFile {
     logWarn("api-keys.json was not valid JSON; set aside and treating as empty", {
       path: filePath,
       movedTo,
-      error: (err as Error).message,
+      error: serializeError(err),
     });
     return { workspaces: {} };
   }
