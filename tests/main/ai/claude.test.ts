@@ -550,3 +550,54 @@ describe("generateTextStream", () => {
     await expect(finished).rejects.toThrow(/stream blew up/);
   });
 });
+
+// The guard is an allowlist of the two reasons that mean "finished", not a
+// denylist of the ones known to be bad. It used to enumerate max_tokens and
+// refusal only, so model_context_window_exceeded fell through and a truncated
+// answer was returned as a complete one - the exact class it exists for, missed
+// because the SDK's union grew.
+describe("incomplete completions", () => {
+  function runStream(msg: unknown) {
+    const f = fakeStream();
+    sdk.stream.mockReturnValue(f.handle);
+    const provider = new ClaudeProvider("k", req());
+    const { finished } = provider.generateTextStream("s", "u", () => {});
+    const rejection = finished;
+    f.resolveFinal(msg);
+    return rejection;
+  }
+
+  it.each(["max_tokens", "refusal", "model_context_window_exceeded", "pause_turn", "tool_use"])(
+    "refuses a completion that stopped for %s",
+    async (stop_reason) => {
+      await expect(runStream(message({ text: "partial", stop_reason }))).rejects.toThrow();
+    },
+  );
+
+  it.each(["end_turn", "stop_sequence"])("accepts a completion that stopped for %s", async (stop_reason) => {
+    await expect(runStream(message({ text: "whole", stop_reason }))).resolves.toBe("whole");
+  });
+
+  it("reports the reason the provider gave for a refusal", async () => {
+    // stop_details is populated precisely when the stop reason is a refusal, and
+    // carries the policy category and a human-readable explanation. A bare
+    // "Claude refused the request." threw away the one thing that tells a writer
+    // what to change.
+    const refused = {
+      ...(message({ text: "", stop_reason: "refusal" }) as Record<string, unknown>),
+      stop_details: { type: "refusal", category: "general_harms", explanation: "Draft names a real person." },
+    };
+
+    await expect(runStream(refused)).rejects.toThrow(/Draft names a real person\./);
+    await expect(runStream(refused)).rejects.toThrow(/general_harms/);
+  });
+
+  it("still says something useful when the refusal carries no details", async () => {
+    const refused = {
+      ...(message({ text: "", stop_reason: "refusal" }) as Record<string, unknown>),
+      stop_details: null,
+    };
+
+    await expect(runStream(refused)).rejects.toThrow(/Claude refused the request\./);
+  });
+});

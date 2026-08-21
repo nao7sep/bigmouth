@@ -97,7 +97,7 @@ export class ClaudeProvider implements AiProvider {
     // Surface a truncated/refused response as an error rather than returning a
     // partial result the caller would treat as complete (the same contract as
     // generateJson and generateTextStream).
-    assertCompleteStop(message.stop_reason);
+    assertCompleteStop(message);
 
     const text = textOf(message);
     if (!text) {
@@ -150,12 +150,9 @@ export class ClaudeProvider implements AiProvider {
 
     const message = await stream.finalMessage();
 
-    if (message.stop_reason === "max_tokens") {
-      throw new Error("Claude stopped before completing structured output");
-    }
-    if (message.stop_reason === "refusal") {
-      throw new Error("Claude refused the structured generation request");
-    }
+    // The same allowlist the text paths use, so a stop reason the SDK adds later
+    // cannot slip through here either.
+    assertCompleteStop(message);
 
     const parsed = (message as { parsed_output?: unknown }).parsed_output;
     if (parsed === null || parsed === undefined) {
@@ -222,7 +219,7 @@ export class ClaudeProvider implements AiProvider {
     const finished = stream.finalMessage().then(
       (message) => {
         stopWatchdog();
-        assertCompleteStop(message.stop_reason);
+        assertCompleteStop(message);
         return textOf(message);
       },
       (err: unknown) => {
@@ -256,13 +253,42 @@ function textOf(message: Anthropic.Message): string {
     .join("");
 }
 
-function assertCompleteStop(stopReason: Anthropic.Message["stop_reason"]): void {
+/**
+ * Rejects any completion that is not whole.
+ *
+ * Written as an allowlist of the two reasons that mean "the model finished",
+ * not a denylist of the ones known to be bad. It used to enumerate `max_tokens`
+ * and `refusal` only, so `model_context_window_exceeded` fell straight through
+ * and a truncated answer was returned as a complete one — the exact class the
+ * guard exists for, missed because the SDK's union grew.
+ */
+function assertCompleteStop(message: Anthropic.Message): void {
+  const { stop_reason: stopReason } = message;
+  if (stopReason === "end_turn" || stopReason === "stop_sequence" || stopReason === null) return;
+
   if (stopReason === "max_tokens") {
     // Reached with thinking on and a tight budget too: reasoning shares the output
     // budget, so a hard task can consume all of it and leave no answer behind.
     throw new Error("Claude stopped before completing the response (hit the output token limit).");
   }
   if (stopReason === "refusal") {
-    throw new Error("Claude refused the request.");
+    throw new Error(refusalMessage(message));
   }
+  throw new Error(`Claude stopped before completing the response (${stopReason}).`);
+}
+
+/**
+ * A refusal, with the reason the provider actually gave.
+ *
+ * The SDK populates `stop_details` precisely when the stop reason is a refusal,
+ * and it carries the policy category and a human-readable explanation. Reporting
+ * a bare "Claude refused the request." threw that away and left a writer whose
+ * draft tripped a classifier with a dead end and nothing to act on — while the
+ * one thing that tells them what to change was sitting in the response.
+ */
+function refusalMessage(message: Anthropic.Message): string {
+  const details = message.stop_details;
+  const parts = [details?.explanation, details?.category ? `Category: ${details.category}.` : null]
+    .filter((part): part is string => Boolean(part));
+  return ["Claude refused the request.", ...parts].join(" ");
 }
