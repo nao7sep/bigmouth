@@ -33,13 +33,13 @@ export function registerWorkspaceHandlers(): void {
     }
   });
 
-  ipcMain.handle(CHANNELS.updateWorkspace, (_event, id: string, updates: { name?: string; dataDirectory?: string }) => {
+  ipcMain.handle(CHANNELS.updateWorkspace, (_event, id: string, updates: { name?: string }) => {
+    const name = updates?.name?.trim();
+    if (!name) throw new Error("Workspace name is required");
+
     let ws;
     try {
-      ws = updateWorkspace(id, {
-        name: updates.name?.trim(),
-        dataDirectory: updates.dataDirectory?.trim(),
-      });
+      ws = updateWorkspace(id, { name });
     } catch (err) {
       logError("workspace update failed", { workspaceId: id, error: serializeError(err) });
       throw err instanceof Error ? err : new Error("Failed to update workspace");

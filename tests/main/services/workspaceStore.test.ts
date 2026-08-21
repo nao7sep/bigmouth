@@ -38,6 +38,33 @@ afterEach(() => {
 // One folder must never register as two workspaces. Two registrations mean two
 // ids, two in-memory indexes keyed by different strings writing over a single
 // posts/index.json, and two separate API-key sets for one folder.
+// A halt only makes sense when the user can act on it, and BIGMOUTH_HOME can put
+// the registry anywhere — so every rejection names the file's full path and says
+// it was left in place. A bare JSON.parse used to throw a SyntaxError that
+// reached the user as "Unexpected end of JSON input".
+describe("an unreadable registry names itself", () => {
+  function withRegistry(contents: string): () => void {
+    const home = tempDir("halt");
+    process.env.BIGMOUTH_HOME = home;
+    initAppDir();
+    const registry = path.join(home, "workspaces.json");
+    fs.writeFileSync(registry, contents, "utf-8");
+    return () => initAppDir();
+  }
+
+  it.each([
+    ["truncated JSON", "{ \"workspaces\": ["],
+    ["a JSON value that is not an object", "[]"],
+    ["a workspaces key that is not an array", '{ "workspaces": {} }'],
+    ["a workspace entry missing its fields", '{ "workspaces": [{ "id": "a" }] }'],
+  ])("names the path and says it was left alone for %s", (_name, contents) => {
+    const reload = withRegistry(contents);
+
+    expect(reload).toThrow(/workspaces\.json/);
+    expect(reload).toThrow(/left unchanged/);
+  });
+});
+
 describe("workspace identity", () => {
   it("rejects the same folder reached with a trailing separator", () => {
     const dir = tempDir("dupe");
@@ -136,21 +163,17 @@ describe("openWorkspace gating", () => {
   });
 });
 
-describe("updateWorkspace validates before mutating", () => {
-  it("leaves the name unchanged when the directory change is rejected", () => {
+describe("updateWorkspace renames, and only renames", () => {
+  it("leaves the folder where it is", () => {
+    // It used to take a dataDirectory and re-point the registry entry without
+    // moving a file — a relocation unreachable from the UI that even permitted
+    // an empty target, so surfacing it would have left every post behind.
     const wsDir = tempDir("ws");
     const ws = createWorkspace("Original", wsDir);
 
-    const badDir = tempDir("bad");
-    fs.writeFileSync(path.join(badDir, "junk.txt"), "x"); // non-empty, not a workspace
+    updateWorkspace(ws.id, { name: "Renamed" });
 
-    expect(() =>
-      updateWorkspace(ws.id, { name: "Renamed", dataDirectory: badDir }),
-    ).toThrow();
-
-    // The rejected update must not have applied the name change in memory — the
-    // same objects listWorkspaces hands the renderer — or moved the directory.
-    expect(getWorkspace(ws.id)?.name).toBe("Original");
+    expect(getWorkspace(ws.id)?.name).toBe("Renamed");
     expect(getWorkspace(ws.id)?.dataDirectory).toBe(wsDir);
   });
 
@@ -203,22 +226,7 @@ describe("openOrCreateWorkspace", () => {
   });
 });
 
-describe("updateWorkspace directory change", () => {
-  it("applies a valid directory change to an empty folder", () => {
-    const ws = createWorkspace("WS", tempDir("ws"));
-    const newDir = tempDir("moved");
-    const updated = updateWorkspace(ws.id, { dataDirectory: newDir });
-    expect(updated?.dataDirectory).toBe(newDir);
-    expect(getWorkspace(ws.id)?.dataDirectory).toBe(newDir);
-  });
-
-  it("rejects a directory already registered to another workspace", () => {
-    const a = createWorkspace("A", tempDir("a"));
-    const bDir = tempDir("b");
-    createWorkspace("B", bDir);
-    expect(() => updateWorkspace(a.id, { dataDirectory: bDir })).toThrow(/already registered/i);
-  });
-
+describe("updateWorkspace", () => {
   it("returns null when updating an unknown workspace", () => {
     expect(updateWorkspace("nope", { name: "x" })).toBeNull();
   });

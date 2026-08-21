@@ -243,7 +243,8 @@ export interface BigMouthApi {
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
   openOrCreateWorkspace(name?: string, dataDirectory?: string): Promise<Workspace>;
-  updateWorkspace(id: string, updates: { name?: string; dataDirectory?: string }): Promise<Workspace>;
+  /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
+  updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<void>;
   revealCurrentLogFile(): Promise<string>;
   /** Native folder picker for choosing a workspace directory; null if cancelled. */

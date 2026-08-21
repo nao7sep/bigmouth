@@ -55,10 +55,7 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Pr
   return bridge().openOrCreateWorkspace(name, dataDirectory);
 }
 
-export function updateWorkspace(
-  id: string,
-  updates: { name?: string; dataDirectory?: string },
-): Promise<Workspace> {
+export function updateWorkspace(id: string, updates: { name: string }): Promise<Workspace> {
   return bridge().updateWorkspace(id, updates);
 }
 

@@ -50,7 +50,7 @@ const api = {
   listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,
   openOrCreateWorkspace: (name?: string, dataDirectory?: string) =>
     ipcRenderer.invoke(CHANNELS.openOrCreateWorkspace, name, dataDirectory) as Promise<Workspace>,
-  updateWorkspace: (id: string, updates: { name?: string; dataDirectory?: string }) =>
+  updateWorkspace: (id: string, updates: { name: string }) =>
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
   revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,

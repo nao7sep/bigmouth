@@ -110,12 +110,11 @@ describe("workspace IPC handlers", () => {
     expect(() => invoke(CHANNELS.updateWorkspace, "nope", { name: "x" })).toThrow(/not found/i);
   });
 
-  it("maps a rejected directory update (non-empty folder) to a thrown Error without mutating", () => {
+  it("refuses a rename with no name, rather than clearing it", () => {
     const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Original");
-    const badDir = tempDir("bad");
-    fs.writeFileSync(path.join(badDir, "junk.txt"), "x");
-    expect(() => invoke(CHANNELS.updateWorkspace, ws.id, { name: "Renamed", dataDirectory: badDir })).toThrow();
-    // The rejected update must not have applied the name change.
+
+    expect(() => invoke(CHANNELS.updateWorkspace, ws.id, { name: "   " })).toThrow(/name is required/i);
+    expect(() => invoke(CHANNELS.updateWorkspace, ws.id, {})).toThrow(/name is required/i);
     expect(listWorkspaces()[0].name).toBe("Original");
   });
 

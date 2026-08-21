@@ -33,33 +33,34 @@ function defaultAppConfig(): AppConfig {
   };
 }
 
-function parseAppConfig(raw: unknown): AppConfig {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("Invalid workspaces.json: expected an object");
+/**
+ * Every message here names the file's path and says it was left in place: a halt
+ * is only reasonable when the user can act on it, and `BIGMOUTH_HOME` can put
+ * the registry anywhere.
+ */
+function parseAppConfig(raw: unknown, filePath: string): AppConfig {
+  // A function declaration, not an arrow: TypeScript narrows on a `never` return
+  // from one, which is what lets the callers below read as plain guards instead
+  // of needing an unreachable throw after each.
+  function reject(detail: string): never {
+    throw new Error(
+      `Cannot read the workspace registry at ${filePath}: ${detail}. It was left unchanged.`,
+    );
   }
+
+  if (!raw || typeof raw !== "object") reject("it does not contain a JSON object");
 
   const source = raw as Record<string, unknown>;
-  if (!Array.isArray(source.workspaces)) {
-    throw new Error("Invalid workspaces.json: workspaces must be an array");
-  }
+  const entries = source.workspaces;
+  if (!Array.isArray(entries)) reject("its `workspaces` key is not an array");
 
-  const workspaces = source.workspaces.map((item) => {
-    if (!item || typeof item !== "object") {
-      throw new Error("Invalid workspaces.json: each workspace must be an object");
+  const workspaces = (entries as unknown[]).map((item) => {
+    if (!item || typeof item !== "object") reject("one of its workspaces is not an object");
+    const { id, name, dataDirectory } = item as Record<string, unknown>;
+    if (typeof id !== "string" || typeof name !== "string" || typeof dataDirectory !== "string") {
+      reject("one of its workspaces is missing an id, a name, or a dataDirectory");
     }
-    const record = item as Record<string, unknown>;
-    if (
-      typeof record.id !== "string" ||
-      typeof record.name !== "string" ||
-      typeof record.dataDirectory !== "string"
-    ) {
-      throw new Error("Invalid workspaces.json: each workspace needs id, name, and dataDirectory");
-    }
-    return {
-      id: record.id,
-      name: record.name,
-      dataDirectory: record.dataDirectory,
-    };
+    return { id, name, dataDirectory };
   });
 
   return { workspaces };
@@ -72,8 +73,21 @@ export function initAppDir(): AppConfig {
 
   if (fs.existsSync(registryPath)) {
     const raw = fs.readFileSync(registryPath, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    appConfig = parseAppConfig(parsed);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (cause) {
+      // A halt has to name the store AND its path and say the file was left in
+      // place, because halting only makes sense when there is a way back. A bare
+      // JSON.parse threw a SyntaxError, which reached the user as a startup
+      // dialog reading "Unexpected end of JSON input" — naming neither the file
+      // nor where it is, and BIGMOUTH_HOME can put it anywhere.
+      throw new Error(
+        `Cannot read the workspace registry at ${registryPath}: the file is not valid JSON. It was left unchanged.`,
+        { cause },
+      );
+    }
+    appConfig = parseAppConfig(parsed, registryPath);
   } else {
     appConfig = defaultAppConfig();
     writeAppConfig();
@@ -258,29 +272,24 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
   return createWorkspace(resolveWorkspaceName(name, dir), dir);
 }
 
-export function updateWorkspace(id: string, updates: { name?: string; dataDirectory?: string }): Workspace | null {
+/**
+ * Renames a workspace. Only the name — a workspace's folder is where it is.
+ *
+ * This used to take a `dataDirectory` too, and it re-pointed the registry entry
+ * without moving a single file: a relocation that existed in the data model and
+ * across IPC but was unreachable from the UI, whose only caller passed a name.
+ * It even permitted an EMPTY target, so surfacing it as written would have left
+ * every post behind and presented the user an empty workspace. The
+ * storage-path conventions call that shape a trap. It is gone rather than
+ * finished, because moving a workspace tree is its own feature with its own
+ * failure modes, not a field on a rename.
+ */
+export function updateWorkspace(id: string, updates: { name: string }): Workspace | null {
   const config = ensureLoaded();
   const ws = config.workspaces.find((w) => w.id === id);
   if (!ws) return null;
 
-  // Validate every change before mutating, so a rejected update leaves the
-  // in-memory registry (the same objects listWorkspaces hands the renderer)
-  // untouched rather than half-applied and out of sync with what is on disk.
-  let nextDir: string | undefined;
-  if (updates.dataDirectory !== undefined) {
-    nextDir = expandWorkspacePath(updates.dataDirectory);
-    const existing = findWorkspaceByDirectory(nextDir);
-    if (existing && existing.id !== id) {
-      throw new Error(`That folder is already registered as workspace "${existing.name}".`);
-    }
-    if (!isEmptyDirectory(nextDir) && !isWorkspaceDirectory(nextDir)) {
-      throw new Error("Workspace location must be an empty folder or an existing workspace.");
-    }
-  }
-
-  if (updates.name !== undefined) ws.name = updates.name;
-  if (nextDir !== undefined) ws.dataDirectory = nextDir;
-
+  ws.name = updates.name;
   writeAppConfig();
   return ws;
 }
