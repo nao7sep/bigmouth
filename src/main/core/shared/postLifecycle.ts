@@ -33,23 +33,11 @@
 import type { PostStatus, PostFrontMatter } from "./types.js";
 import { formatUtcIso } from "./timestamps.js";
 
-/** The four states, in the order the UI presents them. The one enumeration. */
-export const POST_STATUSES: readonly PostStatus[] = ["draft", "ready", "published", "expired"];
-
-/** Whether an arbitrary value — a hand-edited front-matter field, an IPC argument — is a status. */
-export function isPostStatus(value: unknown): value is PostStatus {
-  return typeof value === "string" && (POST_STATUSES as readonly string[]).includes(value);
-}
-
-/**
- * Published and expired posts are locked: their content, metadata, and assets
- * are immutable until the post is moved back to Draft or Ready. This is the
- * single source of truth for the lock, shared by the post-update and asset IPC
- * handlers so they can never diverge on which states are editable.
- */
-export function isEditLocked(status: PostStatus): boolean {
-  return status === "published" || status === "expired";
-}
+// The status vocabulary and the lock live in src/shared, because the renderer
+// decides what to disable from the same rule the main process enforces with —
+// and used to re-spell it twice instead, beside a comment here claiming to be
+// the single source of truth.
+export { POST_STATUSES, isEditLocked, isPostStatus } from "@shared/postStatus";
 
 /**
  * Mutates `fm` to reflect a transition to `newStatus`, applying the lifecycle

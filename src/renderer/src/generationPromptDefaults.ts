@@ -1,19 +1,12 @@
 /**
  * Generation prompt field order and labels used by the Settings UI.
  *
- * Prompt text defaults come from the main process so the renderer does not carry
- * its own copy of built-in prompt content.
+ * Prompt text defaults come from the main process, and the key list from
+ * @shared/metadataFields — the renderer carries neither. It used to carry a
+ * byte-identical copy of the keys, which is the half that could actually drift.
  */
 
-export const GENERATION_PROMPT_KEYS = [
-  "title",
-  "titleEn",
-  "slug",
-  "tags",
-  "tagsEn",
-  "metaDescription",
-  "metaDescriptionEn",
-] as const;
+export { GENERATION_PROMPT_KEYS } from "@shared/metadataFields";
 
 export const GENERATION_PROMPT_LABELS: Record<string, string> = {
   title: "Title",

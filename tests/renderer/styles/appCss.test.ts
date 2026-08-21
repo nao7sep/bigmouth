@@ -38,3 +38,37 @@ describe("App.css window chrome", () => {
     expect(block).toMatch(/overflow-x:\s*auto/);
   });
 });
+
+// A computed-style check rather than a text match: the question is what the user
+// actually gets, and a `cursor: pointer` declared later would beat a rule that
+// merely appears in the file.
+describe("App.css disabled cursors", () => {
+  function cursorOf(className: string, disabled: boolean): string {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    const button = document.createElement("button");
+    button.className = className;
+    if (disabled) button.disabled = true;
+    document.body.appendChild(button);
+
+    const cursor = getComputedStyle(button).cursor;
+    button.remove();
+    style.remove();
+    return cursor;
+  }
+
+  // Every one of these kept the hand while dead, because the reset was written
+  // per button class in six places and these were not among them.
+  it.each(["btn-toolbar", "asset-btn", "meta-field-copy", "btn-export", "btn-primary", "action-button"])(
+    "%s shows the arrow when disabled",
+    (className) => {
+      expect(cursorOf(className, true)).toBe("default");
+    },
+  );
+
+  it("still shows the hand when enabled", () => {
+    expect(cursorOf("btn-toolbar", false)).toBe("pointer");
+  });
+});

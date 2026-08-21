@@ -256,7 +256,6 @@ body {
 .btn-new-post:disabled,
 .btn-primary:disabled {
   background: var(--bm-accent-disabled);
-  cursor: default;
 }
 
 .left-sections {
@@ -396,6 +395,16 @@ body {
   border-left: 1px solid var(--bm-border);
 }
 
+/* The one disabled-cursor rule for the whole app. It used to be reset per
+   button class in six places, which missed four more (.btn-toolbar, .asset-btn,
+   .meta-field-copy, .btn-export) and the read-only dropzone — all of which kept
+   advertising the hand while dead. The cursor conventions ask for exactly one
+   place. */
+button:disabled,
+[aria-disabled="true"] {
+  cursor: default;
+}
+
 /* Keyboard cursor: an inset ring (clip-safe inside the rounded, overflow-hidden
    group), distinct from the committed .active fill below. */
 .status-radio:focus-visible {
@@ -444,7 +453,6 @@ body {
 
 .btn-action:disabled {
   opacity: 0.5;
-  cursor: default;
 }
 
 .settings-checkbox {
@@ -922,7 +930,6 @@ body {
 
 .meta-field-generate:disabled {
   opacity: 0.5;
-  cursor: default;
 }
 
 .meta-field-input {
@@ -971,7 +978,6 @@ body {
 
 .btn-generate-all:disabled {
   opacity: 0.5;
-  cursor: default;
 }
 
 /* Modal */
@@ -1030,7 +1036,6 @@ body {
 }
 
 .modal-close:disabled {
-  cursor: default;
   color: var(--bm-text-muted);
   opacity: 0.5;
 }
@@ -1353,6 +1358,13 @@ body {
   transition: border-color 0.15s, background 0.15s;
 }
 
+/* Read-only (a locked post): its click handler returns immediately, so it must
+   stop advertising the hand and stop reacting to a hover it will ignore. */
+.assets-dropzone[aria-disabled="true"]:hover {
+  border-color: var(--bm-border);
+  background: none;
+}
+
 .assets-dropzone:hover,
 .assets-dropzone.drag-over {
   border-color: var(--bm-accent);
@@ -1542,7 +1554,6 @@ body {
 
 .action-button:disabled {
   opacity: 0.5;
-  cursor: default;
 }
 
 .panel-error {

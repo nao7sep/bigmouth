@@ -11,6 +11,7 @@ import {
   onPostContentSaveFailed,
   reportProblem,
 } from "../api";
+import { isEditLocked } from "@shared/postStatus";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
 import { useConfirm } from "./ConfirmHost";
@@ -47,9 +48,6 @@ const STATUS_VALUES: PostStatus[] = STATUS_OPTIONS.map((o) => o.value);
 
 // Published and expired posts are read-only; the editor locks until the post is
 // moved back to Draft or Ready.
-function isLockedStatus(status: PostStatus): boolean {
-  return status === "published" || status === "expired";
-}
 
 export function CenterPane({
   workspaceId,
@@ -136,7 +134,7 @@ export function CenterPane({
   const handleContentChange = (value: string) => {
     // Published and expired posts are locked; the editor is read-only, but guard
     // the save path too so a stray change can never autosave into a locked post.
-    if (post && isLockedStatus(post.frontMatter.status)) return;
+    if (post && isEditLocked(post.frontMatter.status)) return;
     setContent(value);
     notifyContentChange(value);
     setStatusError(null);
@@ -281,7 +279,7 @@ export function CenterPane({
   }
 
   const fm = post.frontMatter;
-  const locked = isLockedStatus(fm.status);
+  const locked = isEditLocked(fm.status);
   const toolbarError = statusError ?? saveError;
 
   return (

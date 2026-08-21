@@ -159,6 +159,7 @@ export function AssetsTab({
       {/* Drop zone */}
       <div
         className={`assets-dropzone${dragOver ? " drag-over" : ""}`}
+        aria-disabled={readOnly || undefined}
         onDragOver={(e) => {
           if (readOnly) return;
           e.preventDefault();

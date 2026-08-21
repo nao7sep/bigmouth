@@ -5,15 +5,7 @@
  * configurable field-specific style/content instructions.
  */
 
-export const GENERATION_PROMPT_KEYS = [
-  "title",
-  "titleEn",
-  "slug",
-  "tags",
-  "tagsEn",
-  "metaDescription",
-  "metaDescriptionEn",
-] as const;
+export { GENERATION_PROMPT_KEYS } from "@shared/metadataFields";
 
 export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
   title:

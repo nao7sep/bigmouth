@@ -6,6 +6,7 @@ import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
 import type { ContentFont, PostFrontMatter, PostMutationResult, Target } from "@shared/types";
+import { isEditLocked } from "@shared/postStatus";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
@@ -53,7 +54,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   ref
 ) {
   const metadataRef = useRef<MetadataTabHandle>(null);
-  const locked = frontMatter?.status === "published" || frontMatter?.status === "expired";
+  const locked = frontMatter ? isEditLocked(frontMatter.status) : false;
 
   // The Metadata tab is only meaningful for targets that require metadata.
   const showMetadata = target?.requiresMetadata ?? false;

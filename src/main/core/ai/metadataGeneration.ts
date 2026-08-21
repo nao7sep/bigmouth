@@ -1,15 +1,11 @@
 import type { PostFrontMatter } from "../shared/types.js";
-import {
-  DEFAULT_GENERATION_PROMPTS,
-  GENERATION_PROMPT_KEYS,
-  systemPromptForField,
-} from "./generationPrompts.js";
+import { DEFAULT_GENERATION_PROMPTS, systemPromptForField } from "./generationPrompts.js";
+import { GENERATION_PROMPT_KEYS, isMetadataField, type MetadataField } from "@shared/metadataFields";
 
-export type MetadataField = (typeof GENERATION_PROMPT_KEYS)[number];
+export type { MetadataField };
+export { isMetadataField };
 export type GeneratedMetadataValue = string | string[];
 export type GeneratedMetadata = Partial<Record<MetadataField, GeneratedMetadataValue>>;
-
-const METADATA_FIELD_SET = new Set<string>(GENERATION_PROMPT_KEYS);
 
 const FIELD_LABELS: Record<MetadataField, string> = {
   title: "Title",
@@ -78,10 +74,6 @@ const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
     description: "An English meta description for the draft, ideally 120-160 characters.",
   },
 };
-
-export function isMetadataField(value: string): value is MetadataField {
-  return METADATA_FIELD_SET.has(value);
-}
 
 export function normalizeMetadataFields(fields: string[]): MetadataField[] {
   const normalized: MetadataField[] = [];
