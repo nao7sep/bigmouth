@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assetFilenameKey,
+  collidingAssetFilenames,
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
@@ -23,5 +24,12 @@ describe("asset filename rules", () => {
 
   it("escapes Windows device names even when they have multiple suffixes", () => {
     expect(sanitizeAssetFilename("CON.backup.txt")).toBe("_CON.backup.txt");
+  });
+
+  it("finds distinct names that collide after sanitizing", () => {
+    expect(collidingAssetFilenames(["draft?.png", "draft*.png", "other.png"])).toEqual([
+      "draft_.png",
+    ]);
+    expect(collidingAssetFilenames(["same.png", "same.png"])).toEqual(["same.png"]);
   });
 });

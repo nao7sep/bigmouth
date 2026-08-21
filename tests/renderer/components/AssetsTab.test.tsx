@@ -204,6 +204,21 @@ describe("AssetsTab upload via file input", () => {
     await waitFor(() => expect(getByRole("button", { name: "Replace" })).toBeTruthy());
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
+
+  it("rejects a batch whose distinct filenames sanitize to the same stored name", async () => {
+    mockListAssets.mockResolvedValue([]);
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { files: [makeFile("draft?.png"), makeFile("draft*.png")] },
+      });
+    });
+
+    expect(getByText(/resolve to the same asset name \(draft_\.png\)/)).toBeTruthy();
+    expect(mockUploadAsset).not.toHaveBeenCalled();
+  });
 });
 
 describe("AssetsTab drag and drop", () => {

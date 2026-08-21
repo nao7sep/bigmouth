@@ -52,24 +52,27 @@ export function extractParagraphs(text: string): string[] {
 
   for (const line of lines) {
     const trimmed = line.trim();
+    // split("\n") leaves the carriage return on CRLF input. Fence grammar is
+    // line-ending agnostic, so remove that terminator before structural checks.
+    const structuralLine = line.endsWith("\r") ? line.slice(0, -1) : line;
 
     // A fence closes only on a run of the SAME character, at least as long as
     // the one that opened it (CommonMark). Toggling on either marker meant a
     // `~~~` inside a ``` block ended it, and everything after was counted as
     // prose - a code sample containing the other marker is ordinary in a post
     // about Markdown.
-    const openingFence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    const openingFence = /^ {0,3}(`{3,}|~{3,})/.exec(structuralLine);
     if (openFence === null && openingFence) {
       const marker = openingFence[1];
       // Backtick info strings cannot themselves contain a backtick.
-      const rest = line.slice(openingFence[0].length);
+      const rest = structuralLine.slice(openingFence[0].length);
       if (marker[0] !== "`" || !rest.includes("`")) {
         openFence = marker;
         flushParagraph();
         continue;
       }
     } else if (openFence !== null) {
-      const closingFence = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+      const closingFence = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(structuralLine);
       if (
         closingFence &&
         closingFence[1][0] === openFence[0] &&

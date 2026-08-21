@@ -30,6 +30,18 @@ export function sanitizeAssetFilename(raw: string): string {
   return WINDOWS_DEVICE_NAMES.has(stem.toLowerCase()) ? `_${trimmed}` : trimmed;
 }
 
+/** Stored names produced more than once in the same upload batch. */
+export function collidingAssetFilenames(rawNames: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const rawName of rawNames) {
+    const storedName = sanitizeAssetFilename(rawName);
+    counts.set(storedName, (counts.get(storedName) ?? 0) + 1);
+  }
+  return [...counts]
+    .filter(([, count]) => count > 1)
+    .map(([storedName]) => storedName);
+}
+
 /** Names reserved for the asset metadata cache and temporary/hidden files. */
 export function isReservedAssetName(name: string): boolean {
   const key = assetFilenameKey(name);

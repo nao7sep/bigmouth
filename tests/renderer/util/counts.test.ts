@@ -122,6 +122,13 @@ describe("code fences", () => {
     ]);
   });
 
+  it("closes fences in text with CRLF line endings", () => {
+    expect(extractParagraphs("before\r\n\r\n```\r\ncode\r\n```\r\n\r\nafter")).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
   it("does not recognize a fence indented four spaces", () => {
     expect(extractParagraphs("before\n\n    ```\ninside\n    ```\n\nafter")).toEqual([
       "before",

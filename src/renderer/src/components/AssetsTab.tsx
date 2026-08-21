@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
-import { sanitizeAssetFilename } from "@shared/assetNames";
+import { collidingAssetFilenames, sanitizeAssetFilename } from "@shared/assetNames";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { XIcon } from "./Icon";
@@ -103,6 +103,15 @@ export function AssetsTab({
     }
 
     if (uploadable.length === 0) return;
+
+    const batchCollisions = collidingAssetFilenames(uploadable.map((file) => file.name));
+    if (batchCollisions.length > 0) {
+      setUploadError(
+        `Some selected files resolve to the same asset name (${batchCollisions.join(", ")}). ` +
+          "Rename them before uploading so none are overwritten.",
+      );
+      return;
+    }
 
     const existingNames = new Set(assets.map((a) => a.filename.normalize("NFC")));
     const dupes = uploadable
