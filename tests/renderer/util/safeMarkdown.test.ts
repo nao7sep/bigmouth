@@ -13,6 +13,16 @@ describe("renderSafeMarkdown", () => {
     expect(html).toContain('href="https://example.com"');
   });
 
+  it("keeps the app's local asset protocol on images", () => {
+    const html = renderSafeMarkdown("![photo](bigmouth-asset://asset/ws/post/photo.png)");
+    expect(html).toContain('src="bigmouth-asset://asset/ws/post/photo.png"');
+  });
+
+  it("still strips scriptable image URLs", () => {
+    const html = renderSafeMarkdown("![bad](javascript:alert(1))");
+    expect(html).not.toContain("javascript:");
+  });
+
   it("strips <script> tags", () => {
     const html = renderSafeMarkdown("<script>alert(1)</script>ok");
     expect(html).not.toContain("<script");

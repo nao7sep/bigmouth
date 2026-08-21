@@ -116,6 +116,43 @@ export function sameDirectory(a: string, b: string): boolean {
 }
 
 /**
+ * Canonicalizes as much of a path as currently exists, then reattaches any
+ * missing tail. This lets containment checks resolve symlinks without requiring
+ * a prospective workspace directory to exist yet.
+ */
+function canonicalDirectoryPath(input: string): string {
+  let existing = path.resolve(input);
+  const tail: string[] = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    tail.unshift(path.basename(existing));
+    existing = parent;
+  }
+
+  try {
+    existing = fs.realpathSync.native(existing);
+  } catch {
+    // path.resolve above remains the best available canonical form.
+  }
+  return path.resolve(existing, ...tail).normalize("NFC");
+}
+
+/** True when `child` is strictly below `parent`, including through symlinks. */
+export function containsDirectory(parent: string, child: string): boolean {
+  const relative = path.relative(
+    canonicalDirectoryPath(parent),
+    canonicalDirectoryPath(child),
+  );
+  return (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+/**
  * Resolves the single storage root: BIGMOUTH_HOME when set and non-empty,
  * otherwise ~/.bigmouth. The root is derived from the home-directory API and
  * never from the working directory or the running code's location, so the same

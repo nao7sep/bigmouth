@@ -17,6 +17,7 @@ import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { forgetWorkspace } from "./activeConfig.js";
 import {
+  containsDirectory,
   expandWorkspacePath,
   getApiKeysPath,
   getDefaultWorkspacesDir,
@@ -155,12 +156,15 @@ function isEmptyDirectory(dir: string): boolean {
   return fs.readdirSync(dir).length === 0;
 }
 
-/** The registered workspace `dir` sits inside, if any. */
-function enclosingWorkspace(dir: string): Workspace | undefined {
-  return ensureLoaded().workspaces.find((workspace) => {
-    const root = workspace.dataDirectory.normalize("NFC");
-    return dir.normalize("NFC").startsWith(root.endsWith(path.sep) ? root : root + path.sep);
-  });
+function assertNoWorkspaceOverlap(dir: string): void {
+  for (const workspace of ensureLoaded().workspaces) {
+    if (containsDirectory(workspace.dataDirectory, dir)) {
+      throw new Error(`That folder is inside workspace "${workspace.name}".`);
+    }
+    if (containsDirectory(dir, workspace.dataDirectory)) {
+      throw new Error(`That folder contains workspace "${workspace.name}".`);
+    }
+  }
 }
 
 function findWorkspaceByDirectory(dir: string): Workspace | undefined {
@@ -216,13 +220,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
         throw new Error("New workspaces can only be created in an empty folder.");
       }
     }
-    const enclosing = enclosingWorkspace(dir);
-    if (enclosing) {
-      // Nesting made the outer workspace's own tree contain a second one, so it
-      // saw a directory it did not create, and deleting the outer folder took
-      // the inner with it.
-      throw new Error(`That folder is inside workspace "${enclosing.name}".`);
-    }
+    assertNoWorkspaceOverlap(dir);
   } else {
     dir = path.join(getDefaultWorkspacesDir(), id);
   }
@@ -254,6 +252,7 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
   if (!isWorkspaceDirectory(dir)) {
     throw new Error("Choose an existing BigMouth workspace folder.");
   }
+  assertNoWorkspaceOverlap(dir);
 
   const workspace: Workspace = {
     id: nanoid(),

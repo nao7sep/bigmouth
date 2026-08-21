@@ -22,7 +22,6 @@ describe("formatForFilename", () => {
     expect(formatForFilename(d)).toBe("20261231-235959-utc");
   });
 });
-
 describe("formatForFilenameMs", () => {
   it("formats a UTC date as yyyymmdd-hhmmss-fff-utc", () => {
     const d = new Date("2026-06-10T03:15:42.123Z");
@@ -51,4 +50,3 @@ describe("formatUtcIso", () => {
     expect(formatUtcIso(d)).toBe("2026-04-05T14:30:22.123Z");
   });
 });
-

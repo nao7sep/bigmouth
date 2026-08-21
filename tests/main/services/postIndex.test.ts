@@ -317,6 +317,40 @@ describe("reconcile", () => {
     expect(listed?.frontMatter.title).toBe("Kept");
   });
 
+  it("drops a stale row when its source file becomes invalid", () => {
+    const keep = createPost(dataDir, "blogger", "en");
+    const broken = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(broken.filePath, "---\nnot: [valid\n---\n\nbody\n", "utf-8");
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(broken.filePath, later, later);
+    clearCache(dataDir);
+
+    const draftIds = listDrafts(dataDir).map((post) => post.frontMatter.id);
+    expect(draftIds).toContain(keep.frontMatter.id);
+    expect(draftIds).not.toContain(broken.frontMatter.id);
+    expect(indexBytes()).not.toContain(broken.frontMatter.id);
+  });
+
+  it("does not overwrite the original row when an edit creates a duplicate id", () => {
+    const original = createPost(dataDir, "blogger", "en");
+    const changed = createPost(dataDir, "blogger", "en");
+    const raw = fs.readFileSync(changed.filePath, "utf-8").replace(
+      changed.frontMatter.id,
+      original.frontMatter.id,
+    );
+    fs.writeFileSync(changed.filePath, raw, "utf-8");
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(changed.filePath, later, later);
+    clearCache(dataDir);
+
+    const matching = listDrafts(dataDir).filter(
+      (post) => post.frontMatter.id === original.frontMatter.id,
+    );
+    expect(matching).toHaveLength(1);
+    expect(getPost(dataDir, original.frontMatter.id)?.filePath).toBe(original.filePath);
+    expect(indexBytes()).not.toContain(path.basename(changed.filePath));
+  });
+
 
   it("drops an entry whose file disappeared out of band", () => {
     const keep = createPost(dataDir, "blogger", "en");

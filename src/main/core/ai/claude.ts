@@ -264,7 +264,7 @@ function textOf(message: Anthropic.Message): string {
  */
 function assertCompleteStop(message: Anthropic.Message): void {
   const { stop_reason: stopReason } = message;
-  if (stopReason === "end_turn" || stopReason === "stop_sequence" || stopReason === null) return;
+  if (stopReason === "end_turn" || stopReason === "stop_sequence") return;
 
   if (stopReason === "max_tokens") {
     // Reached with thinking on and a tight budget too: reasoning shares the output

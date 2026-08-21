@@ -94,6 +94,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
     const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
     const [contentFont, setContentFont] = useState<ContentFont>(DEFAULT_CONTENT_FONT);
+    const [uiFontFamily, setUiFontFamily] = useState("");
     const [timezone, setTimezone] = useState("Asia/Tokyo");
     const [editorContent, setEditorContent] = useState("");
     const [currentPost, setCurrentPost] = useState<Post | null>(null);
@@ -226,13 +227,22 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
       if (settings.timezone?.trim() && isValidTimeZone(settings.timezone)) setTimezone(settings.timezone);
       setContentFont(settings.contentFont);
-      // Apply the UI font family by overriding --bm-font-ui on the document root;
-      // blank reverts to the App.css default. The string is handed to CSS verbatim
-      // (engine-resolved), per the app-chrome-conventions.
-      const uiFont = settings.uiFontFamily?.trim();
-      if (uiFont) document.documentElement.style.setProperty("--bm-font-ui", uiFont);
-      else document.documentElement.style.removeProperty("--bm-font-ui");
+      setUiFontFamily(settings.uiFontFamily?.trim() ?? "");
     }, []);
+
+    useEffect(() => {
+      // The effect owns this global side effect, so a settings request that
+      // resolves after unmount can only attempt an ignored state update; it
+      // cannot overwrite the next workspace's font on document.documentElement.
+      const root = document.documentElement;
+      const previous = root.style.getPropertyValue("--bm-font-ui");
+      if (uiFontFamily) root.style.setProperty("--bm-font-ui", uiFontFamily);
+      else root.style.removeProperty("--bm-font-ui");
+      return () => {
+        if (previous) root.style.setProperty("--bm-font-ui", previous);
+        else root.style.removeProperty("--bm-font-ui");
+      };
+    }, [uiFontFamily]);
 
     const loadConfig = useCallback(async () => {
       const [nextTargets, settings] = await Promise.all([listTargets(), getSettings()]);
@@ -274,7 +284,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           // (its target no longer requires metadata, or no longer matches), and
           // MetadataTab's unmount clears its one-second autosave timers without
           // persisting — so anything typed in the last second went with it.
-          await flushRightPaneChanges();
+          const flushed = await flushRightPaneChanges();
+          if (!flushed) {
+            setLoadError("Metadata changes could not be saved. Resolve them before reloading settings.");
+            return;
+          }
           await Promise.all([loadConfig(), loadPosts()]);
 
           // The open post too: a rename rewrites `target` in every post FILE, so

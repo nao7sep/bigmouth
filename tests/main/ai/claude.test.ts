@@ -55,7 +55,7 @@ function message(opts: {
   const blocks = opts.blocks ?? (opts.text !== undefined ? [{ type: "text", text: opts.text }] : []);
   return {
     content: blocks,
-    stop_reason: opts.stop_reason ?? "end_turn",
+    stop_reason: Object.hasOwn(opts, "stop_reason") ? opts.stop_reason : "end_turn",
     ...(opts.parsed_output !== undefined ? { parsed_output: opts.parsed_output } : {}),
   };
 }
@@ -567,7 +567,7 @@ describe("incomplete completions", () => {
     return rejection;
   }
 
-  it.each(["max_tokens", "refusal", "model_context_window_exceeded", "pause_turn", "tool_use"])(
+  it.each(["max_tokens", "refusal", "model_context_window_exceeded", "pause_turn", "tool_use", null])(
     "refuses a completion that stopped for %s",
     async (stop_reason) => {
       await expect(runStream(message({ text: "partial", stop_reason }))).rejects.toThrow();

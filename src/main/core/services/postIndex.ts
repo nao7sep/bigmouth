@@ -213,10 +213,18 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
       // Written after the index was: its projection may be stale.
       if (modifiedAt(path.join(postsDir(dataDir), fileName)) <= indexedAt) continue;
       const result = tryEntryFromFile(dataDir, fileName);
-      if (!("entry" in result)) continue;
+      if (!("entry" in result)) {
+        // The source file is authoritative. Once it is no longer projectable,
+        // retaining its old row leaves a post in the list that cannot be opened.
+        map.delete(existingId);
+        changed = true;
+        continue;
+      }
       if (canonicalEntryJson(result.entry) === canonicalEntryJson(map.get(existingId)!)) continue;
       map.delete(existingId);
-      map.set(result.entry.id, result.entry);
+      // Match rebuild semantics when an out-of-band edit changes this file's id
+      // to one already owned by another file: keep the first row, never replace it.
+      insertUnique(map, result.entry);
       changed = true;
       continue;
     }

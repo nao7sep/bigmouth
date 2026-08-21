@@ -27,7 +27,6 @@ export function nextIndex(
   if (current === -1) return direction === 1 ? 0 : length - 1;
   return Math.min(Math.max(current + direction, 0), length - 1);
 }
-
 /** Index of `id` in `ids`, or -1 when absent (or `id` is null/undefined). */
 export function indexOfId(ids: readonly string[], id: string | null | undefined): number {
   if (id == null) return -1;
@@ -101,4 +100,3 @@ export function typeAheadMatch(
   }
   return -1;
 }
-

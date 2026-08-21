@@ -43,7 +43,6 @@ describe("nextIndex", () => {
     expect(nextIndex(-1, 0, 0)).toBe(-1);
   });
 });
-
 describe("indexOfId", () => {
   it("finds an id or returns -1", () => {
     expect(indexOfId(["a", "b", "c"], "b")).toBe(1);
@@ -139,4 +138,3 @@ describe("typeAheadMatch", () => {
     expect(typeAheadMatch(labels, 0, "")).toBe(-1);
   });
 });
-

@@ -22,8 +22,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import {
+  assetFilenameKey,
+  isReservedAssetName,
+  sanitizeAssetFilename,
+} from "@shared/assetNames";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { serializeError, warn as logWarn } from "./logger.js";
+
+export { isReservedAssetName } from "@shared/assetNames";
+export const sanitizeFilename = sanitizeAssetFilename;
 
 export interface AssetMeta {
   filename: string;
@@ -120,15 +128,20 @@ export function saveAssetFile(
  * case-insensitively. The human casing of the chosen name is preserved.
  */
 function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): string {
-  const taken = new Set(siblings.map((a) => a.filename.toLowerCase()));
-  if (!taken.has(filename.toLowerCase()) || siblings.some((a) => a.filename === filename)) {
+  const taken = new Set(siblings.map((a) => assetFilenameKey(a.filename)));
+  const requestedKey = assetFilenameKey(filename);
+  const sameSpelling = siblings.find(
+    (asset) => asset.filename.normalize("NFC") === filename.normalize("NFC"),
+  );
+  if (sameSpelling) return sameSpelling.filename;
+  if (!taken.has(requestedKey)) {
     return filename;
   }
   const ext = path.extname(filename);
   const stem = filename.slice(0, filename.length - ext.length);
   for (let n = 1; ; n++) {
     const candidate = `${stem} (${n})${ext}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
+    if (!taken.has(assetFilenameKey(candidate))) return candidate;
   }
 }
 
@@ -205,55 +218,6 @@ function projectAssetFile(dir: string, filename: string): AssetMeta {
     size: stat.size,
     uploadedAt: stat.mtime.toISOString(),
   };
-}
-
-// Characters no filename may carry: C0/C7F controls, and the set Windows
-// forbids outright. Everything else is kept — letters and digits in any script,
-// spaces, parentheses — because an allowlist of `[a-zA-Z0-9._-]` mapped every
-// non-ASCII name to the same string of underscores, and the collision check
-// downstream then read two different files as one re-upload and overwrote.
-const FORBIDDEN_IN_FILENAME = /[\u0000-\u001f\u007f<>:"/\\|?*]/g;
-
-// Windows refuses these stems whatever the extension, so a file named CON.png
-// could not be written there at all.
-const WINDOWS_DEVICE_NAMES = new Set([
-  "con", "prn", "aux", "nul",
-  "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-  "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
-]);
-
-/**
- * Sanitizes an uploaded filename into one that is storable on every platform
- * the app ships to, changing as little as possible: the basename only, with
- * forbidden characters replaced, a Windows device stem escaped, and the
- * trailing dots and spaces Windows silently strips removed here instead — so
- * `meta.json` can never disagree with what is actually on disk.
- */
-export function sanitizeFilename(raw: string): string {
-  const cleaned = path.basename(raw).replace(FORBIDDEN_IN_FILENAME, "_");
-  // A name that is only dots and spaces leaves nothing behind.
-  const trimmed = cleaned.replace(/[. ]+$/, "");
-  if (trimmed === "") return "asset";
-
-  const ext = path.extname(trimmed);
-  const stem = trimmed.slice(0, trimmed.length - ext.length);
-  return WINDOWS_DEVICE_NAMES.has(stem.toLowerCase()) ? `_${trimmed}` : trimmed;
-}
-
-/**
- * Names the asset directory keeps for its own bookkeeping, and therefore never
- * lists: the metadata sidecar, the in-flight temp files `tempName` produces,
- * and hidden files such as `.DS_Store`.
- *
- * The reader and the writer share this one predicate because they must agree.
- * They did not: `reconcileAssets` filtered these out while `saveAssetFile`
- * happily stored them, so an upload named `notes.tmp` or `.env` was written,
- * reported as saved, and then invisible for ever — and one named `meta.json`
- * was worse still, overwritten by the sidecar write on the next line, taking
- * the whole asset list with it.
- */
-export function isReservedAssetName(name: string): boolean {
-  return name === META_FILENAME || name.startsWith(".") || name.toLowerCase().endsWith(".tmp");
 }
 
 /**

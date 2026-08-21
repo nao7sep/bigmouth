@@ -203,6 +203,40 @@ describe("openWorkspace gating", () => {
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog", theme: "dark" }));
     expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
   });
+
+  it("rejects opening a workspace nested inside a registered workspace", () => {
+    const outer = tempDir("open-outer");
+    createWorkspace("Outer", outer);
+    const inner = path.join(outer, "nested");
+    initializeWorkspaceData(inner);
+
+    expect(() => openWorkspace(inner)).toThrow(/inside workspace "Outer"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("rejects opening a workspace that contains a registered workspace", () => {
+    const outer = tempDir("open-containing");
+    const inner = path.join(outer, "nested");
+    initializeWorkspaceData(inner);
+    openWorkspace(inner, "Inner");
+    initializeWorkspaceData(outer);
+
+    expect(() => openWorkspace(outer)).toThrow(/contains workspace "Inner"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("resolves symlinks when checking workspace containment", () => {
+    const outer = tempDir("open-link-outer");
+    createWorkspace("Outer", outer);
+    const inner = path.join(outer, "nested");
+    initializeWorkspaceData(inner);
+    const parent = tempDir("open-link-parent");
+    const link = path.join(parent, "linked-workspace");
+    fs.symlinkSync(inner, link, "dir");
+
+    expect(() => openWorkspace(link)).toThrow(/inside workspace "Outer"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
 });
 
 describe("updateWorkspace renames, and only renames", () => {

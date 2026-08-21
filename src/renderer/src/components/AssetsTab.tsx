@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
+import { sanitizeAssetFilename } from "@shared/assetNames";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { XIcon } from "./Icon";
@@ -28,10 +29,14 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Mirrors the main-process sanitizeFilename logic
-function sanitizeFilename(raw: string): string {
-  const base = raw.split("/").pop() ?? raw;
-  return base.replace(/[^a-zA-Z0-9._-]/g, "_");
+function markdownLabel(filename: string): string {
+  return filename.replace(/([\\\[\]])/g, "\\$1");
+}
+
+function markdownDestination(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 export function AssetsTab({
@@ -99,10 +104,10 @@ export function AssetsTab({
 
     if (uploadable.length === 0) return;
 
-    const existingNames = new Set(assets.map((a) => a.filename));
+    const existingNames = new Set(assets.map((a) => a.filename.normalize("NFC")));
     const dupes = uploadable
-      .map((f) => sanitizeFilename(f.name))
-      .filter((name) => existingNames.has(name));
+      .map((f) => sanitizeAssetFilename(f.name))
+      .filter((name) => existingNames.has(name.normalize("NFC")));
 
     if (dupes.length > 0) {
       const ok = await confirm({
@@ -148,9 +153,11 @@ export function AssetsTab({
 
   const handleInsert = (filename: string) => {
     if (readOnly) return;
+    const label = markdownLabel(filename);
+    const destination = markdownDestination(filename);
     const md = isImage(filename)
-      ? `![${filename}](${filename})`
-      : `[${filename}](${filename})`;
+      ? `![${label}](${destination})`
+      : `[${label}](${destination})`;
     onInsertAtCursor(md);
   };
 

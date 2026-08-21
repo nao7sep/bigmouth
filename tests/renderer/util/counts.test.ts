@@ -114,6 +114,21 @@ describe("code fences", () => {
   it("closes on a longer run of its own character", () => {
     expect(extractParagraphs("before\n\n```\ncode\n`````\n\nafter")).toEqual(["before", "after"]);
   });
+
+  it("does not close on a marker carrying an info string", () => {
+    expect(extractParagraphs("before\n\n```\ncode\n```js\nstill code\n```\n\nafter")).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
+  it("does not recognize a fence indented four spaces", () => {
+    expect(extractParagraphs("before\n\n    ```\ninside\n    ```\n\nafter")).toEqual([
+      "before",
+      "``` inside ```",
+      "after",
+    ]);
+  });
 });
 
 describe("setext underlines", () => {

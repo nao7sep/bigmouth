@@ -10,36 +10,32 @@ interface PreviewTabProps {
   contentFont: ContentFont;
 }
 
-// A markdown image is `![alt](dest)` or `![alt](dest "title")`. Only the bare
-// destination is captured; a title, if present, is carried through untouched.
-const IMAGE = /!\[([^\]]*)\]\(\s*([^\s)]+)((?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?)\s*\)/g;
-
 // Anything already addressable on its own: an absolute URL of any scheme, a
 // protocol-relative URL, a root-relative path, or an in-document anchor.
 const ALREADY_ADDRESSABLE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i;
 
 /**
- * Rewrites bare image filenames to the asset-protocol URL that serves this
- * post's uploads, and leaves every other destination alone.
- *
- * The previous pattern excluded only a leading `/` and ran to the closing
- * paren, so it swallowed the whole rest of the reference: an `https://` image
- * became `bigmouth-asset://asset/ws/post/https%3A%2F%2F…`, a `data:` URI the
- * same, and a titled image had its title encoded into the filename. Every one
- * of those rendered as a broken image — in the tab whose entire job is showing
- * the user what the post will look like.
+ * Resolves a parsed Markdown image destination. Letting Marked parse first
+ * handles encoded spaces, parentheses and optional titles without a second,
+ * incomplete Markdown grammar in a regular expression.
  */
-function resolveAssetImages(markdown: string, postId: string, workspaceId: string): string {
-  return markdown.replace(IMAGE, (whole, alt: string, dest: string, title: string) => {
-    if (ALREADY_ADDRESSABLE.test(dest)) return whole;
-    return `![${alt}](${assetUrl(postId, dest, workspaceId)}${title})`;
-  });
+function resolveAssetImage(href: string, postId: string, workspaceId: string): string {
+  if (ALREADY_ADDRESSABLE.test(href)) return href;
+  let filename = href;
+  try {
+    filename = decodeURIComponent(href);
+  } catch {
+    // A literal malformed percent sequence is still a valid filename.
+  }
+  return assetUrl(postId, filename, workspaceId);
 }
 
 export function PreviewTab({ workspaceId, content, postId, contentFont }: PreviewTabProps) {
   const html = useMemo(() => {
     if (!content.trim()) return null;
-    return renderSafeMarkdown(resolveAssetImages(content, postId, workspaceId));
+    return renderSafeMarkdown(content, {
+      resolveImageUrl: (href) => resolveAssetImage(href, postId, workspaceId),
+    });
   }, [content, postId, workspaceId]);
 
   if (!html) {

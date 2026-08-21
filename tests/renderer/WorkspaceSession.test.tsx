@@ -343,6 +343,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.style.removeProperty("--bm-font-ui");
 });
 
 describe("WorkspaceSession initial load", () => {
@@ -380,6 +381,26 @@ describe("WorkspaceSession initial load", () => {
 
     fireEvent.click(container.querySelector(".toolbar-error-dismiss")!);
     expect(queryByText("disk gone")).toBeNull();
+  });
+
+  it("cannot apply a workspace font after the session unmounts", async () => {
+    let resolveSettings!: (settings: Settings) => void;
+    mockGetSettings.mockReturnValue(
+      new Promise<Settings>((resolve) => {
+        resolveSettings = resolve;
+      }),
+    );
+    document.documentElement.style.setProperty("--bm-font-ui", "Baseline");
+    const { unmount } = renderSession();
+    unmount();
+
+    await act(async () => {
+      resolveSettings({ ...SETTINGS, uiFontFamily: "Late Font" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.documentElement.style.getPropertyValue("--bm-font-ui")).toBe("Baseline");
   });
 });
 
@@ -636,6 +657,30 @@ describe("WorkspaceSession modals", () => {
     });
 
     expect(rightFlush).toHaveBeenCalled();
+  });
+
+  it("does not reload settings when pending metadata cannot be saved", async () => {
+    const { getByTestId, getByText } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    fireEvent.click(getByTestId("left-settings"));
+    mockListTargets.mockClear();
+    mockGetSettings.mockClear();
+    mockListPosts.mockClear();
+    rightFlush.mockReset().mockResolvedValue(false);
+
+    await act(async () => {
+      fireEvent.click(getByTestId("settings-modal-changed"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getByText(/Metadata changes could not be saved/)).toBeTruthy();
+    expect(mockListTargets).not.toHaveBeenCalled();
+    expect(mockGetSettings).not.toHaveBeenCalled();
+    expect(mockListPosts).not.toHaveBeenCalled();
   });
 
   it("opens and closes the shortcuts and about modals", async () => {

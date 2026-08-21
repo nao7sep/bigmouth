@@ -191,6 +191,19 @@ describe("AssetsTab upload via file input", () => {
     });
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
+
+  it("asks before replacing a Unicode filename using the main-process rules", async () => {
+    mockListAssets.mockResolvedValue([asset({ filename: "写真.png" })]);
+    const { container, getByRole } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("写真.png")] } });
+    });
+
+    await waitFor(() => expect(getByRole("button", { name: "Replace" })).toBeTruthy());
+    expect(mockUploadAsset).not.toHaveBeenCalled();
+  });
 });
 
 describe("AssetsTab drag and drop", () => {
@@ -273,6 +286,16 @@ describe("AssetsTab insert", () => {
     const { getByTitle } = await renderTab({ onInsertAtCursor });
     fireEvent.click(getByTitle("Insert at cursor"));
     expect(onInsertAtCursor).toHaveBeenCalledWith("[doc.pdf](doc.pdf)");
+  });
+
+  it("encodes an asset filename that would otherwise break a Markdown destination", async () => {
+    mockListAssets.mockResolvedValue([asset({ filename: "写真 (1).png" })]);
+    const onInsertAtCursor = vi.fn();
+    const { getByTitle } = await renderTab({ onInsertAtCursor });
+    fireEvent.click(getByTitle("Insert at cursor"));
+    expect(onInsertAtCursor).toHaveBeenCalledWith(
+      "![写真 (1).png](%E5%86%99%E7%9C%9F%20%281%29.png)",
+    );
   });
 });
 

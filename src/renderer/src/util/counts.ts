@@ -58,15 +58,23 @@ export function extractParagraphs(text: string): string[] {
     // `~~~` inside a ``` block ended it, and everything after was counted as
     // prose - a code sample containing the other marker is ordinary in a post
     // about Markdown.
-    const fence = /^(`{3,}|~{3,})/.exec(trimmed);
-    if (fence) {
-      const marker = fence[1];
-      if (openFence === null) {
+    const openingFence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (openFence === null && openingFence) {
+      const marker = openingFence[1];
+      // Backtick info strings cannot themselves contain a backtick.
+      const rest = line.slice(openingFence[0].length);
+      if (marker[0] !== "`" || !rest.includes("`")) {
         openFence = marker;
         flushParagraph();
         continue;
       }
-      if (marker[0] === openFence[0] && marker.length >= openFence.length) {
+    } else if (openFence !== null) {
+      const closingFence = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (
+        closingFence &&
+        closingFence[1][0] === openFence[0] &&
+        closingFence[1].length >= openFence.length
+      ) {
         openFence = null;
         flushParagraph();
         continue;

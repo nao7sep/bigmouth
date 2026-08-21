@@ -3,15 +3,13 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 
 // PreviewTab resolves image references through assetUrl; everything else is pure
-// markdown rendering. The real assetUrl returns a custom-protocol URL, which the
-// markdown sanitizer (DOMPurify) strips from <img src> because the scheme isn't
-// allowlisted — so the mock returns a sanitizer-safe relative URL, letting the
-// test assert the rewrite survives all the way to the rendered <img>.
+// markdown rendering. The mock uses the real custom-protocol shape so these
+// tests also prove the sanitizer preserves local uploaded images.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   assetUrl: vi.fn(
     (postId: string, filename: string, workspaceId?: string) =>
-      `resolved/${workspaceId ?? "ws"}/${postId}/${encodeURIComponent(filename)}`
+      `bigmouth-asset://asset/${workspaceId ?? "ws"}/${postId}/${encodeURIComponent(filename)}`
   ),
 }));
 
@@ -50,13 +48,12 @@ describe("PreviewTab", () => {
     const { container } = renderPreview("![alt text](pic.png)");
     expect(mockAssetUrl).toHaveBeenCalledWith("p1", "pic.png", "w1");
     const img = container.querySelector("img");
-    expect(img?.getAttribute("src")).toBe("resolved/w1/p1/pic.png");
+    expect(img?.getAttribute("src")).toBe("bigmouth-asset://asset/w1/p1/pic.png");
     expect(img?.getAttribute("alt")).toBe("alt text");
   });
 
   it("leaves a rooted (leading-slash) image path untouched", () => {
-    // The rewrite regex excludes filenames whose first char is "/", so a rooted
-    // path is passed through verbatim and assetUrl is never called for it.
+    // Rooted paths are already addressable, so assetUrl is never called for one.
     const { container } = renderPreview("![rooted](/already/resolved.png)");
     expect(mockAssetUrl).not.toHaveBeenCalled();
     const img = container.querySelector("img");
@@ -101,12 +98,18 @@ describe("PreviewTab — image destinations it must not touch", () => {
     const { container } = renderWith('![a](photo.png "A caption")');
     const img = container.querySelector("img");
 
-    // The mock stands in for the custom-protocol URL (DOMPurify strips the real
-    // scheme from an img src), so the assertion is that the rewrite happened.
-    expect(img?.getAttribute("src")).toBe("resolved/ws1/p1/photo.png");
+    expect(img?.getAttribute("src")).toBe("bigmouth-asset://asset/ws1/p1/photo.png");
     // The title used to be encoded into the filename.
     expect(img?.getAttribute("src")).not.toContain("caption");
     expect(img?.getAttribute("title")).toBe("A caption");
+  });
+
+  it("resolves an encoded filename with spaces and parentheses", () => {
+    const { container } = renderWith("![photo](%E5%86%99%E7%9C%9F%20%281%29.png)");
+    expect(mockAssetUrl).toHaveBeenCalledWith("p1", "写真 (1).png", "ws1");
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "%E5%86%99%E7%9C%9F%20(1).png",
+    );
   });
 
   it("applies the content font, so reading and writing share a family", () => {
