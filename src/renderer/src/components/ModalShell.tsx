@@ -17,6 +17,12 @@ interface ModalShellProps {
   // (backdrop, close button) and mark the surface busy. Escape is gated by the
   // owner's close guard. Defaults to false.
   closeDisabled?: boolean;
+  /**
+   * The id of stable explanatory text the screen reader should announce with the
+   * title — a confirm's message, for instance. Modals whose body is a form need
+   * none: their fields carry their own labels.
+   */
+  describedBy?: string;
 }
 
 // Anything the browser will focus, in document order. Excludes explicitly
@@ -37,6 +43,7 @@ export function ModalShell({
   autoFocusClose = false,
   modalStyle,
   closeDisabled = false,
+  describedBy,
 }: ModalShellProps) {
   useModalLayer(onClose);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -96,6 +103,7 @@ export function ModalShell({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={describedBy}
         aria-busy={closeDisabled || undefined}
         tabIndex={-1}
       >

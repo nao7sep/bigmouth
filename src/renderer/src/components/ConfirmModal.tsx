@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { ModalShell } from "./ModalShell";
 
 interface ConfirmModalProps {
@@ -26,11 +27,16 @@ export function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const heading = title ?? confirmLabel;
+  const messageId = useId();
 
   return (
-    <ModalShell title={heading} onClose={onCancel} width={360}>
+    <ModalShell title={heading} onClose={onCancel} width={360} describedBy={messageId}>
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{message}</p>
+        {/* Announced with the title: this sentence is the whole content of every
+            confirm in the app, and it is what the choice turns on. */}
+        <p id={messageId} style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+          {message}
+        </p>
         {error && (
           <p className="settings-field-error" style={{ marginTop: 12 }}>
             {error}

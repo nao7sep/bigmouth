@@ -1,6 +1,13 @@
 import type { PostFrontMatter } from "../shared/types.js";
 import { DEFAULT_GENERATION_PROMPTS, systemPromptForField } from "./generationPrompts.js";
-import { GENERATION_PROMPT_KEYS, isMetadataField, type MetadataField } from "@shared/metadataFields";
+import {
+  GENERATED_SLUG,
+  GENERATED_SLUG_MAX_LENGTH,
+  GENERATED_SLUG_PATTERN,
+  GENERATION_PROMPT_KEYS,
+  isMetadataField,
+  type MetadataField,
+} from "@shared/metadataFields";
 
 export type { MetadataField };
 export { isMetadataField };
@@ -33,8 +40,8 @@ const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
   slug: {
     type: "string",
     minLength: 1,
-    maxLength: 60,
-    pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    maxLength: GENERATED_SLUG_MAX_LENGTH,
+    pattern: GENERATED_SLUG_PATTERN,
     description: "A short readable English slug using lowercase letters, numbers, and hyphens only.",
   },
   tags: {
@@ -232,11 +239,11 @@ function normalizeGeneratedField(field: MetadataField, value: unknown): Generate
     throw new Error(`Structured metadata field ${field} was empty`);
   }
 
-  if (field === "slug" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+  if (field === "slug" && !GENERATED_SLUG.test(normalized)) {
     throw new Error("Generated slug was not URL-safe");
   }
-  if (field === "slug" && normalized.length > 60) {
-    throw new Error("Generated slug was longer than 60 characters");
+  if (field === "slug" && normalized.length > GENERATED_SLUG_MAX_LENGTH) {
+    throw new Error(`Generated slug was longer than ${GENERATED_SLUG_MAX_LENGTH} characters`);
   }
 
   return normalized;

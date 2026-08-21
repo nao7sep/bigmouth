@@ -81,3 +81,21 @@ describe("ConfirmHost", () => {
     expect(onConfirm).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("the confirm's message is announced with its title", () => {
+  it("points aria-describedby at the message paragraph", async () => {
+    // The message is the entire content of every confirm in the app and is what
+    // the choice turns on, so a screen reader must read it with the title. No
+    // dialog carried aria-describedby at all.
+    renderHost(vi.fn(), { message: "Delete this post? This cannot be undone." });
+    fireEvent.click(screen.getByText("ask"));
+
+    const dialog = await screen.findByRole("dialog");
+    const describedBy = dialog.getAttribute("aria-describedby");
+
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "Delete this post? This cannot be undone.",
+    );
+  });
+});

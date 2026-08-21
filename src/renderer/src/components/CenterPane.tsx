@@ -325,13 +325,16 @@ export function CenterPane({
         <span className="toolbar-sep" aria-hidden="true" />
         {fm.sourceId ? (
           <>
-            <span
+            {/* A real button: it was a <span> with an onClick and a pointer
+                cursor, which no keyboard could reach at all. */}
+            <button
+              type="button"
               className="toolbar-source"
               onClick={() => void onSelectPost(fm.sourceId!)}
               title={`Source: ${fm.sourceId}`}
             >
               Source
-            </span>
+            </button>
             <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
               Change
             </button>

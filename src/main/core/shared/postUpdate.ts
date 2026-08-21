@@ -1,3 +1,4 @@
+import { ACCEPTED_SLUG } from "@shared/metadataFields";
 import type { PostStatus } from "@shared/types";
 
 import { isEditLocked } from "./postLifecycle.js";
@@ -5,7 +6,7 @@ import type { EditablePostMetadata } from "./types.js";
 
 // Slug must be safe for export filenames and URLs: ASCII alphanumerics, hyphens,
 // and underscores only.
-const SLUG_RE = /^[a-zA-Z0-9_-]+$/;
+
 
 const EDITABLE_FRONT_MATTER_KEYS = [
   "target",
@@ -33,7 +34,7 @@ const RESERVED_FRONT_MATTER_KEYS = new Set([
 
 export function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  return SLUG_RE.test(value) ? value : null;
+  return ACCEPTED_SLUG.test(value) ? value : null;
 }
 
 /**
