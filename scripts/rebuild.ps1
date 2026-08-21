@@ -75,15 +75,12 @@ try {
     if (Test-Path "out") { Remove-Item -Recurse -Force "out" }
     if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
 
-    # The release build type-checks the shipped sources (main/preload + renderer);
-    # the dev server skips this entirely. Tests are checked separately and are not
-    # part of the release build, so they are not gated here.
-    Write-Step "Type-checking production sources (node + web)"
-    Invoke-Native -FilePath "node_modules/.bin/tsc.cmd" -ArgumentList @("--noEmit", "-p", "tsconfig.node.json")
-    Invoke-Native -FilePath "node_modules/.bin/tsc.cmd" -ArgumentList @("--noEmit", "-p", "tsconfig.web.json")
-
-    Write-Step "Building production bundle"
-    Invoke-Native -FilePath "node_modules/.bin/electron-vite.cmd" -ArgumentList @("build")
+    # `npm run build` is the one definition of the release build (type-check the
+    # shipped sources, then bundle). Re-implementing its steps here meant a change
+    # to the pipeline - which CI runs through `npm run dist` - silently left these
+    # launchers running the old one.
+    Write-Step "Type-checking and building production sources"
+    Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "build")
 
     # Package the built output into a real app bundle — the unpacked app only, no
     # installer. This is what gives the app its own identity (correct name)

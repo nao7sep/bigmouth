@@ -26,7 +26,16 @@ import { NewPostModal } from "./components/NewPostModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AboutModal } from "./components/AboutModal";
-import type { ContentFont, Post, PostMutationResult, PostSummary, Settings, Target, Workspace } from "@shared/types";
+import type {
+  ContentFont,
+  Post,
+  PostMutationResult,
+  PostStatus,
+  PostSummary,
+  Settings,
+  Target,
+  Workspace,
+} from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
@@ -436,63 +445,23 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       });
     }, [loadPosts, selectPost]);
 
-    const handlePostUpdated = useCallback((result: PostMutationResult) => {
-
-      // The update returns the canonical list summary (including its derived
-      // excerpt); use it verbatim for the list and the full post for the editor.
-      const summary: PostSummary = { frontMatter: result.summary };
-      const id = result.frontMatter.id;
-      // The open post is the only fallback for a post that isn't in any loaded
-      // list (it was reached via a source link, so its bucket is off the page).
-      const openPostStatus =
-        currentPostRef.current?.frontMatter.id === id
-          ? currentPostRef.current.frontMatter.status
-          : null;
-
-      const next = applyPostMutationToBuckets(
-        {
-          drafts: draftsRef.current,
-          ready: readyRef.current,
-          published: publishedRef.current,
-          publishedTotal: publishedTotalRef.current,
-          expired: expiredRef.current,
-          expiredTotal: expiredTotalRef.current,
-        },
-        summary,
-        result.frontMatter.status,
-        openPostStatus
-      );
-
-      draftsRef.current = next.drafts;
-      readyRef.current = next.ready;
-      publishedRef.current = next.published;
-      publishedTotalRef.current = next.publishedTotal;
-      expiredRef.current = next.expired;
-      expiredTotalRef.current = next.expiredTotal;
-      setDrafts(next.drafts);
-      setReady(next.ready);
-      setPublished(next.published);
-      setPublishedTotal(next.publishedTotal);
-      setPublishedOffset(next.published.length);
-      setExpired(next.expired);
-      setExpiredTotal(next.expiredTotal);
-      setExpiredOffset(next.expired.length);
-
-      if (id === selectedPostIdRef.current) {
-        setCurrentPost(result);
-      }
-    }, []);
-
-    // Background content saves (the main process owns the write cadence) update
-    // the same list buckets; there is no full post payload and no need for one —
-    // the editor already shows the text, only the projection changed.
-    useEffect(() => {
-      const off = onPostContentSaved((event) => {
-        const summary: PostSummary = { frontMatter: event.summary };
+    /**
+     * Re-buckets the lists after one post changed, and publishes the result to
+     * both the refs and the state.
+     *
+     * The two callers — a full post mutation and a background content save —
+     * had a copy of this each: the same bucket call plus six ref writes and
+     * eight setters, twenty-odd lines apiece. They had already begun to differ.
+     */
+    const applyMutatedPost = useCallback(
+      (summary: PostSummary, status: PostStatus, postId: string) => {
+        // The open post is the only fallback for a post that is in no loaded
+        // list (it was reached via a source link, so its bucket is off the page).
         const openPostStatus =
-          currentPostRef.current?.frontMatter.id === event.postId
+          currentPostRef.current?.frontMatter.id === postId
             ? currentPostRef.current.frontMatter.status
             : null;
+
         const next = applyPostMutationToBuckets(
           {
             drafts: draftsRef.current,
@@ -503,15 +472,18 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             expiredTotal: expiredTotalRef.current,
           },
           summary,
-          event.summary.status,
-          openPostStatus
+          status,
+          openPostStatus,
         );
+
+        // Eagerly, because the next mutation may land before React re-renders.
         draftsRef.current = next.drafts;
         readyRef.current = next.ready;
         publishedRef.current = next.published;
         publishedTotalRef.current = next.publishedTotal;
         expiredRef.current = next.expired;
         expiredTotalRef.current = next.expiredTotal;
+
         setDrafts(next.drafts);
         setReady(next.ready);
         setPublished(next.published);
@@ -520,9 +492,33 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         setExpired(next.expired);
         setExpiredTotal(next.expiredTotal);
         setExpiredOffset(next.expired.length);
+      },
+      [],
+    );
+
+    const handlePostUpdated = useCallback((result: PostMutationResult) => {
+
+      // The update returns the canonical list summary (including its derived
+      // excerpt); use it verbatim for the list and the full post for the editor.
+      const summary: PostSummary = { frontMatter: result.summary };
+      const id = result.frontMatter.id;
+
+      applyMutatedPost(summary, result.frontMatter.status, id);
+
+      if (id === selectedPostIdRef.current) {
+        setCurrentPost(result);
+      }
+    }, [applyMutatedPost]);
+
+    // Background content saves (the main process owns the write cadence) update
+    // the same list buckets; there is no full post payload and no need for one —
+    // the editor already shows the text, only the projection changed.
+    useEffect(() => {
+      const off = onPostContentSaved((event) => {
+        applyMutatedPost({ frontMatter: event.summary }, event.summary.status, event.postId);
       });
       return off;
-    }, []);
+    }, [applyMutatedPost]);
 
     const handleNavigateToPost = useCallback(
       async (id: string) => {

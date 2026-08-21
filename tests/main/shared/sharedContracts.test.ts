@@ -9,7 +9,6 @@ import {
   RIGHT_MIN,
   CENTER_MIN,
   DIVIDER,
-  ROW_MIN,
   WINDOW_MIN_WIDTH,
   WINDOW_MIN_HEIGHT,
 } from "@shared/layout";
@@ -27,13 +26,23 @@ describe("assetUrl", () => {
   });
 });
 
-describe("window-minimum derivation", () => {
-  it("derives ROW_MIN as the sum of the pane minimums plus the dividers", () => {
-    expect(ROW_MIN).toBe(LEFT_MIN + CENTER_MIN + RIGHT_MIN + 2 * DIVIDER);
+describe("window minimums", () => {
+  // Deliberately NOT `ROW_MIN === LEFT_MIN + CENTER_MIN + RIGHT_MIN + 2*DIVIDER`:
+  // that restates layout.ts's own expression, so it cannot fail while the source
+  // stands and protects nothing. What can actually go wrong is a pane minimum
+  // being raised without the window minimum following, so the window becomes
+  // draggable narrow enough to crush a pane — which is a property, not a copy of
+  // the formula.
+  it("is wide enough to hold all three panes and the dividers between them", () => {
+    expect(WINDOW_MIN_WIDTH).toBeGreaterThanOrEqual(
+      LEFT_MIN + CENTER_MIN + RIGHT_MIN + 2 * DIVIDER,
+    );
   });
 
-  it("ties the window minimum width to the pane row (no extra horizontal chrome)", () => {
-    expect(WINDOW_MIN_WIDTH).toBe(ROW_MIN);
+  it("gives every pane a real minimum, so none can be squeezed away", () => {
+    for (const min of [LEFT_MIN, CENTER_MIN, RIGHT_MIN]) {
+      expect(min).toBeGreaterThan(0);
+    }
     expect(WINDOW_MIN_HEIGHT).toBeGreaterThan(0);
   });
 });

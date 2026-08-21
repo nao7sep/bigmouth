@@ -55,15 +55,12 @@ fi
 log_step "Cleaning previous build"
 rm -rf out "$OUT_DIR"
 
-# The release build type-checks the shipped sources (main/preload + renderer);
-# the dev server skips this entirely. Tests are checked separately and are not
-# part of the release build, so they are not gated here.
-log_step "Type-checking production sources (node + web)"
-node_modules/.bin/tsc --noEmit -p tsconfig.node.json
-node_modules/.bin/tsc --noEmit -p tsconfig.web.json
-
-log_step "Building production bundle"
-node_modules/.bin/electron-vite build
+# `npm run build` is the one definition of the release build (type-check the
+# shipped sources, then bundle). Re-implementing its steps here meant a change to
+# the pipeline — which CI runs through `npm run dist` — silently left these
+# launchers running the old one.
+log_step "Type-checking and building production sources"
+npm run build
 
 # Package the built output into a real .app bundle — the .app only, no dmg/zip
 # installer; electron-builder ad-hoc-signs on macOS by default. The bundle gives
