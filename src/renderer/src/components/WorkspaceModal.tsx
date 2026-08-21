@@ -217,6 +217,18 @@ export function WorkspaceModal({
     rows,
     selectedId: preferredWorkspaceId,
     onActivate: handleActivateWorkspace,
+    // The row buttons sit outside the tab order, as the composite-control
+    // conventions require — so the keys are how a keyboard reaches them.
+    onRowAction: (id, action) => {
+      const ws = workspaces.find((w) => w.id === id);
+      if (!ws) return;
+      if (action === "rename") {
+        setEditingId(ws.id);
+        setEditName(ws.name);
+        return;
+      }
+      void handleDelete(ws);
+    },
     pageSize: WORKSPACE_PAGE_SIZE,
     composingRef: listComposing.composingRef,
   });

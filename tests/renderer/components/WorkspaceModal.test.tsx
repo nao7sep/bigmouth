@@ -507,3 +507,35 @@ describe("WorkspaceModal — non-dismissable", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+// The row buttons carry tabIndex={-1}, which the composite-control conventions
+// require — and then require the actions to be reachable another way: "drive
+// them from within, by keys on the active row". Nothing did, so a keyboard-only
+// user could arrow through the list and open a workspace, and nothing else.
+describe("WorkspaceModal — row actions from the keyboard", () => {
+  async function openList() {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    return renderModal();
+  }
+
+  it("F2 on the active row starts a rename", async () => {
+    const { getByRole, getByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "F2" });
+
+    // The row turns into its rename field, seeded with the current name.
+    expect(getByDisplayValue("Alpha")).toBeTruthy();
+  });
+
+  it("Delete on the active row asks to delete it", async () => {
+    const { getByRole, findByText } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "Delete" });
+
+    expect(await findByText(/Remove "Alpha" from the workspace list\?/)).toBeTruthy();
+  });
+});

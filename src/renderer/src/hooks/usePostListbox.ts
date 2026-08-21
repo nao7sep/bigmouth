@@ -99,6 +99,7 @@ export function usePostListbox({
   selectedId,
   onActivate,
   onToggleRow,
+  onRowAction,
   pageSize,
   composingRef,
   autoActivateFirst = false,
@@ -118,6 +119,16 @@ export function usePostListbox({
    * selection is, and an unselected one rests on the container.
    */
   autoActivateFirst?: boolean;
+  /**
+   * Per-row actions driven from the active row, by key.
+   *
+   * The composite-control conventions keep a row's action buttons out of the tab
+   * order — which the workspace list did, with `tabIndex={-1}` — and then require
+   * the actions to be reachable some other way: "drive them from within, by keys
+   * on the active row". Nothing did, so a keyboard-only user could arrow through
+   * the workspace list and open one, and nothing else at all.
+   */
+  onRowAction?: (id: string, action: "rename" | "delete") => void;
 }): UsePostListboxResult {
   const baseId = useId();
   const rowDomId = useCallback((id: string) => `${baseId}-opt-${id}`, [baseId]);
@@ -247,6 +258,17 @@ export function usePostListbox({
           if (expandedById.has(resolvedActiveId)) onToggleRow?.(resolvedActiveId);
           else onActivate(resolvedActiveId);
           return;
+        case "F2":
+          if (resolvedActiveId == null || !onRowAction) return;
+          e.preventDefault();
+          onRowAction(resolvedActiveId, "rename");
+          return;
+        case "Delete":
+        case "Backspace":
+          if (resolvedActiveId == null || !onRowAction) return;
+          e.preventDefault();
+          onRowAction(resolvedActiveId, "delete");
+          return;
         default:
           break;
       }
@@ -279,6 +301,7 @@ export function usePostListbox({
       moveTo,
       onActivate,
       onToggleRow,
+      onRowAction,
       expandedById,
       composingRef,
     ],
