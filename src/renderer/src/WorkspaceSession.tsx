@@ -99,10 +99,26 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [loadError, setLoadError] = useState<string | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
-    const sessionAliveRef = useRef(true);
+    /**
+     * Mirrors of state that callbacks registered once — the global key handler,
+     * an in-flight load — have to read at their own moment rather than at the
+     * render that created them.
+     *
+     * Two kinds, and the difference decides where each is written:
+     *
+     *   - read only LATER (selectedPostId, currentPost, metadataTab): assigned
+     *     during render, below. Always current by the time any event fires.
+     *   - read back in the SAME tick as their setter (the list refs, which an
+     *     append or an optimistic bucket update reads before React re-renders):
+     *     assigned at each mutation site, eagerly.
+     *
+     * Every one of them used to carry BOTH — a post-render effect that copied
+     * state into the ref, plus a hand assignment at each mutation site because
+     * that copy lands too late. Two mechanisms maintaining one mirror, so a new
+     * mutation site that forgot the hand assignment read stale for a render and
+     * the effect hid it.
+     */
     const selectedPostIdRef = useRef<string | null>(null);
-    // Whether the open post's target asks for a Metadata tab, read by the global
-    // key handler — which is registered once and so cannot see current props.
     const metadataTabRef = useRef(false);
     const currentPostRef = useRef<Post | null>(null);
     const draftsRef = useRef<PostSummary[]>([]);
@@ -111,45 +127,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const publishedTotalRef = useRef(0);
     const expiredRef = useRef<PostSummary[]>([]);
     const expiredTotalRef = useRef(0);
-
-    useEffect(() => {
-      sessionAliveRef.current = true;
-      return () => {
-        sessionAliveRef.current = false;
-      };
-    }, []);
-
-    useEffect(() => {
-      selectedPostIdRef.current = selectedPostId;
-    }, [selectedPostId]);
-
-    useEffect(() => {
-      currentPostRef.current = currentPost;
-    }, [currentPost]);
-
-    useEffect(() => {
-      draftsRef.current = drafts;
-    }, [drafts]);
-
-    useEffect(() => {
-      readyRef.current = ready;
-    }, [ready]);
-
-    useEffect(() => {
-      publishedRef.current = published;
-    }, [published]);
-
-    useEffect(() => {
-      publishedTotalRef.current = publishedTotal;
-    }, [publishedTotal]);
-
-    useEffect(() => {
-      expiredRef.current = expired;
-    }, [expired]);
-
-    useEffect(() => {
-      expiredTotalRef.current = expiredTotal;
-    }, [expiredTotal]);
 
     const flushRightPaneChanges = useCallback(
       async () => (await rightPaneRef.current?.flushPendingChanges()) ?? true,
@@ -196,11 +173,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         expiredOffset?: number;
         append?: "published" | "expired";
       }) => {
-        if (!sessionAliveRef.current) return;
         const pubOffset = opts?.publishedOffset ?? 0;
         const expOffset = opts?.expiredOffset ?? 0;
         const data = await listPosts(pubOffset, pubBatchSize, expOffset);
-        if (!sessionAliveRef.current) return;
 
         draftsRef.current = data.drafts;
         readyRef.current = data.ready;
@@ -252,7 +227,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const loadConfig = useCallback(async () => {
       const [nextTargets, settings] = await Promise.all([listTargets(), getSettings()]);
-      if (!sessionAliveRef.current) return;
       setTargets(nextTargets);
       applySettings(settings);
     }, [applySettings]);
@@ -263,7 +237,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // Surface load failures instead of swallowing them: a failed targets load
       // would otherwise leave the New Post dialog silently empty.
       Promise.all([loadPosts(), loadConfig()]).catch((err) => {
-        if (cancelled || !sessionAliveRef.current) return;
+        if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : "Failed to load this workspace.");
       });
       return () => {
@@ -283,7 +257,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      * name too.
      */
     const reloadConfig = useCallback(() => {
-      if (!sessionAliveRef.current) return;
       setLoadError(null);
 
       void (async () => {
@@ -298,11 +271,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           // The open post too: a rename rewrites `target` in every post FILE, so
           // the copy in memory is stale and would match no target at all.
           const openId = selectedPostIdRef.current;
-          if (openId && sessionAliveRef.current) {
+          if (openId) {
             setCurrentPost(await getPost(openId));
           }
         } catch (err) {
-          if (!sessionAliveRef.current) return;
           setLoadError(err instanceof Error ? err.message : "Failed to reload settings.");
         }
       })();
@@ -397,14 +369,12 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const handleCreatePost = async (target: string, language: string, sourceId?: string) => {
       const post = await createPost(target, language, sourceId);
-      if (!sessionAliveRef.current) return;
       setNewPostOpen(false);
       await loadPosts();
       await selectPost(post.frontMatter.id);
     };
 
     const handlePostDeleted = useCallback(() => {
-      if (!sessionAliveRef.current) return;
       const deletedId = selectedPostIdRef.current;
       // Drop only the deleted post from the back stack (it can't be navigated to
       // anymore), keeping the rest so Back still works through the other posts.
@@ -462,13 +432,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // Not in any loaded section (rare): clear and reload to resync.
       void selectPost(null, { skipFlush: true });
       loadPosts().catch((err) => {
-        if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to refresh posts.");
       });
     }, [loadPosts, selectPost]);
 
     const handlePostUpdated = useCallback((result: PostMutationResult) => {
-      if (!sessionAliveRef.current) return;
 
       // The update returns the canonical list summary (including its derived
       // excerpt); use it verbatim for the list and the full post for the editor.
@@ -520,7 +488,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // the editor already shows the text, only the projection changed.
     useEffect(() => {
       const off = onPostContentSaved((event) => {
-        if (!sessionAliveRef.current) return;
         const summary: PostSummary = { frontMatter: event.summary };
         const openPostStatus =
           currentPostRef.current?.frontMatter.id === event.postId
@@ -580,7 +547,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const handleLoadMorePublished = useCallback(() => {
       setLoadError(null);
       loadPosts({ publishedOffset, append: "published" }).catch((err) => {
-        if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
       });
     }, [loadPosts, publishedOffset]);
@@ -588,7 +554,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const handleLoadMoreExpired = useCallback(() => {
       setLoadError(null);
       loadPosts({ expiredOffset, append: "expired" }).catch((err) => {
-        if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
       });
     }, [loadPosts, expiredOffset]);
@@ -598,10 +563,12 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         setLoadError(null);
         await revealCurrentLogFile();
       } catch (err) {
-        if (!sessionAliveRef.current) return;
         setLoadError(err instanceof Error ? err.message : "Failed to reveal current log file.");
       }
     }, []);
+
+    selectedPostIdRef.current = selectedPostId;
+    currentPostRef.current = currentPost;
 
     const currentTarget =
       currentPost && currentPost.frontMatter.id === selectedPostId

@@ -838,6 +838,35 @@ describe("WorkspaceSession keyboard shortcuts", () => {
   });
 });
 
+// The session used to carry a sessionAliveRef, checked at 13 async paths before
+// every setState. It guarded nothing: App mounts this component with
+// key={workspace.id}, so a switch is a full remount with fresh state and fresh
+// refs, and React 18+ made a setState after unmount a silent no-op rather than a
+// warning. Deleting it is only safe if that is actually true, so this asserts it.
+describe("a load that outlives the session", () => {
+  it("settles after unmount without throwing or warning", async () => {
+    let resolveList: (value: PostListResponse) => void = () => {};
+    mockListPosts.mockReturnValueOnce(
+      new Promise<PostListResponse>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { unmount } = renderSession();
+    unmount();
+
+    await act(async () => {
+      resolveList(LIST);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+});
+
 describe("WorkspaceSession imperative flush handle", () => {
   it("exposes flushPendingChanges that flushes the metadata pane", async () => {
     const ref = { current: null } as React.RefObject<WorkspaceSessionHandle | null>;
