@@ -68,6 +68,8 @@ export function CenterPane({
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
+  // True while a delete confirmation is open or resolving. See openDeleteConfirm.
+  const deletingRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { copiedKey, copy: copyContent } = useCopyFeedback();
@@ -195,6 +197,20 @@ export function CenterPane({
   });
 
   const openDeleteConfirm = async () => {
+    // One at a time. Nothing disabled the button and nothing guarded re-entry,
+    // so two fast clicks queued two confirms: the first deleted the post and
+    // moved the selection, then the second asked to delete a post that was
+    // already gone and ran deletePost on the stale id from an unmounted pane.
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    try {
+      await runDeleteConfirm();
+    } finally {
+      deletingRef.current = false;
+    }
+  };
+
+  const runDeleteConfirm = async () => {
     let referrerCount = 0;
     try {
       const { count } = await listReferrers(postId, workspaceId);

@@ -53,3 +53,29 @@ describe("extractFields", () => {
     expect("metaDescriptionEn" in en).toBe(false);
   });
 });
+
+// Zero-width characters are deliberately not whitespace to the cleanup helpers -
+// the conventions say so, and ZWJ is structural inside emoji - so this is the
+// "separate, explicit step" they reserve. Both cases arrive by an ordinary paste
+// from a web page.
+describe("a value with nothing visible in it", () => {
+  const ZWSP = "\u200b";
+
+  it("commits a zero-width-only title as empty, not as a blank row in the list", () => {
+    expect(parseFieldValue("title", ZWSP)).toBe("");
+    expect(parseFieldValue("title", `${ZWSP}  ${ZWSP}`)).toBe("");
+  });
+
+  it("drops a zero-width-only tag instead of storing an invisible one", () => {
+    expect(parseFieldValue("tags", `alpha, ${ZWSP}, beta`)).toEqual(["alpha", "beta"]);
+    expect(parseFieldValue("tags", ZWSP)).toEqual([]);
+  });
+
+  it("never strips the characters from a value that has other content", () => {
+    // ZWJ holds a family emoji together; removing it would split one glyph into
+    // four. This decides presence, it does not scrub.
+    const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
+    expect(parseFieldValue("title", family)).toBe(family);
+    expect(parseFieldValue("tags", family)).toEqual([family]);
+  });
+});

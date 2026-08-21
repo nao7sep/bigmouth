@@ -438,6 +438,31 @@ describe("CenterPane delete", () => {
     await waitFor(() => expect(onPostDeleted).toHaveBeenCalledTimes(1));
   });
 
+  it("queues no second confirm when Delete is clicked twice", async () => {
+    // Nothing disabled the button and nothing guarded re-entry, so two fast
+    // clicks enqueued two confirms: the first deleted the post and moved the
+    // selection, then the second asked to delete a post that was already gone.
+    mockListReferrers.mockResolvedValue({ count: 0, ids: [] });
+    mockDeletePost.mockResolvedValue(undefined);
+    const { container } = await renderPane();
+
+    const button = container.querySelector(".btn-delete")!;
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByText("Delete this post? This cannot be undone.");
+
+    const confirmBtn = document
+      .querySelector(".modal-footer")!
+      .querySelector("button.btn-delete") as HTMLButtonElement;
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(mockDeletePost).toHaveBeenCalledTimes(1));
+    // And no second dialog is waiting behind the first.
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this post? This cannot be undone.")).toBeNull(),
+    );
+  });
+
   it("does not delete when the confirm is cancelled", async () => {
     mockListReferrers.mockResolvedValue({ count: 0, ids: [] });
     await renderPane();

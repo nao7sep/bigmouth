@@ -200,6 +200,9 @@ export function App() {
     });
   }, []);
 
+  // Tears down an in-flight splitter drag: set while one is running, null otherwise.
+  const activeDragRef = useRef<(() => void) | null>(null);
+
   const startDrag = useCallback(
     (
       e: ReactMouseEvent,
@@ -224,19 +227,32 @@ export function App() {
         setIntent(clamp(startW + sign * (ev.clientX - startX), min, max));
       };
       const onUp = () => {
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
+        endDrag();
         // Only a drag persists, and it persists the INTENT (px) to state.json.
         // Resize and mount never reach here, so they never overwrite the stored value.
-        void updateUiState({ [stateKey]: intentRef.current });
+        void updateUiState({ [stateKey]: intentRef.current }).catch((err: unknown) => {
+          reportProblem("could not save the pane width", err, { stateKey });
+        });
+      };
+      const endDrag = () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        activeDragRef.current = null;
       };
+
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
+      // Held so unmount can tear the drag down. Without it, a session torn down
+      // mid-drag (a workspace switch fired from a menu, say) left both document
+      // listeners attached and the body stuck with col-resize and no selection.
+      activeDragRef.current = endDrag;
     },
     []
   );
+
+  useEffect(() => () => activeDragRef.current?.(), []);
 
   if (!wsChecked) return null;
 

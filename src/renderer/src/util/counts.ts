@@ -38,7 +38,9 @@ export function xWeightedCount(text: string): number {
 export function extractParagraphs(text: string): string[] {
   const lines = text.split("\n");
   const paragraphs: string[] = [];
-  let inCodeBlock = false;
+  // The fence that opened the current code block, or null outside one. The
+  // marker itself matters, not just the fact of being inside.
+  let openFence: string | null = null;
   let currentParagraph: string[] = [];
 
   const flushParagraph = () => {
@@ -51,13 +53,27 @@ export function extractParagraphs(text: string): string[] {
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Toggle code blocks
-    if (/^(`{3,}|~{3,})/.test(trimmed)) {
-      inCodeBlock = !inCodeBlock;
-      flushParagraph();
-      continue;
+    // A fence closes only on a run of the SAME character, at least as long as
+    // the one that opened it (CommonMark). Toggling on either marker meant a
+    // `~~~` inside a ``` block ended it, and everything after was counted as
+    // prose - a code sample containing the other marker is ordinary in a post
+    // about Markdown.
+    const fence = /^(`{3,}|~{3,})/.exec(trimmed);
+    if (fence) {
+      const marker = fence[1];
+      if (openFence === null) {
+        openFence = marker;
+        flushParagraph();
+        continue;
+      }
+      if (marker[0] === openFence[0] && marker.length >= openFence.length) {
+        openFence = null;
+        flushParagraph();
+        continue;
+      }
+      // A shorter or different fence inside a block is just code.
     }
-    if (inCodeBlock) continue;
+    if (openFence !== null) continue;
 
     // Skip non-prose lines
     if (
@@ -67,7 +83,7 @@ export function extractParagraphs(text: string): string[] {
       /^\d+[.)]\s/.test(trimmed) ||         // ordered list items
       /^\|.*\|$/.test(trimmed) ||           // table rows
       /^[-*_]{3,}$/.test(trimmed) ||        // horizontal rules (---, ***, ___)
-      /^={3,}$/.test(trimmed) ||            // setext heading underlines
+      /^=+$/.test(trimmed) ||               // setext heading underlines (one `=` is enough)
       /^>/.test(trimmed) ||                 // blockquotes
       /^!\[.*\]\(.*\)$/.test(trimmed) ||   // standalone images
       /^\[.*\]:\s/.test(trimmed) ||         // link reference definitions

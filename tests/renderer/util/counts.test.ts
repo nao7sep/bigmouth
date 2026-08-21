@@ -91,3 +91,35 @@ describe("computeCounts", () => {
     expect(counts.longestParagraphLength).toBe(0);
   });
 });
+
+// A fence closes only on a run of the SAME character, at least as long as the one
+// that opened it. Toggling on either marker meant a `~~~` inside a ``` block
+// ended it and everything after was counted as prose - which a post ABOUT
+// Markdown will contain as a matter of course.
+describe("code fences", () => {
+  it("is not closed by the other fence character", () => {
+    expect(extractParagraphs("before\n\n```\nx\n~~~\ny\n```\n\nafter")).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
+  it("is not closed by a shorter run of its own character", () => {
+    expect(extractParagraphs("before\n\n````\n```\ncode\n````\n\nafter")).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
+  it("closes on a longer run of its own character", () => {
+    expect(extractParagraphs("before\n\n```\ncode\n`````\n\nafter")).toEqual(["before", "after"]);
+  });
+});
+
+describe("setext underlines", () => {
+  it("excludes an underline of any length, not just three or more", () => {
+    // CommonMark allows a single `=`, and it was counted as prose.
+    expect(extractParagraphs("Title\n==\n\nbody")).toEqual(["Title", "body"]);
+    expect(extractParagraphs("Title\n=\n\nbody")).toEqual(["Title", "body"]);
+  });
+});
