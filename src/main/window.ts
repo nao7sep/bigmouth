@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
+import { getUiState, updateUiState } from "./core/services/stateStore.js";
 
 // Matches the renderer `--bm-bg` (#f4efe8 in App.css) so the pre-paint window
 // background does not flash a different color before the page loads.
@@ -53,6 +54,32 @@ export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {
   };
 }
 
+/**
+ * Restores the saved zoom level and keeps it saved.
+ *
+ * Electron's zoom roles mutate webContents in memory only, so a user who zoomed
+ * for readability was back at 100% on every relaunch with no indication why —
+ * the app-chrome conventions require the level to persist wherever zoom exists.
+ * `zoom-changed` covers the trackpad/scroll gesture; the menu roles do not fire
+ * it, so the level is read back after each of them too.
+ */
+function persistZoom(window: BrowserWindow): void {
+  const { zoomLevel } = getUiState();
+  window.webContents.setZoomLevel(zoomLevel);
+
+  const remember = (): void => {
+    const level = window.webContents.getZoomLevel();
+    if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
+  };
+
+  window.webContents.on("zoom-changed", () => setTimeout(remember, 0));
+  // The menu roles change the level without an event; polling once per change is
+  // not possible, so the level is captured when the window loses focus and at
+  // close — both are moments the user has stopped adjusting.
+  window.on("blur", remember);
+  window.on("close", remember);
+}
+
 export function createMainWindow(): BrowserWindow {
   // BigMouth is a light app; force the light theme so a dark-mode host still
   // paints a light native title bar that matches the UI (app-chrome-conventions).
@@ -61,6 +88,7 @@ export function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow(buildWindowOptions());
 
   window.once("ready-to-show", () => {
+    persistZoom(window);
     window.show();
   });
 

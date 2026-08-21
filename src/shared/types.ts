@@ -38,6 +38,10 @@ export interface UiState {
   paneLeftWidth: number;   // left side-pane INTENT width (px); display is clamped at render time
   paneRightWidth: number;  // right side-pane INTENT width (px)
   activeWorkspaceId: string; // last-selected workspace id; "" = none (open the picker)
+  // Electron's zoom LEVEL (not a factor): 0 is 100%, each step is ~1.2x. The View
+  // menu's zoom roles mutate webContents in memory only, so without persisting it
+  // a user who zoomed for readability was back at 100% every launch, silently.
+  zoomLevel: number;
 }
 
 /** A fresh UI state: default pane widths and no remembered workspace. */
@@ -46,6 +50,7 @@ export function defaultUiState(): UiState {
     paneLeftWidth: DEFAULT_PANE_LEFT_WIDTH,
     paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
     activeWorkspaceId: "",
+    zoomLevel: 0,
   };
 }
 

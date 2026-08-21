@@ -63,7 +63,29 @@ describe("stateStore — persistence", () => {
     initStateStore();
     updateUiState({ activeWorkspaceId: "ws-1", paneLeftWidth: 400, paneRightWidth: 600 });
     const after = updateUiState({ paneRightWidth: 700 });
-    expect(after).toEqual({ paneLeftWidth: 400, paneRightWidth: 700, activeWorkspaceId: "ws-1" });
+    expect(after).toEqual({
+      ...defaultUiState(),
+      paneLeftWidth: 400,
+      paneRightWidth: 700,
+      activeWorkspaceId: "ws-1",
+    });
+  });
+
+  it("remembers the zoom level across a reload", () => {
+    // Electron's zoom roles mutate webContents in memory only, so a user who
+    // zoomed for readability was back at 100% on every launch, silently.
+    initStateStore();
+    updateUiState({ zoomLevel: 1.5 });
+
+    initStateStore();
+
+    expect(getUiState().zoomLevel).toBe(1.5);
+  });
+
+  it("falls back to the default zoom when the stored value is not a number", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: "big" }), "utf-8");
+    initStateStore();
+    expect(getUiState().zoomLevel).toBe(defaultUiState().zoomLevel);
   });
 });
 

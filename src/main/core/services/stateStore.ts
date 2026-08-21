@@ -8,22 +8,23 @@
  * conventions): a settings reset must not touch it, and its splitter-drag churn
  * must never rewrite a config file.
  *
- * Unlike the registry, this file is disposable:
- *   - Written with the bare atomic writer, NOT the managed-text choke point — it
- *     is deliberately NOT recorded to the data-backup store. Losing it costs only
- *     default pane widths and a reopened workspace picker; recording every splitter
- *     drag would just churn the backup history (data-backup conventions: the
- *     no-record sites each state their reason inline, as here).
+ * Unlike the registry, losing this file costs almost nothing — default pane
+ * widths and a reopened workspace picker — which shapes two of its three rules
+ * but not the third:
  *   - Materialized lazily: a missing file returns defaults WITHOUT writing (the
  *     convention's "state is written only once there is something to record").
  *   - Self-healing: an invalid file falls back to defaults because nothing here
  *     has recovery value.
+ *   - Recorded, like every other managed text store. It used to be excluded on a
+ *     churn argument, which the data-backup conventions answer directly: a text
+ *     row is tiny, and the store's per-path hash dedup means a save that changes
+ *     nothing writes nothing.
  */
 
 import fs from "node:fs";
 import type { UiState } from "../shared/types.js";
 import { defaultUiState } from "@shared/types";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { writeManagedText } from "../shared/atomicWrite.js";
 import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
@@ -51,6 +52,10 @@ function normalizeUiState(raw: unknown): UiState {
         : base.paneRightWidth,
     activeWorkspaceId:
       typeof source.activeWorkspaceId === "string" ? source.activeWorkspaceId : base.activeWorkspaceId,
+    zoomLevel:
+      typeof source.zoomLevel === "number" && Number.isFinite(source.zoomLevel)
+        ? source.zoomLevel
+        : base.zoomLevel,
   };
 }
 
@@ -112,8 +117,12 @@ export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
   const next = normalizeUiState({ ...ensureLoaded(), ...patch });
   uiState = next;
-  // not recorded: state.json is disposable view state, deliberately kept out of the
-  // data-backup store (see the file header) — write through the bare atomic writer.
-  writeFileAtomic(stateJsonPath, JSON.stringify(next, null, 2) + "\n");
+  // recorded: state.json is a durable JSON store under the storage root, and the
+  // data-backup conventions record everything that is not binary, colocated with
+  // binaries, or append-mode. It used to be excluded as "disposable view state",
+  // which is not one of those three, on a churn argument the conventions answer
+  // directly — and the store's own per-path hash dedup collapses a no-op save
+  // anyway, so a splitter drag that changes nothing writes no row.
+  writeManagedText(stateJsonPath, JSON.stringify(next, null, 2) + "\n");
   return next;
 }

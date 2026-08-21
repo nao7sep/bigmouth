@@ -24,6 +24,8 @@ import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { writeManagedText } from "@main/core/shared/atomicWrite.js";
 import * as backupStore from "@main/core/services/backupStore.js";
 import * as logger from "@main/core/services/logger.js";
+import { getStateJsonPath } from "@main/core/services/storagePaths.js";
+import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 let root: string;
@@ -250,5 +252,28 @@ describe("backup store — the choke point is wired to the real record sites", (
     expect(rows(post.filePath).length).toBeGreaterThanOrEqual(2);
     expect(rows(path.join(ws.dataDirectory, "posts", "index.json")).length).toBeGreaterThanOrEqual(1);
     clearCache(ws.dataDirectory);
+  });
+});
+
+// Which stores record is the convention's own list, and each exclusion in the
+// codebase states its reason inline. state.json used to claim one that is not on
+// that list — "disposable view state" — on a churn argument the conventions
+// answer directly, and the per-path hash dedup below is what makes that answer
+// hold in practice.
+describe("state.json is recorded like every other managed text store", () => {
+  it("records a view-state save, and skips one that changed nothing", () => {
+    const statePath = getStateJsonPath();
+    initStateStore();
+
+    updateUiState({ paneLeftWidth: 401 });
+    expect(rows(statePath)).toHaveLength(1);
+
+    updateUiState({ paneLeftWidth: 402 });
+    expect(rows(statePath)).toHaveLength(2);
+
+    // A splitter drag that lands back where it started writes the same bytes,
+    // which the dedup collapses — the churn the old exclusion worried about.
+    updateUiState({ paneLeftWidth: 402 });
+    expect(rows(statePath)).toHaveLength(2);
   });
 });
