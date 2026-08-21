@@ -142,7 +142,7 @@ export function registerPostHandlers(): void {
 
   ipcMain.handle(CHANNELS.rebuildPostIndex, (_event, wsId: string) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    let result: RebuildResult;
+    let result: RebuildResult & { orphanedAssets: number };
     try {
       result = rebuildIndex(dir);
     } catch (err) {
@@ -157,8 +157,13 @@ export function registerPostHandlers(): void {
       workspace: wsId,
       indexed: result.indexed,
       skipped: result.skipped,
+      orphanedAssets: result.orphanedAssets,
     });
-    return { count: result.indexed, skipped: result.skipped.length };
+    return {
+      count: result.indexed,
+      skipped: result.skipped.length,
+      orphanedAssets: result.orphanedAssets,
+    };
   });
 
   ipcMain.handle(CHANNELS.getPost, (_event, wsId: string, id: string) => {

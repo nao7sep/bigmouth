@@ -208,6 +208,28 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
 // indexed count let a post the user had hand-edited into something unreadable
 // disappear from every list under a success message, with the file intact on
 // disk and nothing to say so.
+describe("a rebuild counts asset folders whose post is gone", () => {
+  // deletePost removes a post's assets with it, but a .md deleted outside the
+  // app left assets/<id>/ behind with nothing in the UI that could reach it.
+  // Nothing here deletes them - they are the user's uploads, and a .md can be
+  // restored from git - so the count is the path to them that did not exist.
+  it("counts an asset folder left behind by a hand-deleted post", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const assets = path.join(dataDir, "assets", post.frontMatter.id);
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(assets, "photo.png"), "bytes");
+
+    expect(rebuildIndex(dataDir).orphanedAssets).toBe(0);
+
+    fs.rmSync(post.filePath);
+    clearCache(dataDir);
+
+    expect(rebuildIndex(dataDir).orphanedAssets).toBe(1);
+    // And the files are still there.
+    expect(fs.existsSync(path.join(assets, "photo.png"))).toBe(true);
+  });
+});
+
 describe("a rebuild says what it left behind", () => {
   function postsPath(name: string): string {
     return path.join(dataDir, "posts", name);
@@ -217,7 +239,7 @@ describe("a rebuild says what it left behind", () => {
     createPost(dataDir, "blogger", "en");
     createPost(dataDir, "blogger", "en");
 
-    expect(rebuildIndex(dataDir)).toEqual({ indexed: 2, skipped: [] });
+    expect(rebuildIndex(dataDir)).toEqual({ indexed: 2, skipped: [], orphanedAssets: 0 });
   });
 
   it("names a file whose front matter cannot be read", () => {

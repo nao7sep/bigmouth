@@ -269,8 +269,13 @@ export interface BigMouthApi {
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<void>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
-  /** `count` is what is now indexed; `skipped` is how many files could not be read. */
-  rebuildPostIndex(wsId: string): Promise<{ count: number; skipped: number }>;
+  /**
+   * `count` is what is now indexed, `skipped` how many files could not be read,
+   * and `orphanedAssets` how many asset folders belong to a post that is gone.
+   */
+  rebuildPostIndex(
+    wsId: string,
+  ): Promise<{ count: number; skipped: number; orphanedAssets: number }>;
 
   /** Records a renderer-side warning or error in the session log. Fire-and-forget. */
   writeRendererLog(entry: RendererLogEntry): void;

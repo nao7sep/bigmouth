@@ -78,7 +78,11 @@ const api = {
   listReferrers: (wsId: string, id: string) =>
     ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,
   rebuildPostIndex: (wsId: string) =>
-    ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{ count: number; skipped: number }>,
+    ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{
+      count: number;
+      skipped: number;
+      orphanedAssets: number;
+    }>,
   // Content streaming: fire-and-forget send; the main-process post store owns
   // the debounce, the disk write, and the flush at quit.
   queuePostContent: (wsId: string, id: string, content: string) => {

@@ -65,6 +65,48 @@ describe("an unreadable registry names itself", () => {
   });
 });
 
+describe("where a workspace may be created", () => {
+  it("refuses a folder inside another workspace", () => {
+    // Nesting made the outer workspace's own tree contain a second one, so it saw
+    // a post-id directory it did not create, and deleting the outer folder took
+    // the inner one with it.
+    const outer = tempDir("outer");
+    createWorkspace("Outer", outer);
+    const inner = path.join(outer, "assets", "inner");
+    fs.mkdirSync(inner, { recursive: true });
+
+    expect(() => createWorkspace("Inner", inner)).toThrow(/inside workspace "Outer"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("says the folder is not writable, rather than surfacing a raw errno", () => {
+    const parent = tempDir("readonly");
+    const dir = path.join(parent, "locked");
+    fs.mkdirSync(dir);
+    fs.chmodSync(dir, 0o500);
+
+    try {
+      expect(() => createWorkspace("Locked", dir)).toThrow(/is not writable/);
+      // And nothing was half-registered.
+      expect(listWorkspaces()).toHaveLength(0);
+    } finally {
+      fs.chmodSync(dir, 0o700);
+    }
+  });
+
+  it("still allows a sibling folder next to a workspace", () => {
+    const parent = tempDir("siblings");
+    const a = path.join(parent, "a");
+    const b = path.join(parent, "b");
+    fs.mkdirSync(a);
+    fs.mkdirSync(b);
+
+    createWorkspace("A", a);
+    expect(() => createWorkspace("B", b)).not.toThrow();
+    expect(listWorkspaces()).toHaveLength(2);
+  });
+});
+
 describe("workspace identity", () => {
   it("rejects the same folder reached with a trailing separator", () => {
     const dir = tempDir("dupe");

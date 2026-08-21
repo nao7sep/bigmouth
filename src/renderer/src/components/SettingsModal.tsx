@@ -695,15 +695,24 @@ function RebuildIndexSection() {
     setMessage(null);
     setError(null);
     try {
-      const { count, skipped } = await rebuildPostIndex();
-      const indexed = `Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`;
+      const { count, skipped, orphanedAssets } = await rebuildPostIndex();
+      const parts = [`Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`];
       // A skipped file is a post the app can no longer show. Saying only what
       // was indexed let one vanish under a success message.
-      setMessage(
-        skipped === 0
-          ? indexed
-          : `${indexed} ${skipped} file${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out — see the log.`,
-      );
+      if (skipped > 0) {
+        parts.push(
+          `${skipped} file${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out — see the log.`,
+        );
+      }
+      // Asset folders whose post is gone: nothing here deletes them (they are
+      // the user's uploads, and a .md can be restored from git), but nothing in
+      // the UI could reach them either, so the count is the path to them.
+      if (orphanedAssets > 0) {
+        parts.push(
+          `${orphanedAssets} asset folder${orphanedAssets === 1 ? "" : "s"} belong${orphanedAssets === 1 ? "s" : ""} to a post that no longer exists.`,
+        );
+      }
+      setMessage(parts.join(" "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Index rebuild failed.");
     } finally {

@@ -143,7 +143,11 @@ export function listReferrers(
   return bridge().listReferrers(requireWs(workspaceId), id);
 }
 
-export function rebuildPostIndex(): Promise<{ count: number; skipped: number }> {
+export function rebuildPostIndex(): Promise<{
+  count: number;
+  skipped: number;
+  orphanedAssets: number;
+}> {
   return bridge().rebuildPostIndex(requireWs());
 }
 

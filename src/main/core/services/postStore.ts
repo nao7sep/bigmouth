@@ -45,8 +45,32 @@ export function clearCache(dataDir: string): void {
   index.clearCache(dataDir);
 }
 
-export function rebuildIndex(dataDir: string): index.RebuildResult {
-  return index.rebuild(dataDir);
+/**
+ * Rebuilds the index, and counts asset folders whose post no longer exists.
+ *
+ * deletePost removes a post's assets with it, but a `.md` deleted outside the
+ * app leaves `assets/<id>/` behind with nothing in the UI that can reach it —
+ * unlistable, unopenable, and invisible. Nothing here deletes them: they are the
+ * user's uploads, and a `.md` can be deleted by accident or restored from git.
+ * Saying how many there are, after a rebuild the user asked for, is the path to
+ * them that did not exist.
+ */
+export function rebuildIndex(dataDir: string): index.RebuildResult & { orphanedAssets: number } {
+  const result = index.rebuild(dataDir);
+  return { ...result, orphanedAssets: countOrphanedAssetDirs(dataDir) };
+}
+
+function countOrphanedAssetDirs(dataDir: string): number {
+  const assetsRoot = path.join(dataDir, "assets");
+  if (!fs.existsSync(assetsRoot)) return 0;
+
+  let orphans = 0;
+  for (const name of fs.readdirSync(assetsRoot)) {
+    if (name.startsWith(".")) continue;
+    if (!fs.statSync(path.join(assetsRoot, name)).isDirectory()) continue;
+    if (!index.getEntry(dataDir, name)) orphans++;
+  }
+  return orphans;
 }
 
 function postsDir(dataDir: string): string {

@@ -155,6 +155,14 @@ function isEmptyDirectory(dir: string): boolean {
   return fs.readdirSync(dir).length === 0;
 }
 
+/** The registered workspace `dir` sits inside, if any. */
+function enclosingWorkspace(dir: string): Workspace | undefined {
+  return ensureLoaded().workspaces.find((workspace) => {
+    const root = workspace.dataDirectory.normalize("NFC");
+    return dir.normalize("NFC").startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+  });
+}
+
 function findWorkspaceByDirectory(dir: string): Workspace | undefined {
   const normalized = expandWorkspacePath(dir);
   return ensureLoaded().workspaces.find((workspace) =>
@@ -199,14 +207,21 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
         throw new Error("Location must be a directory.");
       }
       if (isWorkspaceDirectory(dir)) {
-        // The UI has one "Open or Create" control, so there is no "Open" to point at
-    // — and openOrCreateWorkspace already routes this case to openWorkspace, so
-    // this is reached only by a direct createWorkspace call.
-    throw new Error("That folder already contains a workspace.");
+        // The UI has one "Open or Create" control, so there is no "Open" to
+        // point at — and openOrCreateWorkspace routes this case to openWorkspace,
+        // so this is reached only by a direct createWorkspace call.
+        throw new Error("That folder already contains a workspace.");
       }
       if (!isEmptyDirectory(dir)) {
         throw new Error("New workspaces can only be created in an empty folder.");
       }
+    }
+    const enclosing = enclosingWorkspace(dir);
+    if (enclosing) {
+      // Nesting made the outer workspace's own tree contain a second one, so it
+      // saw a directory it did not create, and deleting the outer folder took
+      // the inner with it.
+      throw new Error(`That folder is inside workspace "${enclosing.name}".`);
     }
   } else {
     dir = path.join(getDefaultWorkspacesDir(), id);
@@ -214,8 +229,14 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
 
   const workspace: Workspace = { id, name, dataDirectory: dir };
 
-  // Initialize the data directory with default files
-  initializeWorkspaceData(dir);
+  try {
+    initializeWorkspaceData(dir);
+  } catch (cause) {
+    // A raw errno ("EACCES: permission denied, mkdir '…/posts'") sat next to the
+    // clean sentences above it, and named an internal subdirectory the user
+    // never chose.
+    throw new Error(`Cannot create a workspace in ${dir}: the folder is not writable.`, { cause });
+  }
 
   config.workspaces.push(workspace);
   writeAppConfig();
