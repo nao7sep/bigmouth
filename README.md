@@ -38,7 +38,9 @@ The Electron window opens; create a workspace to begin. `scripts/rebuild.command
 
 ## Development
 
-`npm run check` is the gate: it typechecks all three environments and runs the suite. The three `tsconfig.*.json` files split the environments — `node` (main + preload + shared), `web` (renderer + shared), and `test` (both). Tests live under `tests/`, mirroring `src/`, and run under Vitest in two projects: `main` on Node and `renderer` on jsdom. `npm run test:coverage` writes a report to the gitignored `coverage/`; it is not a gate and has no threshold.
+`npm run check` is the gate: it typechecks all three environments and runs the suite. The three `tsconfig.*.json` files split the environments — `node` (main + preload + shared), `web` (renderer + shared), and `test` (both).
+
+Tests live under `tests/`, mirroring `src/` so each test's path names the file it covers. Two segments are elided consistently: `tests/main/…` covers `src/main/core/…`, and `tests/renderer/…` covers `src/renderer/src/…`. `tests/shared/` covers `src/shared/`. They run under Vitest in two projects — `main` on Node (which also runs `tests/shared`, since those modules must hold there) and `renderer` on jsdom. `npm run test:coverage` writes a report to the gitignored `coverage/`; it is not a gate and has no threshold.
 
 ## License
 

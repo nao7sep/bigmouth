@@ -6,7 +6,7 @@ import {
   findModelDef,
   resolveThinking,
   validateMaxTokens,
-} from "@shared/types";
+} from "@shared/modelRegistry";
 import { makeDefaultAiConfigs } from "@main/core/shared/defaults.js";
 import { createProvider } from "@main/core/ai/factory.js";
 
