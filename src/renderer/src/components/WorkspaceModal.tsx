@@ -1,3 +1,18 @@
+/**
+ * The workspace picker — and, when no workspace is open, the app's root launch
+ * gate.
+ *
+ * In that mode App renders it as the ENTIRE app with `dismissable={false}`,
+ * which suppresses the ✕, the backdrop, Escape and the footer Cancel. That is
+ * deliberate and the modal-dialog conventions permit it: a launch gate may omit
+ * a dismiss button because there is no "cancel" target behind it — nothing to
+ * return to. The same conventions require the exemption to be documented in the
+ * file, which is what this paragraph is; without it a reader (or a naming audit)
+ * finds a modal with every dismiss path removed and no recorded reason.
+ *
+ * With a workspace already open it is an ordinary dismissable modal.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   listWorkspaces,

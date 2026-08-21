@@ -1,4 +1,6 @@
-import { app, BrowserWindow, dialog, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor } from "electron";
+
+import { confirmQuitWithUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir } from "./core/services/storagePaths.js";
@@ -79,10 +81,7 @@ app.whenReady().then(bootstrap).catch((err: unknown) => {
   } catch {
     // The logger itself may be what failed; stderr above already carried it.
   }
-  dialog.showErrorBox(
-    "BigMouth could not start",
-    `${message}\n\nNo posts or workspace documents were changed. Check the session log, then start BigMouth again.`,
-  );
+  showStartupFailure(message);
   app.exit(1);
 });
 
@@ -107,20 +106,7 @@ app.on("before-quit", (event) => {
   const failures = flushAllPendingContent();
   if (failures.length > 0 && !systemShutdown) {
     logError("pending content flush failed at quit", { failures });
-    const choice = dialog.showMessageBoxSync({
-      type: "warning",
-      title: "Unsaved changes",
-      message: "Some edits could not be saved.",
-      detail:
-        "BigMouth could not write your latest changes to disk. " +
-        "Quit anyway and lose them, or cancel and copy your text somewhere safe? " +
-        "The editor shows why each post could not be saved.",
-      // Cancel is the safest action, so it is the default and the Escape path.
-      buttons: ["Cancel", "Quit Anyway"],
-      defaultId: 0,
-      cancelId: 0,
-    });
-    if (choice === 0) {
+    if (confirmQuitWithUnsavedChanges() === "cancel") {
       shuttingDown = false;
       return;
     }

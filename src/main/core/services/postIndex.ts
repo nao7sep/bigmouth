@@ -35,6 +35,15 @@ function indexPath(dataDir: string): string {
   return path.join(postsDir(dataDir), "index.json");
 }
 
+/** A file's modification time in ms, or 0 when it is not there to stat. */
+function modifiedAt(filePath: string): number {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 // --- Public API ---
 
 export function clearCache(dataDir: string): void {
@@ -179,20 +188,38 @@ function buildFromDisk(dataDir: string): {
 }
 
 /**
- * Reconciles an in-memory index against the files on disk by filename:
- * adds files the index is missing, drops entries whose file is gone. Returns
- * whether anything changed. Does not detect an out-of-band edit to an existing
- * file (same name) — `rebuild()` is the remedy for that.
+ * Reconciles an in-memory index against the files on disk: adds files the index
+ * is missing, re-reads files that changed under it, drops entries whose file is
+ * gone. Returns whether anything changed.
+ *
+ * The re-read is by modification time against the index file's own. A post's
+ * filename is fixed for its lifetime, so a status flipped by a `git revert`, a
+ * merge or a hand edit never changed the name and never triggered a
+ * re-projection — the left pane went on listing the post under its old status
+ * while the editor showed the new one, and only Settings → Rebuild index fixed
+ * it. Cheap: a `stat` per file, and a read only of the few that are newer.
  */
 function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
   const onDisk = new Set(postFileNames(dataDir));
-  const indexed = new Set<string>();
-  for (const entry of map.values()) indexed.add(entry.fileName);
+  const indexed = new Map<string, string>();
+  for (const [id, entry] of map) indexed.set(entry.fileName, id);
 
+  const indexedAt = modifiedAt(indexPath(dataDir));
   let changed = false;
 
   for (const fileName of onDisk) {
-    if (indexed.has(fileName)) continue;
+    const existingId = indexed.get(fileName);
+    if (existingId !== undefined) {
+      // Written after the index was: its projection may be stale.
+      if (modifiedAt(path.join(postsDir(dataDir), fileName)) <= indexedAt) continue;
+      const result = tryEntryFromFile(dataDir, fileName);
+      if (!("entry" in result)) continue;
+      if (canonicalEntryJson(result.entry) === canonicalEntryJson(map.get(existingId)!)) continue;
+      map.delete(existingId);
+      map.set(result.entry.id, result.entry);
+      changed = true;
+      continue;
+    }
     const result = tryEntryFromFile(dataDir, fileName);
     if ("entry" in result && insertUnique(map, result.entry)) changed = true;
   }

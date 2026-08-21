@@ -3,7 +3,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import { createPost, updatePost, getPost, listDrafts, changeStatus, clearCache, rebuildIndex } from "@main/core/services/postStore.js";
+import {
+  createPost,
+  updatePost,
+  getPost,
+  listDrafts,
+  listPublished,
+  changeStatus,
+  clearCache,
+  rebuildIndex,
+} from "@main/core/services/postStore.js";
 import { canonicalIndexJson } from "@main/core/services/postIndex.js";
 import type { PostIndexEntry } from "@main/core/shared/types.js";
 
@@ -255,6 +264,38 @@ describe("a rebuild says what it left behind", () => {
 });
 
 describe("reconcile", () => {
+  it("re-reads a post edited out of band, instead of listing its old status", () => {
+    // A post's filename is fixed for its lifetime, so a status flipped by a git
+    // revert, a merge or a hand edit never changed the name and never triggered
+    // a re-projection: the left pane went on listing the post under Published
+    // while the editor showed Draft, until the user found Settings → Rebuild.
+    const post = createPost(dataDir, "blogger", "en");
+    changeStatus(dataDir, post.frontMatter.id, "published");
+    expect(listPublished(dataDir, 0, 10).map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
+
+    // Edit the file underneath the app, and make it plainly newer than the index.
+    const raw = fs.readFileSync(post.filePath, "utf-8").replace("status: published", "status: draft");
+    fs.writeFileSync(post.filePath, raw, "utf-8");
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(post.filePath, later, later);
+    clearCache(dataDir);
+
+    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
+    expect(listPublished(dataDir, 0, 10).map((p) => p.frontMatter.id)).not.toContain(
+      post.frontMatter.id,
+    );
+  });
+
+  it("leaves an untouched post alone, and does not re-read it", () => {
+    const a = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, a.frontMatter.id, { frontMatter: { title: "Kept" } });
+    clearCache(dataDir);
+
+    const listed = listDrafts(dataDir).find((p) => p.frontMatter.id === a.frontMatter.id);
+    expect(listed?.frontMatter.title).toBe("Kept");
+  });
+
+
   it("drops an entry whose file disappeared out of band", () => {
     const keep = createPost(dataDir, "blogger", "en");
     const gone = createPost(dataDir, "blogger", "en");
