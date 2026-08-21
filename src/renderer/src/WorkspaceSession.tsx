@@ -7,7 +7,15 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, MouseEventHandler, RefObject } from "react";
-import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile, onPostContentSaved } from "./api";
+import {
+  listPosts,
+  createPost,
+  getPost,
+  listTargets,
+  getSettings,
+  revealCurrentLogFile,
+  onPostContentSaved,
+} from "./api";
 import { LeftPane } from "./components/LeftPane";
 import { XIcon } from "./components/Icon";
 import { CenterPane } from "./components/CenterPane";
@@ -263,15 +271,44 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       };
     }, [loadConfig, loadPosts]);
 
+    /**
+     * Re-reads the workspace config after Settings closes — and the posts with it.
+     *
+     * The posts are not optional here. Renaming a target rewrites the `target`
+     * field in every post file, so reloading only the targets left the open post
+     * carrying a name that matched nothing: `currentTarget` went null, the
+     * Metadata tab vanished from the strip, and MetadataTab's unmount cleared its
+     * one-second autosave timers WITHOUT persisting — anything typed in the last
+     * second was gone. The left list and the centre toolbar kept showing the old
+     * name too.
+     */
     const reloadConfig = useCallback(() => {
       if (!sessionAliveRef.current) return;
       setLoadError(null);
-      loadConfig().catch((err) => {
-        if (!sessionAliveRef.current) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to reload settings.");
-      });
+
+      void (async () => {
+        try {
+          // Flush FIRST. Renaming a target can make the Metadata tab disappear
+          // (its target no longer requires metadata, or no longer matches), and
+          // MetadataTab's unmount clears its one-second autosave timers without
+          // persisting — so anything typed in the last second went with it.
+          await flushRightPaneChanges();
+          await Promise.all([loadConfig(), loadPosts()]);
+
+          // The open post too: a rename rewrites `target` in every post FILE, so
+          // the copy in memory is stale and would match no target at all.
+          const openId = selectedPostIdRef.current;
+          if (openId && sessionAliveRef.current) {
+            setCurrentPost(await getPost(openId));
+          }
+        } catch (err) {
+          if (!sessionAliveRef.current) return;
+          setLoadError(err instanceof Error ? err.message : "Failed to reload settings.");
+        }
+      })();
+
       setAnalysisPromptsVersion((n) => n + 1);
-    }, [loadConfig]);
+    }, [flushRightPaneChanges, loadConfig, loadPosts]);
 
     useEffect(() => {
       // Any open modal/dialog owns the keyboard; global shortcuts must not

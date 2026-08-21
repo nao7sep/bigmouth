@@ -595,17 +595,47 @@ describe("WorkspaceSession modals", () => {
 
     mockListTargets.mockClear();
     mockGetSettings.mockClear();
+    mockListPosts.mockClear();
+    rightFlush.mockClear();
     await act(async () => {
       fireEvent.click(getByTestId("settings-modal-changed"));
       await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
-    // onSettingsChanged reloads targets + settings.
+    // onSettingsChanged reloads targets + settings — and the POSTS with them.
+    // Renaming a target rewrites `target` in every post file, so reloading only
+    // the targets left the open post carrying a name that matched nothing: the
+    // Metadata tab vanished and its unmount cleared the one-second autosave
+    // timers WITHOUT persisting, taking anything typed in the last second.
     expect(mockListTargets).toHaveBeenCalledTimes(1);
     expect(mockGetSettings).toHaveBeenCalledTimes(1);
+    expect(mockListPosts).toHaveBeenCalledTimes(1);
     // The analysis prompts version bumps so the right pane reloads prompts. (It
     // is only mounted with a post open, so we just assert the modal cycle here.)
     fireEvent.click(getByTestId("settings-modal-close"));
     expect(queryByTestId("settings-modal")).toBeNull();
+  });
+
+  it("flushes pending metadata edits before a settings change lands", async () => {
+    // The right pane is only mounted with a post open, which is exactly the case
+    // that loses data: renaming a target can make the Metadata tab disappear, and
+    // its unmount clears the one-second autosave timers WITHOUT persisting.
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    fireEvent.click(getByTestId("left-settings"));
+    rightFlush.mockClear();
+
+    await act(async () => {
+      fireEvent.click(getByTestId("settings-modal-changed"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(rightFlush).toHaveBeenCalled();
   });
 
   it("opens and closes the shortcuts and about modals", async () => {
