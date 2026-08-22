@@ -159,6 +159,56 @@ describe("backup store — dedup, change, revert", () => {
     expect(rows(a)).toHaveLength(1);
     expect(rows(b)).toHaveLength(1);
   });
+
+  it("locks before the latest-row read so another process cannot insert the same successor", () => {
+    const file = path.join(root, "sample.md");
+    writeManagedText(file, "A");
+
+    const competitor = new DatabaseSync(path.join(getAppRoot(), "backups.sqlite3"));
+    competitor.exec("PRAGMA busy_timeout = 1");
+    const nextBytes = Buffer.from("B");
+    const nextHash = createHash("sha256").update(nextBytes).digest("hex");
+    let competitorWasBlocked = false;
+
+    const proto = DatabaseSync.prototype as unknown as {
+      prepare: (this: DatabaseSync, sql: string) => {
+        get: (...args: unknown[]) => unknown;
+        run: (...args: unknown[]) => unknown;
+      };
+    };
+    const realPrepare = proto.prepare;
+    proto.prepare = function (sql: string) {
+      const statement = realPrepare.call(this, sql);
+      if (!sql.startsWith("SELECT content_sha256")) return statement;
+      return {
+        ...statement,
+        get: (...args: unknown[]) => {
+          const latest = statement.get(...args);
+          try {
+            realPrepare
+              .call(
+                competitor,
+                "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)",
+              )
+              .run(file, nextBytes, nextHash, nextBytes.byteLength, new Date().toISOString());
+          } catch (err) {
+            competitorWasBlocked = (err as { code?: string }).code === "ERR_SQLITE_ERROR";
+          }
+          return latest;
+        },
+      };
+    };
+
+    try {
+      writeManagedText(file, "B");
+    } finally {
+      proto.prepare = realPrepare;
+      competitor.close();
+    }
+
+    expect(competitorWasBlocked).toBe(true);
+    expect(rows(file).map((row) => Buffer.from(row.content).toString("utf8"))).toEqual(["A", "B"]);
+  });
 });
 
 describe("backup store — best-effort", () => {

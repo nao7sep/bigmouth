@@ -63,6 +63,38 @@ describe("an unreadable registry names itself", () => {
     expect(reload).toThrow(/workspaces\.json/);
     expect(reload).toThrow(/left unchanged/);
   });
+
+  it("rejects duplicate workspace ids without rewriting the registry", () => {
+    const first = tempDir("identity-a");
+    const second = tempDir("identity-b");
+    const raw = JSON.stringify({
+      workspaces: [
+        { id: "same", name: "A", dataDirectory: first },
+        { id: "same", name: "B", dataDirectory: second },
+      ],
+    });
+    const reload = withRegistry(raw);
+
+    expect(reload).toThrow(/workspace id.*appears more than once/);
+    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_HOME!, "workspaces.json"), "utf8")).toBe(raw);
+  });
+
+  it("rejects duplicate physical directories without rewriting the registry", () => {
+    const real = tempDir("identity-real");
+    const linkParent = tempDir("identity-link");
+    const link = path.join(linkParent, "same-folder");
+    fs.symlinkSync(real, link, "dir");
+    const raw = JSON.stringify({
+      workspaces: [
+        { id: "one", name: "A", dataDirectory: real },
+        { id: "two", name: "B", dataDirectory: link },
+      ],
+    });
+    const reload = withRegistry(raw);
+
+    expect(reload).toThrow(/name the same folder/);
+    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_HOME!, "workspaces.json"), "utf8")).toBe(raw);
+  });
 });
 
 describe("where a workspace may be created", () => {

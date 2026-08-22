@@ -11,6 +11,13 @@ describe("validateSlug", () => {
     expect(validateSlug("naïve")).toBeNull();
     expect(validateSlug(42)).toBeNull();
   });
+
+  it("requires a visible identity and bounds the export filename", () => {
+    expect(validateSlug("-")).toBeNull();
+    expect(validateSlug("___")).toBeNull();
+    expect(validateSlug("a".repeat(200))).toBe("a".repeat(200));
+    expect(validateSlug("a".repeat(201))).toBeNull();
+  });
 });
 
 describe("pickEditableFrontMatter", () => {

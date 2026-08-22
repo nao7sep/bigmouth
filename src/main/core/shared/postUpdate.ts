@@ -1,4 +1,4 @@
-import { ACCEPTED_SLUG } from "@shared/metadataFields";
+import { ACCEPTED_SLUG, ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import type { PostStatus } from "@shared/types";
 
 import { isEditLocked } from "./postLifecycle.js";
@@ -34,7 +34,7 @@ const RESERVED_FRONT_MATTER_KEYS = new Set([
 
 export function validateSlug(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  return ACCEPTED_SLUG.test(value) ? value : null;
+  return value.length <= ACCEPTED_SLUG_MAX_LENGTH && ACCEPTED_SLUG.test(value) ? value : null;
 }
 
 /**
@@ -104,7 +104,7 @@ export function validatePostUpdate(
         return {
           ok: false,
           reason: "invalid-slug",
-          message: "Invalid slug: only letters, digits, hyphens, and underscores are allowed",
+          message: `Invalid slug: use 1–${ACCEPTED_SLUG_MAX_LENGTH} letters, digits, hyphens, or underscores, including at least one letter or digit`,
         };
       }
     }

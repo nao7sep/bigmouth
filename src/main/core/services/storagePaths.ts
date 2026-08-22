@@ -52,15 +52,9 @@ function expandEnvReferences(value: string): string {
 }
 
 /**
- * The single path-expansion pipeline for the app. Expands a leading ~ / ~/ / ~\
- * to `base`, substitutes $VAR / %VAR% environment references, and resolves the
- * result to an absolute path against `base` — never against the working
- * directory, so a relative value can never be interpreted relative to how the
- * app happened to be launched.
- *
- * Both the BIGMOUTH_HOME storage root and every user-supplied workspace
- * directory resolve through this one function, so the two cannot diverge in how
- * they expand ~, $VAR, or %VAR%, and neither can fall through to process.cwd().
+ * The storage-root expansion pipeline. Expands a leading ~ / ~/ / ~\ to `base`,
+ * substitutes $VAR / %VAR% environment references, and resolves the result to
+ * an absolute path against `base` — never against the working directory.
  *
  * An input whose env references leave it expanding to nothing (an unset or
  * empty-string $VAR/%VAR%) is a hard error, never a silent fallback: without
@@ -235,9 +229,23 @@ export function getBackupsDbPath(): string {
 }
 
 /**
- * Expands and absolutizes a user-supplied workspace directory through the same
- * pipeline as the root override.
+ * Absolutizes a user-supplied workspace directory while preserving literal
+ * filename characters. A leading tilde is the one supported shorthand.
  */
 export function expandWorkspacePath(p: string): string {
-  return expandAndResolve(p, os.homedir(), "Workspace directory");
+  const home = os.homedir();
+  let value = p.trim();
+  if (value === "~") {
+    value = home;
+  } else if (value.startsWith("~/") || value.startsWith("~\\")) {
+    value = path.join(home, value.slice(2));
+  }
+  if (value.length === 0) throw new Error("Workspace directory is empty");
+
+  // A workspace location is the user's literal filesystem choice. In
+  // particular, Electron's native picker returns an already-absolute path: a
+  // folder named `$archive` or `%drafts%` must keep that name. Expanding main-
+  // process environment variables here both rewrote that choice and exposed
+  // environment values to an unvalidated renderer IPC caller.
+  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(home, value);
 }

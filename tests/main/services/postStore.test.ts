@@ -122,6 +122,17 @@ describe("updatePost", () => {
     const reread = getPost(dataDir, created.frontMatter.id);
     expect(reread?.frontMatter.titleEn).toBeUndefined();
   });
+
+  it("refuses a slug already used by another post, including a case-only variant", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const second = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, first.frontMatter.id, { frontMatter: { slug: "My-Post" } });
+
+    expect(() =>
+      updatePost(dataDir, second.frontMatter.id, { frontMatter: { slug: "my-post" } }),
+    ).toThrow(/already uses the slug/);
+    expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
+  });
 });
 
 describe("changeStatus", () => {

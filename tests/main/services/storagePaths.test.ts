@@ -5,7 +5,7 @@
 // Relocation is driven through the BIGMOUTH_HOME environment variable — the one
 // supported relocation seam — never a private setter.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,14 +17,18 @@ import {
   getLogsDir,
   getStateJsonPath,
   getWorkspacesJsonPath,
+  expandWorkspacePath,
   initStorageRoot,
 } from "@main/core/services/storagePaths.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
 const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
+let fakeHome: string;
 
 beforeEach(() => {
+  fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-fake-home-"));
+  vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
   delete process.env.BIGMOUTH_HOME;
   delete process.env.BIGMOUTH_TEST_BASE;
   delete process.env.BIGMOUTH_TEST_UNSET;
@@ -37,6 +41,8 @@ afterEach(() => {
   else process.env.BIGMOUTH_TEST_BASE = SAVED_TEST_BASE;
   if (SAVED_TEST_UNSET === undefined) delete process.env.BIGMOUTH_TEST_UNSET;
   else process.env.BIGMOUTH_TEST_UNSET = SAVED_TEST_UNSET;
+  vi.restoreAllMocks();
+  fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
 describe("storage root (BIGMOUTH_HOME)", () => {
@@ -181,49 +187,36 @@ describe("storage root (BIGMOUTH_HOME)", () => {
 
 describe("workspace paths are cwd-independent", () => {
   it("resolves a relative workspace dataDirectory under the home root, not the cwd", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-cwd-"));
     const rel = "my-relative-workspace";
-    try {
-      process.env.BIGMOUTH_HOME = root;
-      initAppDir();
-      // The home directory drives the expansion pipeline (os.homedir()), not the
-      // storage root, so a relative workspace path lands under the user's home.
-      const expected = path.join(os.homedir(), rel);
-      const workspace = createWorkspace("Relative WS", rel);
-      expect(path.isAbsolute(workspace.dataDirectory)).toBe(true);
-      expect(workspace.dataDirectory).toBe(expected);
-      expect(workspace.dataDirectory).not.toBe(path.join(process.cwd(), rel));
-      expect(workspace.dataDirectory.startsWith(os.homedir())).toBe(true);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(path.join(os.homedir(), rel), { recursive: true, force: true });
-    }
+    // Exercise the resolver directly: a regression test must never create and
+    // recursively delete a fixed name under the user's real home directory.
+    const resolved = expandWorkspacePath(rel);
+    expect(path.isAbsolute(resolved)).toBe(true);
+    expect(resolved).toBe(path.join(os.homedir(), rel));
+    expect(resolved).not.toBe(path.join(process.cwd(), rel));
   });
 
-  // The same expansion pipeline resolves a user-supplied workspace directory,
-  // so it must reject the identical collapsed-to-empty hazard rather than
-  // register a workspace rooted at the bare home directory.
-  it("rejects a workspace directory that references an unset $VAR instead of collapsing onto the home directory", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-unset-"));
-    try {
-      process.env.BIGMOUTH_HOME = root;
-      initAppDir();
-      delete process.env.BIGMOUTH_TEST_UNSET;
-      expect(() => createWorkspace("Bad WS", "$BIGMOUTH_TEST_UNSET")).toThrow(/expands to an empty path/);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+  it("keeps an unset $VAR literal in a workspace directory", () => {
+    delete process.env.BIGMOUTH_TEST_UNSET;
+    expect(expandWorkspacePath("$BIGMOUTH_TEST_UNSET")).toBe(
+      path.join(os.homedir(), "$BIGMOUTH_TEST_UNSET"),
+    );
   });
 
-  it("rejects a workspace directory that references a $VAR set to the empty string", () => {
+  it("does not expand environment syntax inside an absolute native-picker path", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-empty-"));
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-literal-"));
+    const literal = path.join(parent, "$BIGMOUTH_TEST_BASE", "%BIGMOUTH_TEST_BASE%");
     try {
       process.env.BIGMOUTH_HOME = root;
       initAppDir();
-      process.env.BIGMOUTH_TEST_BASE = "";
-      expect(() => createWorkspace("Bad WS", "$BIGMOUTH_TEST_BASE")).toThrow(/expands to an empty path/);
+      process.env.BIGMOUTH_TEST_BASE = "secret-main-process-value";
+      const workspace = createWorkspace("Literal WS", literal);
+      expect(workspace.dataDirectory).toBe(literal);
+      expect(workspace.dataDirectory).not.toContain("secret-main-process-value");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(parent, { recursive: true, force: true });
     }
   });
 });

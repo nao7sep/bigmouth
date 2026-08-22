@@ -410,6 +410,20 @@ export function updatePost(
 
   const fm = post.frontMatter;
   if (updates.frontMatter) {
+    const requestedSlug = updates.frontMatter.slug;
+    if (
+      typeof requestedSlug === "string" &&
+      requestedSlug.length > 0 &&
+      index
+        .allEntries(dataDir)
+        .some(
+          (entry) =>
+            entry.id !== id &&
+            entry.slug?.toLowerCase() === requestedSlug.toLowerCase(),
+        )
+    ) {
+      throw new Error(`Another post already uses the slug "${requestedSlug}"`);
+    }
     for (const [key, value] of Object.entries(updates.frontMatter)) {
       if (value === null) {
         delete fm[key];

@@ -58,11 +58,31 @@ function parseAppConfig(raw: unknown, filePath: string): AppConfig {
   const workspaces = (entries as unknown[]).map((item) => {
     if (!item || typeof item !== "object") reject("one of its workspaces is not an object");
     const { id, name, dataDirectory } = item as Record<string, unknown>;
-    if (typeof id !== "string" || typeof name !== "string" || typeof dataDirectory !== "string") {
+    if (
+      typeof id !== "string" ||
+      id.length === 0 ||
+      typeof name !== "string" ||
+      typeof dataDirectory !== "string"
+    ) {
       reject("one of its workspaces is missing an id, a name, or a dataDirectory");
     }
     return { id, name, dataDirectory };
   });
+
+  const ids = new Set<string>();
+  for (const workspace of workspaces) {
+    if (ids.has(workspace.id)) reject(`workspace id ${JSON.stringify(workspace.id)} appears more than once`);
+    ids.add(workspace.id);
+  }
+  for (let index = 0; index < workspaces.length; index += 1) {
+    for (let other = index + 1; other < workspaces.length; other += 1) {
+      if (sameDirectory(workspaces[index].dataDirectory, workspaces[other].dataDirectory)) {
+        reject(
+          `workspaces ${JSON.stringify(workspaces[index].name)} and ${JSON.stringify(workspaces[other].name)} name the same folder`,
+        );
+      }
+    }
+  }
 
   return { workspaces };
 }

@@ -111,20 +111,20 @@ function moveAsideInvalid(filePath: string): string | null {
 
 // Validate and canonicalize the on-disk tree, dropping anything that is not the
 // expected shape: workspace -> configs -> config -> keys -> { <segment>: string }.
-function normalize(raw: unknown): ApiKeysFile {
+function normalize(raw: unknown): ApiKeysFile | null {
   const out: ApiKeysFile = { workspaces: {} };
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const workspaces = (raw as { workspaces?: unknown }).workspaces;
-  if (!workspaces || typeof workspaces !== "object" || Array.isArray(workspaces)) return out;
+  if (!workspaces || typeof workspaces !== "object" || Array.isArray(workspaces)) return null;
   for (const [wsId, wsNode] of Object.entries(workspaces as Record<string, unknown>)) {
-    if (!wsNode || typeof wsNode !== "object" || Array.isArray(wsNode)) continue;
+    if (!wsNode || typeof wsNode !== "object" || Array.isArray(wsNode)) return null;
     const configs = (wsNode as { configs?: unknown }).configs;
-    if (!configs || typeof configs !== "object" || Array.isArray(configs)) continue;
+    if (!configs || typeof configs !== "object" || Array.isArray(configs)) return null;
     const outConfigs: Record<string, ConfigKeys> = {};
     for (const [cfgId, cfgNode] of Object.entries(configs as Record<string, unknown>)) {
-      if (!cfgNode || typeof cfgNode !== "object" || Array.isArray(cfgNode)) continue;
+      if (!cfgNode || typeof cfgNode !== "object" || Array.isArray(cfgNode)) return null;
       const keys = (cfgNode as { keys?: unknown }).keys;
-      if (!keys || typeof keys !== "object" || Array.isArray(keys)) continue;
+      if (!keys || typeof keys !== "object" || Array.isArray(keys)) return null;
       const outKeys: Record<string, string> = {};
       for (const [seg, value] of Object.entries(keys as Record<string, unknown>)) {
         const canonical = seg.toLowerCase();
@@ -153,7 +153,14 @@ function readFile(filePath: string): ApiKeysFile {
     return { workspaces: {} };
   }
   try {
-    return normalize(JSON.parse(text));
+    const normalized = normalize(JSON.parse(text));
+    if (normalized) return normalized;
+    const movedTo = moveAsideInvalid(filePath);
+    logWarn("api-keys.json had the wrong shape; set aside and treating as empty", {
+      path: filePath,
+      movedTo,
+    });
+    return { workspaces: {} };
   } catch (err) {
     const movedTo = moveAsideInvalid(filePath);
     logWarn("api-keys.json was not valid JSON; set aside and treating as empty", {

@@ -118,19 +118,41 @@ function sha256(bytes: Buffer): string {
 export function record(absolutePath: string, bytes: Buffer): void {
   const store = ensureOpen();
   if (!store) return; // open failed earlier; disabled for the session (already warned once)
+  let transactionOpen = false;
   try {
     const hash = sha256(bytes);
+    // The latest-row read and its conditional insert are one write decision. WAL
+    // and busy_timeout serialize individual writes, but without acquiring the
+    // write lock before the SELECT two processes can both observe the old hash
+    // and append the same successor. BEGIN IMMEDIATE makes the second recorder
+    // wait before it reads, so it sees the first recorder's committed row.
+    store.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
     const latest = store
       .prepare("SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1")
       .get(absolutePath) as { h: string } | undefined;
-    if (latest?.h === hash) return; // unchanged since the last recorded version — dedup skip
+    if (latest?.h === hash) {
+      store.exec("COMMIT");
+      transactionOpen = false;
+      return; // unchanged since the last recorded version — dedup skip
+    }
 
     store
       .prepare(
         "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)",
       )
       .run(absolutePath, bytes, hash, bytes.byteLength, new Date().toISOString());
+    store.exec("COMMIT");
+    transactionOpen = false;
   } catch (err) {
+    if (transactionOpen) {
+      try {
+        store.exec("ROLLBACK");
+      } catch {
+        // The original record failure is the useful diagnostic. Rollback is
+        // best-effort because the transaction may already have been aborted.
+      }
+    }
     logWarn("backup store: failed to record a managed write", {
       file: absolutePath,
       error: serializeError(err),

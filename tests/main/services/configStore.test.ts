@@ -94,6 +94,19 @@ describe("corrupt config files", () => {
     const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     expect(afterwards.schemaVersion).toBe(99);
   });
+
+  it("refuses duplicate AI config ids without rewriting the config", () => {
+    const configPath = path.join(dataDir, "config.json");
+    const healthy = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const duplicate = JSON.stringify({
+      ...healthy,
+      aiConfigs: [healthy.aiConfigs[0], { ...healthy.aiConfigs[0], name: "Ambiguous copy" }],
+    });
+    fs.writeFileSync(configPath, duplicate, "utf8");
+
+    expect(() => getAiConfigsForClient(ws)).toThrow(/duplicate AI config id/);
+    expect(fs.readFileSync(configPath, "utf8")).toBe(duplicate);
+  });
 });
 
 describe("settings", () => {

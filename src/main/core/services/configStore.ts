@@ -187,6 +187,18 @@ function readConfig(dataDir: string): WorkspaceConfig {
     );
   }
 
+  const aiConfigs = (parsed as { aiConfigs: { id?: unknown }[] }).aiConfigs;
+  const ids = new Set<string>();
+  for (const config of aiConfigs) {
+    if (!config || typeof config.id !== "string" || config.id.length === 0) {
+      throw new Error(`${CONFIG_FILE} contains an AI config without a usable id. It was left unchanged at ${filePath}`);
+    }
+    if (ids.has(config.id)) {
+      throw new Error(`${CONFIG_FILE} contains duplicate AI config id ${JSON.stringify(config.id)}. It was left unchanged at ${filePath}`);
+    }
+    ids.add(config.id);
+  }
+
   return normalizeConfig(parsed);
 }
 

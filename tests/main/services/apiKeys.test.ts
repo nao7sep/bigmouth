@@ -167,9 +167,34 @@ describe("apiKeys secret store", () => {
       expect(resolveApiKey(keyFile, W1, "c2", "anthropic")).toBe("real-pasted"); // untagged → plaintext
     });
 
-    it("treats a wrong-typed workspaces field as empty", () => {
-      fs.writeFileSync(keyFile, JSON.stringify({ workspaces: [] }));
+    it("preserves valid JSON with the wrong container shape before a key write", () => {
+      const wrongShape = '{"workspaces":[],"future":"keep me"}\n';
+      fs.writeFileSync(keyFile, wrongShape);
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+      writeApiKey(keyFile, W1, "c1", "anthropic", "new-key");
+
+      const quarantined = fs
+        .readdirSync(dir)
+        .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
+      expect(quarantined).toBeDefined();
+      expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
+      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("new-key");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/wrong shape/),
+        expect.objectContaining({ path: keyFile, movedTo: path.join(dir, quarantined!) }),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("preserves a store whose nested configs container has the wrong shape", () => {
+      const wrongShape = JSON.stringify({ workspaces: { [W1]: { configs: [] } } });
+      fs.writeFileSync(keyFile, wrongShape);
       expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+      const quarantined = fs
+        .readdirSync(dir)
+        .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
+      expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
     });
 
     it("resolves a malformed obf: value as absent and warns naming the key, rather than passing decoded garbage to the provider", () => {
