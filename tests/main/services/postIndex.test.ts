@@ -306,6 +306,22 @@ describe("a rebuild says what it left behind", () => {
     ]);
   });
 
+  it("reports a non-string slug as an invalid file instead of crashing", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(
+      post.filePath,
+      fs.readFileSync(post.filePath, "utf-8").replace("status: draft", "status: draft\nslug: 123"),
+    );
+
+    const result = rebuildIndex(dataDir);
+
+    expect(result.indexed).toBe(0);
+    expect(result.skipped).toEqual([
+      { fileName: path.basename(post.filePath), reason: "slug must be a string, got number" },
+    ]);
+    expect(fs.readFileSync(post.filePath, "utf-8")).toContain("slug: 123");
+  });
+
   it("names the loser of a duplicated post id", () => {
     const original = createPost(dataDir, "blogger", "en");
     fs.writeFileSync(postsPath("20260101-000000-utc-copy.md"), fs.readFileSync(original.filePath, "utf-8"));

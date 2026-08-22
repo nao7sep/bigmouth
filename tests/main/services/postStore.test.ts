@@ -147,6 +147,24 @@ describe("updatePost", () => {
     ).toThrow(/already uses the slug/);
     expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
   });
+
+  it("skips an externally edited non-string slug while scanning for conflicts", () => {
+    const malformed = createPost(dataDir, "blogger", "en");
+    const editable = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(
+      malformed.filePath,
+      fs
+        .readFileSync(malformed.filePath, "utf-8")
+        .replace("status: draft", "status: draft\nslug: 123"),
+    );
+
+    const updated = updatePost(dataDir, editable.frontMatter.id, {
+      frontMatter: { slug: "release-notes" },
+    });
+
+    expect(updated?.frontMatter.slug).toBe("release-notes");
+    expect(fs.readFileSync(malformed.filePath, "utf-8")).toContain("slug: 123");
+  });
 });
 
 describe("changeStatus", () => {

@@ -137,6 +137,16 @@ export function projectIndexEntry(
   fileName: string,
   body: string
 ): PostIndexEntry {
+  // `gray-matter` returns untyped YAML data. This is the boundary where a slug
+  // becomes an index value used by case-insensitive comparisons, so reject a
+  // present non-string instead of letting it masquerade as the declared type
+  // and crash a later `.toLowerCase()` call. Rebuild/scans catch this error and
+  // retain their existing per-file skip diagnostics.
+  const slug = (frontMatter as Record<string, unknown>).slug;
+  if (slug !== undefined && typeof slug !== "string") {
+    throw new Error(`slug must be a string, got ${slug === null ? "null" : typeof slug}`);
+  }
+
   const entry: PostIndexEntry = {
     id: frontMatter.id,
     fileName,
@@ -145,7 +155,7 @@ export function projectIndexEntry(
     language: frontMatter.language,
     createdAtUtc: frontMatter.createdAtUtc,
   };
-  if (frontMatter.slug) entry.slug = frontMatter.slug;
+  if (slug) entry.slug = slug;
   if (frontMatter.title) entry.title = frontMatter.title;
   if (frontMatter.language !== "en" && frontMatter.titleEn) entry.titleEn = frontMatter.titleEn;
   if (!entry.title && !entry.titleEn) {
@@ -159,4 +169,3 @@ export function projectIndexEntry(
   if (frontMatter.expiredAtUtc) entry.expiredAtUtc = frontMatter.expiredAtUtc;
   return entry;
 }
-
