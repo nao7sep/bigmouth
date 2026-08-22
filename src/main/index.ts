@@ -22,8 +22,12 @@ import { installApplicationMenu } from "./menu.js";
 
 app.setName("BigMouth");
 
-// Must run before the app is ready: declares the raw-asset scheme privileged.
-registerAssetScheme();
+// The stores below deliberately keep their indexes and write-behind buffers in
+// process memory. A second process over the same workspace could therefore make
+// decisions from stale state (including assigning the same export slug twice)
+// and overwrite a newer index.json. One app process may own that state; a second
+// launch is routed back to its existing window before it can touch durable data.
+const ownsInstance = app.requestSingleInstanceLock();
 
 let shuttingDown = false;
 
@@ -72,62 +76,76 @@ function openMainWindow(): void {
   });
 }
 
-app.whenReady().then(bootstrap).catch((err: unknown) => {
-  // Logging itself may be the failing startup step, so stderr remains the floor.
-  const message = err instanceof Error ? err.message : String(err);
-  console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
-  try {
-    logError("bootstrap failed", { error: serializeError(err) });
-  } catch {
-    // The logger itself may be what failed; stderr above already carried it.
-  }
-  showStartupFailure(message);
-  app.exit(1);
-});
+if (!ownsInstance) {
+  app.quit();
+} else {
+  // Must run before the app is ready: declares the raw-asset scheme privileged.
+  registerAssetScheme();
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  app.on("second-instance", () => {
+    const existing = BrowserWindow.getAllWindows()[0];
+    if (!existing) return;
+    if (existing.isMinimized()) existing.restore();
+    existing.focus();
+  });
 
-// Clean shutdown: hold the quit once, write any buffered content edits, flush
-// the log file by closing it, then exit deterministically. The post store owns
-// pending content (write-behind), so this flush — not a renderer round-trip —
-// is what guarantees the newest keystroke is on disk. A second quit during
-// shutdown falls through (force-quit).
-app.on("before-quit", (event) => {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-  event.preventDefault();
+  app.whenReady().then(bootstrap).catch((err: unknown) => {
+    // Logging itself may be the failing startup step, so stderr remains the floor.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
+    try {
+      logError("bootstrap failed", { error: serializeError(err) });
+    } catch {
+      // The logger itself may be what failed; stderr above already carried it.
+    }
+    showStartupFailure(message);
+    app.exit(1);
+  });
 
-  const failures = flushAllPendingContent();
-  if (failures.length > 0 && !systemShutdown) {
-    logError("pending content flush failed at quit", { failures });
-    if (confirmQuitWithUnsavedChanges() === "cancel") {
-      shuttingDown = false;
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+
+  // Clean shutdown: hold the quit once, write any buffered content edits, flush
+  // the log file by closing it, then exit deterministically. The post store owns
+  // pending content (write-behind), so this flush — not a renderer round-trip —
+  // is what guarantees the newest keystroke is on disk. A second quit during
+  // shutdown falls through (force-quit).
+  app.on("before-quit", (event) => {
+    if (shuttingDown) {
       return;
     }
-  }
+    shuttingDown = true;
+    event.preventDefault();
 
-  info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
-  closeLogger();
-  app.exit(0);
-});
+    const failures = flushAllPendingContent();
+    if (failures.length > 0 && !systemShutdown) {
+      logError("pending content flush failed at quit", { failures });
+      if (confirmQuitWithUnsavedChanges() === "cancel") {
+        shuttingDown = false;
+        return;
+      }
+    }
 
-// During OS shutdown or logout the app must not block: flush what it can and go.
-// macOS and Linux only — Windows has no powerMonitor "shutdown"; its signal is
-// the window's "session-end", wired in openMainWindow.
-powerMonitor.on("shutdown", () => {
-  systemShutdown = true;
-});
+    info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
+    closeLogger();
+    app.exit(0);
+  });
 
-process.on("uncaughtException", (err) => {
-  logError("uncaught exception", { error: serializeError(err) });
-});
+  // During OS shutdown or logout the app must not block: flush what it can and go.
+  // macOS and Linux only — Windows has no powerMonitor "shutdown"; its signal is
+  // the window's "session-end", wired in openMainWindow.
+  powerMonitor.on("shutdown", () => {
+    systemShutdown = true;
+  });
 
-process.on("unhandledRejection", (reason) => {
-  logError("unhandled promise rejection", { error: serializeError(reason) });
-});
+  process.on("uncaughtException", (err) => {
+    logError("uncaught exception", { error: serializeError(err) });
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    logError("unhandled promise rejection", { error: serializeError(reason) });
+  });
+}

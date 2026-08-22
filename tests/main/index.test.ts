@@ -20,6 +20,9 @@ const windowHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => 
 const powerHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const shell = vi.hoisted(() => ({
   exits: [] as number[],
+  quitRequests: 0,
+  ownsInstance: true,
+  windows: [] as { isMinimized: () => boolean; restore: () => void; focus: () => void }[],
   dialogs: [] as { detail?: string }[],
   // What the user clicks in the unsaved-changes dialog: 0 = Cancel (the default).
   dialogChoice: 0,
@@ -28,13 +31,14 @@ const shell = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     setName: () => {},
+    requestSingleInstanceLock: () => shell.ownsInstance,
     getVersion: () => "0.0.0-test",
     whenReady: () => Promise.resolve(),
     on: (event: string, cb: (...args: unknown[]) => unknown) => appHandlers.set(event, cb),
-    quit: () => {},
+    quit: () => { shell.quitRequests++; },
     exit: (code: number) => shell.exits.push(code),
   },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: { getAllWindows: () => shell.windows },
   dialog: {
     showMessageBoxSync: (options: { detail?: string }) => {
       shell.dialogs.push(options);
@@ -88,6 +92,9 @@ async function bootApp(): Promise<PostStore> {
   windowHandlers.clear();
   powerHandlers.clear();
   shell.exits.length = 0;
+  shell.quitRequests = 0;
+  shell.ownsInstance = true;
+  shell.windows.length = 0;
   shell.dialogs.length = 0;
   shell.dialogChoice = 0;
 
@@ -177,5 +184,38 @@ describe("quit flushes the write-behind buffer", () => {
 
     expect(shell.dialogs).toEqual([]);
     expect(shell.exits).toEqual([0]);
+  });
+});
+
+describe("single app-process ownership", () => {
+  it("quits a second process before it can bootstrap process-local workspace state", async () => {
+    vi.resetModules();
+    appHandlers.clear();
+    windowHandlers.clear();
+    powerHandlers.clear();
+    shell.quitRequests = 0;
+    shell.ownsInstance = false;
+
+    await import("@main/index.js");
+    await Promise.resolve();
+
+    expect(shell.quitRequests).toBe(1);
+    expect(windowHandlers.has("session-end")).toBe(false);
+    expect(appHandlers.has("before-quit")).toBe(false);
+  });
+
+  it("focuses the existing window when another launch is redirected to it", async () => {
+    await bootApp();
+    const existing = {
+      isMinimized: vi.fn(() => true),
+      restore: vi.fn(),
+      focus: vi.fn(),
+    };
+    shell.windows.push(existing);
+
+    appHandlers.get("second-instance")!();
+
+    expect(existing.restore).toHaveBeenCalledOnce();
+    expect(existing.focus).toHaveBeenCalledOnce();
   });
 });
