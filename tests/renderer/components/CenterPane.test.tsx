@@ -35,14 +35,14 @@ vi.mock("@renderer/api", () => ({
 // logic. The editor stand-in exposes a textarea that drives onContentChange.
 vi.mock("@renderer/components/MarkdownEditor", () => ({
   MarkdownEditor: (props: {
-    content: string;
+    initialContent: string;
     onContentChange: (v: string) => void;
     readOnly?: boolean;
   }) => (
     <textarea
       data-testid="editor"
       data-readonly={String(props.readOnly)}
-      value={props.content}
+      value={props.initialContent}
       onChange={(e) => props.onContentChange(e.target.value)}
     />
   ),

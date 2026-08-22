@@ -11,7 +11,7 @@ export interface MarkdownEditorHandle {
 }
 
 interface MarkdownEditorProps {
-  content: string;
+  initialContent: string;
   onContentChange: (value: string) => void;
   watermark: string;
   contentFont: ContentFont;
@@ -46,16 +46,17 @@ export function buildEditorTheme(font: ContentFont) {
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
   function MarkdownEditor(
-    { content, onContentChange, watermark, contentFont, readOnly = false }: MarkdownEditorProps,
+    { initialContent, onContentChange, watermark, contentFont, readOnly = false }: MarkdownEditorProps,
     ref
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onContentChange);
-  const suppressChangeRef = useRef(false);
   const readOnlyCompartmentRef = useRef(new Compartment());
   const editableCompartmentRef = useRef(new Compartment());
   const themeCompartmentRef = useRef(new Compartment());
+  const appliedReadOnlyRef = useRef(readOnly);
+  const appliedContentFontRef = useRef(contentFont);
   // Read the latest content font without retriggering the create-once effect.
   const contentFontRef = useRef(contentFont);
   contentFontRef.current = contentFont;
@@ -82,13 +83,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     if (!containerRef.current) return;
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged && !suppressChangeRef.current) {
+      if (update.docChanged) {
         onChangeRef.current(update.state.doc.toString());
       }
     });
 
     const state = EditorState.create({
-      doc: content,
+      doc: initialContent,
       extensions: [
         basicSetup,
         markdown({ codeLanguages: languages }),
@@ -113,32 +114,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       view.destroy();
       viewRef.current = null;
     };
-    // Only run on mount — content updates handled via dispatch below
+    // A keyed CenterPane mounts one editor per post. Keeping the document
+    // editor-owned after this seed is important: feeding each intermediate
+    // React render back into CodeMirror can replace its composition DOM while
+    // a macOS IME candidate is active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external content changes (e.g. post switch) into the editor
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
-
-    const currentDoc = view.state.doc.toString();
-    if (currentDoc !== content) {
-      suppressChangeRef.current = true;
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: currentDoc.length,
-          insert: content,
-        },
-      });
-      suppressChangeRef.current = false;
-    }
-  }, [content]);
-
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
+    if (!view || appliedReadOnlyRef.current === readOnly) return;
+    appliedReadOnlyRef.current = readOnly;
     view.dispatch({
       effects: [
         readOnlyCompartmentRef.current.reconfigure(EditorState.readOnly.of(readOnly)),
@@ -151,7 +137,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   // without rebuilding the editor.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || appliedContentFontRef.current === contentFont) return;
+    appliedContentFontRef.current = contentFont;
     view.dispatch({
       effects: themeCompartmentRef.current.reconfigure(buildEditorTheme(contentFont)),
     });

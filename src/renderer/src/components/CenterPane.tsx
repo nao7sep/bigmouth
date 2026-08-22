@@ -396,7 +396,7 @@ export function CenterPane({
       <div className="center-editor">
         <MarkdownEditor
           ref={editorRef}
-          content={content}
+          initialContent={content}
           onContentChange={handleContentChange}
           watermark={watermark}
           contentFont={contentFont}
