@@ -286,12 +286,11 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
 }
 
 export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Workspace {
-  const trimmedDir = dataDirectory?.trim();
-  if (!trimmedDir) {
+  if (dataDirectory === undefined || dataDirectory.length === 0) {
     return createWorkspace(resolveWorkspaceName(name, undefined));
   }
 
-  const dir = expandWorkspacePath(trimmedDir);
+  const dir = expandWorkspacePath(dataDirectory);
   const existing = findWorkspaceByDirectory(dir);
   if (existing) {
     return existing;

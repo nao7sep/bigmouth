@@ -16,7 +16,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { MODEL_DEFS, defaultMaxTokens, findModelDef } from "@shared/types";
+import { MODEL_DEFS, defaultMaxTokens, findModelDef, isAiConfigId } from "@shared/types";
 import type {
   Settings,
   Target,
@@ -190,7 +190,7 @@ function readConfig(dataDir: string): WorkspaceConfig {
   const aiConfigs = (parsed as { aiConfigs: { id?: unknown }[] }).aiConfigs;
   const ids = new Set<string>();
   for (const config of aiConfigs) {
-    if (!config || typeof config.id !== "string" || config.id.length === 0) {
+    if (!config || !isAiConfigId(config.id)) {
       throw new Error(`${CONFIG_FILE} contains an AI config without a usable id. It was left unchanged at ${filePath}`);
     }
     if (ids.has(config.id)) {

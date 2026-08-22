@@ -61,7 +61,7 @@ export function WorkspaceModal({
   const nameComposing = useComposing();
   const locationComposing = useComposing();
 
-  const isDirty = name.trim() !== "" || location.trim() !== "";
+  const isDirty = name.trim() !== "" || location !== "";
 
   const clearForm = () => {
     setError(null);
@@ -130,7 +130,7 @@ export function WorkspaceModal({
     setSubmitting(true);
     setError(null);
     try {
-      const workspace = await openOrCreateWorkspace(name.trim() || undefined, location.trim() || undefined);
+      const workspace = await openOrCreateWorkspace(name.trim() || undefined, location === "" ? undefined : location);
       clearForm();
       load();
       await onSelect(workspace);

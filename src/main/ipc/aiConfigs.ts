@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS, type AiConfigInput, type AiConfigPatch } from "@shared/ipc";
-import { AI_PROVIDERS, validateMaxTokens, type AiProvider } from "@shared/types";
+import { AI_PROVIDERS, isAiConfigId, validateMaxTokens, type AiProvider } from "@shared/types";
 import {
   getAiConfigsForClient,
   createAiConfig,
@@ -12,9 +12,6 @@ import {
 } from "../core/services/configStore.js";
 import { info, warn, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-
-// AI config IDs share nanoid's alphabet; rejecting odd characters keeps logs sane.
-const ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function isAiProvider(value: unknown): value is AiProvider {
   return typeof value === "string" && (AI_PROVIDERS as readonly string[]).includes(value);
@@ -30,7 +27,7 @@ export function registerAiConfigHandlers(): void {
 
   ipcMain.handle(CHANNELS.createAiConfig, (_event, wsId: string, input: AiConfigInput) => {
     const ws = resolveWorkspace(wsId);
-    if (typeof input?.id !== "string" || !ID_RE.test(input.id)) {
+    if (!isAiConfigId(input?.id)) {
       throw new Error("id is required and must match [A-Za-z0-9_-]+");
     }
     if (typeof input.name !== "string") throw new Error("name must be a string");
@@ -61,7 +58,7 @@ export function registerAiConfigHandlers(): void {
   ipcMain.handle(CHANNELS.setActiveAiConfig, (_event, wsId: string, id: string) => {
     const ws = resolveWorkspace(wsId);
     if (typeof id !== "string") throw new Error("id must be a string");
-    if (id !== "" && !ID_RE.test(id)) throw new Error("id is malformed");
+    if (id !== "" && !isAiConfigId(id)) throw new Error("id is malformed");
     try {
       const result = setActiveAiConfig(ws, id);
       info("ai active config set", { workspace: wsId, activeId: id || null });
@@ -75,7 +72,7 @@ export function registerAiConfigHandlers(): void {
   // Partial update: a field omitted is preserved; apiKey "" clears, non-empty replaces.
   ipcMain.handle(CHANNELS.updateAiConfig, (_event, wsId: string, id: string, body: AiConfigPatch) => {
     const ws = resolveWorkspace(wsId);
-    if (!ID_RE.test(id)) throw new Error("id is malformed");
+    if (!isAiConfigId(id)) throw new Error("id is malformed");
     const patch: UpdateAiConfigPatch = {};
     if (body?.name !== undefined) {
       if (typeof body.name !== "string") throw new Error("name must be a string");
@@ -114,7 +111,7 @@ export function registerAiConfigHandlers(): void {
 
   ipcMain.handle(CHANNELS.deleteAiConfig, (_event, wsId: string, id: string) => {
     const ws = resolveWorkspace(wsId);
-    if (!ID_RE.test(id)) throw new Error("id is malformed");
+    if (!isAiConfigId(id)) throw new Error("id is malformed");
     try {
       const result = deleteAiConfig(ws, id);
       info("ai config deleted", { workspace: wsId, configId: id });

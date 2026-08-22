@@ -200,6 +200,16 @@ export {
 export const AI_PROVIDERS = ["anthropic"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
+// AI config ids are durable links between the git-versioned workspace config,
+// the machine-local key store, and every management IPC operation. One predicate
+// owns their nanoid-compatible grammar so a row accepted from disk is guaranteed
+// to remain selectable, updateable, and deletable through the app.
+const AI_CONFIG_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+export function isAiConfigId(value: unknown): value is string {
+  return typeof value === "string" && AI_CONFIG_ID_RE.test(value);
+}
+
 // User-facing display names. The internal id is the conventional vendor/env name
 // (api-key-storage-conventions); the product label is a display mapping only.
 export const PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: "Claude" };

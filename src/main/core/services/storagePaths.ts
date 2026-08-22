@@ -234,7 +234,7 @@ export function getBackupsDbPath(): string {
  */
 export function expandWorkspacePath(p: string): string {
   const home = os.homedir();
-  let value = p.trim();
+  let value = p;
   if (value === "~") {
     value = home;
   } else if (value.startsWith("~/") || value.startsWith("~\\")) {

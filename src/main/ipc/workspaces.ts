@@ -20,7 +20,7 @@ export function registerWorkspaceHandlers(): void {
 
   ipcMain.handle(CHANNELS.openOrCreateWorkspace, (_event, name?: string, dataDirectory?: string) => {
     try {
-      const ws = openOrCreateWorkspace(name?.trim(), dataDirectory?.trim());
+      const ws = openOrCreateWorkspace(name?.trim(), dataDirectory);
       info("workspace selected", {
         workspaceId: ws.id,
         workspaceName: ws.name,

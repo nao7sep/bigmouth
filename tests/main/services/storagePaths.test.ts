@@ -219,6 +219,27 @@ describe("workspace paths are cwd-independent", () => {
       fs.rmSync(parent, { recursive: true, force: true });
     }
   });
+
+  it.skipIf(process.platform === "win32")("preserves leading and trailing spaces in a native-picker directory", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-space-home-"));
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ws-space-parent-"));
+    const literal = path.join(parent, " Workspace ");
+    const trimmedSibling = path.join(parent, "Workspace");
+    try {
+      fs.mkdirSync(literal);
+      process.env.BIGMOUTH_HOME = root;
+      initAppDir();
+
+      const workspace = createWorkspace("Literal spaces", literal);
+
+      expect(workspace.dataDirectory).toBe(literal);
+      expect(fs.existsSync(path.join(literal, "config.json"))).toBe(true);
+      expect(fs.existsSync(trimmedSibling)).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
 });
 
 // The module owns every standard subpath name, so two derivations of one file

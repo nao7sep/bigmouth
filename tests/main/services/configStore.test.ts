@@ -107,6 +107,22 @@ describe("corrupt config files", () => {
     expect(() => getAiConfigsForClient(ws)).toThrow(/duplicate AI config id/);
     expect(fs.readFileSync(configPath, "utf8")).toBe(duplicate);
   });
+
+  it.each([
+    ["empty", ""],
+    ["outside the management grammar", "bad id!"],
+  ])("refuses an %s AI config id without rewriting the config", (_case, id) => {
+    const configPath = path.join(dataDir, "config.json");
+    const healthy = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const malformed = JSON.stringify({
+      ...healthy,
+      aiConfigs: [{ ...healthy.aiConfigs[0], id }],
+    });
+    fs.writeFileSync(configPath, malformed, "utf8");
+
+    expect(() => getAiConfigsForClient(ws)).toThrow(/without a usable id/);
+    expect(fs.readFileSync(configPath, "utf8")).toBe(malformed);
+  });
 });
 
 describe("settings", () => {

@@ -229,6 +229,25 @@ describe("WorkspaceModal — create/open submit", () => {
     expect(mockOpenOrCreate).toHaveBeenCalledWith(undefined, undefined);
   });
 
+  it("submits a picker path with leading and trailing spaces unchanged", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockResolvedValue("/picked/ Workspace ");
+    mockOpenOrCreate.mockResolvedValue(WORKSPACE);
+    const { getByText } = await renderWith();
+
+    await act(async () => {
+      fireEvent.click(getByText("Browse"));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(getByText("Open or Create"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockOpenOrCreate).toHaveBeenCalledWith(undefined, "/picked/ Workspace ");
+  });
+
   it("surfaces a submit failure as a field error and keeps the form open", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockOpenOrCreate.mockRejectedValue(new Error("folder is not empty"));

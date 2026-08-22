@@ -1,6 +1,6 @@
 // Integration test for the workspace IPC handlers: the real workspaceStore runs
 // against a throwaway BIGMOUTH_HOME; only `electron` (ipcMain) and the logger are
-// mocked. Exercises list/openOrCreate/update/delete, argument trimming, the
+// mocked. Exercises list/openOrCreate/update/delete, name cleanup, literal paths, the
 // not-found -> thrown-Error mapping, and the rule that deleting a workspace also
 // drops its stored API keys (asserted through the apiKeys service, mirroring
 // tests/main/services/workspaceStore.test.ts).
@@ -82,7 +82,7 @@ describe("workspace IPC handlers", () => {
 
   it("trims the name when opening-or-creating, then opens the same directory idempotently", () => {
     const dir = tempDir("explicit");
-    const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "  Spaced  ", `  ${dir}  `);
+    const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "  Spaced  ", dir);
     expect(ws.name).toBe("Spaced");
     expect(ws.dataDirectory).toBe(dir);
 
@@ -90,6 +90,18 @@ describe("workspace IPC handlers", () => {
     const again = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "ignored", dir);
     expect(again.id).toBe(ws.id);
     expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform === "win32")("preserves a native-picked directory with leading and trailing spaces", () => {
+    const parent = tempDir("literal-spaces");
+    const dir = path.join(parent, " Workspace ");
+    fs.mkdirSync(dir);
+
+    const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Literal", dir);
+
+    expect(ws.dataDirectory).toBe(dir);
+    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(true);
+    expect(fs.existsSync(path.join(parent, "Workspace"))).toBe(false);
   });
 
   it("maps a store rejection (non-empty, non-workspace folder) to a thrown Error", () => {
