@@ -695,13 +695,18 @@ function RebuildIndexSection() {
     setMessage(null);
     setError(null);
     try {
-      const { count, skipped, orphanedAssets } = await rebuildPostIndex();
+      const { count, skipped, duplicateSlugs, orphanedAssets } = await rebuildPostIndex();
       const parts = [`Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`];
       // A skipped file is a post the app can no longer show. Saying only what
       // was indexed let one vanish under a success message.
       if (skipped > 0) {
         parts.push(
           `${skipped} file${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out — see the log.`,
+        );
+      }
+      if (duplicateSlugs > 0) {
+        parts.push(
+          `${duplicateSlugs} duplicate slug group${duplicateSlugs === 1 ? "" : "s"} remain${duplicateSlugs === 1 ? "s" : ""} — see the log.`,
         );
       }
       // Asset folders whose post is gone: nothing here deletes them (they are

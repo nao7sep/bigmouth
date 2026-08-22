@@ -81,6 +81,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{
       count: number;
       skipped: number;
+      duplicateSlugs: number;
       orphanedAssets: number;
     }>,
   // Content streaming: fire-and-forget send; the main-process post store owns

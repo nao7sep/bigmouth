@@ -88,10 +88,16 @@ export function removeEntry(dataDir: string, id: string): void {
   persist(dataDir, map);
 }
 
-/** What a rebuild found: how many posts are indexed, and every file it could not use. */
+export interface DuplicateSlugGroup {
+  slug: string;
+  fileNames: string[];
+}
+
+/** What a rebuild found: indexed posts, unusable files, and ambiguous slugs. */
 export interface RebuildResult {
   indexed: number;
   skipped: { fileName: string; reason: string }[];
+  duplicateSlugs: DuplicateSlugGroup[];
 }
 
 /**
@@ -105,10 +111,32 @@ export interface RebuildResult {
  * editing those files outside it.
  */
 export function rebuild(dataDir: string): RebuildResult {
-  const { map, skipped } = buildFromDisk(dataDir);
+  const { map, skipped, duplicateSlugs } = buildFromDisk(dataDir);
   indexes.set(dataDir, map);
   persist(dataDir, map);
-  return { indexed: map.size, skipped };
+  return { indexed: map.size, skipped, duplicateSlugs };
+}
+
+/**
+ * Finds a post that currently owns a slug by reading the Markdown source of
+ * truth, rather than the derived in-memory index. Bigmouth explicitly supports
+ * editing those files outside the app, so the cache can be stale for the whole
+ * lifetime of an open window.
+ */
+export function findSlugConflictOnDisk(
+  dataDir: string,
+  slug: string,
+  excludingFileName: string,
+): PostIndexEntry | null {
+  const normalized = slug.toLowerCase();
+  for (const fileName of postFileNames(dataDir)) {
+    if (fileName === excludingFileName) continue;
+    const result = tryEntryFromFile(dataDir, fileName);
+    if ("entry" in result && result.entry.slug?.toLowerCase() === normalized) {
+      return result.entry;
+    }
+  }
+  return null;
 }
 
 // --- Internal ---
@@ -171,6 +199,7 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
 function buildFromDisk(dataDir: string): {
   map: Map<string, PostIndexEntry>;
   skipped: { fileName: string; reason: string }[];
+  duplicateSlugs: DuplicateSlugGroup[];
 } {
   const map = new Map<string, PostIndexEntry>();
   const skipped: { fileName: string; reason: string }[] = [];
@@ -184,7 +213,11 @@ function buildFromDisk(dataDir: string): {
       skipped.push({ fileName, reason: `duplicate post id ${result.entry.id}` });
     }
   }
-  return { map, skipped };
+  const duplicateSlugs = findDuplicateSlugGroups(map.values());
+  for (const duplicate of duplicateSlugs) {
+    logWarn("duplicate post slug", { slug: duplicate.slug, fileNames: duplicate.fileNames });
+  }
+  return { map, skipped, duplicateSlugs };
 }
 
 /**
@@ -307,6 +340,21 @@ function postFileNames(dataDir: string): string[] {
     .readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .sort();
+}
+
+function findDuplicateSlugGroups(entries: Iterable<PostIndexEntry>): DuplicateSlugGroup[] {
+  const bySlug = new Map<string, DuplicateSlugGroup>();
+  for (const entry of entries) {
+    if (!entry.slug) continue;
+    const key = entry.slug.toLowerCase();
+    const existing = bySlug.get(key);
+    if (existing) {
+      existing.fileNames.push(entry.fileName);
+    } else {
+      bySlug.set(key, { slug: key, fileNames: [entry.fileName] });
+    }
+  }
+  return [...bySlug.values()].filter((group) => group.fileNames.length > 1);
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {

@@ -157,11 +157,13 @@ export function registerPostHandlers(): void {
       workspace: wsId,
       indexed: result.indexed,
       skipped: result.skipped,
+      duplicateSlugs: result.duplicateSlugs,
       orphanedAssets: result.orphanedAssets,
     });
     return {
       count: result.indexed,
       skipped: result.skipped.length,
+      duplicateSlugs: result.duplicateSlugs.length,
       orphanedAssets: result.orphanedAssets,
     };
   });

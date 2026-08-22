@@ -271,11 +271,12 @@ export interface BigMouthApi {
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
   /**
    * `count` is what is now indexed, `skipped` how many files could not be read,
-   * and `orphanedAssets` how many asset folders belong to a post that is gone.
+   * `duplicateSlugs` how many case-insensitive slug collisions remain, and
+   * `orphanedAssets` how many asset folders belong to a post that is gone.
    */
   rebuildPostIndex(
     wsId: string,
-  ): Promise<{ count: number; skipped: number; orphanedAssets: number }>;
+  ): Promise<{ count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number }>;
 
   /** Records a renderer-side warning or error in the session log. Fire-and-forget. */
   writeRendererLog(entry: RendererLogEntry): void;

@@ -414,13 +414,7 @@ export function updatePost(
     if (
       typeof requestedSlug === "string" &&
       requestedSlug.length > 0 &&
-      index
-        .allEntries(dataDir)
-        .some(
-          (entry) =>
-            entry.id !== id &&
-            entry.slug?.toLowerCase() === requestedSlug.toLowerCase(),
-        )
+      index.findSlugConflictOnDisk(dataDir, requestedSlug, path.basename(post.filePath))
     ) {
       throw new Error(`Another post already uses the slug "${requestedSlug}"`);
     }

@@ -133,6 +133,20 @@ describe("updatePost", () => {
     ).toThrow(/already uses the slug/);
     expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
   });
+
+  it("refuses a slug added to another post by an external Markdown edit", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const second = createPost(dataDir, "blogger", "en");
+    const externallyEdited = fs
+      .readFileSync(first.filePath, "utf-8")
+      .replace("status: draft", "status: draft\nslug: Release-Notes");
+    fs.writeFileSync(first.filePath, externallyEdited);
+
+    expect(() =>
+      updatePost(dataDir, second.frontMatter.id, { frontMatter: { slug: "release-notes" } }),
+    ).toThrow(/already uses the slug/);
+    expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
+  });
 });
 
 describe("changeStatus", () => {

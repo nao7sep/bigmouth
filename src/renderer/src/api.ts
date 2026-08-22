@@ -146,6 +146,7 @@ export function listReferrers(
 export function rebuildPostIndex(): Promise<{
   count: number;
   skipped: number;
+  duplicateSlugs: number;
   orphanedAssets: number;
 }> {
   return bridge().rebuildPostIndex(requireWs());

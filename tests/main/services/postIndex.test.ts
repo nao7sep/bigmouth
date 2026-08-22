@@ -239,7 +239,40 @@ describe("a rebuild says what it left behind", () => {
     createPost(dataDir, "blogger", "en");
     createPost(dataDir, "blogger", "en");
 
-    expect(rebuildIndex(dataDir)).toEqual({ indexed: 2, skipped: [], orphanedAssets: 0 });
+    expect(rebuildIndex(dataDir)).toEqual({
+      indexed: 2,
+      skipped: [],
+      duplicateSlugs: [],
+      orphanedAssets: 0,
+    });
+  });
+
+  it("reports duplicate slugs without leaving either post out", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const second = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(
+      first.filePath,
+      fs
+        .readFileSync(first.filePath, "utf-8")
+        .replace("status: draft", "status: draft\nslug: Release-Notes"),
+    );
+    fs.writeFileSync(
+      second.filePath,
+      fs
+        .readFileSync(second.filePath, "utf-8")
+        .replace("status: draft", "status: draft\nslug: release-notes"),
+    );
+
+    const result = rebuildIndex(dataDir);
+
+    expect(result.indexed).toBe(2);
+    expect(result.skipped).toEqual([]);
+    expect(result.duplicateSlugs).toEqual([
+      {
+        slug: "release-notes",
+        fileNames: [path.basename(first.filePath), path.basename(second.filePath)].sort(),
+      },
+    ]);
   });
 
   it("names a file whose front matter cannot be read", () => {

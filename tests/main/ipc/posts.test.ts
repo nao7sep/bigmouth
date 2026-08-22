@@ -417,8 +417,13 @@ describe("rebuildPostIndex", () => {
   it("rebuilds the index and reports the post count", () => {
     createDraft();
     createDraft();
-    const res = invoke<{ count: number }>(CHANNELS.rebuildPostIndex, wsId);
-    expect(res.count).toBe(2);
+    const res = invoke<{
+      count: number;
+      skipped: number;
+      duplicateSlugs: number;
+      orphanedAssets: number;
+    }>(CHANNELS.rebuildPostIndex, wsId);
+    expect(res).toEqual({ count: 2, skipped: 0, duplicateSlugs: 0, orphanedAssets: 0 });
   });
 
   // The catch branch (rebuildIndex throwing) is not exercised: rebuildIndex only
