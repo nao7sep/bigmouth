@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { render, act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, act, cleanup, createEvent, fireEvent, waitFor, within } from "@testing-library/react";
 import type { AssetMeta } from "@shared/types";
 
 // AssetsTab reaches the backend through these four api calls.
@@ -41,6 +41,7 @@ function makeFile(name: string, sizeBytes = 10): File {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   mockListAssets.mockReset();
   mockUploadAsset.mockReset();
@@ -232,20 +233,62 @@ describe("AssetsTab drag and drop", () => {
     // supplied directly on the event; the handler only reads dataTransfer.files.
     const file = makeFile("dropped.png");
     await act(async () => {
-      fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+      fireEvent.drop(zone, { dataTransfer: { files: [file], dropEffect: "none" } });
     });
     expect(mockUploadAsset).toHaveBeenCalledWith("p1", file, "w1");
   });
 
-  it("toggles the drag-over class on dragover/dragleave", async () => {
+  it("highlights only accepted file offers and resets on dragleave", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container } = await renderTab();
     const zone = dropzone(container);
 
-    fireEvent.dragOver(zone);
+    const rejected = createEvent.dragOver(zone, {
+      dataTransfer: { types: ["text/plain"], dropEffect: "copy" },
+    });
+    fireEvent(zone, rejected);
+    expect(rejected.defaultPrevented).toBe(false);
+    expect((rejected as DragEvent).dataTransfer?.dropEffect).toBe("none");
+    expect(zone.classList.contains("drag-over")).toBe(false);
+    expect(zone.classList.contains("drag-rejected")).toBe(true);
+
+    const accepted = createEvent.dragOver(zone, {
+      dataTransfer: { types: ["Files"], dropEffect: "none" },
+    });
+    fireEvent(zone, accepted);
+    expect(accepted.defaultPrevented).toBe(true);
+    expect((accepted as DragEvent).dataTransfer?.dropEffect).toBe("copy");
     expect(zone.classList.contains("drag-over")).toBe(true);
+    expect(zone.classList.contains("drag-rejected")).toBe(false);
     fireEvent.dragLeave(zone);
     expect(zone.classList.contains("drag-over")).toBe(false);
+  });
+
+  it("clears an accepted highlight when a cancelled OS drag sends no terminal event", async () => {
+    mockListAssets.mockResolvedValue([]);
+    const { container } = await renderTab();
+    const zone = dropzone(container);
+    vi.useFakeTimers();
+
+    fireEvent.dragOver(zone, { dataTransfer: { types: ["Files"], dropEffect: "none" } });
+    expect(zone.classList.contains("drag-over")).toBe(true);
+
+    act(() => vi.advanceTimersByTime(501));
+    expect(zone.classList.contains("drag-over")).toBe(false);
+  });
+
+  it("ignores a drop without local file data", async () => {
+    mockListAssets.mockResolvedValue([]);
+    const { container } = await renderTab();
+    const zone = dropzone(container);
+    const droppedText = createEvent.drop(zone, {
+      dataTransfer: { files: [], types: ["text/plain"], dropEffect: "none" },
+    });
+
+    fireEvent(zone, droppedText);
+
+    expect(droppedText.defaultPrevented).toBe(false);
+    expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });
 

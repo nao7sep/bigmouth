@@ -46,10 +46,12 @@ function state(over: Partial<PostPickerState> = {}): PostPickerState {
 }
 
 describe("PostPickerList — render", () => {
-  it("renders a filter input and a labelled listbox of post rows", () => {
+  it("renders a filter input and a labelled listbox with display-form status labels", () => {
     const posts = [
-      summary({ id: "p1", title: "First" }),
+      summary({ id: "p1", title: "First", status: "published" }),
       summary({ id: "p2", title: "Second", target: "x", language: "ja", status: "draft" }),
+      summary({ id: "p3", title: "Third", status: "ready" }),
+      summary({ id: "p4", title: "Fourth", status: "expired" }),
     ];
     const { getByPlaceholderText, getByLabelText, getByText } = render(
       <PostPickerList {...state({ posts })} onSelect={vi.fn()} />,
@@ -59,8 +61,11 @@ describe("PostPickerList — render", () => {
     expect(listbox.getAttribute("role")).toBe("listbox");
     expect(getByText("First")).toBeTruthy();
     expect(getByText("Second")).toBeTruthy();
-    // The sub-line packs target · language · status.
-    expect(getByText("x · ja · draft")).toBeTruthy();
+    // The sub-line presents a display label without changing the wire status.
+    expect(getByText("blog · en · Published")).toBeTruthy();
+    expect(getByText("x · ja · Draft")).toBeTruthy();
+    expect(getByText("blog · en · Ready")).toBeTruthy();
+    expect(getByText("blog · en · Expired")).toBeTruthy();
   });
 
   it("falls back through title → excerpt → id for the row label", () => {

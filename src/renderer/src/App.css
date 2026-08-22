@@ -1367,7 +1367,7 @@ button:disabled,
   background: none;
 }
 
-.assets-dropzone:hover,
+.assets-dropzone:not([aria-disabled="true"]):hover:not(.drag-rejected),
 .assets-dropzone.drag-over {
   border-color: var(--bm-accent);
   background: var(--bm-accent-subtle);

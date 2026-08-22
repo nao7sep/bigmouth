@@ -14,6 +14,13 @@ interface AssetsTabProps {
 }
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
+const DRAG_SIGNAL_TIMEOUT_MS = 500;
+
+type DragState = "idle" | "accepting" | "rejecting";
+
+function offersFiles(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes("Files");
+}
 
 function ext(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
@@ -48,10 +55,39 @@ export function AssetsTab({
 }: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragState, setDragState] = useState<DragState>("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragSignalTimeoutRef = useRef<number | undefined>(undefined);
   const confirm = useConfirm();
+
+  const resetDragState = useCallback(() => {
+    if (dragSignalTimeoutRef.current !== undefined) {
+      window.clearTimeout(dragSignalTimeoutRef.current);
+      dragSignalTimeoutRef.current = undefined;
+    }
+    setDragState("idle");
+  }, []);
+
+  const pulseDragState = useCallback((state: Exclude<DragState, "idle">) => {
+    if (dragSignalTimeoutRef.current !== undefined) {
+      window.clearTimeout(dragSignalTimeoutRef.current);
+    }
+    setDragState(state);
+    dragSignalTimeoutRef.current = window.setTimeout(() => {
+      dragSignalTimeoutRef.current = undefined;
+      setDragState("idle");
+    }, DRAG_SIGNAL_TIMEOUT_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (dragSignalTimeoutRef.current !== undefined) {
+        window.clearTimeout(dragSignalTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -130,11 +166,11 @@ export function AssetsTab({
   };
 
   const handleDrop = async (e: React.DragEvent) => {
+    resetDragState();
+    if (readOnly || e.dataTransfer.files.length === 0) return;
     e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      await checkAndUpload(e.dataTransfer.files);
-    }
+    e.dataTransfer.dropEffect = "copy";
+    await checkAndUpload(e.dataTransfer.files);
   };
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,14 +210,22 @@ export function AssetsTab({
     <div className="assets-tab">
       {/* Drop zone */}
       <div
-        className={`assets-dropzone${dragOver ? " drag-over" : ""}`}
+        className={
+          `assets-dropzone${dragState === "accepting" ? " drag-over" : ""}` +
+          `${dragState === "rejecting" ? " drag-rejected" : ""}`
+        }
         aria-disabled={readOnly || undefined}
         onDragOver={(e) => {
-          if (readOnly) return;
+          if (readOnly || !offersFiles(e.dataTransfer)) {
+            e.dataTransfer.dropEffect = "none";
+            pulseDragState("rejecting");
+            return;
+          }
           e.preventDefault();
-          setDragOver(true);
+          e.dataTransfer.dropEffect = "copy";
+          pulseDragState("accepting");
         }}
-        onDragLeave={() => setDragOver(false)}
+        onDragLeave={resetDragState}
         onDrop={handleDrop}
         onClick={() => {
           if (readOnly) return;
