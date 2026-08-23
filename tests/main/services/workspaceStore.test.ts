@@ -14,6 +14,7 @@ import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js
 
 const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const tempDirs: string[] = [];
+const DIRECTORY_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `bigmouth-${prefix}-`));
@@ -83,7 +84,7 @@ describe("an unreadable registry names itself", () => {
     const real = tempDir("identity-real");
     const linkParent = tempDir("identity-link");
     const link = path.join(linkParent, "same-folder");
-    fs.symlinkSync(real, link, "dir");
+    fs.symlinkSync(real, link, DIRECTORY_LINK_TYPE);
     const raw = JSON.stringify({
       workspaces: [
         { id: "one", name: "A", dataDirectory: real },
@@ -111,7 +112,7 @@ describe("where a workspace may be created", () => {
     expect(listWorkspaces()).toHaveLength(1);
   });
 
-  it("says the folder is not writable, rather than surfacing a raw errno", () => {
+  it.skipIf(process.platform === "win32")("says the folder is not writable, rather than surfacing a raw errno", () => {
     const parent = tempDir("readonly");
     const dir = path.join(parent, "locked");
     fs.mkdirSync(dir);
@@ -182,7 +183,7 @@ describe("workspace identity", () => {
     createWorkspace("A", real);
 
     const link = path.join(parent, "link");
-    fs.symlinkSync(real, link, "dir");
+    fs.symlinkSync(real, link, DIRECTORY_LINK_TYPE);
     expect(() => createWorkspace("B", link)).toThrow(/already registered as workspace "A"/);
     expect(listWorkspaces()).toHaveLength(1);
   });
@@ -264,7 +265,7 @@ describe("openWorkspace gating", () => {
     initializeWorkspaceData(inner);
     const parent = tempDir("open-link-parent");
     const link = path.join(parent, "linked-workspace");
-    fs.symlinkSync(inner, link, "dir");
+    fs.symlinkSync(inner, link, DIRECTORY_LINK_TYPE);
 
     expect(() => openWorkspace(link)).toThrow(/inside workspace "Outer"/);
     expect(listWorkspaces()).toHaveLength(1);

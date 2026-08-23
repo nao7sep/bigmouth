@@ -73,6 +73,7 @@ function ensureOpen(): DatabaseSync | null {
   // hook before initAppDir, as a unit test can), and a resolver that threw once will throw again; calling
   // it inside the catch would let that second throw escape the whole best-effort wrapper.
   let file = "<unresolved>";
+  let opened: DatabaseSync | null = null;
   try {
     file = storeFile();
     // not recorded: backups.sqlite3 is the store itself — binary, and written by this backup layer, not
@@ -81,7 +82,7 @@ function ensureOpen(): DatabaseSync | null {
     // The storage root already exists (initAppDir mkdir's it at startup); this mkdir is a cheap guard so
     // the store can still open under a root a test relocated to.
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const opened = new DatabaseSync(file);
+    opened = new DatabaseSync(file);
     opened.exec("PRAGMA journal_mode = WAL");
     // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
     // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
@@ -89,6 +90,12 @@ function ensureOpen(): DatabaseSync | null {
     opened.exec(SCHEMA);
     db = opened;
   } catch (err) {
+    try {
+      opened?.close();
+    } catch {
+      // The initialization error below is the useful diagnostic. Releasing a
+      // partially opened handle is best-effort on the already-failed path.
+    }
     logWarn("backup store: could not open; recording disabled for this session", {
       file,
       error: serializeError(err),

@@ -20,6 +20,14 @@ const alias = {
 export default defineConfig({
   resolve: { alias },
   test: {
+    // Keep worker startup and jsdom memory bounded on low-throughput supported
+    // hosts. More file workers made the ordinary Windows gate time out while
+    // workers were still starting rather than exercising product behavior.
+    maxWorkers: 2,
+    // setup.ts owns the backup-store handle and is registered before each
+    // test file's temp-directory cleanup. Run hooks in registration order so
+    // Windows releases SQLite before removing the directory it holds.
+    sequence: { hooks: "list" },
     coverage: {
       // One V8 coverage report across both projects (main + renderer). `include`
       // spans all source so the report flags logic no test reaches, not just a

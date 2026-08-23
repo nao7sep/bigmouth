@@ -507,7 +507,7 @@ describe("pending content (write-behind buffer)", () => {
     expect(events[0].id).toBe(post.frontMatter.id);
   });
 
-  it("keeps the buffer and notifies save-failed when the write cannot land", () => {
+  it.skipIf(process.platform === "win32")("keeps the buffer and notifies save-failed when the write cannot land", () => {
     const events: ContentSaveEvent[] = [];
     setContentSaveListener((e) => events.push(e));
     const post = createPost(dataDir, "blogger", "en");

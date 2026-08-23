@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import { closeBackupStore } from "@main/core/services/backupStore.js";
 import {
   getApiKeysPath,
   getAppRoot,
@@ -25,6 +26,11 @@ const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
 const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
 let fakeHome: string;
+
+function removeTestTree(tree: string): void {
+  closeBackupStore();
+  fs.rmSync(tree, { recursive: true, force: true });
+}
 
 beforeEach(() => {
   fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-fake-home-"));
@@ -42,7 +48,7 @@ afterEach(() => {
   if (SAVED_TEST_UNSET === undefined) delete process.env.BIGMOUTH_TEST_UNSET;
   else process.env.BIGMOUTH_TEST_UNSET = SAVED_TEST_UNSET;
   vi.restoreAllMocks();
-  fs.rmSync(fakeHome, { recursive: true, force: true });
+  removeTestTree(fakeHome);
 });
 
 describe("storage root (BIGMOUTH_HOME)", () => {
@@ -55,7 +61,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(fs.existsSync(path.join(root, "logs"))).toBe(true);
       expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      removeTestTree(root);
     }
   });
 
@@ -78,7 +84,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(Array.isArray(parsed.workspaces)).toBe(true);
       expect(parsed.workspaces).toHaveLength(1);
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      removeTestTree(root);
     }
   });
 
@@ -96,7 +102,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(getLogsDir()).toBe(path.join(expected, "logs"));
       expect(getLogsDir()).not.toBe(path.join(process.cwd(), rel, "logs"));
     } finally {
-      fs.rmSync(expected, { recursive: true, force: true });
+      removeTestTree(expected);
     }
   });
 
@@ -108,7 +114,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(getLogsDir()).toBe(path.join(expected, "logs"));
       expect(fs.existsSync(path.join(expected, "logs"))).toBe(true);
     } finally {
-      fs.rmSync(expected, { recursive: true, force: true });
+      removeTestTree(expected);
     }
   });
 
@@ -122,7 +128,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(getLogsDir()).toBe(path.join(expected, "logs"));
       expect(fs.existsSync(path.join(expected, "logs"))).toBe(true);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      removeTestTree(base);
     }
   });
 
@@ -136,7 +142,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       expect(getLogsDir()).toBe(path.join(expected, "logs"));
       expect(fs.existsSync(path.join(expected, "logs"))).toBe(true);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      removeTestTree(base);
     }
   });
 
@@ -151,7 +157,7 @@ describe("storage root (BIGMOUTH_HOME)", () => {
       process.env.BIGMOUTH_HOME = filePath;
       expect(() => initAppDir()).toThrow(/Cannot use the bigmouth storage root/);
     } finally {
-      fs.rmSync(file, { recursive: true, force: true });
+      removeTestTree(file);
     }
   });
 
@@ -215,8 +221,8 @@ describe("workspace paths are cwd-independent", () => {
       expect(workspace.dataDirectory).toBe(literal);
       expect(workspace.dataDirectory).not.toContain("secret-main-process-value");
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(parent, { recursive: true, force: true });
+      removeTestTree(root);
+      removeTestTree(parent);
     }
   });
 
@@ -236,8 +242,8 @@ describe("workspace paths are cwd-independent", () => {
       expect(fs.existsSync(path.join(literal, "config.json"))).toBe(true);
       expect(fs.existsSync(trimmedSibling)).toBe(false);
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(parent, { recursive: true, force: true });
+      removeTestTree(root);
+      removeTestTree(parent);
     }
   });
 });
@@ -259,7 +265,7 @@ describe("standard subpaths", () => {
     expect(getStateJsonPath()).toBe(path.join(home, "state.json"));
     expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
 
-    fs.rmSync(home, { recursive: true, force: true });
+    removeTestTree(home);
   });
 
   it("resolves without the workspace registry, which is what broke the import cycle", () => {
@@ -276,6 +282,6 @@ describe("standard subpaths", () => {
     expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
     expect(fs.existsSync(path.join(home, "workspaces.json"))).toBe(false);
 
-    fs.rmSync(home, { recursive: true, force: true });
+    removeTestTree(home);
   });
 });
