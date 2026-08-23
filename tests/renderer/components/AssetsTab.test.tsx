@@ -238,7 +238,7 @@ describe("AssetsTab drag and drop", () => {
     expect(mockUploadAsset).toHaveBeenCalledWith("p1", file, "w1");
   });
 
-  it("highlights only accepted file offers and resets on dragleave", async () => {
+  it("separates protected file delivery from proven acceptance", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container } = await renderTab();
     const zone = dropzone(container);
@@ -247,13 +247,22 @@ describe("AssetsTab drag and drop", () => {
       dataTransfer: { types: ["text/plain"], dropEffect: "copy" },
     });
     fireEvent(zone, rejected);
-    expect(rejected.defaultPrevented).toBe(false);
+    expect(rejected.defaultPrevented).toBe(true);
     expect((rejected as DragEvent).dataTransfer?.dropEffect).toBe("none");
     expect(zone.classList.contains("drag-over")).toBe(false);
     expect(zone.classList.contains("drag-rejected")).toBe(true);
 
+    const deliveryOnly = createEvent.dragOver(zone, {
+      dataTransfer: { files: [], types: ["Files"], dropEffect: "copy" },
+    });
+    fireEvent(zone, deliveryOnly);
+    expect(deliveryOnly.defaultPrevented).toBe(true);
+    expect((deliveryOnly as DragEvent).dataTransfer?.dropEffect).toBe("none");
+    expect(zone.classList.contains("drag-over")).toBe(false);
+    expect(zone.classList.contains("drag-rejected")).toBe(false);
+
     const accepted = createEvent.dragOver(zone, {
-      dataTransfer: { types: ["Files"], dropEffect: "none" },
+      dataTransfer: { files: [makeFile("ready.png")], types: ["Files"], dropEffect: "none" },
     });
     fireEvent(zone, accepted);
     expect(accepted.defaultPrevented).toBe(true);
@@ -270,7 +279,13 @@ describe("AssetsTab drag and drop", () => {
     const zone = dropzone(container);
     vi.useFakeTimers();
 
-    fireEvent.dragOver(zone, { dataTransfer: { types: ["Files"], dropEffect: "none" } });
+    fireEvent.dragOver(zone, {
+      dataTransfer: {
+        files: [makeFile("ready.png")],
+        types: ["Files"],
+        dropEffect: "none",
+      },
+    });
     expect(zone.classList.contains("drag-over")).toBe(true);
 
     act(() => vi.advanceTimersByTime(501));
@@ -287,7 +302,8 @@ describe("AssetsTab drag and drop", () => {
 
     fireEvent(zone, droppedText);
 
-    expect(droppedText.defaultPrevented).toBe(false);
+    expect(droppedText.defaultPrevented).toBe(true);
+    expect((droppedText as DragEvent).dataTransfer?.dropEffect).toBe("none");
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });

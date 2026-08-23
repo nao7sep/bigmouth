@@ -22,6 +22,10 @@ function offersFiles(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes("Files");
 }
 
+function exposesFiles(dataTransfer: DataTransfer): boolean {
+  return offersFiles(dataTransfer) && dataTransfer.files.length > 0;
+}
+
 function ext(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -167,8 +171,12 @@ export function AssetsTab({
 
   const handleDrop = async (e: React.DragEvent) => {
     resetDragState();
-    if (readOnly || e.dataTransfer.files.length === 0) return;
+    // Always neutralize the webview's native text/URL/file drop behavior before
+    // deciding whether this drop belongs to the asset importer.
     e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "none";
+    if (readOnly || e.dataTransfer.files.length === 0) return;
     e.dataTransfer.dropEffect = "copy";
     await checkAndUpload(e.dataTransfer.files);
   };
@@ -216,12 +224,22 @@ export function AssetsTab({
         }
         aria-disabled={readOnly || undefined}
         onDragOver={(e) => {
+          // Finder may advertise only the protected `Files` type during
+          // dragover. Prevent the browser default so the eventual drop can be
+          // inspected, but do not advertise acceptance until File objects are
+          // actually available.
+          e.preventDefault();
+          e.stopPropagation();
           if (readOnly || !offersFiles(e.dataTransfer)) {
             e.dataTransfer.dropEffect = "none";
             pulseDragState("rejecting");
             return;
           }
-          e.preventDefault();
+          if (!exposesFiles(e.dataTransfer)) {
+            e.dataTransfer.dropEffect = "none";
+            resetDragState();
+            return;
+          }
           e.dataTransfer.dropEffect = "copy";
           pulseDragState("accepting");
         }}
