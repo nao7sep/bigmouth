@@ -602,7 +602,7 @@ button:disabled,
   flex: 1;
   padding: 8px 4px;
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border: none;
@@ -912,7 +912,7 @@ button:disabled,
 .meta-field-copy,
 .meta-field-generate {
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: 12px;
   background: none;
   border: 1px solid var(--bm-border);
   border-radius: 3px;
@@ -1444,7 +1444,7 @@ button:disabled,
 }
 
 .asset-meta-note {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--bm-accent);
   margin-top: 2px;
 }
@@ -1490,7 +1490,7 @@ button:disabled,
 
 .asset-btn {
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: 12px;
   background: none;
   border: 1px solid var(--bm-border);
   border-radius: 3px;
