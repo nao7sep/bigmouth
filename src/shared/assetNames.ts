@@ -8,6 +8,18 @@ const WINDOWS_DEVICE_NAMES = new Set([
   "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ]);
 
+// Formats the renderer can display inline and ask Chromium to inspect for
+// dimensions. Keep this one shared decision at both sides of the IPC boundary:
+// the renderer decides whether to probe, while main decides whether dimensions
+// supplied by the sandbox are meaningful for the stored file.
+const IMAGE_ASSET_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
+
+/** Whether a stored asset name denotes an inline-displayable image format. */
+export function isImageAssetFilename(name: string): boolean {
+  const extension = name.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_ASSET_EXTENSIONS.has(extension);
+}
+
 /** A portable comparison key for filenames on case-insensitive Unicode filesystems. */
 export function assetFilenameKey(name: string): string {
   return name.normalize("NFC").toLowerCase();

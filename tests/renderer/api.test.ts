@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import {
   setActiveWorkspace,
@@ -44,6 +44,10 @@ import type { ImagingOptions } from "@shared/types";
 function installBridge(overrides: Record<string, unknown> = {}): void {
   window.bigmouth = overrides as unknown as BigMouthApi;
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("api bridge adapter", () => {
   beforeEach(() => {
@@ -340,10 +344,13 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.listAssets).toHaveBeenCalledWith("other", "p1");
     });
 
-    it("uploadAsset reads the File to bytes and forwards name + data", async () => {
+    it("uploadAsset decodes an image in the renderer and forwards name, bytes, and dimensions", async () => {
       const b = bridge();
       installBridge(b);
       const buffer = new TextEncoder().encode("hello").buffer;
+      const close = vi.fn();
+      const decode = vi.fn().mockResolvedValue({ width: 640, height: 480, close });
+      vi.stubGlobal("createImageBitmap", decode);
       // A minimal File stand-in exposing name + arrayBuffer().
       const file = {
         name: "pic.png",
@@ -351,7 +358,128 @@ describe("api wrappers — call-through and argument shape", () => {
       } as unknown as File;
       await uploadAsset("p1", file);
       expect(file.arrayBuffer).toHaveBeenCalled();
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", { name: "pic.png", data: buffer });
+      expect(decode).toHaveBeenCalledWith(file);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "pic.png",
+        data: buffer,
+        width: 640,
+        height: 480,
+      });
+    });
+
+    it("uploads malformed images without dimensions when Chromium rejects the decode", async () => {
+      const b = bridge();
+      installBridge(b);
+      const buffer = new TextEncoder().encode("not really a png").buffer;
+      vi.stubGlobal("createImageBitmap", vi.fn().mockRejectedValue(new Error("bad image")));
+      const file = {
+        name: "broken.png",
+        arrayBuffer: vi.fn().mockResolvedValue(buffer),
+      } as unknown as File;
+
+      await uploadAsset("p1", file);
+
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "broken.png",
+        data: buffer,
+      });
+    });
+
+    it("drops nonsensical decoder dimensions and still releases the bitmap", async () => {
+      const b = bridge();
+      installBridge(b);
+      const close = vi.fn();
+      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 0, height: 480, close }));
+      const buffer = new ArrayBuffer(2);
+      const file = {
+        name: "empty.jpg",
+        arrayBuffer: vi.fn().mockResolvedValue(buffer),
+      } as unknown as File;
+
+      await uploadAsset("p1", file);
+
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "empty.jpg",
+        data: buffer,
+      });
+    });
+
+    it("does not ask the image decoder to inspect non-image assets", async () => {
+      const b = bridge();
+      installBridge(b);
+      const decode = vi.fn();
+      vi.stubGlobal("createImageBitmap", decode);
+      const buffer = new TextEncoder().encode("notes").buffer;
+      const file = {
+        name: "notes.txt",
+        arrayBuffer: vi.fn().mockResolvedValue(buffer),
+      } as unknown as File;
+
+      await uploadAsset("p1", file);
+
+      expect(decode).not.toHaveBeenCalled();
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "notes.txt",
+        data: buffer,
+      });
+    });
+
+    it("uploads an image without dimensions when the decoder API is unavailable", async () => {
+      const b = bridge();
+      installBridge(b);
+      vi.stubGlobal("createImageBitmap", undefined);
+      const buffer = new ArrayBuffer(3);
+      const file = {
+        name: "photo.webp",
+        arrayBuffer: vi.fn().mockResolvedValue(buffer),
+      } as unknown as File;
+
+      await uploadAsset("p1", file);
+
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "photo.webp",
+        data: buffer,
+      });
+    });
+
+    it("does not let bitmap cleanup failure cancel a valid upload", async () => {
+      const b = bridge();
+      installBridge(b);
+      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({
+        width: 320,
+        height: 200,
+        close: vi.fn(() => { throw new Error("already closed"); }),
+      }));
+      const buffer = new ArrayBuffer(4);
+      const file = {
+        name: "photo.gif",
+        arrayBuffer: vi.fn().mockResolvedValue(buffer),
+      } as unknown as File;
+
+      await expect(uploadAsset("p1", file)).resolves.toBeUndefined();
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "photo.gif",
+        data: buffer,
+        width: 320,
+        height: 200,
+      });
+    });
+
+    it("releases a decoded bitmap even when reading the original bytes fails", async () => {
+      const b = bridge();
+      installBridge(b);
+      const close = vi.fn();
+      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 10, height: 20, close }));
+      const file = {
+        name: "photo.avif",
+        arrayBuffer: vi.fn().mockRejectedValue(new Error("read failed")),
+      } as unknown as File;
+
+      await expect(uploadAsset("p1", file)).rejects.toThrow("read failed");
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(b.uploadAsset).not.toHaveBeenCalled();
     });
 
     it("deleteAsset forwards ws + postId + filename", () => {

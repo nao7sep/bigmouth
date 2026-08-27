@@ -20,6 +20,7 @@ import type {
   ImagingStyle,
 } from "@shared/types";
 import {
+  type AssetUploadInput,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
   assetUrl as buildAssetUrl,
@@ -28,6 +29,7 @@ import {
   type MetadataGenerationResults,
   type PostUpdate,
 } from "@shared/ipc";
+import { isImageAssetFilename } from "@shared/assetNames";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
 // (`window.bigmouth`) over IPC. The active workspace id is tracked here and
@@ -254,10 +256,43 @@ export function listAssets(postId: string, workspaceId?: string): Promise<AssetM
   return bridge().listAssets(requireWs(workspaceId), postId);
 }
 
+/**
+ * Image decoding belongs in the sandboxed renderer, not Electron's privileged
+ * main process. Dimensions are presentation metadata only: a missing decoder,
+ * malformed file, or unsupported format must never prevent the original bytes
+ * from being stored. Always release the decoded bitmap promptly.
+ */
+async function imageDimensions(file: File): Promise<Pick<AssetUploadInput, "width" | "height">> {
+  if (!isImageAssetFilename(file.name) || typeof createImageBitmap !== "function") return {};
+
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(file);
+    const { width, height } = bitmap;
+    if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
+      return {};
+    }
+    return { width, height };
+  } catch {
+    return {};
+  } finally {
+    try {
+      bitmap?.close();
+    } catch {
+      // Releasing optional presentation metadata must never cancel byte storage.
+    }
+  }
+}
+
 export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<AssetMeta> {
-  // The picked File is read to bytes here and handed across the bridge.
-  const data = await file.arrayBuffer();
-  return bridge().uploadAsset(requireWs(workspaceId), postId, { name: file.name, data });
+  // Decode and read concurrently; dimension failure is deliberately contained
+  // inside imageDimensions, while a byte-read failure still aborts the upload.
+  const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
+  return bridge().uploadAsset(requireWs(workspaceId), postId, {
+    name: file.name,
+    data,
+    ...dimensions,
+  });
 }
 
 export function deleteAsset(postId: string, filename: string, workspaceId?: string): Promise<void> {

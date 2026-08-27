@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { ipcMain } from "electron";
 import exifr from "exifr";
-import { imageSize } from "image-size";
 
 import { CHANNELS, type AssetUploadInput } from "@shared/ipc";
+import { isImageAssetFilename } from "@shared/assetNames";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getSettings } from "../core/services/configStore.js";
 import { getPost } from "../core/services/postStore.js";
@@ -25,7 +25,6 @@ import { resolveWorkspace } from "./context.js";
 // Identifier validation (defense against path traversal). postId is a nanoid;
 // filename is a single path component with no separators or `..`.
 const POST_ID_RE = /^[A-Za-z0-9_-]+$/;
-const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 
 function readPostId(raw: unknown): string | null {
   const id = String(raw);
@@ -43,6 +42,31 @@ function readFilename(raw: unknown): string | null {
 
 function assetStoreErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Asset store error";
+}
+
+/**
+ * The renderer is sandboxed but still an untrusted IPC peer. Dimensions are an
+ * optional, presentation-only pair: accept both positive safe integers for an
+ * image filename, or accept neither. The values never govern paths, allocation,
+ * or parsing; a forged half-pair or non-image annotation never reaches disk.
+ */
+function readUploadDimensions(
+  filename: string,
+  file: AssetUploadInput,
+): { width?: number; height?: number } {
+  if (!isImageAssetFilename(filename)) return {};
+  const { width, height } = file;
+  if (
+    typeof width !== "number" ||
+    !Number.isSafeInteger(width) ||
+    width <= 0 ||
+    typeof height !== "number" ||
+    !Number.isSafeInteger(height) ||
+    height <= 0
+  ) {
+    return {};
+  }
+  return { width, height };
 }
 
 export function registerAssetHandlers(): void {
@@ -78,18 +102,9 @@ export function registerAssetHandlers(): void {
 
     const filename = sanitizeFilename(file.name);
 
-    let width: number | undefined;
-    let height: number | undefined;
+    const { width, height } = readUploadDimensions(filename, file);
     let hasMetadata: boolean | undefined;
-    const fileExt = path.extname(filename).slice(1).toLowerCase();
-    if (IMAGE_EXTS.has(fileExt)) {
-      try {
-        const dims = imageSize(buffer);
-        width = dims.width;
-        height = dims.height;
-      } catch {
-        // Dimensions unavailable
-      }
+    if (isImageAssetFilename(filename)) {
       try {
         const exif = await exifr.parse(buffer);
         if (exif && Object.keys(exif).length > 0) hasMetadata = true;

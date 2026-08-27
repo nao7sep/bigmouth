@@ -1,9 +1,9 @@
 // Integration test for the per-post asset IPC handlers (list / upload / delete):
 // the real assetStore + postStore + configStore run against a throwaway
 // BIGMOUTH_HOME + a real registered workspace; only `electron` (ipcMain) and the
-// logger are mocked. The upload handler receives raw bytes the way the renderer
-// hands them over — an `AssetUploadInput` whose `data` is an ArrayBuffer (see
-// src/renderer/src/api.ts `uploadAsset`, which reads the File to `arrayBuffer()`).
+// logger are mocked. The upload handler receives raw bytes plus optional image
+// dimensions from the sandboxed renderer, then validates that IPC payload before
+// storing it (see src/renderer/src/api.ts `uploadAsset`).
 //
 // A fresh workspace has no targets, so a target is registered through the real
 // configStore before any post is created (createPost would otherwise reject).
@@ -46,8 +46,7 @@ const SAVED_HOME = process.env.BIGMOUTH_HOME;
 
 const TARGET: Target = { name: "blogger", defaultLanguage: "en", requiresMetadata: false };
 
-// A real 1x1 PNG, so image-size can read width/height during upload. exifr finds
-// no metadata in it, so hasMetadata stays unset — both image branches exercised.
+// A real 1x1 PNG. exifr finds no metadata in it, so hasMetadata stays unset.
 const PNG_1x1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAACAAEABQABCi0q8AAAAASUVORK5CYI",
   "base64",
@@ -62,11 +61,15 @@ async function invokeAsync<T>(channel: string, ...args: unknown[]): Promise<T> {
 }
 
 /** Builds the byte payload the handler expects from a Buffer. */
-function upload(name: string, bytes: Buffer): AssetUploadInput {
+function upload(
+  name: string,
+  bytes: Buffer,
+  dimensions: Pick<AssetUploadInput, "width" | "height"> = {},
+): AssetUploadInput {
   // Slice to a tight ArrayBuffer so a pooled Node Buffer's backing store is not
   // handed across with extra bytes.
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  return { name, data: ab as ArrayBuffer };
+  return { name, data: ab as ArrayBuffer, ...dimensions };
 }
 
 /** Creates a draft post through the post handler and returns its id. */
@@ -113,9 +116,14 @@ describe("listAssets", () => {
 });
 
 describe("uploadAsset", () => {
-  it("stores an image, computing size + dimensions, and lists it back", async () => {
+  it("stores a renderer-inspected image with its validated dimensions and lists it back", async () => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(CHANNELS.uploadAsset, wsId, id, upload("pic.png", PNG_1x1));
+    const meta = await invokeAsync<AssetMeta>(
+      CHANNELS.uploadAsset,
+      wsId,
+      id,
+      upload("pic.png", PNG_1x1, { width: 1, height: 1 }),
+    );
 
     expect(meta.filename).toBe("pic.png");
     expect(meta.size).toBe(PNG_1x1.length);
@@ -127,6 +135,68 @@ describe("uploadAsset", () => {
     expect(listed.map((a) => a.filename)).toEqual(["pic.png"]);
     // The bytes actually landed on disk under assets/{postId}/.
     expect(fs.existsSync(path.join(assetDir(dataDir, id), "pic.png"))).toBe(true);
+  });
+
+  it.each([
+    ["missing height", { width: 640 }],
+    ["missing width", { height: 480 }],
+    ["zero", { width: 0, height: 480 }],
+    ["negative", { width: -1, height: 480 }],
+    ["fractional", { width: 1.5, height: 480 }],
+    ["infinite", { width: Number.POSITIVE_INFINITY, height: 480 }],
+    ["unsafe integer", { width: Number.MAX_SAFE_INTEGER + 1, height: 480 }],
+  ])("drops a forged %s dimension payload as an indivisible pair", async (_label, dimensions) => {
+    const id = createDraft();
+    const meta = await invokeAsync<AssetMeta>(
+      CHANNELS.uploadAsset,
+      wsId,
+      id,
+      upload("pic.png", PNG_1x1, dimensions),
+    );
+
+    expect(meta.width).toBeUndefined();
+    expect(meta.height).toBeUndefined();
+  });
+
+  it("drops runtime type violations even though the shared TypeScript contract is numeric", async () => {
+    const id = createDraft();
+    const forged = upload("pic.png", PNG_1x1, { width: 640, height: 480 }) as unknown as Record<string, unknown>;
+    forged.width = "640";
+
+    const meta = await invokeAsync<AssetMeta>(CHANNELS.uploadAsset, wsId, id, forged);
+
+    expect(meta.width).toBeUndefined();
+    expect(meta.height).toBeUndefined();
+  });
+
+  it("never annotates a non-image file with forged renderer dimensions", async () => {
+    const id = createDraft();
+    const meta = await invokeAsync<AssetMeta>(
+      CHANNELS.uploadAsset,
+      wsId,
+      id,
+      upload("notes.txt", Buffer.from("hello"), { width: 640, height: 480 }),
+    );
+
+    expect(meta.width).toBeUndefined();
+    expect(meta.height).toBeUndefined();
+  });
+
+  it("stores a crafted box-format payload without parsing image dimensions in main", async () => {
+    const id = createDraft();
+    // Zero-sized `ftyp` box: the shape behind the removed image-size HEIF/JXL
+    // infinite-loop advisories. The misleading .jpg name cannot make main decode it.
+    const crafted = Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
+    const meta = await invokeAsync<AssetMeta>(
+      CHANNELS.uploadAsset,
+      wsId,
+      id,
+      upload("renamed.jpg", crafted),
+    );
+
+    expect(meta.width).toBeUndefined();
+    expect(meta.height).toBeUndefined();
+    expect(fs.readFileSync(path.join(assetDir(dataDir, id), "renamed.jpg"))).toEqual(crafted);
   });
 
   it("stores a non-image file without dimensions", async () => {

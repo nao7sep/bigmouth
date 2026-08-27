@@ -158,11 +158,14 @@ export function assetUrl(wsId: string, postId: string, filename: string): string
 
 // --- Method payload/result helpers ---
 
-/** Raw bytes for an asset upload — the renderer reads the picked `File` to an
- * ArrayBuffer and hands the bytes over. */
+/** Raw bytes for an asset upload. The sandboxed renderer also supplies optional
+ * dimensions from Chromium's image decoder; main treats them as untrusted IPC
+ * input and stores them only when they form a valid pair. */
 export interface AssetUploadInput {
   name: string;
   data: ArrayBuffer;
+  width?: number;
+  height?: number;
 }
 
 export interface PostUpdate {

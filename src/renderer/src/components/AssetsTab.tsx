@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
-import { collidingAssetFilenames, sanitizeAssetFilename } from "@shared/assetNames";
+import {
+  collidingAssetFilenames,
+  isImageAssetFilename,
+  sanitizeAssetFilename,
+} from "@shared/assetNames";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { XIcon } from "./Icon";
@@ -13,7 +17,6 @@ interface AssetsTabProps {
   readOnly?: boolean;
 }
 
-const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif"]);
 const DRAG_SIGNAL_TIMEOUT_MS = 500;
 
 type DragState = "idle" | "accepting" | "rejecting";
@@ -31,7 +34,7 @@ function ext(filename: string): string {
 }
 
 function isImage(filename: string): boolean {
-  return IMAGE_EXTS.has(ext(filename));
+  return isImageAssetFilename(filename);
 }
 
 function formatBytes(n: number): string {

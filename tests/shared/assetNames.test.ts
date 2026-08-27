@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assetFilenameKey,
   collidingAssetFilenames,
+  isImageAssetFilename,
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
@@ -32,4 +33,18 @@ describe("asset filename rules", () => {
     ]);
     expect(collidingAssetFilenames(["same.png", "same.png"])).toEqual(["same.png"]);
   });
+
+  it.each(["photo.jpg", "PHOTO.JPEG", "image.png", "loop.gif", "still.webp", "frame.avif"])(
+    "recognizes inline image asset %s",
+    (name) => {
+      expect(isImageAssetFilename(name)).toBe(true);
+    },
+  );
+
+  it.each(["notes.txt", "archive", "photo.heic", "photo.jxl", "icon.icns", "fake.png.txt"])(
+    "does not treat %s as an inline image asset",
+    (name) => {
+      expect(isImageAssetFilename(name)).toBe(false);
+    },
+  );
 });
