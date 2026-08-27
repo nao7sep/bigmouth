@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listAssets, uploadAsset, deleteAsset, assetUrl } from "../api";
+import { listAssets, uploadAsset, deleteAsset, assetUrl, reportProblem } from "../api";
 import {
   collidingAssetFilenames,
   isImageAssetFilename,
+  isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { XIcon } from "./Icon";
+import { inspectAssetDragOffer } from "../util/assetDrop";
+import { AssetUploadAdmissionError } from "../util/assetUpload";
 
 interface AssetsTabProps {
   workspaceId: string;
@@ -19,14 +22,24 @@ interface AssetsTabProps {
 
 const DRAG_SIGNAL_TIMEOUT_MS = 500;
 
-type DragState = "idle" | "accepting" | "rejecting";
+type DragState = "idle" | "delivery" | "accepting" | "rejecting";
+type AssetNotice = {
+  severity: "warning" | "error";
+  message: string;
+  issueKeys: string[];
+};
 
-function offersFiles(dataTransfer: DataTransfer): boolean {
-  return Array.from(dataTransfer.types).includes("Files");
+function assetIssueKey(file: Pick<File, "name">): string {
+  // Keep the offered spelling, not the stored/sanitized name: two distinct
+  // inputs that collide after sanitization are two unresolved items, and one
+  // later upload must not falsely clear the batch-collision result for both.
+  return `asset:${file.name.normalize("NFC")}`;
 }
 
-function exposesFiles(dataTransfer: DataTransfer): boolean {
-  return offersFiles(dataTransfer) && dataTransfer.files.length > 0;
+function coversIssueKeys(resolved: readonly string[], issues: readonly string[]): boolean {
+  const resolvedSet = new Set(resolved);
+  const issueSet = new Set(issues);
+  return issueSet.size > 0 && [...issueSet].every((key) => resolvedSet.has(key));
 }
 
 function ext(filename: string): string {
@@ -63,8 +76,11 @@ export function AssetsTab({
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<AssetNotice | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const assetsRef = useRef<AssetMeta[]>([]);
+  const uploadTailRef = useRef<Promise<void>>(Promise.resolve());
+  const queuedUploadsRef = useRef(0);
   const dragSignalTimeoutRef = useRef<number | undefined>(undefined);
   const confirm = useConfirm();
 
@@ -96,39 +112,89 @@ export function AssetsTab({
     [],
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<string | null> => {
     try {
       const list = await listAssets(postId, workspaceId);
+      assetsRef.current = list;
       setAssets(list);
+      return null;
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Failed to load assets");
+      return err instanceof Error ? err.message : "Failed to load assets";
     }
   }, [postId, workspaceId]);
 
   useEffect(() => {
     setAssets([]);
-    setUploadError(null);
-    load();
+    assetsRef.current = [];
+    setUploadNotice(null);
+    void load().then((message) => {
+      if (message) setUploadNotice({
+        severity: "error",
+        message,
+        issueKeys: [`refresh:${postId}`],
+      });
+    });
   }, [load]);
 
-  const uploadFiles = async (files: File[]) => {
+  const uploadFiles = async (
+    files: File[],
+    rejected: Array<{ file: File; message: string }>,
+    operationKeys: string[],
+  ) => {
     if (readOnly) return;
-    setUploading(true);
-    setUploadError(null);
-    const failures: string[] = [];
+    const admissionFailures: Array<{ file: File; message: string }> = [];
+    const operationalFailures: Array<{ file: File; message: string }> = [];
     for (const file of files) {
       try {
         await uploadAsset(postId, file, workspaceId);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Upload failed";
-        failures.push(`${file.name}: ${message}`);
+        if (err instanceof AssetUploadAdmissionError) {
+          admissionFailures.push({ file, message });
+        } else {
+          operationalFailures.push({ file, message });
+          reportProblem("Asset upload failed.", err, { postId, filename: file.name });
+        }
       }
     }
-    await load();
-    if (failures.length > 0) {
-      setUploadError(`Failed to upload ${failures.length} file(s): ${failures.join("; ")}`);
+    const refreshFailure = await load();
+    const invalid = [...rejected, ...admissionFailures];
+    if (invalid.length > 0 || operationalFailures.length > 0 || refreshFailure) {
+      const addedCount = files.length - admissionFailures.length - operationalFailures.length;
+      const parts: string[] = [];
+      if (addedCount > 0) {
+        parts.push(`Added ${addedCount} asset${addedCount === 1 ? "" : "s"}`);
+      }
+      if (invalid.length > 0) {
+        parts.push(
+          `${invalid.length} item${invalid.length === 1 ? "" : "s"} could not be added: ` +
+          invalid.map(({ file, message }) => `${file.name}: ${message}`).join("; "),
+        );
+      }
+      if (operationalFailures.length > 0) {
+        parts.push(
+          `${operationalFailures.length} upload${operationalFailures.length === 1 ? "" : "s"} failed: ` +
+          operationalFailures.map(({ file, message }) => `${file.name}: ${message}`).join("; "),
+        );
+      }
+      if (refreshFailure) parts.push(`Asset list could not be refreshed: ${refreshFailure}`);
+      setUploadNotice({
+        severity: operationalFailures.length > 0 || refreshFailure ? "error" : "warning",
+        message: `${parts.join("; ")}.`,
+        issueKeys: [
+          ...invalid.map(({ file }) => assetIssueKey(file)),
+          ...operationalFailures.map(({ file }) => assetIssueKey(file)),
+          ...(refreshFailure ? [`refresh:${postId}`] : []),
+        ],
+      });
+    } else {
+      setUploadNotice((current) => {
+        if (current === null) return null;
+        const resolvedKeys = [...operationKeys, `refresh:${postId}`];
+        if (coversIssueKeys(resolvedKeys, current.issueKeys)) return null;
+        return current;
+      });
     }
-    setUploading(false);
   };
 
   const checkAndUpload = async (files: FileList | File[]) => {
@@ -137,26 +203,49 @@ export function AssetsTab({
     const limitBytes = maxUploadMb * 1024 * 1024;
 
     const tooLarge = fileArray.filter((f) => f.size > limitBytes);
-    const uploadable = fileArray.filter((f) => f.size <= limitBytes);
+    const reserved = fileArray.filter((file) =>
+      file.size <= limitBytes && isReservedAssetName(sanitizeAssetFilename(file.name))
+    );
+    const uploadable = fileArray.filter((file) =>
+      file.size <= limitBytes && !isReservedAssetName(sanitizeAssetFilename(file.name))
+    );
+    const rejected = [
+      ...tooLarge.map((file) => ({ file, message: `is larger than ${maxUploadMb} MB` })),
+      ...reserved.map((file) => ({
+        file,
+        message: "uses a name BigMouth keeps for its own bookkeeping; rename it and try again",
+      })),
+    ];
+    const operationKeys = fileArray.map(assetIssueKey);
 
-    if (tooLarge.length > 0) {
-      setUploadError(
-        `Too large (max ${maxUploadMb} MB): ${tooLarge.map((f) => f.name).join(", ")}`
-      );
-    }
-
-    if (uploadable.length === 0) return;
-
-    const batchCollisions = collidingAssetFilenames(uploadable.map((file) => file.name));
-    if (batchCollisions.length > 0) {
-      setUploadError(
-        `Some selected files resolve to the same asset name (${batchCollisions.join(", ")}). ` +
-          "Rename them before uploading so none are overwritten.",
-      );
+    if (uploadable.length === 0) {
+      if (rejected.length > 0) {
+        setUploadNotice({
+          severity: "warning",
+          message: `${rejected.length} item${rejected.length === 1 ? "" : "s"} could not be added: ` +
+            `${rejected.map(({ file, message }) => `${file.name}: ${message}`).join("; ")}.`,
+          issueKeys: rejected.map(({ file }) => assetIssueKey(file)),
+        });
+      }
       return;
     }
 
-    const existingNames = new Set(assets.map((a) => a.filename.normalize("NFC")));
+    const batchCollisions = collidingAssetFilenames(uploadable.map((file) => file.name));
+    if (batchCollisions.length > 0) {
+      const details = [
+        `some selected files resolve to the same asset name (${batchCollisions.join(", ")}). ` +
+          "Rename them before uploading so none are overwritten",
+        ...rejected.map(({ file, message }) => `${file.name}: ${message}`),
+      ];
+      setUploadNotice({
+        severity: "warning",
+        message: `${fileArray.length} items could not be added: ${details.join("; ")}.`,
+        issueKeys: operationKeys,
+      });
+      return;
+    }
+
+    const existingNames = new Set(assetsRef.current.map((a) => a.filename.normalize("NFC")));
     const dupes = uploadable
       .map((f) => sanitizeAssetFilename(f.name))
       .filter((name) => existingNames.has(name.normalize("NFC")));
@@ -169,7 +258,29 @@ export function AssetsTab({
       });
       if (!ok) return;
     }
-    await uploadFiles(uploadable);
+    await uploadFiles(uploadable, rejected, operationKeys);
+  };
+
+  const enqueueUpload = async (files: FileList | File[]) => {
+    const captured = Array.from(files);
+    if (captured.length === 0) return;
+    queuedUploadsRef.current += 1;
+    setUploading(true);
+    const operation = uploadTailRef.current.then(() => checkAndUpload(captured));
+    uploadTailRef.current = operation.catch(() => undefined);
+    try {
+      await operation;
+    } catch (err) {
+      reportProblem("Asset upload transaction failed.", err, { postId });
+      setUploadNotice({
+        severity: "error",
+        message: err instanceof Error ? err.message : "Asset upload failed.",
+        issueKeys: captured.map(assetIssueKey),
+      });
+    } finally {
+      queuedUploadsRef.current -= 1;
+      if (queuedUploadsRef.current === 0) setUploading(false);
+    }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -179,14 +290,29 @@ export function AssetsTab({
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "none";
-    if (readOnly || e.dataTransfer.files.length === 0) return;
+    if (readOnly) {
+      setUploadNotice({
+        severity: "warning",
+        message: "Assets are read-only.",
+        issueKeys: ["receiver:read-only"],
+      });
+      return;
+    }
+    if (e.dataTransfer.files.length === 0) {
+      setUploadNotice({
+        severity: "warning",
+        message: "The Assets collection accepts files from Finder or Upload.",
+        issueKeys: ["offer:non-file"],
+      });
+      return;
+    }
     e.dataTransfer.dropEffect = "copy";
-    await checkAndUpload(e.dataTransfer.files);
+    await enqueueUpload(e.dataTransfer.files);
   };
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      await checkAndUpload(e.target.files);
+      await enqueueUpload(e.target.files);
       e.target.value = "";
     }
   };
@@ -201,9 +327,17 @@ export function AssetsTab({
     if (!ok) return;
     try {
       await deleteAsset(postId, filename, workspaceId);
-      setAssets((prev) => prev.filter((a) => a.filename !== filename));
+      setAssets((prev) => {
+        const next = prev.filter((a) => a.filename !== filename);
+        assetsRef.current = next;
+        return next;
+      });
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Delete failed");
+      setUploadNotice({
+        severity: "error",
+        message: err instanceof Error ? err.message : "Delete failed",
+        issueKeys: [`delete:${filename}`],
+      });
     }
   };
 
@@ -218,65 +352,75 @@ export function AssetsTab({
   };
 
   return (
-    <div className="assets-tab">
-      {/* Drop zone */}
-      <div
-        className={
-          `assets-dropzone${dragState === "accepting" ? " drag-over" : ""}` +
-          `${dragState === "rejecting" ? " drag-rejected" : ""}`
+    <div
+      className={
+        `assets-tab${dragState === "accepting" ? " drag-over" : ""}` +
+        `${dragState === "delivery" ? " drag-delivery" : ""}` +
+        `${dragState === "rejecting" ? " drag-rejected" : ""}`
+      }
+      aria-disabled={readOnly || undefined}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const offer = inspectAssetDragOffer(e.dataTransfer, maxUploadMb * 1024 * 1024);
+        if (readOnly || offer === "rejected") {
+          e.dataTransfer.dropEffect = "none";
+          pulseDragState("rejecting");
+          return;
         }
-        aria-disabled={readOnly || undefined}
-        onDragOver={(e) => {
-          // Finder may advertise only the protected `Files` type during
-          // dragover. Prevent the browser default so the eventual drop can be
-          // inspected, but do not advertise acceptance until File objects are
-          // actually available.
-          e.preventDefault();
-          e.stopPropagation();
-          if (readOnly || !offersFiles(e.dataTransfer)) {
-            e.dataTransfer.dropEffect = "none";
-            pulseDragState("rejecting");
-            return;
-          }
-          if (!exposesFiles(e.dataTransfer)) {
-            e.dataTransfer.dropEffect = "none";
-            resetDragState();
-            return;
-          }
-          e.dataTransfer.dropEffect = "copy";
-          pulseDragState("accepting");
-        }}
-        onDragLeave={resetDragState}
-        onDrop={handleDrop}
-        onClick={() => {
-          if (readOnly) return;
-          fileInputRef.current?.click();
-        }}
-      >
+        // Chromium needs a transport action to deliver Finder's protected
+        // Files offer. The neutral state does not claim those hidden files
+        // have passed the upload boundary yet.
+        e.dataTransfer.dropEffect = "copy";
+        pulseDragState(offer === "accepted" ? "accepting" : "delivery");
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        resetDragState();
+      }}
+      onDrop={handleDrop}
+    >
+      <div className="assets-toolbar">
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          style={{ display: "none" }}
+          hidden
           onChange={handleFileInput}
         />
-        {readOnly
-          ? "Assets are read-only."
-          : uploading
-            ? "Uploading…"
-            : "Drop files here or click to upload"}
+        <button
+          type="button"
+          className="btn-toolbar"
+          disabled={readOnly || uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? "Uploading…" : "Upload"}
+        </button>
       </div>
 
-      {uploadError && (
-        <div className="assets-error">
-          <span>{uploadError}</span>
-          <button className="assets-error-dismiss" onClick={() => setUploadError(null)}><XIcon /></button>
+      {uploadNotice && (
+        <div
+          className={
+            `assets-result assets-result--${uploadNotice.severity}`
+          }
+          role={uploadNotice.severity === "error" ? "alert" : "status"}
+        >
+          <span>{uploadNotice.message}</span>
+          <button
+            className="assets-result-dismiss"
+            onClick={() => setUploadNotice(null)}
+            aria-label="Dismiss result"
+          >
+            <XIcon />
+          </button>
         </div>
       )}
 
       {/* Asset grid */}
       {assets.length === 0 ? (
-        <div className="assets-empty">No assets yet</div>
+        <div className="assets-empty">
+          {readOnly ? "No assets yet" : "No assets yet. Drop files here or use Upload."}
+        </div>
       ) : (
           <div className="assets-grid">
             {assets.map((asset) => (

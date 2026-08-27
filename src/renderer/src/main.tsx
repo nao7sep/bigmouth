@@ -4,6 +4,10 @@ import { App } from "./App";
 import { ConfirmProvider } from "./components/ConfirmHost";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { reportProblem } from "./api";
+import { denyUnhandledExternalDrop } from "./util/externalDropBoundary";
+
+window.addEventListener("dragover", denyUnhandledExternalDrop);
+window.addEventListener("drop", denyUnhandledExternalDrop);
 
 // Last-resort hooks: anything that escapes a component or a promise chain lands
 // in the session log instead of only the devtools console, which nobody has open

@@ -33,6 +33,8 @@
   --bm-on-accent: #fff8f0;
   --bm-link: #854629;
   --bm-warning: #965b17;
+  --bm-warning-soft: #fff6e7;
+  --bm-warning-border: #ddb66f;
   --bm-danger: #b42318;
   --bm-danger-soft: #fff0ec;
   --bm-danger-border: #eea79a;
@@ -397,7 +399,7 @@ body {
 
 /* The one disabled-cursor rule for the whole app. It used to be reset per
    button class in six places, which missed four more (.btn-toolbar, .asset-btn,
-   .meta-field-copy, .btn-export) and the read-only dropzone — all of which kept
+   .meta-field-copy, .btn-export) and read-only pseudo-buttons — all of which kept
    advertising the hand while dead. The cursor conventions ask for exactly one
    place. */
 button:disabled,
@@ -1345,33 +1347,30 @@ button:disabled,
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-}
-
-.assets-dropzone {
-  margin: 12px 0;
-  padding: 20px;
-  border: 2px dashed var(--bm-border);
   border-radius: 6px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--bm-text-faint);
-  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.assets-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 12px;
   flex-shrink: 0;
-  transition: border-color 0.15s, background 0.15s;
 }
 
-/* Read-only (a locked post): its click handler returns immediately, so it must
-   stop advertising the hand and stop reacting to a hover it will ignore. */
-.assets-dropzone[aria-disabled="true"]:hover {
-  border-color: var(--bm-border);
-  background: none;
-}
-
-.assets-dropzone:not([aria-disabled="true"]):hover:not(.drag-rejected),
-.assets-dropzone.drag-over {
-  border-color: var(--bm-accent);
+.assets-tab.drag-over {
   background: var(--bm-accent-subtle);
-  color: var(--bm-accent);
+  box-shadow: inset 0 0 0 2px var(--bm-accent);
+}
+
+.assets-tab.drag-delivery {
+  background: var(--bm-surface-muted);
+  box-shadow: inset 0 0 0 2px var(--bm-text-muted);
+}
+
+.assets-tab.drag-rejected {
+  background: var(--bm-danger-soft);
+  box-shadow: inset 0 0 0 2px var(--bm-danger-border);
 }
 
 .assets-empty {
@@ -1380,25 +1379,34 @@ button:disabled,
   font-size: 13px;
 }
 
-.assets-error {
+.assets-result {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin: 8px 0;
   padding: 8px 12px;
-  background: var(--bm-danger-soft);
-  border: 1px solid var(--bm-danger-border);
   border-radius: 4px;
-  color: var(--bm-danger);
   font-size: 12px;
 }
 
-.assets-error-dismiss {
+.assets-result--warning {
+  background: var(--bm-warning-soft);
+  border: 1px solid var(--bm-warning-border);
+  color: var(--bm-warning);
+}
+
+.assets-result--error {
+  background: var(--bm-danger-soft);
+  border: 1px solid var(--bm-danger-border);
+  color: var(--bm-danger);
+}
+
+.assets-result-dismiss {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: var(--bm-danger);
+  color: currentColor;
   /* Sized to the banner text it sits in, so the icon matches its cap height. */
   font-size: 12px;
   cursor: pointer;

@@ -35,6 +35,8 @@ import {
   assetUrl,
 } from "@renderer/api";
 import type { AnalysisStreamHandle, BigMouthApi } from "@shared/ipc";
+import { ASSET_UPLOAD_ADMISSION_PREFIX } from "@shared/ipc";
+import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
 import type { ImagingOptions } from "@shared/types";
 
 // api.ts is a thin adapter over the preload bridge (`window.bigmouth`); these
@@ -480,6 +482,22 @@ describe("api wrappers — call-through and argument shape", () => {
       await expect(uploadAsset("p1", file)).rejects.toThrow("read failed");
       expect(close).toHaveBeenCalledTimes(1);
       expect(b.uploadAsset).not.toHaveBeenCalled();
+    });
+
+    it("maps a predictable main-process admission rejection without flattening other errors", async () => {
+      const b = bridge();
+      b.uploadAsset.mockRejectedValue(
+        new Error(`IPC failed: ${ASSET_UPLOAD_ADMISSION_PREFIX} Post is locked.`),
+      );
+      installBridge(b);
+      const file = {
+        name: "photo.png",
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(1)),
+      } as unknown as File;
+
+      await expect(uploadAsset("p1", file)).rejects.toEqual(
+        new AssetUploadAdmissionError("Post is locked."),
+      );
     });
 
     it("deleteAsset forwards ws + postId + filename", () => {

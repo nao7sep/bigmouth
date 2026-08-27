@@ -15,12 +15,15 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { AssetsTab } from "@renderer/components/AssetsTab";
+import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
+import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
-import { listAssets, uploadAsset, deleteAsset } from "@renderer/api";
+import { listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
 
 const mockListAssets = vi.mocked(listAssets);
 const mockUploadAsset = vi.mocked(uploadAsset);
 const mockDeleteAsset = vi.mocked(deleteAsset);
+const mockReportProblem = vi.mocked(reportProblem);
 
 function asset(overrides: Partial<AssetMeta> = {}): AssetMeta {
   return {
@@ -46,6 +49,7 @@ afterEach(() => {
   mockListAssets.mockReset();
   mockUploadAsset.mockReset();
   mockDeleteAsset.mockReset();
+  mockReportProblem.mockReset();
 });
 
 async function renderTab(
@@ -70,15 +74,15 @@ async function renderTab(
   return { onInsertAtCursor, ...utils };
 }
 
-function dropzone(container: HTMLElement): HTMLElement {
-  return container.querySelector(".assets-dropzone") as HTMLElement;
+function assetCollection(container: HTMLElement): HTMLElement {
+  return container.querySelector(".assets-tab") as HTMLElement;
 }
 
 describe("AssetsTab loading", () => {
   it("shows the empty state when there are no assets", async () => {
     mockListAssets.mockResolvedValue([]);
     const { getByText } = await renderTab();
-    expect(getByText("No assets yet")).toBeTruthy();
+    expect(getByText("No assets yet. Drop files here or use Upload.")).toBeTruthy();
   });
 
   it("surfaces a load failure in the error banner", async () => {
@@ -143,11 +147,12 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [big] } });
     });
 
-    expect(getByText(/Too large \(max 1 MB\): big\.png/)).toBeTruthy();
+    expect(getByText(/big\.png: is larger than 1 MB/)).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 
-  it("collects per-file failures into the error banner", async () => {
+  it("collects per-file failures into one persistent result", async () => {
     mockListAssets.mockResolvedValue([]);
     mockUploadAsset.mockRejectedValue(new Error("server said no"));
     const { container, getByText } = await renderTab();
@@ -157,7 +162,82 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("bad.png")] } });
     });
 
-    expect(getByText(/Failed to upload 1 file\(s\): bad\.png: server said no/)).toBeTruthy();
+    expect(getByText(/1 upload failed: bad\.png: server said no/)).toBeTruthy();
+    expect(container.querySelector(".assets-result--error")).toBeTruthy();
+    expect(mockReportProblem).toHaveBeenCalledWith(
+      "Asset upload failed.",
+      expect.any(Error),
+      expect.objectContaining({ filename: "bad.png" }),
+    );
+  });
+
+  it("presents predictable upload admission rejection as a warning without error logging", async () => {
+    mockListAssets.mockResolvedValue([]);
+    mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError("Post is locked."));
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("draft.png")] } });
+    });
+
+    expect(getByText(/draft\.png: Post is locked/)).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
+    expect(mockReportProblem).not.toHaveBeenCalled();
+  });
+
+  it("clears a failed result when a successful batch covers the failed asset", async () => {
+    mockListAssets.mockResolvedValue([]);
+    mockUploadAsset
+      .mockRejectedValueOnce(new Error("disk unavailable"))
+      .mockResolvedValueOnce(asset({ filename: "retry.png" }));
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { files: [makeFile("retry.png"), makeFile("also-ready.png")] },
+      });
+    });
+    expect(getByText(/disk unavailable/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("retry.png")] } });
+    });
+    expect(container.querySelector(".assets-result")).toBeNull();
+  });
+
+  it("rejects reserved asset names as input warnings before upload", async () => {
+    mockListAssets.mockResolvedValue([]);
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("meta.json")] } });
+    });
+
+    expect(getByText(/meta\.json: uses a name BigMouth keeps/)).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
+    expect(mockUploadAsset).not.toHaveBeenCalled();
+  });
+
+  it("summarizes a partial batch and does not clear it after an unrelated success", async () => {
+    mockListAssets.mockResolvedValue([]);
+    mockUploadAsset.mockResolvedValue(asset());
+    const { container, getByText } = await renderTab({ maxUploadMb: 1 });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { files: [makeFile("ready.png"), makeFile("large.png", 2 * 1024 * 1024)] },
+      });
+    });
+    expect(getByText(/Added 1 asset; 1 item could not be added: large\.png: is larger than 1 MB/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("another.png")] } });
+    });
+    expect(getByText(/large\.png: is larger than 1 MB/)).toBeTruthy();
   });
 
   it("asks to replace a duplicate filename and uploads when confirmed", async () => {
@@ -218,7 +298,14 @@ describe("AssetsTab upload via file input", () => {
     });
 
     expect(getByText(/resolve to the same asset name \(draft_\.png\)/)).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
+
+    mockUploadAsset.mockResolvedValue(asset({ filename: "draft_.png" }));
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("draft?.png")] } });
+    });
+    expect(getByText(/resolve to the same asset name \(draft_\.png\)/)).toBeTruthy();
   });
 });
 
@@ -227,7 +314,7 @@ describe("AssetsTab drag and drop", () => {
     mockListAssets.mockResolvedValueOnce([]).mockResolvedValueOnce([asset()]);
     mockUploadAsset.mockResolvedValue(asset());
     const { container } = await renderTab();
-    const zone = dropzone(container);
+    const zone = assetCollection(container);
 
     // jsdom can't synthesize a native DataTransfer, so the drop's payload is
     // supplied directly on the event; the handler only reads dataTransfer.files.
@@ -238,10 +325,10 @@ describe("AssetsTab drag and drop", () => {
     expect(mockUploadAsset).toHaveBeenCalledWith("p1", file, "w1");
   });
 
-  it("separates protected file delivery from proven acceptance", async () => {
+  it("accepts protected Finder delivery without accepting non-file data", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container } = await renderTab();
-    const zone = dropzone(container);
+    const zone = assetCollection(container);
 
     const rejected = createEvent.dragOver(zone, {
       dataTransfer: { types: ["text/plain"], dropEffect: "copy" },
@@ -257,7 +344,8 @@ describe("AssetsTab drag and drop", () => {
     });
     fireEvent(zone, deliveryOnly);
     expect(deliveryOnly.defaultPrevented).toBe(true);
-    expect((deliveryOnly as DragEvent).dataTransfer?.dropEffect).toBe("none");
+    expect((deliveryOnly as DragEvent).dataTransfer?.dropEffect).toBe("copy");
+    expect(zone.classList.contains("drag-delivery")).toBe(true);
     expect(zone.classList.contains("drag-over")).toBe(false);
     expect(zone.classList.contains("drag-rejected")).toBe(false);
 
@@ -273,10 +361,68 @@ describe("AssetsTab drag and drop", () => {
     expect(zone.classList.contains("drag-over")).toBe(false);
   });
 
+  it("rejects an inspectable batch when every file exceeds the upload limit", () => {
+    const oversized = new File(["too large"], "oversized.bin");
+    expect(inspectAssetDragOffer({
+      types: ["Files"],
+      items: [{ kind: "file", getAsFile: () => oversized }] as unknown as DataTransferItemList,
+      files: [oversized] as unknown as FileList,
+    }, oversized.size - 1)).toBe("rejected");
+  });
+
+  it("keeps a mixed inspectable batch neutral", () => {
+    const ready = makeFile("ready.png", 10);
+    const oversized = makeFile("oversized.png", 30);
+    expect(inspectAssetDragOffer({
+      types: ["Files"],
+      items: [] as unknown as DataTransferItemList,
+      files: [ready, oversized] as unknown as FileList,
+    }, 20)).toBe("delivery-only");
+  });
+
+  it("serializes rapid drops through admission, upload, and refresh", async () => {
+    mockListAssets.mockResolvedValue([]);
+    let releaseFirst: (() => void) | undefined;
+    const firstUpload = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    mockUploadAsset
+      .mockImplementationOnce(async () => {
+        await firstUpload;
+        return asset({ filename: "first.png" });
+      })
+      .mockResolvedValueOnce(asset({ filename: "second.png" }));
+    const { container } = await renderTab();
+    const zone = assetCollection(container);
+
+    const firstDrop = createEvent.drop(zone, {
+      dataTransfer: {
+        files: [makeFile("first.png")],
+        types: ["Files"],
+        dropEffect: "none",
+      },
+    });
+    const secondDrop = createEvent.drop(zone, {
+      dataTransfer: {
+        files: [makeFile("second.png")],
+        types: ["Files"],
+        dropEffect: "none",
+      },
+    });
+
+    await act(async () => {
+      fireEvent(zone, firstDrop);
+      fireEvent(zone, secondDrop);
+      await Promise.resolve();
+    });
+    expect(mockUploadAsset).toHaveBeenCalledTimes(1);
+
+    await act(async () => releaseFirst?.());
+    await waitFor(() => expect(mockUploadAsset).toHaveBeenCalledTimes(2));
+  });
+
   it("clears an accepted highlight when a cancelled OS drag sends no terminal event", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container } = await renderTab();
-    const zone = dropzone(container);
+    const zone = assetCollection(container);
     vi.useFakeTimers();
 
     fireEvent.dragOver(zone, {
@@ -292,10 +438,10 @@ describe("AssetsTab drag and drop", () => {
     expect(zone.classList.contains("drag-over")).toBe(false);
   });
 
-  it("ignores a drop without local file data", async () => {
+  it("explains a committed drop without local file data", async () => {
     mockListAssets.mockResolvedValue([]);
-    const { container } = await renderTab();
-    const zone = dropzone(container);
+    const { container, getByText } = await renderTab();
+    const zone = assetCollection(container);
     const droppedText = createEvent.drop(zone, {
       dataTransfer: { files: [], types: ["text/plain"], dropEffect: "none" },
     });
@@ -304,6 +450,7 @@ describe("AssetsTab drag and drop", () => {
 
     expect(droppedText.defaultPrevented).toBe(true);
     expect((droppedText as DragEvent).dataTransfer?.dropEffect).toBe("none");
+    expect(getByText("The Assets collection accepts files from Finder or Upload.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });
@@ -373,33 +520,33 @@ describe("AssetsTab insert", () => {
   });
 });
 
-describe("AssetsTab error banner", () => {
-  it("dismisses the error banner via the close button", async () => {
+describe("AssetsTab result", () => {
+  it("dismisses the result via the close button", async () => {
     mockListAssets.mockRejectedValue(new Error("oops"));
     const { container, getByText } = await renderTab();
     expect(getByText("oops")).toBeTruthy();
-    fireEvent.click(container.querySelector(".assets-error-dismiss") as HTMLButtonElement);
-    expect(container.querySelector(".assets-error")).toBeNull();
+    fireEvent.click(container.querySelector(".assets-result-dismiss") as HTMLButtonElement);
+    expect(container.querySelector(".assets-result")).toBeNull();
   });
 });
 
 describe("AssetsTab read-only", () => {
-  it("shows the read-only dropzone label and disables card actions", async () => {
+  it("disables Upload and card actions", async () => {
     mockListAssets.mockResolvedValue([asset({ filename: "ro.png" })]);
-    const { container, getByText } = await renderTab({ readOnly: true });
-    expect(getByText("Assets are read-only.")).toBeTruthy();
+    const { container, getByRole } = await renderTab({ readOnly: true });
+    expect((getByRole("button", { name: "Upload" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
     const buttons = within(card).getAllByRole("button");
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it("ignores a drop while read-only", async () => {
+  it("explains a committed drop while read-only", async () => {
     mockListAssets.mockResolvedValue([]);
-    const { container } = await renderTab({ readOnly: true });
-    // The drop handler short-circuits via uploadFiles's readOnly guard.
+    const { container, getByText } = await renderTab({ readOnly: true });
     await act(async () => {
-      fireEvent.drop(dropzone(container), { dataTransfer: { files: [makeFile("x.png")] } });
+      fireEvent.drop(assetCollection(container), { dataTransfer: { files: [makeFile("x.png")] } });
     });
+    expect(getByText("Assets are read-only.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });

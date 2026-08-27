@@ -21,6 +21,7 @@ import type {
 } from "@shared/types";
 import {
   type AssetUploadInput,
+  ASSET_UPLOAD_ADMISSION_PREFIX,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
   assetUrl as buildAssetUrl,
@@ -29,6 +30,7 @@ import {
   type MetadataGenerationResults,
   type PostUpdate,
 } from "@shared/ipc";
+import { AssetUploadAdmissionError } from "./util/assetUpload";
 import { isImageAssetFilename } from "@shared/assetNames";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
@@ -288,11 +290,22 @@ export async function uploadAsset(postId: string, file: File, workspaceId?: stri
   // Decode and read concurrently; dimension failure is deliberately contained
   // inside imageDimensions, while a byte-read failure still aborts the upload.
   const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
-  return bridge().uploadAsset(requireWs(workspaceId), postId, {
-    name: file.name,
-    data,
-    ...dimensions,
-  });
+  try {
+    return await bridge().uploadAsset(requireWs(workspaceId), postId, {
+      name: file.name,
+      data,
+      ...dimensions,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const marker = message.indexOf(ASSET_UPLOAD_ADMISSION_PREFIX);
+    if (marker >= 0) {
+      throw new AssetUploadAdmissionError(
+        message.slice(marker + ASSET_UPLOAD_ADMISSION_PREFIX.length).trim(),
+      );
+    }
+    throw error;
+  }
 }
 
 export function deleteAsset(postId: string, filename: string, workspaceId?: string): Promise<void> {

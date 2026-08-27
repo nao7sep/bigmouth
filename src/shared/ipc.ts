@@ -168,6 +168,9 @@ export interface AssetUploadInput {
   height?: number;
 }
 
+/** Stable marker retained in Electron's serialized IPC error message. */
+export const ASSET_UPLOAD_ADMISSION_PREFIX = "BIGMOUTH_ASSET_ADMISSION:";
+
 export interface PostUpdate {
   content?: string;
   frontMatter?: EditablePostMetadata;

@@ -4,8 +4,12 @@ import path from "node:path";
 import { ipcMain } from "electron";
 import exifr from "exifr";
 
-import { CHANNELS, type AssetUploadInput } from "@shared/ipc";
-import { isImageAssetFilename } from "@shared/assetNames";
+import {
+  ASSET_UPLOAD_ADMISSION_PREFIX,
+  CHANNELS,
+  type AssetUploadInput,
+} from "@shared/ipc";
+import { isImageAssetFilename, isReservedAssetName } from "@shared/assetNames";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getSettings } from "../core/services/configStore.js";
 import { getPost } from "../core/services/postStore.js";
@@ -97,10 +101,18 @@ export function registerAssetHandlers(): void {
     const buffer = Buffer.from(file.data);
     const limitMb = getSettings(dir).maxUploadMb ?? 500;
     if (buffer.length > limitMb * 1024 * 1024) {
-      throw new Error(`File is larger than the ${limitMb} MB upload limit.`);
+      throw new Error(
+        `${ASSET_UPLOAD_ADMISSION_PREFIX} File is larger than the ${limitMb} MB upload limit.`,
+      );
     }
 
     const filename = sanitizeFilename(file.name);
+    if (isReservedAssetName(filename)) {
+      throw new Error(
+        `${ASSET_UPLOAD_ADMISSION_PREFIX} "${filename}" is a name BigMouth keeps for its own bookkeeping. ` +
+        "Rename the file and try again.",
+      );
+    }
 
     const { width, height } = readUploadDimensions(filename, file);
     let hasMetadata: boolean | undefined;
@@ -130,7 +142,10 @@ export function registerAssetHandlers(): void {
     if (!post) throw new Error("Post not found");
     if (isEditLocked(post.frontMatter.status)) {
       const label = post.frontMatter.status === "published" ? "Published" : "Expired";
-      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
+      throw new Error(
+        `${ASSET_UPLOAD_ADMISSION_PREFIX} ${label} posts are locked. ` +
+        "Move the post back to Ready or Draft to change its assets.",
+      );
     }
 
     let storedMeta: AssetMeta;
