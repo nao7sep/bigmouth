@@ -419,25 +419,6 @@ describe("AssetsTab drag and drop", () => {
     await waitFor(() => expect(mockUploadAsset).toHaveBeenCalledTimes(2));
   });
 
-  it("clears an accepted highlight when a cancelled OS drag sends no terminal event", async () => {
-    mockListAssets.mockResolvedValue([]);
-    const { container } = await renderTab();
-    const zone = assetCollection(container);
-    vi.useFakeTimers();
-
-    fireEvent.dragOver(zone, {
-      dataTransfer: {
-        files: [makeFile("ready.png")],
-        types: ["Files"],
-        dropEffect: "none",
-      },
-    });
-    expect(zone.classList.contains("drag-over")).toBe(true);
-
-    act(() => vi.advanceTimersByTime(501));
-    expect(zone.classList.contains("drag-over")).toBe(false);
-  });
-
   it("explains a committed drop without local file data", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container, getByText } = await renderTab();

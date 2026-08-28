@@ -20,8 +20,6 @@ interface AssetsTabProps {
   readOnly?: boolean;
 }
 
-const DRAG_SIGNAL_TIMEOUT_MS = 500;
-
 type DragState = "idle" | "delivery" | "accepting" | "rejecting";
 type AssetNotice = {
   severity: "warning" | "error";
@@ -81,36 +79,11 @@ export function AssetsTab({
   const assetsRef = useRef<AssetMeta[]>([]);
   const uploadTailRef = useRef<Promise<void>>(Promise.resolve());
   const queuedUploadsRef = useRef(0);
-  const dragSignalTimeoutRef = useRef<number | undefined>(undefined);
   const confirm = useConfirm();
 
   const resetDragState = useCallback(() => {
-    if (dragSignalTimeoutRef.current !== undefined) {
-      window.clearTimeout(dragSignalTimeoutRef.current);
-      dragSignalTimeoutRef.current = undefined;
-    }
     setDragState("idle");
   }, []);
-
-  const pulseDragState = useCallback((state: Exclude<DragState, "idle">) => {
-    if (dragSignalTimeoutRef.current !== undefined) {
-      window.clearTimeout(dragSignalTimeoutRef.current);
-    }
-    setDragState(state);
-    dragSignalTimeoutRef.current = window.setTimeout(() => {
-      dragSignalTimeoutRef.current = undefined;
-      setDragState("idle");
-    }, DRAG_SIGNAL_TIMEOUT_MS);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (dragSignalTimeoutRef.current !== undefined) {
-        window.clearTimeout(dragSignalTimeoutRef.current);
-      }
-    },
-    [],
-  );
 
   const load = useCallback(async (): Promise<string | null> => {
     try {
@@ -365,14 +338,14 @@ export function AssetsTab({
         const offer = inspectAssetDragOffer(e.dataTransfer, maxUploadMb * 1024 * 1024);
         if (readOnly || offer === "rejected") {
           e.dataTransfer.dropEffect = "none";
-          pulseDragState("rejecting");
+          setDragState("rejecting");
           return;
         }
         // Chromium needs a transport action to deliver Finder's protected
         // Files offer. The neutral state does not claim those hidden files
         // have passed the upload boundary yet.
         e.dataTransfer.dropEffect = "copy";
-        pulseDragState(offer === "accepted" ? "accepting" : "delivery");
+        setDragState(offer === "accepted" ? "accepting" : "delivery");
       }}
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
