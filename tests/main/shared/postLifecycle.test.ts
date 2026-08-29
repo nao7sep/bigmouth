@@ -40,9 +40,8 @@ describe("isEditLocked", () => {
 
 describe("POST_STATUSES", () => {
   it("is the one enumeration of the four states, and recognizes nothing else", () => {
-    // The list is what the app enumerates; the ordering it used to encode was
-    // never consulted, and the spec is explicit that any state may move directly
-    // to any other.
+    // The list is what this app enumerates. Its ordering is presentation-only;
+    // the transition function accepts every recognized status from every state.
     expect(POST_STATUSES).toEqual(["draft", "ready", "published", "expired"]);
     expect(isPostStatus("published")).toBe(true);
     // A hand-edited front matter can carry anything at all.
