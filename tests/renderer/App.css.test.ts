@@ -11,6 +11,7 @@ import { CENTER_MIN, LEFT_MIN, RIGHT_MIN } from "@shared/layout";
 // tests/node-shims.d.ts.)
 
 const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
+const app = readFileSync(`${process.cwd()}/src/renderer/src/App.tsx`, "utf8");
 
 describe("App.css window chrome", () => {
   it("declares a light color-scheme so native UI matches the theme", () => {
@@ -37,6 +38,14 @@ describe("App.css window chrome", () => {
   it("lets the pane row scroll horizontally rather than collapsing a pane", () => {
     const block = css.match(/\.app-layout\s*\{[\s\S]*?\}/)?.[0] ?? "";
     expect(block).toMatch(/overflow-x:\s*auto/);
+  });
+
+  it("keeps an impossible scaled floor inside a two-axis viewport", () => {
+    const block = css.match(/\.workspace-viewport\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    expect(block).toMatch(/overflow:\s*auto/);
+    expect(app).toContain("className=\"workspace-floor\"");
+    expect(app).toContain("minWidth: WINDOW_MIN_WIDTH");
+    expect(app).toContain("minHeight: WINDOW_MIN_HEIGHT");
   });
 });
 

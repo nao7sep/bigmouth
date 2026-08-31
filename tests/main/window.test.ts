@@ -12,11 +12,22 @@ vi.mock("electron", () => ({
   BrowserWindow: class {},
   Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
   nativeTheme: { themeSource: "light" },
+  screen: {
+    getDisplayMatching: () => ({ workAreaSize: { width: 1440, height: 900 } }),
+    getPrimaryDisplay: () => ({ workAreaSize: { width: 1440, height: 900 } }),
+    on: vi.fn(),
+    removeListener: vi.fn(),
+  },
   shell: { openExternal: vi.fn() },
 }));
 
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
-import { buildWindowOptions, isAllowedExternalUrl, zoomFactorForLevel } from "@main/window.js";
+import {
+  boundWindowMinimum,
+  buildWindowOptions,
+  isAllowedExternalUrl,
+  zoomFactorForLevel,
+} from "@main/window.js";
 
 describe("isAllowedExternalUrl", () => {
   it("allows the three schemes a link in a post can legitimately use", () => {
@@ -75,6 +86,16 @@ describe("buildWindowOptions", () => {
     expect(options.webPreferences?.zoomFactor).toBe(zoomFactor);
     expect(options.minWidth).toBe(Math.ceil(WINDOW_MIN_WIDTH * zoomFactor));
     expect(options.minHeight).toBe(Math.ceil(WINDOW_MIN_HEIGHT * zoomFactor));
+  });
+
+  it("caps only the native floor when scaled content is larger than the work area", () => {
+    const required = { width: 2790, height: 1800 };
+
+    expect(boundWindowMinimum(required, { width: 1512, height: 950 })).toEqual({
+      width: 1512,
+      height: 950,
+    });
+    expect(boundWindowMinimum(required, { width: 3200, height: 2000 })).toEqual(required);
   });
 
   it("opens hidden, so the first paint is never a blank white window", () => {

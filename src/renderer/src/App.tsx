@@ -17,6 +17,7 @@ import {
   clamp,
   clampPaneWidth,
 } from "./paneConstants";
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import "./App.css";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
@@ -273,21 +274,28 @@ export function App() {
 
   return (
     <>
-      <WorkspaceSession
-        ref={sessionRef}
-        appLayoutRef={appLayoutRef}
-        key={activeWorkspace.id}
-        workspace={activeWorkspace}
-        leftWidth={leftWidth}
-        rightWidth={rightWidth}
-        onStartLeftDrag={(e) =>
-          startDrag(e, leftIntentRef, setLeftIntent, "paneLeftWidth", 1, LEFT_MIN, LEFT_MAX)
-        }
-        onStartRightDrag={(e) =>
-          startDrag(e, rightIntentRef, setRightIntent, "paneRightWidth", -1, RIGHT_MIN, RIGHT_MAX)
-        }
-        onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
-      />
+      <div className="workspace-viewport">
+        <div
+          className="workspace-floor"
+          style={{ minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }}
+        >
+          <WorkspaceSession
+            ref={sessionRef}
+            appLayoutRef={appLayoutRef}
+            key={activeWorkspace.id}
+            workspace={activeWorkspace}
+            leftWidth={leftWidth}
+            rightWidth={rightWidth}
+            onStartLeftDrag={(e) =>
+              startDrag(e, leftIntentRef, setLeftIntent, "paneLeftWidth", 1, LEFT_MIN, LEFT_MAX)
+            }
+            onStartRightDrag={(e) =>
+              startDrag(e, rightIntentRef, setRightIntent, "paneRightWidth", -1, RIGHT_MIN, RIGHT_MAX)
+            }
+            onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
+          />
+        </div>
+      </div>
       {workspaceModalOpen && workspaceModal}
     </>
   );

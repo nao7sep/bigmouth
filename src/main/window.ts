@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, nativeTheme, shell } from "electron";
+import { BrowserWindow, Menu, nativeTheme, screen, shell } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,8 +39,23 @@ export function zoomFactorForLevel(zoomLevel: number): number {
   return 1.2 ** zoomLevel;
 }
 
-export function buildWindowOptions(zoomFactor = 1): Electron.BrowserWindowConstructorOptions {
-  const minimum = windowMinimumForZoom(zoomFactor);
+export function boundWindowMinimum(
+  required: { width: number; height: number },
+  workArea: { width: number; height: number },
+): { width: number; height: number } {
+  return {
+    width: Math.min(required.width, workArea.width),
+    height: Math.min(required.height, workArea.height),
+  };
+}
+
+export function buildWindowOptions(
+  zoomFactor = 1,
+  workArea?: { width: number; height: number },
+): Electron.BrowserWindowConstructorOptions {
+  const required = windowMinimumForZoom(zoomFactor);
+  const minimum =
+    workArea === undefined ? required : boundWindowMinimum(required, workArea);
   return {
     width: 1480,
     height: 940,
@@ -74,7 +89,9 @@ function configureZoom(window: BrowserWindow): void {
   window.webContents.setZoomLevel(zoomLevel);
 
   const remember = (): void => {
-    const minimum = windowMinimumForZoom(window.webContents.getZoomFactor());
+    const required = windowMinimumForZoom(window.webContents.getZoomFactor());
+    const workArea = screen.getDisplayMatching(window.getBounds()).workAreaSize;
+    const minimum = boundWindowMinimum(required, workArea);
     window.setMinimumSize(minimum.width, minimum.height);
     const level = window.webContents.getZoomLevel();
     if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
@@ -94,7 +111,13 @@ function configureZoom(window: BrowserWindow): void {
   });
   window.on("focus", () => setTimeout(remember, 0));
   window.on("blur", remember);
+  window.on("move", remember);
   window.on("close", remember);
+  const onDisplayMetricsChanged = (): void => remember();
+  screen.on("display-metrics-changed", onDisplayMetricsChanged);
+  window.once("closed", () =>
+    screen.removeListener("display-metrics-changed", onDisplayMetricsChanged),
+  );
 }
 
 export function createMainWindow(): BrowserWindow {
@@ -103,7 +126,9 @@ export function createMainWindow(): BrowserWindow {
   nativeTheme.themeSource = "light";
 
   const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
-  const window = new BrowserWindow(buildWindowOptions(zoomFactor));
+  const window = new BrowserWindow(
+    buildWindowOptions(zoomFactor, screen.getPrimaryDisplay().workAreaSize),
+  );
 
   window.once("ready-to-show", () => {
     configureZoom(window);
