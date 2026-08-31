@@ -18,7 +18,8 @@ import { useConfirm } from "./ConfirmHost";
 import { computeCounts, type ContentCounts } from "../util/counts";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useRadioGroup } from "../hooks/useRadioGroup";
-import { CheckIcon, ChevronLeftIcon, XIcon } from "./Icon";
+import { CheckIcon, ChevronLeftIcon } from "./Icon";
+import { OperationalResult } from "./OperationalResult";
 
 interface CenterPaneProps {
   workspaceId: string;
@@ -365,18 +366,17 @@ export function CenterPane({
         </button>
       </div>
       {toolbarError && (
-        <div className="toolbar-error">
-          {toolbarError}
-          <button
-            className="toolbar-error-dismiss"
-            onClick={() => {
+        <OperationalResult
+          severity="error"
+          className="toolbar-error"
+          dismissClassName="toolbar-error-dismiss"
+          onDismiss={() => {
               setStatusError(null);
               setSaveError(null);
-            }}
-          >
-            <XIcon />
-          </button>
-        </div>
+          }}
+        >
+          {toolbarError}
+        </OperationalResult>
       )}
       {locked && (
         <div className="toolbar-notice">

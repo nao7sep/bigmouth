@@ -16,7 +16,7 @@ vi.mock("electron", () => ({
 }));
 
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
-import { buildWindowOptions, isAllowedExternalUrl } from "@main/window.js";
+import { buildWindowOptions, isAllowedExternalUrl, zoomFactorForLevel } from "@main/window.js";
 
 describe("isAllowedExternalUrl", () => {
   it("allows the three schemes a link in a post can legitimately use", () => {
@@ -65,6 +65,16 @@ describe("buildWindowOptions", () => {
     // And the default size actually fits inside them.
     expect(options.width).toBeGreaterThanOrEqual(WINDOW_MIN_WIDTH);
     expect(options.height).toBeGreaterThanOrEqual(WINDOW_MIN_HEIGHT);
+  });
+
+  it("constructs a restored zoom window with a matching native floor", () => {
+    const zoomFactor = zoomFactorForLevel(2);
+    const options = buildWindowOptions(zoomFactor);
+
+    expect(zoomFactor).toBeCloseTo(1.44);
+    expect(options.webPreferences?.zoomFactor).toBe(zoomFactor);
+    expect(options.minWidth).toBe(Math.ceil(WINDOW_MIN_WIDTH * zoomFactor));
+    expect(options.minHeight).toBe(Math.ceil(WINDOW_MIN_HEIGHT * zoomFactor));
   });
 
   it("opens hidden, so the first paint is never a blank white window", () => {

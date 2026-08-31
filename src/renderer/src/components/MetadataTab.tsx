@@ -12,7 +12,8 @@ import { updatePost, generateMetadataField, generateMetadataFields } from "../ap
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue } from "../util/metadataFields";
 import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
-import { CheckIcon, XIcon } from "./Icon";
+import { CheckIcon } from "./Icon";
+import { OperationalResult } from "./OperationalResult";
 
 interface MetadataTabProps {
   workspaceId: string;
@@ -310,12 +311,14 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     return (
       <div className="metadata-tab">
         {genError && (
-          <div className="metadata-error">
+          <OperationalResult
+            severity="error"
+            className="metadata-error"
+            dismissClassName="metadata-error-dismiss"
+            onDismiss={clearGenError}
+          >
             {genError}
-            <button className="metadata-error-dismiss" onClick={clearGenError}>
-              <XIcon />
-            </button>
-          </div>
+          </OperationalResult>
         )}
         {readOnly && (
           <p className="meta-field-hint">
@@ -556,4 +559,3 @@ function AutoGrowTextarea({
     />
   );
 }
-

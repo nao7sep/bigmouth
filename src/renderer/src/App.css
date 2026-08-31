@@ -515,6 +515,18 @@ button:disabled,
   border-bottom: 1px solid var(--bm-danger-border);
 }
 
+.operational-result-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.operational-result-message > svg {
+  flex-shrink: 0;
+}
+
 .toolbar-error-dismiss {
   flex-shrink: 0;
   background: none;

@@ -2,7 +2,7 @@ import { BrowserWindow, Menu, nativeTheme, shell } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
+import { windowMinimumForZoom } from "@shared/layout";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
 
 // Matches the renderer `--bm-bg` (#f4efe8 in App.css) so the pre-paint window
@@ -35,12 +35,17 @@ function openExternalIfAllowed(rawUrl: string): void {
 // window — see tests/main/window.test.ts. The minimum size is the pane-row plus chrome,
 // sourced from @shared/layout (app-chrome-conventions) — never hand-typed, so it
 // can never disagree with the renderer's pane minimums.
-export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {
+export function zoomFactorForLevel(zoomLevel: number): number {
+  return 1.2 ** zoomLevel;
+}
+
+export function buildWindowOptions(zoomFactor = 1): Electron.BrowserWindowConstructorOptions {
+  const minimum = windowMinimumForZoom(zoomFactor);
   return {
     width: 1480,
     height: 940,
-    minWidth: WINDOW_MIN_WIDTH,
-    minHeight: WINDOW_MIN_HEIGHT,
+    minWidth: minimum.width,
+    minHeight: minimum.height,
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
     titleBarStyle: "default",
@@ -50,6 +55,7 @@ export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      zoomFactor,
     },
   };
 }
@@ -63,19 +69,30 @@ export function buildWindowOptions(): Electron.BrowserWindowConstructorOptions {
  * `zoom-changed` covers the trackpad/scroll gesture; the menu roles do not fire
  * it, so the level is read back after each of them too.
  */
-function persistZoom(window: BrowserWindow): void {
+function configureZoom(window: BrowserWindow): void {
   const { zoomLevel } = getUiState();
   window.webContents.setZoomLevel(zoomLevel);
 
   const remember = (): void => {
+    const minimum = windowMinimumForZoom(window.webContents.getZoomFactor());
+    window.setMinimumSize(minimum.width, minimum.height);
     const level = window.webContents.getZoomLevel();
     if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
   };
 
+  // Apply the restored level's native floor before the hidden window is shown.
+  remember();
   window.webContents.on("zoom-changed", () => setTimeout(remember, 0));
-  // The menu roles change the level without an event; polling once per change is
-  // not possible, so the level is captured when the window loses focus and at
-  // close — both are moments the user has stopped adjusting.
+  // Native zoom roles do not emit `zoom-changed`. A keyboard role is observed
+  // after Electron handles its input; a pointer-selected menu role is observed
+  // when focus returns. Blur/close remain persistence fallbacks.
+  window.webContents.on("before-input-event", (_event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    if (modifier && ["+", "=", "-", "0"].includes(input.key)) {
+      setTimeout(remember, 0);
+    }
+  });
+  window.on("focus", () => setTimeout(remember, 0));
   window.on("blur", remember);
   window.on("close", remember);
 }
@@ -85,10 +102,11 @@ export function createMainWindow(): BrowserWindow {
   // paints a light native title bar that matches the UI (app-chrome-conventions).
   nativeTheme.themeSource = "light";
 
-  const window = new BrowserWindow(buildWindowOptions());
+  const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
+  const window = new BrowserWindow(buildWindowOptions(zoomFactor));
 
   window.once("ready-to-show", () => {
-    persistZoom(window);
+    configureZoom(window);
     window.show();
   });
 

@@ -8,7 +8,7 @@ import {
 } from "@shared/assetNames";
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
-import { XIcon } from "./Icon";
+import { OperationalResult } from "./OperationalResult";
 import { inspectAssetDragOffer } from "../util/assetDrop";
 import { AssetUploadAdmissionError } from "../util/assetUpload";
 
@@ -372,21 +372,14 @@ export function AssetsTab({
       </div>
 
       {uploadNotice && (
-        <div
-          className={
-            `assets-result assets-result--${uploadNotice.severity}`
-          }
-          role={uploadNotice.severity === "error" ? "alert" : "status"}
+        <OperationalResult
+          severity={uploadNotice.severity}
+          className={`assets-result assets-result--${uploadNotice.severity}`}
+          dismissClassName="assets-result-dismiss"
+          onDismiss={() => setUploadNotice(null)}
         >
-          <span>{uploadNotice.message}</span>
-          <button
-            className="assets-result-dismiss"
-            onClick={() => setUploadNotice(null)}
-            aria-label="Dismiss result"
-          >
-            <XIcon />
-          </button>
-        </div>
+          {uploadNotice.message}
+        </OperationalResult>
       )}
 
       {/* Asset grid */}

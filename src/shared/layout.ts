@@ -20,3 +20,16 @@ export const ROW_MIN = LEFT_MIN + CENTER_MIN + RIGHT_MIN + 2 * DIVIDER;
  */
 export const WINDOW_MIN_WIDTH = ROW_MIN;
 export const WINDOW_MIN_HEIGHT = 600;
+
+/**
+ * Electron zoom reduces the number of CSS pixels available inside a native
+ * window. Scale the native floor with it so zooming cannot make any pane's CSS
+ * minimum impossible to satisfy. The returned values remain device-pixel
+ * integers for BrowserWindow.setMinimumSize().
+ */
+export function windowMinimumForZoom(zoomFactor: number): { width: number; height: number } {
+  return {
+    width: Math.ceil(WINDOW_MIN_WIDTH * zoomFactor),
+    height: Math.ceil(WINDOW_MIN_HEIGHT * zoomFactor),
+  };
+}

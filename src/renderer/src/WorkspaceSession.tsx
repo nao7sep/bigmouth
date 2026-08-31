@@ -17,7 +17,7 @@ import {
   onPostContentSaved,
 } from "./api";
 import { LeftPane } from "./components/LeftPane";
-import { XIcon } from "./components/Icon";
+import { OperationalResult } from "./components/OperationalResult";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
@@ -592,15 +592,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     return (
       <div className="workspace-session">
         {loadError && (
-          <div className="toolbar-error">
-            <span>{loadError}</span>
-            <button
-              className="toolbar-error-dismiss"
-              onClick={() => setLoadError(null)}
-            >
-              <XIcon />
-            </button>
-          </div>
+          <OperationalResult
+            severity="error"
+            className="toolbar-error"
+            dismissClassName="toolbar-error-dismiss"
+            onDismiss={() => setLoadError(null)}
+          >
+            {loadError}
+          </OperationalResult>
         )}
         <div
           ref={appLayoutRef}

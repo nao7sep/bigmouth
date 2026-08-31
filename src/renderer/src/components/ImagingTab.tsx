@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { CheckIcon } from "./Icon";
+import { OperationalResult } from "./OperationalResult";
 
 const COUNT_OPTIONS = [3, 5, 10] as const;
 const RELATION_OPTIONS: Array<{ value: ImagingRelation; label: string }> = [
@@ -223,7 +224,11 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
         </div>
       </div>
 
-      {error && <div className="panel-error">{error}</div>}
+      {error && (
+        <OperationalResult severity="error" className="panel-error">
+          {error}
+        </OperationalResult>
+      )}
 
       {!content.trim() && (
         <div className="panel-empty">Write some post content first.</div>

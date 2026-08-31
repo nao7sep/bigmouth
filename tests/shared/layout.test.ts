@@ -9,6 +9,7 @@ import {
   DIVIDER,
   WINDOW_MIN_WIDTH,
   WINDOW_MIN_HEIGHT,
+  windowMinimumForZoom,
 } from "@shared/layout";
 
 describe("window minimums", () => {
@@ -29,5 +30,16 @@ describe("window minimums", () => {
       expect(min).toBeGreaterThan(0);
     }
     expect(WINDOW_MIN_HEIGHT).toBeGreaterThan(0);
+  });
+
+  it("scales the native floor with Electron zoom so the CSS pane floors remain real", () => {
+    expect(windowMinimumForZoom(1)).toEqual({
+      width: WINDOW_MIN_WIDTH,
+      height: WINDOW_MIN_HEIGHT,
+    });
+    expect(windowMinimumForZoom(1.5)).toEqual({
+      width: Math.ceil(WINDOW_MIN_WIDTH * 1.5),
+      height: Math.ceil(WINDOW_MIN_HEIGHT * 1.5),
+    });
   });
 });

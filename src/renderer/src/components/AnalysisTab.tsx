@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listAnalysisPrompts, runAnalysisStream } from "../api";
 import type { AnalysisPrompt } from "@shared/types";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
+import { OperationalResult } from "./OperationalResult";
 
 interface AnalysisTabProps {
   postId: string;
@@ -107,7 +108,11 @@ export function AnalysisTab({
 
   if (prompts.length === 0 && !loading) {
     if (promptsError) {
-      return <div className="panel-error">Couldn't load analysis prompts: {promptsError}</div>;
+      return (
+        <OperationalResult severity="error" className="panel-error">
+          Couldn't load analysis prompts: {promptsError}
+        </OperationalResult>
+      );
     }
     return (
       <div className="panel-empty">
@@ -143,7 +148,11 @@ export function AnalysisTab({
         </button>
       </div>
 
-      {error && <div className="panel-error">{error}</div>}
+      {error && (
+        <OperationalResult severity="error" className="panel-error">
+          {error}
+        </OperationalResult>
+      )}
 
       {/* Open while it is the only thing to read, then collapsed once the answer
           arrives — the reasoning is what fills the wait, not the deliverable. */}
