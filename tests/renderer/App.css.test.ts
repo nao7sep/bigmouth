@@ -50,11 +50,14 @@ describe("App.css window chrome", () => {
 
   it("makes the active right tab panel fill the pane", () => {
     const content = css.match(/\.right-content\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const panel = css.match(/\.right-content\s*>\s*\[role="tabpanel"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
     const activePanel = css.match(/\.right-content\s*>\s*\[role="tabpanel"\]:not\(\.tab-hidden\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
 
     expect(content).toMatch(/display:\s*flex/);
     expect(content).toMatch(/flex-direction:\s*column/);
     expect(content).toMatch(/min-height:\s*0/);
+    expect(content).toMatch(/padding:\s*2px\s+2px\s+2px\s+0/);
+    expect(panel).toMatch(/padding:\s*14px\s+14px\s+14px\s+16px/);
     expect(activePanel).toMatch(/flex:\s*1\s+0\s+100%/);
   });
 });
@@ -90,6 +93,15 @@ describe("App.css disabled cursors", () => {
 
   it("still shows the hand when enabled", () => {
     expect(cursorOf("btn-toolbar", false)).toBe("pointer");
+  });
+});
+
+describe("App.css asset receiver presentation", () => {
+  it("draws the existing drag boundary on the complete Assets tab panel", () => {
+    expect(css).not.toMatch(/\.assets-tab::after/);
+    expect(css).toMatch(/\.assets-tab\.drag-over\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-accent\)/);
+    expect(css).toMatch(/\.assets-tab\.drag-delivery\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-text-muted\)/);
+    expect(css).toMatch(/\.assets-tab\.drag-rejected\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-danger-border\)/);
   });
 });
 

@@ -97,7 +97,7 @@ describe("AssetsTab loading", () => {
     ]);
     const { container, getByText } = await renderTab();
     const card = container.querySelector(".asset-card") as HTMLElement;
-    expect(card.classList.contains("has-exif")).toBe(true);
+    expect(card.className).toBe("asset-card");
     expect(card.querySelector("img")?.getAttribute("src")).toBe("asset://w1/p1/photo.jpg");
     expect(getByText(/2\.9 MB/)).toBeTruthy(); // formatBytes MB branch
     expect(getByText(/800.*600/)).toBeTruthy(); // dimensions

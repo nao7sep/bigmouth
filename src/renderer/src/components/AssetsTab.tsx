@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { HTMLAttributes } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl, reportProblem } from "../api";
 import {
   collidingAssetFilenames,
@@ -12,7 +13,10 @@ import { OperationalResult } from "./OperationalResult";
 import { inspectAssetDragOffer } from "../util/assetDrop";
 import { AssetUploadAdmissionError } from "../util/assetUpload";
 
-interface AssetsTabProps {
+interface AssetsTabProps extends Pick<
+  HTMLAttributes<HTMLDivElement>,
+  "aria-labelledby" | "className" | "id" | "role"
+> {
   workspaceId: string;
   postId: string;
   onInsertAtCursor: (text: string) => void;
@@ -70,6 +74,7 @@ export function AssetsTab({
   onInsertAtCursor,
   maxUploadMb,
   readOnly = false,
+  ...containerProps
 }: AssetsTabProps) {
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -326,10 +331,12 @@ export function AssetsTab({
 
   return (
     <div
+      {...containerProps}
       className={
         `assets-tab${dragState === "accepting" ? " drag-over" : ""}` +
         `${dragState === "delivery" ? " drag-delivery" : ""}` +
-        `${dragState === "rejecting" ? " drag-rejected" : ""}`
+        `${dragState === "rejecting" ? " drag-rejected" : ""}` +
+        `${containerProps.className ? ` ${containerProps.className}` : ""}`
       }
       aria-disabled={readOnly || undefined}
       onDragOver={(e) => {
@@ -427,7 +434,7 @@ function AssetCard({
   const img = isImage(asset.filename);
 
   return (
-    <div className={`asset-card${asset.hasMetadata ? " has-exif" : ""}`}>
+    <div className="asset-card">
       <div className="asset-thumb">
         {img ? (
           <img src={src} alt={asset.filename} />

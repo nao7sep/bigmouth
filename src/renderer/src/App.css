@@ -661,7 +661,19 @@ button:disabled,
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px;
+  /* The 5px divider immediately to the left draws its 1px line in the center,
+     already leaving 2px between that line and this pane. Do not double that
+     gap. The 2px receiver highlight otherwise touches the clipped top, right,
+     and bottom window edges, so those sides receive a gutter equal to the
+     highlight's own 2px width. */
+  padding: 2px 2px 2px 0;
+}
+
+.right-content > [role="tabpanel"] {
+  min-height: 0;
+  /* Complements the asymmetric outer gutter so tab contents retain their
+     original 16px inset on every side. */
+  padding: 14px 14px 14px 16px;
 }
 
 .right-content > [role="tabpanel"]:not(.tab-hidden) {
@@ -1377,8 +1389,6 @@ button:disabled,
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border-radius: 6px;
-  transition: background 0.15s, box-shadow 0.15s;
 }
 
 .assets-toolbar {
@@ -1389,17 +1399,14 @@ button:disabled,
 }
 
 .assets-tab.drag-over {
-  background: var(--bm-accent-subtle);
   box-shadow: inset 0 0 0 2px var(--bm-accent);
 }
 
 .assets-tab.drag-delivery {
-  background: var(--bm-surface-muted);
   box-shadow: inset 0 0 0 2px var(--bm-text-muted);
 }
 
 .assets-tab.drag-rejected {
-  background: var(--bm-danger-soft);
   box-shadow: inset 0 0 0 2px var(--bm-danger-border);
 }
 
@@ -1461,11 +1468,6 @@ button:disabled,
   border: 1px solid var(--bm-border-subtle);
   border-radius: 6px;
   background: var(--bm-surface);
-}
-
-.asset-card.has-exif {
-  border-color: var(--bm-accent-border);
-  background: var(--bm-accent-subtle);
 }
 
 .asset-thumb {

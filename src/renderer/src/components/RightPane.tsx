@@ -163,23 +163,25 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             )}
           </div>
         )}
-        <div
-          {...getPanelProps("Assets")}
-          className={effectiveTab === "Assets" ? "" : "tab-hidden"}
-        >
-          {loading ? (
+        {loading ? (
+          <div
+            {...getPanelProps("Assets")}
+            className={effectiveTab === "Assets" ? "" : "tab-hidden"}
+          >
             <RightPanePlaceholder message="Loading assets…" />
-          ) : (
-            <AssetsTab
-              key={postId}
-              workspaceId={workspaceId}
-              postId={postId}
-              onInsertAtCursor={onInsertAtCursor}
-              maxUploadMb={maxUploadMb}
-              readOnly={locked}
-            />
-          )}
-        </div>
+          </div>
+        ) : (
+          <AssetsTab
+            {...getPanelProps("Assets")}
+            className={effectiveTab === "Assets" ? "" : "tab-hidden"}
+            key={postId}
+            workspaceId={workspaceId}
+            postId={postId}
+            onInsertAtCursor={onInsertAtCursor}
+            maxUploadMb={maxUploadMb}
+            readOnly={locked}
+          />
+        )}
       </div>
     </div>
   );

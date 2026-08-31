@@ -25,7 +25,14 @@ vi.mock("@renderer/components/ImagingTab", () => ({
 }));
 vi.mock("@renderer/components/AssetsTab", () => ({
   AssetsTab: (props: Record<string, unknown>) => (
-    <div data-testid="assets-tab" data-readonly={String(props.readOnly)}>
+    <div
+      aria-labelledby={String(props["aria-labelledby"])}
+      className={String(props.className ?? "")}
+      data-testid="assets-tab"
+      data-readonly={String(props.readOnly)}
+      id={String(props.id)}
+      role={String(props.role)}
+    >
       assets
     </div>
   ),
@@ -127,6 +134,15 @@ describe("RightPane effective tab", () => {
     expect(previewPanel.className).not.toContain("tab-hidden");
     const analysisPanel = container.querySelector('[data-testid="analysis-tab"]')!.parentElement!;
     expect(analysisPanel.className).toContain("tab-hidden");
+  });
+
+  it("uses the Assets component root as the complete tab panel", () => {
+    const { container } = renderPane({ activeTab: "Assets" });
+    const assets = screen.getByTestId("assets-tab");
+
+    expect(assets.getAttribute("role")).toBe("tabpanel");
+    expect(assets.className).not.toContain("tab-hidden");
+    expect(assets.parentElement).toBe(container.querySelector(".right-content"));
   });
 
   it("falls back to the first visible tab and notifies when the active tab is not visible", () => {
