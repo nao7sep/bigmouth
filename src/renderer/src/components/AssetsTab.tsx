@@ -121,7 +121,7 @@ export function AssetsTab({
       try {
         await uploadAsset(postId, file, workspaceId);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Upload failed";
+        const message = err instanceof Error ? err.message : "Add failed";
         if (err instanceof AssetUploadAdmissionError) {
           admissionFailures.push({ file, message });
         } else {
@@ -146,7 +146,7 @@ export function AssetsTab({
       }
       if (operationalFailures.length > 0) {
         parts.push(
-          `${operationalFailures.length} upload${operationalFailures.length === 1 ? "" : "s"} failed: ` +
+          `${operationalFailures.length} item${operationalFailures.length === 1 ? "" : "s"} could not be added: ` +
           operationalFailures.map(({ file, message }) => `${file.name}: ${message}`).join("; "),
         );
       }
@@ -207,7 +207,7 @@ export function AssetsTab({
     if (batchCollisions.length > 0) {
       const details = [
         `some selected files resolve to the same asset name (${batchCollisions.join(", ")}). ` +
-          "Rename them before uploading so none are overwritten",
+          "Rename them before adding so none are overwritten",
         ...rejected.map(({ file, message }) => `${file.name}: ${message}`),
       ];
       setUploadNotice({
@@ -247,7 +247,7 @@ export function AssetsTab({
       reportProblem("Asset upload transaction failed.", err, { postId });
       setUploadNotice({
         severity: "error",
-        message: err instanceof Error ? err.message : "Asset upload failed.",
+        message: err instanceof Error ? err.message : "Assets could not be added.",
         issueKeys: captured.map(assetIssueKey),
       });
     } finally {
@@ -274,7 +274,7 @@ export function AssetsTab({
     if (e.dataTransfer.files.length === 0) {
       setUploadNotice({
         severity: "warning",
-        message: "The Assets collection accepts files from Finder or Upload.",
+        message: "The Assets collection accepts files from Finder or Add.",
         issueKeys: ["offer:non-file"],
       });
       return;
@@ -367,7 +367,7 @@ export function AssetsTab({
           disabled={readOnly || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? "Uploading…" : "Upload"}
+          {uploading ? "Adding…" : "Add"}
         </button>
       </div>
 
@@ -385,7 +385,7 @@ export function AssetsTab({
       {/* Asset grid */}
       {assets.length === 0 ? (
         <div className="assets-empty">
-          {readOnly ? "No assets yet" : "No assets yet. Drop files here or use Upload."}
+          {readOnly ? "No assets yet" : "No assets yet. Drop files here or use Add."}
         </div>
       ) : (
           <div className="assets-grid">

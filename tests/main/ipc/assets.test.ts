@@ -252,7 +252,7 @@ describe("uploadAsset", () => {
     const settings = getSettings(dataDir);
     saveSettings(dataDir, { ...settings, maxUploadMb: 0 });
     await expect(invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).rejects.toThrow(
-      /larger than the 0 MB upload limit/,
+      /larger than the 0 MB asset size limit/,
     );
   });
 

@@ -82,7 +82,7 @@ describe("AssetsTab loading", () => {
   it("shows the empty state when there are no assets", async () => {
     mockListAssets.mockResolvedValue([]);
     const { getByText } = await renderTab();
-    expect(getByText("No assets yet. Drop files here or use Upload.")).toBeTruthy();
+    expect(getByText("No assets yet. Drop files here or use Add.")).toBeTruthy();
   });
 
   it("surfaces a load failure in the error banner", async () => {
@@ -162,7 +162,7 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("bad.png")] } });
     });
 
-    expect(getByText(/1 upload failed: bad\.png: server said no/)).toBeTruthy();
+    expect(getByText(/1 item could not be added: bad\.png: server said no/)).toBeTruthy();
     expect(container.querySelector(".assets-result--error")).toBeTruthy();
     expect(mockReportProblem).toHaveBeenCalledWith(
       "Asset upload failed.",
@@ -325,6 +325,20 @@ describe("AssetsTab drag and drop", () => {
     expect(mockUploadAsset).toHaveBeenCalledWith("p1", file, "w1");
   });
 
+  it("accepts a drop over a populated asset card through the pane receiver", async () => {
+    mockListAssets.mockResolvedValue([asset({ filename: "existing.png" })]);
+    mockUploadAsset.mockResolvedValue(asset({ filename: "new.png" }));
+    const { container } = await renderTab();
+    const card = container.querySelector(".asset-card") as HTMLElement;
+    const file = makeFile("new.png");
+
+    await act(async () => {
+      fireEvent.drop(card, { dataTransfer: { files: [file], dropEffect: "none" } });
+    });
+
+    expect(mockUploadAsset).toHaveBeenCalledWith("p1", file, "w1");
+  });
+
   it("accepts protected Finder delivery without accepting non-file data", async () => {
     mockListAssets.mockResolvedValue([]);
     const { container } = await renderTab();
@@ -431,7 +445,7 @@ describe("AssetsTab drag and drop", () => {
 
     expect(droppedText.defaultPrevented).toBe(true);
     expect((droppedText as DragEvent).dataTransfer?.dropEffect).toBe("none");
-    expect(getByText("The Assets collection accepts files from Finder or Upload.")).toBeTruthy();
+    expect(getByText("The Assets collection accepts files from Finder or Add.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });
@@ -512,10 +526,10 @@ describe("AssetsTab result", () => {
 });
 
 describe("AssetsTab read-only", () => {
-  it("disables Upload and card actions", async () => {
+  it("disables Add and card actions", async () => {
     mockListAssets.mockResolvedValue([asset({ filename: "ro.png" })]);
     const { container, getByRole } = await renderTab({ readOnly: true });
-    expect((getByRole("button", { name: "Upload" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
     const buttons = within(card).getAllByRole("button");
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);

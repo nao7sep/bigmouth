@@ -47,6 +47,16 @@ describe("App.css window chrome", () => {
     expect(app).toContain("minWidth: WINDOW_MIN_WIDTH");
     expect(app).toContain("minHeight: WINDOW_MIN_HEIGHT");
   });
+
+  it("makes the active right tab panel fill the pane", () => {
+    const content = css.match(/\.right-content\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const activePanel = css.match(/\.right-content\s*>\s*\[role="tabpanel"\]:not\(\.tab-hidden\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(content).toMatch(/display:\s*flex/);
+    expect(content).toMatch(/flex-direction:\s*column/);
+    expect(content).toMatch(/min-height:\s*0/);
+    expect(activePanel).toMatch(/flex:\s*1\s+0\s+100%/);
+  });
 });
 
 // A computed-style check rather than a text match: the question is what the user

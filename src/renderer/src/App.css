@@ -656,9 +656,16 @@ button:disabled,
 
 .right-content {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px;
+}
+
+.right-content > [role="tabpanel"]:not(.tab-hidden) {
+  flex: 1 0 100%;
 }
 
 .tab-hidden {

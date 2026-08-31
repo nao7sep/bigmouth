@@ -102,7 +102,7 @@ export function registerAssetHandlers(): void {
     const limitMb = getSettings(dir).maxUploadMb ?? 500;
     if (buffer.length > limitMb * 1024 * 1024) {
       throw new Error(
-        `${ASSET_UPLOAD_ADMISSION_PREFIX} File is larger than the ${limitMb} MB upload limit.`,
+        `${ASSET_UPLOAD_ADMISSION_PREFIX} File is larger than the ${limitMb} MB asset size limit.`,
       );
     }
 

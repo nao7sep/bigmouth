@@ -531,7 +531,7 @@ function GeneralTab({
         {errors.publishedPostsPerLoad && <FieldError msg={errors.publishedPostsPerLoad} />}
       </div>
       <div className="form-field">
-        <label className="form-label">Max upload size (MB)</label>
+        <label className="form-label">Maximum asset size (MB)</label>
         <input
           className="form-input"
           type="number"
