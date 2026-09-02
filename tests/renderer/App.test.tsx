@@ -93,6 +93,7 @@ const mockList = vi.mocked(listWorkspaces);
 const mockSetActive = vi.mocked(setActiveWorkspace);
 const mockGetUiState = vi.mocked(getUiState);
 const mockUpdateUiState = vi.mocked(updateUiState);
+const mockWriteRendererLog = vi.fn();
 
 const WS1: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/d/a" };
 
@@ -104,6 +105,8 @@ function uiState(activeWorkspaceId: string): UiState {
 // jsdom has no ResizeObserver; App's pane-measurement effect needs one. A no-op
 // stub satisfies the construct/observe/disconnect calls without measuring.
 beforeEach(() => {
+  mockWriteRendererLog.mockReset();
+  Object.defineProperty(window, "bigmouth", { configurable: true, value: { writeRendererLog: mockWriteRendererLog } });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -200,6 +203,24 @@ describe("App bootstrap — stored workspace", () => {
 });
 
 describe("App workspace selection", () => {
+  it("keeps the opened workspace visible and reports a hostile preference-save failure safely", async () => {
+    mockUpdateUiState.mockRejectedValueOnce(new Error("EACCES /private/tmp/BIGMOUTH_UI_STATE_SENTINEL"));
+    const { getByTestId, getByRole } = await renderApp();
+
+    await act(async () => {
+      fireEvent.click(getByTestId("ws-modal-select"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getByTestId("session-ws").textContent).toBe("ws2");
+    expect(getByRole("alert").textContent).toContain("could not be remembered")
+    expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_UI_STATE_SENTINEL")
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: active workspace preference save failed",
+    }));
+  });
+
   it("activates, persists, and renders the session for the picked workspace", async () => {
     const { getByTestId, queryByTestId } = await renderApp();
     expect(getByTestId("ws-modal")).toBeTruthy();
@@ -237,6 +258,27 @@ describe("App workspace selection", () => {
     expect(mockUpdateUiState).not.toHaveBeenCalledWith({ activeWorkspaceId: "ws2" });
     expect(getByTestId("session-ws").textContent).toBe("ws1");
     expect(queryByTestId("ws-modal")).toBeTruthy();
+  });
+
+  it("keeps the picker recovery visible when clearing a deleted active preference fails", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
+    mockList.mockResolvedValue([WS1]);
+    mockUpdateUiState.mockRejectedValueOnce(new Error("EACCES /private/tmp/BIGMOUTH_DELETE_SENTINEL"));
+    const { getByTestId, getByRole } = await renderApp();
+
+    fireEvent.click(getByTestId("session-switch"));
+    await act(async () => {
+      fireEvent.click(getByTestId("ws-modal-delete-active"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
+    expect(getByRole("alert").textContent).toContain("picker will recover it next time")
+    expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_DELETE_SENTINEL")
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: cleared active workspace preference save failed",
+    }));
   });
 });
 

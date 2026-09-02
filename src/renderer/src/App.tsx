@@ -19,6 +19,7 @@ import {
 } from "./paneConstants";
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import { presentFailure } from "./util/presentFailure";
+import { OperationalResult } from "./components/OperationalResult";
 import "./App.css";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
@@ -46,6 +47,7 @@ export function App() {
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<string | null>(null);
+  const [workspacePreferenceError, setWorkspacePreferenceError] = useState<string | null>(null);
 
   // Intent widths (px): what the user dragged each side pane to. Seeded with the
   // shared defaults and replaced by the persisted intents once state.json is
@@ -181,7 +183,17 @@ export function App() {
     setActiveWorkspace(ws.id);
     setActiveWorkspaceState(ws);
     setWorkspaceRegistryError(null);
-    void updateUiState({ activeWorkspaceId: ws.id });
+    try {
+      await updateUiState({ activeWorkspaceId: ws.id });
+      setWorkspacePreferenceError(null);
+    } catch (err) {
+      setWorkspacePreferenceError(presentFailure(
+        "This workspace is open, but it could not be remembered for the next launch.",
+        "renderer: active workspace preference save failed",
+        err,
+        { workspaceId: ws.id },
+      ));
+    }
     setWorkspaceModalOpen(false);
   }, []);
 
@@ -193,7 +205,17 @@ export function App() {
       if (!flushed) return false;
 
       setActiveWorkspace("");
-      void updateUiState({ activeWorkspaceId: "" });
+      try {
+        await updateUiState({ activeWorkspaceId: "" });
+        setWorkspacePreferenceError(null);
+      } catch (err) {
+        setWorkspacePreferenceError(presentFailure(
+          "The workspace was removed, but the launch preference could not be updated. The picker will recover it next time.",
+          "renderer: cleared active workspace preference save failed",
+          err,
+          { workspaceId },
+        ));
+      }
       setActiveWorkspaceState(null);
       setWorkspaceModalOpen(true);
       return true;
@@ -277,8 +299,18 @@ export function App() {
     />
   );
 
+  const workspacePreferenceResult = workspacePreferenceError ? (
+    <OperationalResult
+      severity="error"
+      className="app-operational-result"
+      onDismiss={() => setWorkspacePreferenceError(null)}
+    >
+      {workspacePreferenceError}
+    </OperationalResult>
+  ) : null;
+
   if (!activeWorkspace) {
-    return workspaceModal;
+    return <>{workspaceModal}{workspacePreferenceResult}</>;
   }
 
   return (
@@ -306,6 +338,7 @@ export function App() {
         </div>
       </div>
       {workspaceModalOpen && workspaceModal}
+      {workspacePreferenceResult}
     </>
   );
 }
