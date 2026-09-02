@@ -538,6 +538,11 @@ button:disabled,
   flex-shrink: 0;
 }
 
+.operational-result-message > strong {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .modal-result {
   display: flex;
   align-items: center;
