@@ -5,9 +5,9 @@ import { ipcMain } from "electron";
 import exifr from "exifr";
 
 import {
-  ASSET_UPLOAD_ADMISSION_PREFIX,
   CHANNELS,
   type AssetUploadInput,
+  type AssetUploadResult,
 } from "@shared/ipc";
 import { isImageAssetFilename, isReservedAssetName } from "@shared/assetNames";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
@@ -101,17 +101,12 @@ export function registerAssetHandlers(): void {
     const buffer = Buffer.from(file.data);
     const limitMb = getSettings(dir).maxUploadMb ?? 500;
     if (buffer.length > limitMb * 1024 * 1024) {
-      throw new Error(
-        `${ASSET_UPLOAD_ADMISSION_PREFIX} File is larger than the ${limitMb} MB asset size limit.`,
-      );
+      return { ok: false, admission: { code: "file-too-large", limitMb } } satisfies AssetUploadResult;
     }
 
     const filename = sanitizeFilename(file.name);
     if (isReservedAssetName(filename)) {
-      throw new Error(
-        `${ASSET_UPLOAD_ADMISSION_PREFIX} "${filename}" is a name BigMouth keeps for its own bookkeeping. ` +
-        "Rename the file and try again.",
-      );
+      return { ok: false, admission: { code: "reserved-name", filename } } satisfies AssetUploadResult;
     }
 
     const { width, height } = readUploadDimensions(filename, file);
@@ -141,11 +136,13 @@ export function registerAssetHandlers(): void {
     const post = getPost(dir, pid);
     if (!post) throw new Error("Post not found");
     if (isEditLocked(post.frontMatter.status)) {
-      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
-      throw new Error(
-        `${ASSET_UPLOAD_ADMISSION_PREFIX} ${label} posts are locked. ` +
-        "Move the post back to Ready or Draft to change its assets.",
-      );
+      return {
+        ok: false,
+        admission: {
+          code: "post-locked",
+          status: post.frontMatter.status === "published" ? "published" : "expired",
+        },
+      } satisfies AssetUploadResult;
     }
 
     let storedMeta: AssetMeta;
@@ -164,7 +161,7 @@ export function registerAssetHandlers(): void {
       height: height ?? null,
       hasMetadata: hasMetadata ?? false,
     });
-    return storedMeta;
+    return { ok: true, asset: storedMeta } satisfies AssetUploadResult;
   });
 
   ipcMain.handle(CHANNELS.deleteAsset, (_event, wsId: string, postId: string, filename: string) => {

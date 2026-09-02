@@ -75,28 +75,6 @@ export function CheckIcon(props: IconProps): ReactElement {
   );
 }
 
-/** Structural error cue for operational results; never the sole severity cue. */
-export function ErrorIcon(props: IconProps): ReactElement {
-  return (
-    <IconBase data-icon="error" {...props}>
-      <circle cx="12" cy="11.65" r="8.35" />
-      <path d="M12 7.35V12.75" />
-      <path d="M12 16.15L12 16.2" />
-    </IconBase>
-  );
-}
-
-/** Structural warning cue for operational results; never the sole severity cue. */
-export function WarningIcon(props: IconProps): ReactElement {
-  return (
-    <IconBase data-icon="warning" {...props}>
-      <path d="M12 3.25L21 19.65H3L12 3.25Z" />
-      <path d="M12 8.25V13.15" />
-      <path d="M12 16.45L12 16.5" />
-    </IconBase>
-  );
-}
-
 /** Replaces the typed ▼ glyph. */
 export function ChevronDownIcon(props: IconProps): ReactElement {
   return (

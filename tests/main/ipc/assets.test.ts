@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CHANNELS, type AssetUploadInput } from "@shared/ipc";
+import { CHANNELS, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
 import type { AssetMeta, Post, Target } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
@@ -58,6 +58,13 @@ function invoke<T>(channel: string, ...args: unknown[]): T {
 
 async function invokeAsync<T>(channel: string, ...args: unknown[]): Promise<T> {
   return (await handlers.get(channel)!({}, ...args)) as Promise<T> as T;
+}
+
+async function invokeUpload(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetMeta> {
+  const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, postId, file);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(`Unexpected upload admission: ${result.admission.code}`);
+  return result.asset;
 }
 
 /** Builds the byte payload the handler expects from a Buffer. */
@@ -118,12 +125,7 @@ describe("listAssets", () => {
 describe("uploadAsset", () => {
   it("stores a renderer-inspected image with its validated dimensions and lists it back", async () => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("pic.png", PNG_1x1, { width: 1, height: 1 }),
-    );
+    const meta = await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, { width: 1, height: 1 }));
 
     expect(meta.filename).toBe("pic.png");
     expect(meta.size).toBe(PNG_1x1.length);
@@ -147,12 +149,7 @@ describe("uploadAsset", () => {
     ["unsafe integer", { width: Number.MAX_SAFE_INTEGER + 1, height: 480 }],
   ])("drops a forged %s dimension payload as an indivisible pair", async (_label, dimensions) => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("pic.png", PNG_1x1, dimensions),
-    );
+    const meta = await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, dimensions));
 
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
@@ -163,7 +160,7 @@ describe("uploadAsset", () => {
     const forged = upload("pic.png", PNG_1x1, { width: 640, height: 480 }) as unknown as Record<string, unknown>;
     forged.width = "640";
 
-    const meta = await invokeAsync<AssetMeta>(CHANNELS.uploadAsset, wsId, id, forged);
+    const meta = await invokeUpload(wsId, id, forged as unknown as AssetUploadInput);
 
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
@@ -171,12 +168,7 @@ describe("uploadAsset", () => {
 
   it("never annotates a non-image file with forged renderer dimensions", async () => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("notes.txt", Buffer.from("hello"), { width: 640, height: 480 }),
-    );
+    const meta = await invokeUpload(wsId, id, upload("notes.txt", Buffer.from("hello"), { width: 640, height: 480 }));
 
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
@@ -187,12 +179,7 @@ describe("uploadAsset", () => {
     // Zero-sized `ftyp` box: the shape behind the removed image-size HEIF/JXL
     // infinite-loop advisories. The misleading .jpg name cannot make main decode it.
     const crafted = Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("renamed.jpg", crafted),
-    );
+    const meta = await invokeUpload(wsId, id, upload("renamed.jpg", crafted));
 
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
@@ -201,12 +188,7 @@ describe("uploadAsset", () => {
 
   it("stores a non-image file without dimensions", async () => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("notes.txt", Buffer.from("hello")),
-    );
+    const meta = await invokeUpload(wsId, id, upload("notes.txt", Buffer.from("hello")));
     expect(meta.filename).toBe("notes.txt");
     expect(meta.size).toBe(5);
     expect(meta.width).toBeUndefined();
@@ -215,12 +197,7 @@ describe("uploadAsset", () => {
 
   it("sanitizes the filename (strips path components)", async () => {
     const id = createDraft();
-    const meta = await invokeAsync<AssetMeta>(
-      CHANNELS.uploadAsset,
-      wsId,
-      id,
-      upload("../../etc/passwd", Buffer.from("x")),
-    );
+    const meta = await invokeUpload(wsId, id, upload("../../etc/passwd", Buffer.from("x")));
     expect(meta.filename).toBe("passwd");
   });
 
@@ -251,16 +228,16 @@ describe("uploadAsset", () => {
     // Drop the limit to 0 MB so even a tiny file trips the guard, no large buffer needed.
     const settings = getSettings(dataDir);
     saveSettings(dataDir, { ...settings, maxUploadMb: 0 });
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).rejects.toThrow(
-      /larger than the 0 MB asset size limit/,
+    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
+      { ok: false, admission: { code: "file-too-large", limitMb: 0 } },
     );
   });
 
   it("refuses to upload to a published (locked) post", async () => {
     const id = createDraft();
     changeStatus(dataDir, id, "published");
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).rejects.toThrow(
-      /Published posts are locked/,
+    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
+      { ok: false, admission: { code: "post-locked", status: "published" } },
     );
   });
 
@@ -273,7 +250,7 @@ describe("uploadAsset", () => {
     const pending = invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("late.png", PNG_1x1));
     changeStatus(dataDir, id, "published");
 
-    await expect(pending).rejects.toThrow(/Published posts are locked/);
+    await expect(pending).resolves.toEqual({ ok: false, admission: { code: "post-locked", status: "published" } });
     expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
   });
 
@@ -288,8 +265,8 @@ describe("uploadAsset", () => {
       await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("keep.png", PNG_1x1));
 
       await expect(
-        invokeAsync(CHANNELS.uploadAsset, wsId, id, upload(name, Buffer.from("USER-PAYLOAD"))),
-      ).rejects.toThrow(/keeps for its own bookkeeping/);
+        invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload(name, Buffer.from("USER-PAYLOAD"))),
+      ).resolves.toEqual({ ok: false, admission: { code: "reserved-name", filename: name } });
 
       // The asset that was already there is untouched.
       expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual([
@@ -314,8 +291,8 @@ describe("uploadAsset", () => {
   it("refuses to upload to an expired (locked) post", async () => {
     const id = createDraft();
     changeStatus(dataDir, id, "expired");
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).rejects.toThrow(
-      /Expired posts are locked/,
+    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
+      { ok: false, admission: { code: "post-locked", status: "expired" } },
     );
   });
 });

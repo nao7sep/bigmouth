@@ -21,7 +21,7 @@ import type {
 } from "@shared/types";
 import {
   type AssetUploadInput,
-  ASSET_UPLOAD_ADMISSION_PREFIX,
+  type AssetUploadAdmission,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
   assetUrl as buildAssetUrl,
@@ -290,21 +290,25 @@ export async function uploadAsset(postId: string, file: File, workspaceId?: stri
   // Decode and read concurrently; dimension failure is deliberately contained
   // inside imageDimensions, while a byte-read failure still aborts the upload.
   const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
-  try {
-    return await bridge().uploadAsset(requireWs(workspaceId), postId, {
-      name: file.name,
-      data,
-      ...dimensions,
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    const marker = message.indexOf(ASSET_UPLOAD_ADMISSION_PREFIX);
-    if (marker >= 0) {
-      throw new AssetUploadAdmissionError(
-        message.slice(marker + ASSET_UPLOAD_ADMISSION_PREFIX.length).trim(),
-      );
+  const result = await bridge().uploadAsset(requireWs(workspaceId), postId, {
+    name: file.name,
+    data,
+    ...dimensions,
+  });
+  if (result.ok) return result.asset;
+  throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));
+}
+
+function assetUploadAdmissionMessage(admission: AssetUploadAdmission): string {
+  switch (admission.code) {
+    case "file-too-large":
+      return `File is larger than the ${admission.limitMb} MB asset size limit.`;
+    case "reserved-name":
+      return `"${admission.filename}" is a name BigMouth keeps for its own bookkeeping. Rename the file and try again.`;
+    case "post-locked": {
+      const label = admission.status === "published" ? "Published" : "Expired";
+      return `${label} posts are locked. Move the post back to Ready or Draft to change its assets.`;
     }
-    throw error;
   }
 }
 
@@ -409,23 +413,31 @@ export function reportProblem(
   err?: unknown,
   detail?: Record<string, unknown>,
 ): void {
+  const diagnostic = { ...(detail ?? {}), ...describeError(err) };
   try {
     bridge().writeRendererLog({
       level: "error",
       message,
-      detail: { ...(detail ?? {}), ...describeError(err) },
+      detail: diagnostic,
     });
-  } catch {
-    // The bridge itself is gone (teardown, or a test with no window.bigmouth).
-    // There is nowhere left to report to, and throwing here would replace the
-    // caller's recovered failure with an unrecovered one.
+  } catch (reportError) {
+    console.error("[BigMouth] Renderer diagnostic could not be recorded.", { reportError, message, diagnostic });
   }
 }
 
-function describeError(err: unknown): Record<string, unknown> {
+function describeError(err: unknown, seen = new WeakSet<object>()): Record<string, unknown> {
   if (err === undefined) return {};
   if (err instanceof Error) {
-    return { error: { name: err.name, message: err.message, stack: err.stack } };
+    if (seen.has(err)) return { error: { name: err.name, message: err.message, cause: "circular" } };
+    seen.add(err);
+    return {
+      error: {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        ...(err.cause === undefined ? {} : { cause: describeError(err.cause, seen).error }),
+      },
+    };
   }
   return { error: String(err) };
 }

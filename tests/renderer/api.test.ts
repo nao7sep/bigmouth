@@ -35,7 +35,6 @@ import {
   assetUrl,
 } from "@renderer/api";
 import type { AnalysisStreamHandle, BigMouthApi } from "@shared/ipc";
-import { ASSET_UPLOAD_ADMISSION_PREFIX } from "@shared/ipc";
 import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
 import type { ImagingOptions } from "@shared/types";
 
@@ -129,7 +128,9 @@ describe("api wrappers — call-through and argument shape", () => {
     const stub: Record<string, ReturnType<typeof vi.fn>> = {};
     return new Proxy(stub, {
       get(target, prop: string) {
-        if (!(prop in target)) target[prop] = vi.fn().mockResolvedValue(undefined);
+        if (!(prop in target)) {
+          target[prop] = vi.fn().mockResolvedValue(prop === "uploadAsset" ? { ok: true, asset: undefined } : undefined);
+        }
         return target[prop];
       },
     });
@@ -484,11 +485,9 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.uploadAsset).not.toHaveBeenCalled();
     });
 
-    it("maps a predictable main-process admission rejection without flattening other errors", async () => {
+    it("maps a structured main-process admission without parsing Electron rejection prose", async () => {
       const b = bridge();
-      b.uploadAsset.mockRejectedValue(
-        new Error(`IPC failed: ${ASSET_UPLOAD_ADMISSION_PREFIX} Post is locked.`),
-      );
+      b.uploadAsset.mockResolvedValue({ ok: false, admission: { code: "post-locked", status: "published" } });
       installBridge(b);
       const file = {
         name: "photo.png",
@@ -496,8 +495,21 @@ describe("api wrappers — call-through and argument shape", () => {
       } as unknown as File;
 
       await expect(uploadAsset("p1", file)).rejects.toEqual(
-        new AssetUploadAdmissionError("Post is locked."),
+        new AssetUploadAdmissionError("Published posts are locked. Move the post back to Ready or Draft to change its assets."),
       );
+    });
+
+    it("does not project an arbitrary Electron rejection into admission copy", async () => {
+      const b = bridge();
+      const diagnostic = new Error("Error invoking remote method: EACCES /private/tmp/BIGMOUTH_ASSET_SENTINEL");
+      b.uploadAsset.mockRejectedValue(diagnostic);
+      installBridge(b);
+      const file = {
+        name: "photo.png",
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(1)),
+      } as unknown as File;
+
+      await expect(uploadAsset("p1", file)).rejects.toBe(diagnostic);
     });
 
     it("deleteAsset forwards ws + postId + filename", () => {

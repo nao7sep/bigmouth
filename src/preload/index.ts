@@ -11,6 +11,7 @@ import {
   type AnalysisStreamHandle,
   type AnalysisStreamParams,
   type AssetUploadInput,
+  type AssetUploadResult,
   type BigMouthApi,
   type MetadataGenerationResults,
   type PostUpdate,
@@ -146,7 +147,7 @@ const api = {
   listAssets: (wsId: string, postId: string) =>
     ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetMeta[]>,
   uploadAsset: (wsId: string, postId: string, file: AssetUploadInput) =>
-    ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetMeta>,
+    ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetUploadResult>,
   deleteAsset: (wsId: string, postId: string, filename: string) =>
     ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<void>,
 

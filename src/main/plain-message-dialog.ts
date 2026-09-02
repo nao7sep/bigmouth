@@ -58,7 +58,10 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
       settle(cancelId);
     });
     win.webContents.once("dom-ready", () => {
-      void win.webContents.executeJavaScript("document.documentElement.scrollHeight", true)
+      void win.webContents.executeJavaScript(
+        "document.getElementById('dialog-header').offsetHeight + document.getElementById('dialog-body').scrollHeight + document.getElementById('dialog-footer').offsetHeight",
+        true,
+      )
         .then((height: number) => {
           if (win.isDestroyed()) return;
           const displayHeight = parent?.getBounds().height ?? 900;
@@ -67,23 +70,25 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
           return win.webContents.executeJavaScript(`document.getElementById('choice-${defaultId}')?.focus()`, true);
         });
     });
-    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderHtml(options, buttons))}`);
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options, buttons))}`);
   });
 }
 
-function renderHtml(options: PlainMessageDialogOptions, buttons: string[]): string {
+export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions, buttons: string[]): string {
   const actions = buttons.map((label, index) => {
     const kind = index === options.destructiveId ? " destructive" : index === (options.defaultId ?? 0) ? " primary" : "";
     return `<button id="choice-${index}" class="button${kind}" type="button" onclick="location.href='${CHOICE_ORIGIN}${index}'">${escapeHtml(label)}</button>`;
   }).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#f7f4ef;color:#292524}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px;display:flex;flex-direction:column;gap:12px}
+    *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+    .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}
     h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#57534e}
-    .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:auto;padding-top:12px}
+    .actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 24px}
     .button{color:#292524;border:1px solid #a8a29e;border-radius:6px;padding:7px 14px;background:#fafaf9;font:inherit}
-    .button:hover,.button:focus{background:#e7e5e4;outline:2px solid #78716c;outline-offset:2px}.primary{color:white;background:#2563eb;border-color:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}
-  </style></head><body><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}<div class="actions">${actions}</div></body></html>`;
+    .button:hover,.button:focus{outline:2px solid #78716c;outline-offset:2px}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#e7e5e4}
+    .primary{color:white;background:#2563eb;border-color:#1d4ed8}.primary:hover,.primary:focus{background:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}.destructive:hover,.destructive:focus{background:#991b1b}
+  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
 }
 
 function escapeHtml(value: string): string {

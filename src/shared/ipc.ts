@@ -168,8 +168,15 @@ export interface AssetUploadInput {
   height?: number;
 }
 
-/** Stable marker retained in Electron's serialized IPC error message. */
-export const ASSET_UPLOAD_ADMISSION_PREFIX = "BIGMOUTH_ASSET_ADMISSION:";
+/** Predictable upload admissions cross IPC as data, never serialized exceptions. */
+export type AssetUploadAdmission =
+  | { code: "file-too-large"; limitMb: number }
+  | { code: "reserved-name"; filename: string }
+  | { code: "post-locked"; status: "published" | "expired" };
+
+export type AssetUploadResult =
+  | { ok: true; asset: AssetMeta }
+  | { ok: false; admission: AssetUploadAdmission };
 
 export interface PostUpdate {
   content?: string;
@@ -315,7 +322,7 @@ export interface BigMouthApi {
 
   // Assets
   listAssets(wsId: string, postId: string): Promise<AssetMeta[]>;
-  uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetMeta>;
+  uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetUploadResult>;
   deleteAsset(wsId: string, postId: string, filename: string): Promise<void>;
 
   // AI generation
