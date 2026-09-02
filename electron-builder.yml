@@ -47,4 +47,10 @@ win:
 # Clean, predictable installer filename (electron-builder's default is
 # "${productName} Setup ${version}.exe", with a space). Portable zips keep theirs.
 nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
   artifactName: ${productName}-${version}-setup.${ext}
