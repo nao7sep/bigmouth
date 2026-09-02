@@ -44,6 +44,7 @@ import {
 import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useTablist } from "../hooks/useTablist";
+import { OperationalResult } from "./OperationalResult";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -332,7 +333,9 @@ export function SettingsModal({
     >
       {loadError ? (
         <div className="modal-body">
-          <p className="settings-field-error">{loadError}</p>
+          <OperationalResult severity="error" className="modal-result">
+            {loadError}
+          </OperationalResult>
           <p>Close and reopen Settings to try again.</p>
         </div>
       ) : !loaded ? (
@@ -393,7 +396,11 @@ export function SettingsModal({
               />
             )}
           </div>
-          {saveError && <p className="settings-field-error">{saveError}</p>}
+          {saveError && (
+            <OperationalResult severity="error" className="modal-result modal-footer-result">
+              {saveError}
+            </OperationalResult>
+          )}
           <div className="modal-footer">
             <button
               className="btn-toolbar"
@@ -735,7 +742,11 @@ function RebuildIndexSection() {
         {running ? "Rebuilding…" : "Rebuild index"}
       </button>
       {message && <p className="settings-hint">{message}</p>}
-      {error && <FieldError msg={error} />}
+      {error && (
+        <OperationalResult severity="error" className="modal-result">
+          {error}
+        </OperationalResult>
+      )}
     </div>
   );
 }

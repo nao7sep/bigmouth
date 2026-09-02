@@ -4,6 +4,7 @@ import { usePostPicker } from "../hooks/usePostPicker";
 import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import type { Target } from "@shared/types";
+import { OperationalResult } from "./OperationalResult";
 
 interface NewPostModalProps {
   targets: Target[];
@@ -120,7 +121,9 @@ export function NewPostModal({
               ))}
             </select>
           ) : (
-            <p className="settings-field-error">No targets configured.</p>
+            <OperationalResult severity="warning" className="modal-result">
+              No targets configured. Add one in Settings before creating a post.
+            </OperationalResult>
           )}
         </div>
 
@@ -142,9 +145,9 @@ export function NewPostModal({
               ))}
             </select>
           ) : (
-            <p className="settings-field-error">
+            <OperationalResult severity="warning" className="modal-result">
               No supported languages configured. Add one in Settings → General before creating a post.
-            </p>
+            </OperationalResult>
           )}
         </div>
 
@@ -172,7 +175,11 @@ export function NewPostModal({
             />
           )}
         </div>
-        {createError && <p className="settings-field-error">{createError}</p>}
+        {createError && (
+          <OperationalResult severity="error" className="modal-result">
+            {createError}
+          </OperationalResult>
+        )}
       </div>
       <div className="modal-footer">
         <button className="btn-toolbar" onClick={() => void handleRequestClose()}>

@@ -73,6 +73,8 @@ const mockChangeStatus = vi.mocked(changePostStatus);
 const mockDeletePost = vi.mocked(deletePost);
 const mockListReferrers = vi.mocked(listReferrers);
 const mockQueueContent = vi.mocked(queuePostContent);
+let clipboardWrite: ReturnType<typeof vi.fn>;
+let originalClipboard: PropertyDescriptor | undefined;
 
 function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
   return {
@@ -158,9 +160,22 @@ beforeEach(() => {
   savedListeners.clear();
   failedListeners.clear();
   mockGetPost.mockResolvedValue(post());
+  clipboardWrite = vi.fn().mockResolvedValue(undefined);
+  originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboardWrite },
+  });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  if (originalClipboard) {
+    Object.defineProperty(navigator, "clipboard", originalClipboard);
+  } else {
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  }
+});
 
 describe("CenterPane loading", () => {
   it("shows the loading placeholder before the post arrives, then renders the toolbar", async () => {
@@ -397,6 +412,19 @@ describe("CenterPane source linking", () => {
 });
 
 describe("CenterPane toolbar actions", () => {
+  it("keeps a failed copy beside the editor toolbar", async () => {
+    clipboardWrite.mockRejectedValueOnce(new Error("denied"));
+    await renderPane();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    });
+
+    const result = screen.getByRole("alert");
+    expect(result.textContent).toContain("Could not copy to the clipboard");
+    expect(result.closest(".pane-center")).toBeTruthy();
+  });
+
   it("fires onExport when Export is clicked", async () => {
     const onExport = vi.fn();
     await renderPane({ onExport });

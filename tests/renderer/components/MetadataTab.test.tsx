@@ -458,6 +458,20 @@ describe("MetadataTab copy and error dismiss", () => {
     expect(copyBtn.querySelector("svg")?.dataset.icon).toBe("check");
   });
 
+  it("keeps a failed copy inside the affected metadata field", async () => {
+    clipboardWrite.mockRejectedValueOnce(new Error("denied"));
+    const { container } = renderTab();
+    const titleField = container.querySelector(".meta-field") as HTMLElement;
+
+    await act(async () => {
+      fireEvent.click(titleField.querySelector(".meta-field-copy") as HTMLButtonElement);
+    });
+
+    const result = titleField.querySelector('[role="alert"]');
+    expect(result?.textContent).toContain("Could not copy to the clipboard");
+    expect(result?.querySelector('[data-icon="error"]')).toBeTruthy();
+  });
+
   it("dismisses the generation error banner", async () => {
     mockGenerateMetadataField.mockRejectedValue(new Error("boom"));
     const { container } = renderTab();

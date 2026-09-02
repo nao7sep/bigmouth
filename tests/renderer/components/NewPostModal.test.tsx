@@ -101,8 +101,9 @@ describe("NewPostModal — render", () => {
   });
 
   it("shows the no-targets fallback and disables Create when no targets exist", async () => {
-    const { getByText } = await renderModal({ targets: [] });
-    expect(getByText("No targets configured.")).toBeTruthy();
+    const { getByText, getByRole } = await renderModal({ targets: [] });
+    expect(getByText(/No targets configured/)).toBeTruthy();
+    expect(getByRole("status").textContent).toContain("Warning:");
     expect((getByText("Create").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -189,6 +190,9 @@ describe("NewPostModal — create flow", () => {
       await Promise.resolve();
     });
     expect(getByText("create boom")).toBeTruthy();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Error: create boom",
+    );
   });
 });
 

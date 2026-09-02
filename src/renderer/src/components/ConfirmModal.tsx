@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { ModalShell } from "./ModalShell";
+import { OperationalResult } from "./OperationalResult";
 
 interface ConfirmModalProps {
   title?: string;
@@ -38,9 +39,9 @@ export function ConfirmModal({
           {message}
         </p>
         {error && (
-          <p className="settings-field-error" style={{ marginTop: 12 }}>
+          <OperationalResult severity="error" className="modal-result">
             {error}
-          </p>
+          </OperationalResult>
         )}
       </div>
       <div className="modal-footer">

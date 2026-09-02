@@ -4,6 +4,7 @@ import type { PostPickerState } from "../hooks/usePostPicker";
 import { getPostTitle } from "../util/postTitle";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
+import { OperationalResult } from "./OperationalResult";
 
 const PAGE_SIZE = 10;
 
@@ -104,7 +105,11 @@ export function PostPickerList({
             );
           })
         )}
-        {error && <p className="settings-field-error">{error}</p>}
+        {error && (
+          <OperationalResult severity="error" className="modal-result">
+            {error}
+          </OperationalResult>
+        )}
         {hasMore && (
           <button
             // Pointer-only: not a tab stop, so it never breaks the listbox's

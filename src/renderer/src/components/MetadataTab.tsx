@@ -62,7 +62,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const generationLockRef = useRef(false);
     const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
-    const { copiedKey, copy: copyToClipboard } = useCopyFeedback();
+    const {
+      copiedKey,
+      copy: copyToClipboard,
+      copyErrors,
+      dismissCopyError,
+    } = useCopyFeedback();
     const fieldsRef = useRef(fields);
     // The value last confirmed saved for each field, in the same
     // raw string form as `fields` and seeded from the same front matter, so
@@ -341,6 +346,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onBlur={() => flushField("title")}
           onCopy={() => copyToClipboard(fields.title, "title")}
           copied={copiedKey === "title"}
+          copyError={copyErrors.title}
+          onDismissCopyError={() => dismissCopyError("title")}
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
           generateDisabled={readOnly || generationLocked || noContent}
@@ -355,6 +362,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onBlur={() => flushField("titleEn")}
             onCopy={() => copyToClipboard(fields.titleEn ?? "", "titleEn")}
             copied={copiedKey === "titleEn"}
+            copyError={copyErrors.titleEn}
+            onDismissCopyError={() => dismissCopyError("titleEn")}
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
             generateDisabled={readOnly || generationLocked || noContent}
@@ -369,6 +378,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onBlur={() => flushField("slug")}
           onCopy={() => copyToClipboard(fields.slug, "slug")}
           copied={copiedKey === "slug"}
+          copyError={copyErrors.slug}
+          onDismissCopyError={() => dismissCopyError("slug")}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
           generateDisabled={readOnly || generationLocked || noContent}
@@ -382,6 +393,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onBlur={() => flushField("tags")}
           onCopy={() => copyToClipboard(fields.tags, "tags")}
           copied={copiedKey === "tags"}
+          copyError={copyErrors.tags}
+          onDismissCopyError={() => dismissCopyError("tags")}
           onGenerate={() => generate("tags")}
           generating={isGenerating("tags")}
           generateDisabled={readOnly || generationLocked || noContent}
@@ -397,6 +410,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onBlur={() => flushField("tagsEn")}
             onCopy={() => copyToClipboard(fields.tagsEn ?? "", "tagsEn")}
             copied={copiedKey === "tagsEn"}
+            copyError={copyErrors.tagsEn}
+            onDismissCopyError={() => dismissCopyError("tagsEn")}
             onGenerate={() => generate("tagsEn")}
             generating={isGenerating("tagsEn")}
             generateDisabled={readOnly || generationLocked || noContent}
@@ -412,6 +427,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onBlur={() => flushField("metaDescription")}
           onCopy={() => copyToClipboard(fields.metaDescription, "metaDescription")}
           copied={copiedKey === "metaDescription"}
+          copyError={copyErrors.metaDescription}
+          onDismissCopyError={() => dismissCopyError("metaDescription")}
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
           generateDisabled={readOnly || generationLocked || noContent}
@@ -426,6 +443,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onBlur={() => flushField("metaDescriptionEn")}
             onCopy={() => copyToClipboard(fields.metaDescriptionEn ?? "", "metaDescriptionEn")}
             copied={copiedKey === "metaDescriptionEn"}
+            copyError={copyErrors.metaDescriptionEn}
+            onDismissCopyError={() => dismissCopyError("metaDescriptionEn")}
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
             generateDisabled={readOnly || generationLocked || noContent}
@@ -440,6 +459,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onBlur={() => flushField("extra")}
           onCopy={() => copyToClipboard(fields.extra, "extra")}
           copied={copiedKey === "extra"}
+          copyError={copyErrors.extra}
+          onDismissCopyError={() => dismissCopyError("extra")}
           placeholder={extraFieldWatermark}
           readOnly={readOnly}
           isActive={isActive}
@@ -456,6 +477,8 @@ function MetaField({
   onBlur,
   onCopy,
   copied,
+  copyError,
+  onDismissCopyError,
   onGenerate,
   generating,
   generateDisabled,
@@ -469,6 +492,8 @@ function MetaField({
   onBlur: () => void;
   onCopy: () => void;
   copied?: boolean;
+  copyError?: string;
+  onDismissCopyError: () => void;
   onGenerate?: () => void;
   generating?: boolean;
   generateDisabled?: boolean;
@@ -502,6 +527,16 @@ function MetaField({
           </button>
         </div>
       </div>
+      {copyError && (
+        <OperationalResult
+          severity="error"
+          className="metadata-error metadata-copy-error"
+          dismissClassName="metadata-error-dismiss"
+          onDismiss={onDismissCopyError}
+        >
+          {copyError}
+        </OperationalResult>
+      )}
       <AutoGrowTextarea
         value={value}
         onChange={onChange}

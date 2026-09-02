@@ -248,10 +248,10 @@ describe("WorkspaceModal — create/open submit", () => {
     expect(mockOpenOrCreate).toHaveBeenCalledWith(undefined, "/picked/ Workspace ");
   });
 
-  it("surfaces a submit failure as a field error and keeps the form open", async () => {
+  it("surfaces a submit failure as an inline alert and keeps the form open", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockOpenOrCreate.mockRejectedValue(new Error("folder is not empty"));
-    const { getByPlaceholderText, getByText } = await renderWith();
+    const { getByPlaceholderText, getByText, getByRole } = await renderWith();
 
     fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
       target: { value: "Beta" },
@@ -263,6 +263,7 @@ describe("WorkspaceModal — create/open submit", () => {
     });
 
     expect(getByText("folder is not empty")).toBeTruthy();
+    expect(getByRole("alert").textContent).toContain("Error: folder is not empty");
   });
 });
 

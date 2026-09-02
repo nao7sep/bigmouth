@@ -85,6 +85,25 @@ describe("ExportModal — copy", () => {
     });
     expect(getByText("Copy")).toBeTruthy();
   });
+
+  it("keeps a failed copy beside the modal action until retry succeeds", async () => {
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    const { getByText, getByRole, queryByRole } = renderExport();
+
+    await act(async () => {
+      fireEvent.click(getByText("Copy"));
+    });
+    expect(getByRole("alert").textContent).toContain(
+      "Error: Could not copy to the clipboard. Try again.",
+    );
+
+    writeText.mockResolvedValueOnce(undefined);
+    await act(async () => {
+      fireEvent.click(getByText("Copy"));
+    });
+    expect(queryByRole("alert")).toBeNull();
+    expect(getByText("Copied")).toBeTruthy();
+  });
 });
 
 describe("ExportModal — download", () => {

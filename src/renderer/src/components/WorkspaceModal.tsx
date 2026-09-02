@@ -27,6 +27,7 @@ import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
+import { OperationalResult } from "./OperationalResult";
 
 const WORKSPACE_PAGE_SIZE = 10;
 
@@ -387,7 +388,11 @@ export function WorkspaceModal({
             An existing folder must be empty or a BigMouth workspace.
           </p>
         </div>
-        {error && <p className="settings-field-error">{error}</p>}
+        {error && (
+          <OperationalResult severity="error" className="modal-result">
+            {error}
+          </OperationalResult>
+        )}
         <div className="dialog-actions">
           {dismissable && (
             <button

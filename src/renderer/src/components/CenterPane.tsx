@@ -73,7 +73,12 @@ export function CenterPane({
   const deletingRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const { copiedKey, copy: copyContent } = useCopyFeedback();
+  const {
+    copiedKey,
+    copy: copyContent,
+    copyErrors,
+    dismissCopyError,
+  } = useCopyFeedback();
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const confirm = useConfirm();
   const onPostUpdatedRef = useRef(onPostUpdated);
@@ -365,6 +370,16 @@ export function CenterPane({
           Delete
         </button>
       </div>
+      {copyErrors.content && (
+        <OperationalResult
+          severity="error"
+          className="toolbar-error"
+          dismissClassName="toolbar-error-dismiss"
+          onDismiss={() => dismissCopyError("content")}
+        >
+          {copyErrors.content}
+        </OperationalResult>
+      )}
       {toolbarError && (
         <OperationalResult
           severity="error"

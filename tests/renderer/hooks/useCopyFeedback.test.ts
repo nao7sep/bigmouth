@@ -11,6 +11,7 @@ let writeText: ReturnType<typeof vi.fn>;
 let originalClipboard: PropertyDescriptor | undefined;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.useFakeTimers();
   writeText = vi.fn().mockResolvedValue(undefined);
   originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -117,11 +118,32 @@ describe("useCopyFeedback", () => {
     await act(async () => result.current.copy("x"));
 
     expect(result.current.copiedKey).toBeNull();
+    expect(result.current.copyErrors.default).toBe(
+      "Could not copy to the clipboard. Try again.",
+    );
     expect(reportProblem).toHaveBeenCalledWith(
       "clipboard write failed",
       expect.any(Error),
       { key: "default" },
     );
+  });
+
+  it("keeps independent failures until each action succeeds or is dismissed", async () => {
+    writeText.mockRejectedValueOnce(new Error("first denied"));
+    writeText.mockRejectedValueOnce(new Error("second denied"));
+    const { result } = renderHook(() => useCopyFeedback());
+
+    await act(async () => result.current.copy("a", "first"));
+    await act(async () => result.current.copy("b", "second"));
+    expect(Object.keys(result.current.copyErrors)).toEqual(["first", "second"]);
+
+    writeText.mockResolvedValueOnce(undefined);
+    await act(async () => result.current.copy("a", "first"));
+    expect(result.current.copyErrors.first).toBeUndefined();
+    expect(result.current.copyErrors.second).toBeTruthy();
+
+    act(() => result.current.dismissCopyError("second"));
+    expect(result.current.copyErrors).toEqual({});
   });
 
   it("clears the pending reset timer on unmount", async () => {

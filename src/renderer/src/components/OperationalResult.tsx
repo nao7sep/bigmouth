@@ -24,7 +24,11 @@ export function OperationalResult({
   const label = severity === "error" ? "Error" : "Warning";
 
   return (
-    <div className={className} role={severity === "error" ? "alert" : "status"} aria-atomic="true">
+    <div
+      className={`${className} operational-result operational-result--${severity}`}
+      role={severity === "error" ? "alert" : "status"}
+      aria-atomic="true"
+    >
       <span className="operational-result-message">
         {severity === "error" ? <ErrorIcon /> : <WarningIcon />}
         <strong>{label}:</strong> {children}

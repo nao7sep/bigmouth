@@ -159,7 +159,7 @@ describe("SettingsModal — render and tab switching", () => {
     mock.listAnalysisPromptDefaults.mockResolvedValue(prompts());
     mock.listAnalysisPrompts.mockResolvedValue(prompts());
 
-    const { getByText, queryByRole } = render(
+    const { getByText, getByRole, queryByRole } = render(
       <ConfirmProvider>
         <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
@@ -169,6 +169,7 @@ describe("SettingsModal — render and tab switching", () => {
       await Promise.resolve();
     });
     expect(getByText("disk gone")).toBeTruthy();
+    expect(getByRole("alert").textContent).toContain("Error: disk gone");
     // No tablist is rendered while the load failed.
     expect(queryByRole("tablist")).toBeNull();
   });
@@ -414,6 +415,7 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     });
 
     expect(getByText("write failed")).toBeTruthy();
+    expect(getByRole("alert").textContent).toContain("Error: write failed");
     expect(onClose).not.toHaveBeenCalled();
   });
 });

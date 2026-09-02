@@ -4,6 +4,7 @@ import removeMd from "remove-markdown";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { ModalShell } from "./ModalShell";
 import { CheckIcon } from "./Icon";
+import { OperationalResult } from "./OperationalResult";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -22,7 +23,7 @@ const EXPORT_FORMATS: { value: ExportFormat; label: string }[] = [
 
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   const [format, setFormat] = useState<ExportFormat>("html");
-  const { copiedKey, copy } = useCopyFeedback();
+  const { copiedKey, copy, copyErrors, dismissCopyError } = useCopyFeedback();
 
   const html = useMemo(() => marked.parse(content) as string, [content]);
 
@@ -75,6 +76,17 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
           </span>
         )}
       </pre>
+
+      {copyErrors.copy && (
+        <OperationalResult
+          severity="error"
+          className="modal-result modal-footer-result"
+          onDismiss={() => dismissCopyError("copy")}
+          dismissClassName="modal-result-dismiss"
+        >
+          {copyErrors.copy}
+        </OperationalResult>
+      )}
 
       <div className="export-actions">
         <button className="btn-toolbar" onClick={onClose}>

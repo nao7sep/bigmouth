@@ -64,7 +64,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
   const [error, setError] = useState<string | null>(null);
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const { copiedKey, copy } = useCopyFeedback();
+  const {
+    copiedKey,
+    copy,
+    copyErrors,
+    dismissCopyError,
+    clearCopyErrors,
+  } = useCopyFeedback();
 
   useEffect(() => {
     runIdRef.current += 1;
@@ -73,7 +79,8 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     setItems([]);
     setError(null);
     setLoading(false);
-  }, [postId]);
+    clearCopyErrors();
+  }, [postId, clearCopyErrors]);
 
   useEffect(() => {
     return () => {
@@ -97,6 +104,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     setLoading(true);
     setError(null);
     setItems([]);
+    clearCopyErrors();
 
     try {
       const nextItems = await generateImaging(postId, content, options, controller.signal);
@@ -252,6 +260,16 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
               )}
             </button>
           </div>
+          {copyErrors.all && (
+            <OperationalResult
+              severity="error"
+              className="metadata-error imaging-copy-error"
+              dismissClassName="metadata-error-dismiss"
+              onDismiss={() => dismissCopyError("all")}
+            >
+              {copyErrors.all}
+            </OperationalResult>
+          )}
           {items.map((item, index) => (
             <div key={`${index}-${item.slice(0, 24)}`} className="image-prompt-card">
               <div className="image-prompt-header">
@@ -270,6 +288,16 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
                   )}
                 </button>
               </div>
+              {copyErrors[`prompt-${index}`] && (
+                <OperationalResult
+                  severity="error"
+                  className="metadata-error imaging-copy-error"
+                  dismissClassName="metadata-error-dismiss"
+                  onDismiss={() => dismissCopyError(`prompt-${index}`)}
+                >
+                  {copyErrors[`prompt-${index}`]}
+                </OperationalResult>
+              )}
               <div className="image-prompt-text">{item}</div>
             </div>
           ))}

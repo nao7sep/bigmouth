@@ -3,29 +3,50 @@ import { reportProblem } from "../api";
 
 export function useCopyFeedback(duration = 1500) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copyErrors, setCopyErrors] = useState<Record<string, string>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(
-    (text: string, key = "default") => {
+    async (text: string, key = "default") => {
       // "Copied" was shown before the write resolved and the rejection was
       // swallowed, so a failed copy still reported success and the user pasted
       // whatever was on the clipboard before.
-      void navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          setCopiedKey(key);
-          if (timerRef.current) clearTimeout(timerRef.current);
-          timerRef.current = setTimeout(
-            () => setCopiedKey((current) => (current === key ? null : current)),
-            duration
-          );
-        })
-        .catch((err: unknown) => {
-          reportProblem("clipboard write failed", err, { key });
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopyErrors((current) => {
+          if (!(key in current)) return current;
+          const next = { ...current };
+          delete next[key];
+          return next;
         });
+        setCopiedKey(key);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(
+          () => setCopiedKey((current) => (current === key ? null : current)),
+          duration
+        );
+      } catch (err) {
+        reportProblem("clipboard write failed", err, { key });
+        setCopiedKey((current) => (current === key ? null : current));
+        setCopyErrors((current) => ({
+          ...current,
+          [key]: "Could not copy to the clipboard. Try again.",
+        }));
+      }
     },
     [duration]
   );
+
+  const dismissCopyError = useCallback((key: string) => {
+    setCopyErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const clearCopyErrors = useCallback(() => setCopyErrors({}), []);
 
   // Drop the pending reset on unmount so it never fires on a gone component
   // (e.g. closing the Export modal right after Copy).
@@ -33,5 +54,5 @@ export function useCopyFeedback(duration = 1500) {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
-  return { copiedKey, copy };
+  return { copiedKey, copy, copyErrors, dismissCopyError, clearCopyErrors };
 }

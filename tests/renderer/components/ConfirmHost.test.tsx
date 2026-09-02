@@ -73,6 +73,7 @@ describe("ConfirmHost", () => {
 
     // The failure is shown in the dialog and the promise stays unsettled.
     await screen.findByText("delete failed");
+    expect(screen.getByRole("alert").textContent).toContain("Error: delete failed");
     expect(onResult).not.toHaveBeenCalled();
 
     // Retrying succeeds → the dialog closes and the promise resolves true.

@@ -221,4 +221,23 @@ describe("ImagingTab copy", () => {
     expect(copyAll.textContent?.trim()).toBe("Copied");
     expect(copyAll.querySelector("svg")?.dataset.icon).toBe("check");
   });
+
+  it("keeps a failed prompt copy inside the affected prompt card", async () => {
+    mockGenerate.mockResolvedValue(["one", "two"]);
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    const { container, getAllByTitle } = renderTab();
+    await act(async () => {
+      fireEvent.click(container.querySelector(".action-button") as HTMLButtonElement);
+    });
+
+    await act(async () => {
+      fireEvent.click(getAllByTitle("Copy prompt")[1]);
+    });
+
+    const cards = container.querySelectorAll(".image-prompt-card");
+    expect(cards[0].querySelector('[role="alert"]')).toBeNull();
+    expect(cards[1].querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not copy to the clipboard",
+    );
+  });
 });
