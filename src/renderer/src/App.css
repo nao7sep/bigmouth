@@ -467,6 +467,15 @@ button:disabled,
   background: var(--bm-panel);
 }
 
+.btn-toolbar:focus-visible {
+  outline: 2px solid var(--bm-accent);
+  outline-offset: 1px;
+}
+
+[data-window-inactive] .btn-toolbar:focus-visible {
+  outline-color: var(--bm-border);
+}
+
 /* Solid, content-width action button (Add / Restore) — reads as a real button, not a
    subtle toolbar pill, and never stretches to fill a flex-column settings section. */
 .btn-action {

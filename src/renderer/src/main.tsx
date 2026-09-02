@@ -9,6 +9,13 @@ import { denyUnhandledExternalDrop } from "./util/externalDropBoundary";
 window.addEventListener("dragover", denyUnhandledExternalDrop);
 window.addEventListener("drop", denyUnhandledExternalDrop);
 
+const syncWindowActivity = (): void => {
+  document.documentElement.toggleAttribute("data-window-inactive", !document.hasFocus());
+};
+window.addEventListener("focus", syncWindowActivity);
+window.addEventListener("blur", syncWindowActivity);
+syncWindowActivity();
+
 // Last-resort hooks: anything that escapes a component or a promise chain lands
 // in the session log instead of only the devtools console, which nobody has open
 // when it matters (logging conventions, "Global last-resort hooks").

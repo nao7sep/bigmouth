@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { openExternal, reportProblem } from "../api";
 import { ModalShell } from "./ModalShell";
 import { ExternalLinkIcon } from "./Icon";
@@ -15,13 +15,17 @@ export function AboutModal({ onClose }: AboutModalProps) {
     repo: undefined,
     issues: undefined,
   });
+  const linkAttempts = useRef<Record<"repo" | "issues", number>>({ repo: 0, issues: 0 });
 
   async function openLink(owner: "repo" | "issues", url: string): Promise<void> {
+    const attempt = ++linkAttempts.current[owner];
     try {
       await openExternal(url);
+      if (linkAttempts.current[owner] !== attempt) return;
       setLinkFailures((current) => ({ ...current, [owner]: undefined }));
     } catch (error) {
       reportProblem("About link could not be opened", error, { owner, url });
+      if (linkAttempts.current[owner] !== attempt) return;
       setLinkFailures((current) => ({
         ...current,
         [owner]: owner === "repo"

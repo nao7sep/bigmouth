@@ -117,6 +117,11 @@ describe("App.css modal close affordance", () => {
     expect(focus).toMatch(/background:\s*color-mix/);
     expect(focus).toMatch(/outline:\s*2px\s+solid\s+currentColor/);
   });
+
+  it("mutes a retained footer-button focus ring when the window is inactive", () => {
+    expect(css).toMatch(/\.btn-toolbar:focus-visible\s*\{[\s\S]*?outline:\s*2px\s+solid\s+var\(--bm-accent\)/);
+    expect(css).toMatch(/\[data-window-inactive\] \.btn-toolbar:focus-visible\s*\{[\s\S]*?outline-color:\s*var\(--bm-border\)/);
+  });
 });
 
 // App.css restates the pane minimums as literals, "kept in sync" with

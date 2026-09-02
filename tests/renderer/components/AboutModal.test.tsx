@@ -30,6 +30,12 @@ const { version: APP_VERSION } = JSON.parse(
 );
 
 describe("AboutModal", () => {
+  function deferred(): { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
   it("renders the dialog with the app name, version and license", () => {
     const { getByRole, getByText } = render(<AboutModal onClose={vi.fn()} />);
     const dialog = getByRole("dialog");
@@ -80,6 +86,23 @@ describe("AboutModal", () => {
 
     fireEvent.click(getAllByLabelText("Close result")[0]);
     expect(queryByText("Report Issue could not be opened. Try again.")).toBeNull();
+  });
+
+  it("does not let an older link settlement replace the current attempt", async () => {
+    const older = deferred();
+    const newer = deferred();
+    openExternal.mockImplementationOnce(() => older.promise).mockImplementationOnce(() => newer.promise);
+    const { getByRole, queryByText } = render(<AboutModal onClose={vi.fn()} />);
+    const github = getByRole("link", { name: /^GitHub/ });
+
+    fireEvent.click(github);
+    fireEvent.click(github);
+    newer.resolve();
+    await newer.promise;
+    older.reject(new Error("EACCES /private/tmp/BIGMOUTH-STALE-LINK-SENTINEL"));
+    await waitFor(() => expect(writeRendererLog).toHaveBeenCalledTimes(1));
+
+    expect(queryByText("GitHub could not be opened. Try again.")).toBeNull();
   });
 
   it("autofocuses the close button so the keyboard lands on the only action", () => {
