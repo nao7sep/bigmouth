@@ -1114,6 +1114,7 @@ button:disabled,
 .modal-close {
   background: none;
   border: none;
+  border-radius: 4px;
   /* Matches the modal title beside it. Was 22px, inflated because the × glyph it
      used to hold renders at 0.468em; a drawn icon fills 0.696em, so the same
      22px put a 15px mark against an 11px title. */
@@ -1125,6 +1126,14 @@ button:disabled,
 
 .modal-close:hover:not(:disabled) {
   color: var(--bm-text);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.modal-close:focus-visible {
+  color: var(--bm-text);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
 }
 
 .modal-close:disabled {

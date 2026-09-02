@@ -105,6 +105,20 @@ describe("App.css asset receiver presentation", () => {
   });
 });
 
+describe("App.css modal close affordance", () => {
+  it("keeps the drawn close mark quiet at rest and reveals its hit area on hover and focus", () => {
+    const rest = css.match(/\.modal-close\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const hover = css.match(/\.modal-close:hover:not\(:disabled\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const focus = css.match(/\.modal-close:focus-visible\s*\{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(rest).toMatch(/border:\s*none/);
+    expect(rest).toMatch(/background:\s*none/);
+    expect(hover).toMatch(/background:\s*color-mix/);
+    expect(focus).toMatch(/background:\s*color-mix/);
+    expect(focus).toMatch(/outline:\s*2px\s+solid\s+currentColor/);
+  });
+});
+
 // App.css restates the pane minimums as literals, "kept in sync" with
 // @shared/layout by comment only — and the window minimum is derived from those
 // constants, so a CSS literal drifting upward makes the window draggable narrow
