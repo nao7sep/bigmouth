@@ -33,7 +33,7 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
     fullscreenable: false,
     autoHideMenuBar: true,
     title: options.title,
-    backgroundColor: "#18181b",
+    backgroundColor: "#f7f4ef",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
 
@@ -77,12 +77,12 @@ function renderHtml(options: PlainMessageDialogOptions, buttons: string[]): stri
     return `<button id="choice-${index}" class="button${kind}" type="button" onclick="location.href='${CHOICE_ORIGIN}${index}'">${escapeHtml(label)}</button>`;
   }).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    :root{color-scheme:dark;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5}
+    :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#f7f4ef;color:#292524}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px;display:flex;flex-direction:column;gap:12px}
-    h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#d4d4d8}
+    h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#57534e}
     .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:auto;padding-top:12px}
-    .button{color:#f4f4f5;border:1px solid #52525b;border-radius:6px;padding:7px 14px;background:#27272a;font:inherit}
-    .button:hover,.button:focus{background:#3f3f46;outline:2px solid #a1a1aa;outline-offset:2px}.primary{background:#2563eb;border-color:#3b82f6}.destructive{background:#991b1b;border-color:#dc2626}
+    .button{color:#292524;border:1px solid #a8a29e;border-radius:6px;padding:7px 14px;background:#fafaf9;font:inherit}
+    .button:hover,.button:focus{background:#e7e5e4;outline:2px solid #78716c;outline-offset:2px}.primary{color:white;background:#2563eb;border-color:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}
   </style></head><body><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}<div class="actions">${actions}</div></body></html>`;
 }
 
