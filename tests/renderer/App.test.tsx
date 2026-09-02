@@ -27,6 +27,7 @@ vi.mock("@renderer/WorkspaceSession", () => {
       props: {
         workspace: Workspace;
         onSwitchWorkspace: () => void;
+        onStartLeftDrag: (event: React.MouseEvent) => void;
       },
       ref: React.Ref<{ flushPendingChanges: () => Promise<boolean> }>
     ) {
@@ -36,6 +37,9 @@ vi.mock("@renderer/WorkspaceSession", () => {
           <span data-testid="session-ws">{props.workspace.id}</span>
           <button data-testid="session-switch" onClick={props.onSwitchWorkspace}>
             switch
+          </button>
+          <button data-testid="left-drag" onMouseDown={props.onStartLeftDrag}>
+            resize left pane
           </button>
         </div>
       );
@@ -163,6 +167,18 @@ describe("App bootstrap — no stored workspace", () => {
     expect(container.querySelector('[data-testid="ws-modal"]')).toBeNull();
     expect(container.querySelector('[data-testid="session"]')).toBeNull();
   });
+
+  it("surfaces a hostile optional UI-state load failure while opening the safe picker", async () => {
+    mockGetUiState.mockRejectedValue(
+      new Error("EACCES IPC /private/tmp/BIGMOUTH-UI-LOAD-SENTINEL"),
+    );
+    const { getByTestId, getByRole } = await renderApp();
+
+    expect(getByTestId("ws-modal")).toBeTruthy();
+    const result = getByRole("alert");
+    expect(result.textContent).toContain("Defaults are in use for this launch");
+    expect(result.textContent).not.toContain("BIGMOUTH-UI-LOAD-SENTINEL");
+  });
 });
 
 describe("App bootstrap — stored workspace", () => {
@@ -278,6 +294,32 @@ describe("App workspace selection", () => {
     expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_DELETE_SENTINEL")
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
       message: "renderer: cleared active workspace preference save failed",
+    }));
+  });
+});
+
+describe("App pane intent persistence", () => {
+  it("keeps the resized pane in use and retains an independent authored save result", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
+    mockList.mockResolvedValue([WS1]);
+    mockUpdateUiState.mockRejectedValueOnce(
+      new Error("EACCES IPC /private/tmp/BIGMOUTH-PANE-SENTINEL"),
+    );
+    const { getByTestId, getByRole } = await renderApp();
+
+    fireEvent.mouseDown(getByTestId("left-drag"), { clientX: 100 });
+    fireEvent.mouseMove(document, { clientX: 140 });
+    await act(async () => {
+      fireEvent.mouseUp(document);
+      await Promise.resolve();
+    });
+
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ paneLeftWidth: expect.any(Number) });
+    const result = getByRole("alert");
+    expect(result.textContent).toContain("current width is still in use");
+    expect(result.textContent).not.toContain("BIGMOUTH-PANE-SENTINEL");
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: pane width save failed",
     }));
   });
 });

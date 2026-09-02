@@ -78,10 +78,18 @@ export function WorkspaceModal({
   };
 
   const handleBrowse = async () => {
-    const dir = await pickWorkspaceDirectory();
-    if (dir) {
-      setError(null);
-      setLocation(dir);
+    try {
+      const dir = await pickWorkspaceDirectory();
+      if (dir) {
+        setError(null);
+        setLocation(dir);
+      }
+    } catch (err) {
+      setError(presentFailure(
+        "The folder picker could not be opened. Your location is unchanged; try again.",
+        "renderer: workspace folder picker failed",
+        err,
+      ));
     }
   };
 

@@ -47,7 +47,16 @@ export function App() {
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<string | null>(null);
-  const [workspacePreferenceError, setWorkspacePreferenceError] = useState<string | null>(null);
+  const [shellResults, setShellResults] = useState<Array<{ key: string; message: string }>>([]);
+  const reportShellResult = useCallback((key: string, message: string) => {
+    setShellResults((current) => [
+      ...current.filter((result) => result.key !== key),
+      { key, message },
+    ]);
+  }, []);
+  const resolveShellResult = useCallback((key: string) => {
+    setShellResults((current) => current.filter((result) => result.key !== key));
+  }, []);
 
   // Intent widths (px): what the user dragged each side pane to. Seeded with the
   // shared defaults and replaced by the persisted intents once state.json is
@@ -128,6 +137,10 @@ export function App() {
         // A failed state read is non-fatal: fall back to defaults and the picker.
         reportProblem("could not read the saved UI state", err);
         if (!cancelled) {
+          reportShellResult(
+            "ui-state-load",
+            "The saved window layout and last workspace could not be loaded. Defaults are in use for this launch.",
+          );
           setWorkspaceModalOpen(true);
           setWsChecked(true);
         }
@@ -174,7 +187,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reportShellResult]);
 
   const handleSelectWorkspace = useCallback(async (ws: Workspace) => {
     const flushed = (await sessionRef.current?.flushPendingChanges()) ?? true;
@@ -185,9 +198,9 @@ export function App() {
     setWorkspaceRegistryError(null);
     try {
       await updateUiState({ activeWorkspaceId: ws.id });
-      setWorkspacePreferenceError(null);
+      resolveShellResult("active-workspace");
     } catch (err) {
-      setWorkspacePreferenceError(presentFailure(
+      reportShellResult("active-workspace", presentFailure(
         "This workspace is open, but it could not be remembered for the next launch.",
         "renderer: active workspace preference save failed",
         err,
@@ -195,7 +208,7 @@ export function App() {
       ));
     }
     setWorkspaceModalOpen(false);
-  }, []);
+  }, [reportShellResult, resolveShellResult]);
 
   const handleActiveWorkspaceDeleted = useCallback(
     async (workspaceId: string) => {
@@ -207,9 +220,9 @@ export function App() {
       setActiveWorkspace("");
       try {
         await updateUiState({ activeWorkspaceId: "" });
-        setWorkspacePreferenceError(null);
+        resolveShellResult("active-workspace");
       } catch (err) {
-        setWorkspacePreferenceError(presentFailure(
+        reportShellResult("active-workspace", presentFailure(
           "The workspace was removed, but the launch preference could not be updated. The picker will recover it next time.",
           "renderer: cleared active workspace preference save failed",
           err,
@@ -220,7 +233,7 @@ export function App() {
       setWorkspaceModalOpen(true);
       return true;
     },
-    [activeWorkspace]
+    [activeWorkspace, reportShellResult, resolveShellResult]
   );
 
   const handleActiveWorkspaceUpdated = useCallback((workspace: Workspace) => {
@@ -260,9 +273,16 @@ export function App() {
         endDrag();
         // Only a drag persists, and it persists the INTENT (px) to state.json.
         // Resize and mount never reach here, so they never overwrite the stored value.
-        void updateUiState({ [stateKey]: intentRef.current }).catch((err: unknown) => {
-          reportProblem("could not save the pane width", err, { stateKey });
-        });
+        void updateUiState({ [stateKey]: intentRef.current })
+          .then(() => resolveShellResult(stateKey))
+          .catch((err: unknown) => {
+            reportShellResult(stateKey, presentFailure(
+              "The pane width could not be saved. Its current width is still in use for this launch.",
+              "renderer: pane width save failed",
+              err,
+              { stateKey },
+            ));
+          });
       };
       const endDrag = () => {
         document.body.style.cursor = "";
@@ -279,7 +299,7 @@ export function App() {
       // listeners attached and the body stuck with col-resize and no selection.
       activeDragRef.current = endDrag;
     },
-    []
+    [reportShellResult, resolveShellResult]
   );
 
   useEffect(() => () => activeDragRef.current?.(), []);
@@ -299,18 +319,23 @@ export function App() {
     />
   );
 
-  const workspacePreferenceResult = workspacePreferenceError ? (
-    <OperationalResult
-      severity="error"
-      className="app-operational-result"
-      onDismiss={() => setWorkspacePreferenceError(null)}
-    >
-      {workspacePreferenceError}
-    </OperationalResult>
+  const shellResultStack = shellResults.length > 0 ? (
+    <div className="app-operational-results">
+      {shellResults.map((result) => (
+        <OperationalResult
+          key={result.key}
+          severity="error"
+          className="app-operational-result"
+          onDismiss={() => resolveShellResult(result.key)}
+        >
+          {result.message}
+        </OperationalResult>
+      ))}
+    </div>
   ) : null;
 
   if (!activeWorkspace) {
-    return <>{workspaceModal}{workspacePreferenceResult}</>;
+    return <>{workspaceModal}{shellResultStack}</>;
   }
 
   return (
@@ -338,7 +363,7 @@ export function App() {
         </div>
       </div>
       {workspaceModalOpen && workspaceModal}
-      {workspacePreferenceResult}
+      {shellResultStack}
     </>
   );
 }

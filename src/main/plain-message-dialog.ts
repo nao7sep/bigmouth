@@ -45,6 +45,10 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
       resolve(choice);
       if (!win.isDestroyed()) win.close();
     };
+    const settleLoadFailure = (phase: string, error: unknown): void => {
+      console.error(`[bigmouth] message dialog ${phase} failed:`, error);
+      settle(cancelId);
+    };
     win.on("closed", () => settle(cancelId));
     win.webContents.on("will-navigate", (event, url) => {
       if (!url.startsWith(CHOICE_ORIGIN)) return;
@@ -68,9 +72,12 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
           win.setContentSize(520, Math.min(Math.max(Math.ceil(height), 220), Math.floor(displayHeight * 0.85)));
           win.show();
           return win.webContents.executeJavaScript(`document.getElementById('choice-${defaultId}')?.focus()`, true);
-        });
+        })
+        .catch((error: unknown) => settleLoadFailure("measurement", error));
     });
-    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options, buttons))}`);
+    void win
+      .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options, buttons))}`)
+      .catch((error: unknown) => settleLoadFailure("load", error));
   });
 }
 

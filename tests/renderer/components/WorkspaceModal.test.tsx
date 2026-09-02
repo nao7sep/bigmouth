@@ -302,6 +302,27 @@ describe("WorkspaceModal — Browse", () => {
     });
     expect((getByPlaceholderText("Default location if blank") as HTMLInputElement).value).toBe("");
   });
+
+  it("retains an authored form result when the native picker rejects", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockRejectedValue(
+      new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"),
+    );
+    const { getByText, getByRole, getByPlaceholderText } = await renderWith();
+
+    await act(async () => {
+      fireEvent.click(getByText("Browse"));
+      await Promise.resolve();
+    });
+
+    const result = getByRole("alert");
+    expect(result.textContent).toContain("location is unchanged");
+    expect(result.textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
+    expect((getByPlaceholderText("Default location if blank") as HTMLInputElement).value).toBe("");
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace folder picker failed",
+    }));
+  });
 });
 
 describe("WorkspaceModal — inline rename save", () => {

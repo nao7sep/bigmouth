@@ -115,13 +115,19 @@ body {
   height: 100%;
 }
 
-.app-operational-result {
+.app-operational-results {
   position: fixed;
   z-index: 1100;
   top: 10px;
   left: 50%;
   width: min(520px, calc(100vw - 20px));
   transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+}
+
+.app-operational-result {
+  position: relative;
   padding: 10px 36px 10px 12px;
   border: 1px solid var(--bm-danger-border);
   border-radius: 8px;
