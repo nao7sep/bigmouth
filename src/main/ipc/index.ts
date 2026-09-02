@@ -12,6 +12,7 @@ import { registerImagingHandlers } from "./imaging.js";
 import { registerAssetHandlers } from "./assets.js";
 import { registerAnalysisHandlers } from "./analysis.js";
 import { registerDialogHandlers } from "./dialog.js";
+import { registerExternalHandlers } from "./external.js";
 
 /**
  * Registers every ipcMain handler. Called once at startup. Each domain registers
@@ -32,4 +33,5 @@ export function registerIpcHandlers(): void {
   registerAssetHandlers();
   registerAnalysisHandlers();
   registerDialogHandlers();
+  registerExternalHandlers();
 }

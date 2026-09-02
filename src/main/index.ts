@@ -39,7 +39,7 @@ let systemShutdown = false;
 // asset protocol and the IPC handlers the renderer calls, install the application
 // menu, and open the window. The main process owns the single storage resolver and
 // the filesystem (storage-path-conventions).
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   const appConfig = initAppDir();
   initLogger(getLogsDir());
   // State store (view state: pane widths + last workspace) resolves state.json under
@@ -56,11 +56,11 @@ function bootstrap(): void {
   handleAssetProtocol();
   registerIpcHandlers();
   installApplicationMenu();
-  openMainWindow();
+  await openMainWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      openMainWindow();
+      void openMainWindow().catch(handleStartupFailure);
     }
   });
 }
@@ -69,11 +69,25 @@ function bootstrap(): void {
 // raises "session-end" on the window (Electron has no app-level equivalent);
 // macOS and Linux raise powerMonitor "shutdown" below. Both set the same flag,
 // so a logoff on any platform takes the never-block path at quit.
-function openMainWindow(): void {
-  const window = createMainWindow();
+async function openMainWindow(): Promise<void> {
+  const window = await createMainWindow();
   window.on("session-end", () => {
     systemShutdown = true;
   });
+}
+
+let handlingStartupFailure = false;
+async function handleStartupFailure(err: unknown): Promise<void> {
+  if (handlingStartupFailure) return;
+  handlingStartupFailure = true;
+  console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
+  try {
+    logError("bootstrap failed", { error: serializeError(err) });
+  } catch {
+    // The logger itself may be what failed; stderr above already carried it.
+  }
+  await showStartupFailure();
+  app.exit(1);
 }
 
 if (!ownsInstance) {
@@ -89,17 +103,7 @@ if (!ownsInstance) {
     existing.focus();
   });
 
-  app.whenReady().then(bootstrap).catch(async (err: unknown) => {
-    // Logging itself may be the failing startup step, so stderr remains the floor.
-    console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
-    try {
-      logError("bootstrap failed", { error: serializeError(err) });
-    } catch {
-      // The logger itself may be what failed; stderr above already carried it.
-    }
-    await showStartupFailure();
-    app.exit(1);
-  });
+  app.whenReady().then(bootstrap).catch(handleStartupFailure);
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {

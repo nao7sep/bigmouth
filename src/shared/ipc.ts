@@ -48,6 +48,7 @@ export const CHANNELS = {
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
   revealCurrentLogFile: "log:revealCurrent",
+  openExternal: "shell:openExternal",
   // The renderer's only way into the session log: it is sandboxed and opens no
   // file of its own, so it forwards a structured record to main (logging
   // conventions, "Multi-process apps"). One-way and fire-and-forget — a failure
@@ -260,6 +261,8 @@ export interface BigMouthApi {
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<void>;
   revealCurrentLogFile(): Promise<string>;
+  /** Opens an allowed web or mail URL in the OS handler. */
+  openExternal(url: string): Promise<void>;
   /** Native folder picker for choosing a workspace directory; null if cancelled. */
   pickDirectory(): Promise<string | null>;
 

@@ -1,32 +1,24 @@
-import { BrowserWindow, Menu, nativeTheme, screen, shell } from "electron";
+import { BrowserWindow, Menu, nativeTheme, screen } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { windowMinimumForZoom } from "@shared/layout";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
+import { error as logError, serializeError } from "./core/services/logger.js";
+import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
+
+export { isAllowedExternalUrl } from "./ipc/external.js";
 
 // Matches the renderer `--bm-bg` (#f4efe8 in App.css) so the pre-paint window
 // background does not flash a different color before the page loads.
 const WINDOW_BACKGROUND = "#f4efe8";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Schemes the app is willing to hand to the OS via shell.openExternal. Anything
-// else a renderer asks to open (file:, custom handlers, …) is ignored.
-const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
-
-// Whether a URL may be handed to the OS browser. Exported so the allowlist can
-// be covered without driving a real BrowserWindow — see tests/main/window.test.ts.
-export function isAllowedExternalUrl(rawUrl: string): boolean {
-  try {
-    return ALLOWED_EXTERNAL_PROTOCOLS.has(new URL(rawUrl).protocol);
-  } catch {
-    return false;
-  }
-}
-
 function openExternalIfAllowed(rawUrl: string): void {
   if (isAllowedExternalUrl(rawUrl)) {
-    void shell.openExternal(rawUrl);
+    void openExternalUrl(rawUrl).catch((error: unknown) => {
+      logError("unowned external navigation failed", { url: rawUrl, error: serializeError(error) });
+    });
   }
 }
 
@@ -120,7 +112,7 @@ function configureZoom(window: BrowserWindow): void {
   );
 }
 
-export function createMainWindow(): BrowserWindow {
+export async function createMainWindow(): Promise<BrowserWindow> {
   // BigMouth is a light app; force the light theme so a dark-mode host still
   // paints a light native title bar that matches the UI (app-chrome-conventions).
   nativeTheme.themeSource = "light";
@@ -191,11 +183,11 @@ export function createMainWindow(): BrowserWindow {
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     // The Content-Security-Policy travels in the HTML, not a response header:
     // this is a file:// load, which a header CSP cannot reach. See src/shared/csp.ts.
-    void window.loadFile(join(__dirname, "../renderer/index.html"));
+    await window.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
   return window;

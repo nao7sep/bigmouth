@@ -71,6 +71,10 @@ export function revealCurrentLogFile(): Promise<string> {
   return bridge().revealCurrentLogFile();
 }
 
+export function openExternal(url: string): Promise<void> {
+  return bridge().openExternal(url);
+}
+
 export function pickWorkspaceDirectory(): Promise<string | null> {
   return bridge().pickDirectory();
 }

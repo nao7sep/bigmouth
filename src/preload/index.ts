@@ -55,6 +55,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
   revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,
+  openExternal: (url: string) => ipcRenderer.invoke(CHANNELS.openExternal, url) as Promise<void>,
   // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
   // something can never turn into a second failure the caller has to handle.
   writeRendererLog: (entry: RendererLogEntry) => ipcRenderer.send(CHANNELS.writeRendererLog, entry),

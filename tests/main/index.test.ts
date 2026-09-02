@@ -26,6 +26,8 @@ const shell = vi.hoisted(() => ({
   dialogs: [] as { detail?: string }[],
   // What the user clicks in the unsaved-changes dialog: 0 = Cancel (the default).
   dialogChoice: 0,
+  windowLoadFailure: null as Error | null,
+  loggedErrors: [] as unknown[][],
 }));
 
 vi.mock("electron", () => ({
@@ -52,7 +54,7 @@ vi.mock("@main/plain-message-dialog.js", () => ({
 }));
 
 vi.mock("@main/window.js", () => ({
-  createMainWindow: () => ({
+  createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : Promise.resolve({
     on: (event: string, cb: (...args: unknown[]) => unknown) => windowHandlers.set(event, cb),
   }),
 }));
@@ -73,7 +75,7 @@ vi.mock("@main/core/services/logger.js", () => ({
   debug: () => {},
   info: () => {},
   warn: () => {},
-  error: () => {},
+  error: (...args: unknown[]) => { shell.loggedErrors.push(args); },
 }));
 
 type PostStore = typeof import("@main/core/services/postStore.js");
@@ -97,6 +99,8 @@ async function bootApp(): Promise<PostStore> {
   shell.windows.length = 0;
   shell.dialogs.length = 0;
   shell.dialogChoice = 0;
+  shell.windowLoadFailure = null;
+  shell.loggedErrors.length = 0;
 
   const store = (await import("@main/core/services/postStore.js")) as PostStore;
   const { initializeWorkspaceData } = await import("@main/core/services/dataDir.js");
@@ -191,6 +195,24 @@ describe("quit flushes the write-behind buffer", () => {
 });
 
 describe("single app-process ownership", () => {
+  it("routes a renderer document-load rejection to the authored startup halt", async () => {
+    vi.resetModules();
+    appHandlers.clear();
+    windowHandlers.clear();
+    shell.dialogs.length = 0;
+    shell.exits.length = 0;
+    shell.loggedErrors.length = 0;
+    shell.windowLoadFailure = new Error("EACCES /private/tmp/renderer.html");
+
+    await import("@main/index.js");
+    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+
+    expect(shell.dialogs[0].detail).toContain("No posts or workspace documents were changed");
+    expect(JSON.stringify(shell.dialogs[0])).not.toContain("EACCES");
+    expect(JSON.stringify(shell.loggedErrors)).toContain("EACCES");
+    expect(shell.exits).toEqual([1]);
+  });
+
   it("quits a second process before it can bootstrap process-local workspace state", async () => {
     vi.resetModules();
     appHandlers.clear();
