@@ -22,6 +22,7 @@ import {
   pickWorkspaceDirectory,
   reportProblem,
 } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import type { Workspace } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
@@ -136,7 +137,11 @@ export function WorkspaceModal({
       load();
       await onSelect(workspace);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open or create workspace.");
+      setError(presentFailure(
+        "The workspace could not be opened or created. Check the selected folder and try again.",
+        "renderer: workspace open or creation failed",
+        err,
+      ));
     } finally {
       setSubmitting(false);
     }

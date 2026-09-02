@@ -158,7 +158,7 @@ describe("ImagingTab run", () => {
       fireEvent.click(container.querySelector(".action-button") as HTMLButtonElement);
     });
     expect(container.querySelector(".panel-error")).toBeTruthy();
-    expect(getByText("imaging boom")).toBeTruthy();
+    expect(getByText("Image prompts could not be generated. Existing prompts are unchanged; try again.")).toBeTruthy();
   });
 
   it("ignores a stale run's result after the post switches", async () => {

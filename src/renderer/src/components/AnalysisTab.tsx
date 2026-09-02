@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listAnalysisPrompts, runAnalysisStream } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import type { AnalysisPrompt } from "@shared/types";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
 import { OperationalResult } from "./OperationalResult";
@@ -41,7 +42,11 @@ export function AnalysisTab({
         });
       })
       .catch((err) => {
-        setPromptsError(err instanceof Error ? err.message : "Failed to load analysis prompts.");
+        setPromptsError(presentFailure(
+          "Analysis prompts could not be loaded. Reopen this post to try again.",
+          "renderer: analysis prompts load failed",
+          err,
+        ));
       });
   }, [promptsVersion]);
 
@@ -88,7 +93,12 @@ export function AnalysisTab({
     } catch (err) {
       if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
-      setError(err instanceof Error ? err.message : "Analysis failed");
+      setError(presentFailure(
+        "The analysis could not be completed. No result was saved; try again.",
+        "renderer: analysis run failed",
+        err,
+        { postId, prompt: selectedPrompt },
+      ));
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;

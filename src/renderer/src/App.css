@@ -515,6 +515,7 @@ button:disabled,
 }
 
 .toolbar-error {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -527,20 +528,40 @@ button:disabled,
 }
 
 .operational-result-message {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.operational-result-message > svg {
-  flex-shrink: 0;
+.operational-result:has(.operational-result-dismiss) {
+  position: relative;
+  padding-right: 34px;
 }
 
-.operational-result-message > strong {
-  flex-shrink: 0;
-  white-space: nowrap;
+.operational-result-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.operational-result-dismiss:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.operational-result-dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
 }
 
 .modal-result {
@@ -572,26 +593,13 @@ button:disabled,
 }
 
 .modal-result-dismiss {
-  flex-shrink: 0;
-  padding: 0 2px;
-  border: 0;
-  background: none;
-  color: currentColor;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
+  top: 5px;
+  right: 7px;
 }
 
 .toolbar-error-dismiss {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--bm-danger);
-  /* Sized to the banner text it sits in, so the icon matches its cap height. */
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
+  top: 3px;
+  right: 10px;
 }
 
 .toolbar-notice {
@@ -956,15 +964,8 @@ button:disabled,
 }
 
 .metadata-error-dismiss {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--bm-danger);
-  /* Sized to the banner text it sits in, so the icon matches its cap height. */
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
+  top: 5px;
+  right: 7px;
 }
 
 .metadata-copy-error,
@@ -1489,15 +1490,8 @@ button:disabled,
 }
 
 .assets-result-dismiss {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: currentColor;
-  /* Sized to the banner text it sits in, so the icon matches its cap height. */
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
+  top: 5px;
+  right: 7px;
 }
 
 .assets-grid {

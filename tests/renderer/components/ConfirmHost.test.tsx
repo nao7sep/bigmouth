@@ -72,8 +72,8 @@ describe("ConfirmHost", () => {
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     // The failure is shown in the dialog and the promise stays unsettled.
-    await screen.findByText("delete failed");
-    expect(screen.getByRole("alert").textContent).toContain("Error: delete failed");
+    await screen.findByText("The action could not be completed. Nothing was changed; try again.");
+    expect(screen.getByRole("alert").textContent).not.toContain("Error:");
     expect(onResult).not.toHaveBeenCalled();
 
     // Retrying succeeds → the dialog closes and the promise resolves true.

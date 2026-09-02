@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { presentFailure } from "../util/presentFailure";
 
 export interface ConfirmOptions {
   title?: string;
@@ -92,7 +93,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         // The action failed: keep the dialog open, surface the reason, and clear
         // busy so the user can retry or cancel. The promise stays unsettled.
-        setError(err instanceof Error ? err.message : "Action failed.");
+        setError(presentFailure(
+          "The action could not be completed. Nothing was changed; try again.",
+          "renderer: confirmed action failed",
+          err,
+        ));
         setBusy(false);
         runningRef.current = false;
       }

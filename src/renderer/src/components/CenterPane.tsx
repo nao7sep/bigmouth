@@ -11,6 +11,7 @@ import {
   onPostContentSaveFailed,
   reportProblem,
 } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import { isEditLocked } from "@shared/postStatus";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
@@ -103,7 +104,12 @@ export function CenterPane({
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load post");
+        setLoadError(presentFailure(
+          "This post could not be loaded. Select it again to retry.",
+          "renderer: post load failed",
+          err,
+          { postId },
+        ));
       });
 
     return () => {
@@ -129,7 +135,7 @@ export function CenterPane({
       if (event.postId !== postId) return;
       setSaveError(
         event.kind === "unsaveable"
-          ? `${event.message} BigMouth cannot save your changes. Your text is still here — copy it somewhere safe.`
+          ? "BigMouth cannot save your changes. Your text is still here; copy it somewhere safe and check the log."
           : "Autosave failed and will retry. Your text is held in memory until it saves."
       );
     });
@@ -164,7 +170,12 @@ export function CenterPane({
       setPost(updated);
       onPostUpdated(updated);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Status change failed");
+      setStatusError(presentFailure(
+        "The post status could not be changed. The previous status is still in effect; try again.",
+        "renderer: post status change failed",
+        err,
+        { postId, newStatus },
+      ));
     }
   };
 
@@ -242,7 +253,12 @@ export function CenterPane({
       await deletePost(postId, workspaceId);
       onPostDeleted();
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Delete failed");
+      setStatusError(presentFailure(
+        "The post could not be deleted. It remains in the workspace; try again.",
+        "renderer: post deletion failed",
+        err,
+        { postId },
+      ));
     }
   };
 
@@ -274,7 +290,12 @@ export function CenterPane({
       onPostUpdated(updated);
       setStatusError(null);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Failed to link source post");
+      setStatusError(presentFailure(
+        "The source post could not be linked. The current source is unchanged; try again.",
+        "renderer: source post link failed",
+        err,
+        { postId, sourceId },
+      ));
     }
   };
 
@@ -285,7 +306,12 @@ export function CenterPane({
       onPostUpdated(updated);
       setStatusError(null);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Failed to unlink source post");
+      setStatusError(presentFailure(
+        "The source post could not be unlinked. The current source is unchanged; try again.",
+        "renderer: source post unlink failed",
+        err,
+        { postId },
+      ));
     }
   };
 

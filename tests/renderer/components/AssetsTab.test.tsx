@@ -88,7 +88,7 @@ describe("AssetsTab loading", () => {
   it("surfaces a load failure in the error banner", async () => {
     mockListAssets.mockRejectedValue(new Error("list failed"));
     const { getByText } = await renderTab();
-    expect(getByText("list failed")).toBeTruthy();
+    expect(getByText("Assets could not be loaded. Reopen this post to try again.")).toBeTruthy();
   });
 
   it("renders an image asset with a thumbnail and an exif note", async () => {
@@ -162,7 +162,7 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("bad.png")] } });
     });
 
-    expect(getByText(/1 item could not be added: bad\.png: server said no/)).toBeTruthy();
+    expect(getByText(/1 item could not be added: bad\.png: The file could not be added/)).toBeTruthy();
     expect(container.querySelector(".assets-result--error")).toBeTruthy();
     expect(mockReportProblem).toHaveBeenCalledWith(
       "Asset upload failed.",
@@ -199,7 +199,7 @@ describe("AssetsTab upload via file input", () => {
         target: { files: [makeFile("retry.png"), makeFile("also-ready.png")] },
       });
     });
-    expect(getByText(/disk unavailable/)).toBeTruthy();
+    expect(getByText(/The file could not be added/)).toBeTruthy();
 
     await act(async () => {
       fireEvent.change(input, { target: { files: [makeFile("retry.png")] } });
@@ -483,7 +483,9 @@ describe("AssetsTab delete", () => {
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     });
-    await waitFor(() => expect(getByText("delete boom")).toBeTruthy());
+    await waitFor(() => expect(getByText(
+      "stay.png could not be deleted. It remains attached to this post; try again.",
+    )).toBeTruthy());
   });
 });
 
@@ -519,7 +521,7 @@ describe("AssetsTab result", () => {
   it("dismisses the result via the close button", async () => {
     mockListAssets.mockRejectedValue(new Error("oops"));
     const { container, getByText } = await renderTab();
-    expect(getByText("oops")).toBeTruthy();
+    expect(getByText("Assets could not be loaded. Reopen this post to try again.")).toBeTruthy();
     fireEvent.click(container.querySelector(".assets-result-dismiss") as HTMLButtonElement);
     expect(container.querySelector(".assets-result")).toBeNull();
   });

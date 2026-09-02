@@ -262,8 +262,8 @@ describe("WorkspaceModal — create/open submit", () => {
       await Promise.resolve();
     });
 
-    expect(getByText("folder is not empty")).toBeTruthy();
-    expect(getByRole("alert").textContent).toContain("Error: folder is not empty");
+    expect(getByText("The workspace could not be opened or created. Check the selected folder and try again.")).toBeTruthy();
+    expect(getByRole("alert").textContent).not.toContain("Error:");
   });
 });
 
@@ -432,7 +432,7 @@ describe("WorkspaceModal — delete", () => {
 
     // The vetoed deletion surfaces inline and does not call deleteWorkspace.
     expect(
-      await findByText("Resolve the unsaved changes in the active workspace before deleting it."),
+      await findByText("The action could not be completed. Nothing was changed; try again."),
     ).toBeTruthy();
     expect(mockDeleteWorkspace).not.toHaveBeenCalled();
   });
@@ -452,7 +452,7 @@ describe("WorkspaceModal — delete", () => {
     });
 
     // The failed active-delete restores the session and surfaces the error.
-    expect(await findByText("delete failed on disk")).toBeTruthy();
+    expect(await findByText("The action could not be completed. Nothing was changed; try again.")).toBeTruthy();
     expect(onSelect).toHaveBeenCalledWith(WORKSPACE);
   });
 

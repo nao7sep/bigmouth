@@ -39,15 +39,15 @@ vi.mock("electron", () => ({
     exit: (code: number) => shell.exits.push(code),
   },
   BrowserWindow: { getAllWindows: () => shell.windows },
-  dialog: {
-    showMessageBoxSync: (options: { detail?: string }) => {
-      shell.dialogs.push(options);
-      return shell.dialogChoice;
-    },
-    showErrorBox: () => {},
-  },
   powerMonitor: {
     on: (event: string, cb: (...args: unknown[]) => unknown) => powerHandlers.set(event, cb),
+  },
+}));
+
+vi.mock("@main/plain-message-dialog.js", () => ({
+  showPlainMessageDialog: async (options: { detail?: string }) => {
+    shell.dialogs.push(options);
+    return shell.dialogChoice;
   },
 }));
 
@@ -109,10 +109,13 @@ async function bootApp(): Promise<PostStore> {
 }
 
 /** Runs the app's before-quit handler the way Electron would. */
-function quit(): void {
+async function quit(): Promise<void> {
   const handler = appHandlers.get("before-quit");
   expect(handler, "before-quit was never registered").toBeTruthy();
   handler!({ preventDefault: () => {} });
+  await vi.waitFor(() => {
+    if (shell.dialogs.length === 0 && shell.exits.length === 0) throw new Error("quit is still settling");
+  });
 }
 
 beforeEach(() => {
@@ -134,7 +137,7 @@ describe("quit flushes the write-behind buffer", () => {
     const post = store.createPost(dataDir, "blogger", "en");
     store.queueContent(dataDir, post.frontMatter.id, "typed a moment before quitting");
 
-    quit();
+    await quit();
 
     // Raw read, bypassing the store: what is durable, not what it reports.
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed a moment before quitting");
@@ -149,7 +152,7 @@ describe("quit flushes the write-behind buffer", () => {
     // The file goes out of band (a sync client, a Finder move, a git checkout).
     fs.unlinkSync(post.filePath);
 
-    quit();
+    await quit();
 
     expect(shell.dialogs).toHaveLength(1);
     expect(shell.dialogs[0].detail).toContain("copy your text somewhere safe");
@@ -165,7 +168,7 @@ describe("quit flushes the write-behind buffer", () => {
 
     // Windows raises session-end on the window; there is no app-level event.
     windowHandlers.get("session-end")!({ reasons: ["logoff"] });
-    quit();
+    await quit();
 
     // A dialog here would block until Windows force-terminated the app, losing
     // the buffer — exactly what the escape hatch exists to prevent.
@@ -180,7 +183,7 @@ describe("quit flushes the write-behind buffer", () => {
     fs.unlinkSync(post.filePath);
 
     powerHandlers.get("shutdown")!();
-    quit();
+    await quit();
 
     expect(shell.dialogs).toEqual([]);
     expect(shell.exits).toEqual([0]);

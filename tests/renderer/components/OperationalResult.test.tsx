@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OperationalResult } from "@renderer/components/OperationalResult";
 
 describe("OperationalResult", () => {
-  it("makes an error persistent, structural, and assertively announced", () => {
+  it("announces an error without redundant visible or spoken severity", () => {
     const onDismiss = vi.fn();
     const { getByRole, container } = render(
       <OperationalResult
@@ -18,9 +18,9 @@ describe("OperationalResult", () => {
 
     const result = getByRole("alert");
     expect(result.getAttribute("aria-atomic")).toBe("true");
-    expect(result.textContent).toContain("Error: Save failed");
-    expect(container.querySelector('[data-icon="error"]')).toBeTruthy();
-    fireEvent.click(getByRole("button", { name: "Dismiss error" }));
+    expect(result.textContent).toBe("Save failed");
+    expect(container.querySelector('[data-icon="error"]')).toBeNull();
+    fireEvent.click(getByRole("button", { name: "Close result" }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
@@ -31,7 +31,7 @@ describe("OperationalResult", () => {
       </OperationalResult>,
     );
 
-    expect(getByRole("status").textContent).toContain("Warning: Some files need attention");
-    expect(container.querySelector('[data-icon="warning"]')).toBeTruthy();
+    expect(getByRole("status").textContent).toBe("Some files need attention");
+    expect(container.querySelector('[data-icon="warning"]')).toBeNull();
   });
 });

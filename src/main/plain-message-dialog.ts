@@ -1,0 +1,91 @@
+import { BrowserWindow } from "electron";
+
+export interface PlainMessageDialogOptions {
+  title: string;
+  message: string;
+  detail?: string;
+  buttons?: string[];
+  defaultId?: number;
+  cancelId?: number;
+  destructiveId?: number;
+}
+
+const CHOICE_ORIGIN = "https://bigmouth-dialog.invalid/choice/";
+
+/** App-authored message shell: no framework severity/application icon. */
+export async function showPlainMessageDialog(options: PlainMessageDialogOptions): Promise<number> {
+  const buttons = options.buttons?.length ? options.buttons : ["OK"];
+  const defaultId = options.defaultId ?? 0;
+  const cancelId = options.cancelId ?? defaultId;
+  const parent = BrowserWindow.getFocusedWindow() ?? undefined;
+  const win = new BrowserWindow({
+    parent,
+    modal: Boolean(parent),
+    show: false,
+    width: 520,
+    height: 260,
+    minWidth: 420,
+    minHeight: 220,
+    maxWidth: 680,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    title: options.title,
+    backgroundColor: "#18181b",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+
+  return await new Promise<number>((resolve) => {
+    let settled = false;
+    const settle = (choice: number): void => {
+      if (settled) return;
+      settled = true;
+      resolve(choice);
+      if (!win.isDestroyed()) win.close();
+    };
+    win.on("closed", () => settle(cancelId));
+    win.webContents.on("will-navigate", (event, url) => {
+      if (!url.startsWith(CHOICE_ORIGIN)) return;
+      event.preventDefault();
+      const choice = Number(url.slice(CHOICE_ORIGIN.length));
+      settle(Number.isInteger(choice) && choice >= 0 && choice < buttons.length ? choice : cancelId);
+    });
+    win.webContents.on("before-input-event", (event, input) => {
+      if (input.key !== "Escape") return;
+      event.preventDefault();
+      settle(cancelId);
+    });
+    win.webContents.once("dom-ready", () => {
+      void win.webContents.executeJavaScript("document.documentElement.scrollHeight", true)
+        .then((height: number) => {
+          if (win.isDestroyed()) return;
+          const displayHeight = parent?.getBounds().height ?? 900;
+          win.setContentSize(520, Math.min(Math.max(Math.ceil(height), 220), Math.floor(displayHeight * 0.85)));
+          win.show();
+          return win.webContents.executeJavaScript(`document.getElementById('choice-${defaultId}')?.focus()`, true);
+        });
+    });
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderHtml(options, buttons))}`);
+  });
+}
+
+function renderHtml(options: PlainMessageDialogOptions, buttons: string[]): string {
+  const actions = buttons.map((label, index) => {
+    const kind = index === options.destructiveId ? " destructive" : index === (options.defaultId ?? 0) ? " primary" : "";
+    return `<button id="choice-${index}" class="button${kind}" type="button" onclick="location.href='${CHOICE_ORIGIN}${index}'">${escapeHtml(label)}</button>`;
+  }).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    :root{color-scheme:dark;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px;display:flex;flex-direction:column;gap:12px}
+    h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#d4d4d8}
+    .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:auto;padding-top:12px}
+    .button{color:#f4f4f5;border:1px solid #52525b;border-radius:6px;padding:7px 14px;background:#27272a;font:inherit}
+    .button:hover,.button:focus{background:#3f3f46;outline:2px solid #a1a1aa;outline-offset:2px}.primary{background:#2563eb;border-color:#3b82f6}.destructive{background:#991b1b;border-color:#dc2626}
+  </style></head><body><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}<div class="actions">${actions}</div></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+}

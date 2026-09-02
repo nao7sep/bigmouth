@@ -274,7 +274,8 @@ describe("MetadataTab autosave", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
     });
-    expect(container.querySelector(".metadata-error")?.textContent).toContain("save died");
+    expect(container.querySelector(".metadata-error")?.textContent)
+      .toContain("Metadata could not be saved. Your edit is still shown and will be retried before leaving the post.");
   });
 });
 
@@ -325,7 +326,8 @@ describe("MetadataTab single-field generation", () => {
     await act(async () => {
       fireEvent.click(titleGenerate(container));
     });
-    expect(container.querySelector(".metadata-error")?.textContent).toContain("gen failed");
+    expect(container.querySelector(".metadata-error")?.textContent)
+      .toContain("Metadata could not be generated. Existing metadata is unchanged; try again.");
     expect(mockUpdatePost).not.toHaveBeenCalled();
   });
 
@@ -379,7 +381,8 @@ describe("MetadataTab Generate All", () => {
     await act(async () => {
       fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
     });
-    expect(container.querySelector(".metadata-error")?.textContent).toContain("batch save died");
+    expect(container.querySelector(".metadata-error")?.textContent)
+      .toContain("Generated metadata could not be saved. The generated values are still shown; try again before leaving the post.");
   });
 
   it("surfaces a failure when the whole batch generation rejects", async () => {
@@ -388,7 +391,8 @@ describe("MetadataTab Generate All", () => {
     await act(async () => {
       fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
     });
-    expect(container.querySelector(".metadata-error")?.textContent).toContain("provider down");
+    expect(container.querySelector(".metadata-error")?.textContent)
+      .toContain("Metadata could not be generated. Existing metadata is unchanged; try again.");
   });
 });
 
@@ -469,7 +473,7 @@ describe("MetadataTab copy and error dismiss", () => {
 
     const result = titleField.querySelector('[role="alert"]');
     expect(result?.textContent).toContain("Could not copy to the clipboard");
-    expect(result?.querySelector('[data-icon="error"]')).toBeTruthy();
+    expect(result?.querySelector('[data-icon="error"]')).toBeNull();
   });
 
   it("dismisses the generation error banner", async () => {

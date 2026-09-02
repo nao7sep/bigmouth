@@ -8,6 +8,7 @@ import {
   type ImagingRelation,
   type ImagingStyle,
 } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
@@ -113,7 +114,12 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     } catch (err) {
       if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
-      setError(err instanceof Error ? err.message : "Imaging failed");
+      setError(presentFailure(
+        "Image prompts could not be generated. Existing prompts are unchanged; try again.",
+        "renderer: imaging generation failed",
+        err,
+        { postId },
+      ));
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;

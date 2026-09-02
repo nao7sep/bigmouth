@@ -157,7 +157,9 @@ describe("usePostPicker", () => {
 
     const { result } = renderHook(() => usePostPicker(50));
 
-    await waitFor(() => expect(result.current.error).toBe("network down"));
+    await waitFor(() => expect(result.current.error).toBe(
+      "Posts could not be loaded. Close and reopen this picker to try again.",
+    ));
     expect(result.current.posts).toHaveLength(0);
   });
 
@@ -172,7 +174,9 @@ describe("usePostPicker", () => {
     mockListPosts.mockRejectedValueOnce(new Error("load more failed"));
     act(() => result.current.loadMore());
 
-    await waitFor(() => expect(result.current.error).toBe("load more failed"));
+    await waitFor(() => expect(result.current.error).toBe(
+      "More posts could not be loaded. The posts already shown are unchanged; try again.",
+    ));
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["p1"]);
   });
 });

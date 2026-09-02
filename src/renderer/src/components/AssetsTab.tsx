@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 import { listAssets, uploadAsset, deleteAsset, assetUrl, reportProblem } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import {
   collidingAssetFilenames,
   isImageAssetFilename,
@@ -97,7 +98,12 @@ export function AssetsTab({
       setAssets(list);
       return null;
     } catch (err) {
-      return err instanceof Error ? err.message : "Failed to load assets";
+      return presentFailure(
+        "Assets could not be loaded. Reopen this post to try again.",
+        "renderer: asset list failed",
+        err,
+        { postId },
+      );
     }
   }, [postId, workspaceId]);
 
@@ -126,11 +132,13 @@ export function AssetsTab({
       try {
         await uploadAsset(postId, file, workspaceId);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Add failed";
         if (err instanceof AssetUploadAdmissionError) {
-          admissionFailures.push({ file, message });
+          admissionFailures.push({ file, message: err.message });
         } else {
-          operationalFailures.push({ file, message });
+          operationalFailures.push({
+            file,
+            message: "The file could not be added. Check that it is still available and try again.",
+          });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });
         }
       }
@@ -252,7 +260,7 @@ export function AssetsTab({
       reportProblem("Asset upload transaction failed.", err, { postId });
       setUploadNotice({
         severity: "error",
-        message: err instanceof Error ? err.message : "Assets could not be added.",
+        message: "Assets could not be added. The current asset list is unchanged; try again.",
         issueKeys: captured.map(assetIssueKey),
       });
     } finally {
@@ -311,9 +319,10 @@ export function AssetsTab({
         return next;
       });
     } catch (err) {
+      reportProblem("Asset deletion failed.", err, { postId, filename });
       setUploadNotice({
         severity: "error",
-        message: err instanceof Error ? err.message : "Delete failed",
+        message: `${filename} could not be deleted. It remains attached to this post; try again.`,
         issueKeys: [`delete:${filename}`],
       });
     }

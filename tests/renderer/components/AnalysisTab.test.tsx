@@ -57,7 +57,7 @@ describe("AnalysisTab prompt loading", () => {
     mockListPrompts.mockRejectedValue(new Error("disk gone"));
     const { container, getByText } = await renderTab();
     expect(container.querySelector(".panel-error")).toBeTruthy();
-    expect(getByText(/disk gone/)).toBeTruthy();
+    expect(getByText(/Analysis prompts could not be loaded\. Reopen this post to try again\./)).toBeTruthy();
   });
 
   it("renders the toolbar with an option per prompt and selects the first", async () => {
@@ -148,7 +148,7 @@ describe("AnalysisTab run", () => {
       fireEvent.click(container.querySelector(".action-button") as HTMLButtonElement);
     });
     expect(container.querySelector(".panel-error")).toBeTruthy();
-    expect(getByText("model exploded")).toBeTruthy();
+    expect(getByText("The analysis could not be completed. No result was saved; try again.")).toBeTruthy();
   });
 
   it("disables controls while a run is in flight", async () => {

@@ -16,6 +16,7 @@ import {
   revealCurrentLogFile,
   onPostContentSaved,
 } from "./api";
+import { presentFailure } from "./util/presentFailure";
 import { LeftPane } from "./components/LeftPane";
 import { OperationalResult } from "./components/OperationalResult";
 import { CenterPane } from "./components/CenterPane";
@@ -257,7 +258,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // would otherwise leave the New Post dialog silently empty.
       Promise.all([loadPosts(), loadConfig()]).catch((err) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load this workspace.");
+        setLoadError(presentFailure(
+          "This workspace could not be loaded. Reopen it to try again.",
+          "renderer: workspace load failed",
+          err,
+        ));
       });
       return () => {
         cancelled = true;
@@ -298,7 +303,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             setCurrentPost(await getPost(openId));
           }
         } catch (err) {
-          setLoadError(err instanceof Error ? err.message : "Failed to reload settings.");
+          setLoadError(presentFailure(
+            "Settings changed, but this workspace could not be refreshed. Reopen the workspace to use the saved settings.",
+            "renderer: workspace settings refresh failed",
+            err,
+          ));
         }
       })();
 
@@ -455,7 +464,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // Not in any loaded section (rare): clear and reload to resync.
       void selectPost(null, { skipFlush: true });
       loadPosts().catch((err) => {
-        setLoadError(err instanceof Error ? err.message : "Failed to refresh posts.");
+        setLoadError(presentFailure(
+          "The post list could not be refreshed. Reopen the workspace to try again.",
+          "renderer: post list refresh failed",
+          err,
+        ));
       });
     }, [loadPosts, selectPost]);
 
@@ -557,14 +570,22 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const handleLoadMorePublished = useCallback(() => {
       setLoadError(null);
       loadPosts({ publishedOffset, append: "published" }).catch((err) => {
-        setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
+        setLoadError(presentFailure(
+          "More published posts could not be loaded. The posts already shown are unchanged; try again.",
+          "renderer: published post pagination failed",
+          err,
+        ));
       });
     }, [loadPosts, publishedOffset]);
 
     const handleLoadMoreExpired = useCallback(() => {
       setLoadError(null);
       loadPosts({ expiredOffset, append: "expired" }).catch((err) => {
-        setLoadError(err instanceof Error ? err.message : "Failed to load more posts.");
+        setLoadError(presentFailure(
+          "More expired posts could not be loaded. The posts already shown are unchanged; try again.",
+          "renderer: expired post pagination failed",
+          err,
+        ));
       });
     }, [loadPosts, expiredOffset]);
 
@@ -573,7 +594,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         setLoadError(null);
         await revealCurrentLogFile();
       } catch (err) {
-        setLoadError(err instanceof Error ? err.message : "Failed to reveal current log file.");
+        setLoadError(presentFailure(
+          "The current log could not be revealed. Open the logs folder from About and try again.",
+          "renderer: reveal current log failed",
+          err,
+        ));
       }
     }, []);
 

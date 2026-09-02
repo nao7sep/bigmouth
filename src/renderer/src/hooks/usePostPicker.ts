@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listPosts } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import type { PostSummary } from "@shared/types";
 
 export interface PostPickerState {
@@ -39,7 +40,11 @@ export function usePostPicker(
         setExpOffset(data.expired.length);
         setExpTotal(data.expiredTotal);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load posts."));
+      .catch((err) => setError(presentFailure(
+        "Posts could not be loaded. Close and reopen this picker to try again.",
+        "renderer: post picker load failed",
+        err,
+      )));
   }, [batchSize, excludeId]);
 
   const loadMore = () => {
@@ -68,7 +73,11 @@ export function usePostPicker(
         setPubOffset((o) => Math.max(o, requestPubOffset + data.published.length));
         setExpOffset((o) => Math.max(o, requestExpOffset + data.expired.length));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load more posts."))
+      .catch((err) => setError(presentFailure(
+        "More posts could not be loaded. The posts already shown are unchanged; try again.",
+        "renderer: post picker pagination failed",
+        err,
+      )))
       .finally(() => {
         loadingMoreRef.current = false;
         setLoadingMore(false);

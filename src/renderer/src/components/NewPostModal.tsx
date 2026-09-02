@@ -5,6 +5,7 @@ import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import type { Target } from "@shared/types";
 import { OperationalResult } from "./OperationalResult";
+import { presentFailure } from "../util/presentFailure";
 
 interface NewPostModalProps {
   targets: Target[];
@@ -95,7 +96,11 @@ export function NewPostModal({
     try {
       await onCreate(selectedTarget, selectedLanguage, sourceId || undefined);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create post.");
+      setCreateError(presentFailure(
+        "The post could not be created. Your selections are still shown; try again.",
+        "renderer: post creation failed",
+        err,
+      ));
     } finally {
       setCreating(false);
     }

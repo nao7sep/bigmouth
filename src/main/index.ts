@@ -89,16 +89,15 @@ if (!ownsInstance) {
     existing.focus();
   });
 
-  app.whenReady().then(bootstrap).catch((err: unknown) => {
+  app.whenReady().then(bootstrap).catch(async (err: unknown) => {
     // Logging itself may be the failing startup step, so stderr remains the floor.
-    const message = err instanceof Error ? err.message : String(err);
     console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
     try {
       logError("bootstrap failed", { error: serializeError(err) });
     } catch {
       // The logger itself may be what failed; stderr above already carried it.
     }
-    showStartupFailure(message);
+    await showStartupFailure();
     app.exit(1);
   });
 
@@ -121,17 +120,19 @@ if (!ownsInstance) {
     event.preventDefault();
 
     const failures = flushAllPendingContent();
-    if (failures.length > 0 && !systemShutdown) {
-      logError("pending content flush failed at quit", { failures });
-      if (confirmQuitWithUnsavedChanges() === "cancel") {
-        shuttingDown = false;
-        return;
+    void (async () => {
+      if (failures.length > 0 && !systemShutdown) {
+        logError("pending content flush failed at quit", { failures });
+        if (await confirmQuitWithUnsavedChanges() === "cancel") {
+          shuttingDown = false;
+          return;
+        }
       }
-    }
 
-    info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
-    closeLogger();
-    app.exit(0);
+      info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
+      closeLogger();
+      app.exit(0);
+    })();
   });
 
   // During OS shutdown or logout the app must not block: flush what it can and go.

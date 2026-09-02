@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Post, PostFrontMatter, PostMutationResult } from "@shared/types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue } from "../util/metadataFields";
 import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
@@ -135,7 +136,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onPostUpdatedRef.current(updated);
           return true;
         } catch (err) {
-          showGenError(err instanceof Error ? err.message : `Failed to save ${key}`);
+          showGenError(presentFailure(
+            "Metadata could not be saved. Your edit is still shown and will be retried before leaving the post.",
+            "renderer: metadata field save failed",
+            err,
+            { postId, field: key },
+          ));
           return false;
         }
       },
@@ -206,7 +212,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             await persistField(key, value);
             return { key, ok: true as const };
           } catch (err) {
-            const message = err instanceof Error ? err.message : "Generation failed";
+            const message = presentFailure(
+              "Metadata could not be generated. Existing metadata is unchanged; try again.",
+              "renderer: metadata generation failed",
+              err,
+              { postId, field: key },
+            );
             showGenError(message);
             return { key, ok: false as const, error: message };
           } finally {
@@ -290,7 +301,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
               for (const key of savedKeys) savedRef.current[key] = generatedFields[key];
               onPostUpdatedRef.current(updated);
             } catch (err) {
-              showGenError(err instanceof Error ? err.message : "Failed to save generated metadata");
+              showGenError(presentFailure(
+                "Generated metadata could not be saved. The generated values are still shown; try again before leaving the post.",
+                "renderer: generated metadata save failed",
+                err,
+                { postId },
+              ));
             }
           }
 
@@ -298,7 +314,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             showGenError(`Failed to generate: ${failed.join(", ")}`);
           }
         } catch (err) {
-          showGenError(err instanceof Error ? err.message : "Batch generation failed");
+          showGenError(presentFailure(
+            "Metadata could not be generated. Existing metadata is unchanged; try again.",
+            "renderer: metadata batch generation failed",
+            err,
+            { postId },
+          ));
         } finally {
           setGeneratingAll(false);
           generationLockRef.current = false;

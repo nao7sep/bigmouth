@@ -37,6 +37,7 @@ import {
   rebuildPostIndex,
   reportProblem,
 } from "../api";
+import { presentFailure } from "../util/presentFailure";
 import {
   GENERATION_PROMPT_KEYS,
   GENERATION_PROMPT_LABELS,
@@ -143,7 +144,11 @@ export function SettingsModal({
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load settings.");
+        setLoadError(presentFailure(
+          "Settings could not be loaded. Close and reopen Settings to try again.",
+          "renderer: settings load failed",
+          err,
+        ));
       });
     return () => {
       cancelled = true;
@@ -317,7 +322,11 @@ export function SettingsModal({
       onSettingsChanged();
       onClose();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save settings");
+      setSaveError(presentFailure(
+        "Settings could not be saved. Your changes are still shown; try again.",
+        "renderer: settings save failed",
+        err,
+      ));
     } finally {
       setSaving(false);
     }
@@ -726,7 +735,11 @@ function RebuildIndexSection() {
       }
       setMessage(parts.join(" "));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Index rebuild failed.");
+      setError(presentFailure(
+        "The post index could not be rebuilt. Existing posts were not changed; try again or check the log.",
+        "renderer: post index rebuild failed",
+        err,
+      ));
     } finally {
       setRunning(false);
     }

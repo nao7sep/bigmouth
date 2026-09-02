@@ -99,7 +99,7 @@ describe("SourcePickerModal — render", () => {
   it("surfaces a load failure in the list", async () => {
     mockListPosts.mockRejectedValue(new Error("index unreadable"));
     const { getByText } = await renderModal();
-    expect(getByText("index unreadable")).toBeTruthy();
+    expect(getByText("Posts could not be loaded. Close and reopen this picker to try again.")).toBeTruthy();
   });
 });
 

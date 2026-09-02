@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ErrorIcon, WarningIcon, XIcon } from "./Icon";
+import { XIcon } from "./Icon";
 
 interface OperationalResultProps {
   severity: "warning" | "error";
@@ -11,8 +11,8 @@ interface OperationalResultProps {
 
 /**
  * The common semantics for persistent local operational results. Placement and
- * recovery remain owned by the feature surface; this supplies the visible
- * non-colour cue, live-region role, and accessible dismissal shared by them.
+ * recovery remain owned by the feature surface; this supplies live-region
+ * semantics and the quiet, upper-end dismissal shared by them.
  */
 export function OperationalResult({
   severity,
@@ -21,24 +21,19 @@ export function OperationalResult({
   onDismiss,
   dismissClassName,
 }: OperationalResultProps) {
-  const label = severity === "error" ? "Error" : "Warning";
-
   return (
     <div
       className={`${className} operational-result operational-result--${severity}`}
       role={severity === "error" ? "alert" : "status"}
       aria-atomic="true"
     >
-      <span className="operational-result-message">
-        {severity === "error" ? <ErrorIcon /> : <WarningIcon />}
-        <strong>{label}:</strong> {children}
-      </span>
+      <div className="operational-result-message">{children}</div>
       {onDismiss && (
         <button
           type="button"
-          className={dismissClassName}
+          className={`operational-result-dismiss${dismissClassName ? ` ${dismissClassName}` : ""}`}
           onClick={onDismiss}
-          aria-label={`Dismiss ${severity}`}
+          aria-label="Close result"
         >
           <XIcon />
         </button>

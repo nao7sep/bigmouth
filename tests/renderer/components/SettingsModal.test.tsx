@@ -168,8 +168,8 @@ describe("SettingsModal — render and tab switching", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(getByText("disk gone")).toBeTruthy();
-    expect(getByRole("alert").textContent).toContain("Error: disk gone");
+    expect(getByText("Settings could not be loaded. Close and reopen Settings to try again.")).toBeTruthy();
+    expect(getByRole("alert").textContent).not.toContain("Error:");
     // No tablist is rendered while the load failed.
     expect(queryByRole("tablist")).toBeNull();
   });
@@ -414,8 +414,8 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
       await Promise.resolve();
     });
 
-    expect(getByText("write failed")).toBeTruthy();
-    expect(getByRole("alert").textContent).toContain("Error: write failed");
+    expect(getByText("Settings could not be saved. Your changes are still shown; try again.")).toBeTruthy();
+    expect(getByRole("alert").textContent).not.toContain("Error:");
     expect(onClose).not.toHaveBeenCalled();
   });
 });
@@ -627,7 +627,7 @@ describe("SettingsModal — RebuildIndexSection", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(getByText("index locked")).toBeTruthy();
+    expect(getByText("The post index could not be rebuilt. Existing posts were not changed; try again or check the log.")).toBeTruthy();
   });
 });
 

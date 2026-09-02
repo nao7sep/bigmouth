@@ -94,7 +94,7 @@ describe("ExportModal — copy", () => {
       fireEvent.click(getByText("Copy"));
     });
     expect(getByRole("alert").textContent).toContain(
-      "Error: Could not copy to the clipboard. Try again.",
+      "Could not copy to the clipboard. Try again.",
     );
 
     writeText.mockResolvedValueOnce(undefined);

@@ -197,7 +197,8 @@ describe("CenterPane loading", () => {
         <CenterPane {...baseProps()} />
       </ConfirmProvider>
     );
-    await waitFor(() => expect(container.querySelector(".center-loading")?.textContent).toBe("disk gone"));
+    await waitFor(() => expect(container.querySelector(".center-loading")?.textContent)
+      .toBe("This post could not be loaded. Select it again to retry."));
     expect(container.querySelector(".toolbar-label")?.textContent).toBe("Load failed");
   });
 
@@ -294,7 +295,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
     });
     // Why we cannot save, and that the text is still here — never a promise to
     // retry, which for a missing post would be a lie.
-    expect(error.textContent).toContain("This post's file is missing.");
+    expect(error.textContent).toContain("BigMouth cannot save your changes.");
     expect(error.textContent).toContain("copy it somewhere safe");
     expect(error.textContent).not.toContain("will retry");
     // The editor still holds the user's work, which is the only copy left.
@@ -348,7 +349,8 @@ describe("CenterPane status changes", () => {
     mockChangeStatus.mockRejectedValue(new Error("status nope"));
     const { container } = await renderPane();
     fireEvent.click(screen.getByRole("radio", { name: "Ready" }));
-    await waitFor(() => expect(container.querySelector(".toolbar-error")?.textContent).toContain("status nope"));
+    await waitFor(() => expect(container.querySelector(".toolbar-error")?.textContent)
+      .toContain("The post status could not be changed. The previous status is still in effect; try again."));
   });
 });
 

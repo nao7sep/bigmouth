@@ -377,10 +377,10 @@ describe("WorkspaceSession initial load", () => {
   it("surfaces a load failure in the toolbar and dismisses it", async () => {
     mockListPosts.mockRejectedValue(new Error("disk gone"));
     const { getByText, container, queryByText } = await mountLoaded();
-    expect(getByText("disk gone")).toBeTruthy();
+    expect(getByText("This workspace could not be loaded. Reopen it to try again.")).toBeTruthy();
 
     fireEvent.click(container.querySelector(".toolbar-error-dismiss")!);
-    expect(queryByText("disk gone")).toBeNull();
+    expect(queryByText("This workspace could not be loaded. Reopen it to try again.")).toBeNull();
   });
 
   it("cannot apply a workspace font after the session unmounts", async () => {
@@ -734,7 +734,7 @@ describe("WorkspaceSession load more / log", () => {
       fireEvent.click(getByTestId("left-more-exp"));
       await Promise.resolve();
     });
-    expect(getByText("more failed")).toBeTruthy();
+    expect(getByText("More expired posts could not be loaded. The posts already shown are unchanged; try again.")).toBeTruthy();
   });
 
   it("reveals the current log file and surfaces a failure", async () => {
@@ -750,7 +750,7 @@ describe("WorkspaceSession load more / log", () => {
       fireEvent.click(getByTestId("left-log"));
       await Promise.resolve();
     });
-    expect(getByText("no log")).toBeTruthy();
+    expect(getByText("The current log could not be revealed. Open the logs folder from About and try again.")).toBeTruthy();
   });
 });
 

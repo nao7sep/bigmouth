@@ -5,9 +5,7 @@ interface Props {
   children: ReactNode;
 }
 
-interface State {
-  message: string | null;
-}
+interface State { failed: boolean; }
 
 /**
  * Catches a render-time error so the window shows what happened instead of a
@@ -18,10 +16,10 @@ interface State {
  * actionable thing, and its location is where the About dialog already says.
  */
 export class ErrorBoundary extends Component<Props, State> {
-  override state: State = { message: null };
+  override state: State = { failed: false };
 
-  static getDerivedStateFromError(err: unknown): State {
-    return { message: err instanceof Error ? err.message : String(err) };
+  static getDerivedStateFromError(): State {
+    return { failed: true };
   }
 
   override componentDidCatch(err: unknown, info: ErrorInfo): void {
@@ -29,11 +27,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   override render(): ReactNode {
-    if (this.state.message === null) return this.props.children;
+    if (!this.state.failed) return this.props.children;
     return (
       <div className="fatal-error" role="alert">
         <h1>BigMouth hit an error it could not recover from</h1>
-        <p>{this.state.message}</p>
         <p>
           Your posts are on disk and unaffected. Restart the app; the session log has the
           details.
