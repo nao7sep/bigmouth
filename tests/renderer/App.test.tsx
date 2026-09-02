@@ -51,8 +51,9 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     activeWorkspaceId: string | null;
     onWorkspaceDeleted: (id: string) => boolean | Promise<boolean>;
     onWorkspaceUpdated: (ws: Workspace) => void;
+    initialLoadError?: string | null;
   }) => (
-    <div data-testid="ws-modal" data-dismissable={String(props.dismissable)}>
+    <div data-testid="ws-modal" data-dismissable={String(props.dismissable)} data-load-error={props.initialLoadError ?? ""}>
       <span data-testid="ws-modal-active">{props.activeWorkspaceId ?? "none"}</span>
       <button
         data-testid="ws-modal-select"
@@ -184,13 +185,17 @@ describe("App bootstrap — stored workspace", () => {
     expect(queryByTestId("session")).toBeNull();
   });
 
-  it("falls back to the picker and clears the remembered id when the load rejects", async () => {
+  it("keeps the remembered id and gives the picker authored recovery copy when loading rejects", async () => {
     mockGetUiState.mockResolvedValue(uiState("ws1"));
-    mockList.mockRejectedValue(new Error("disk gone"));
+    mockList.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_SENTINEL"));
     const { getByTestId } = await renderApp();
 
-    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "" });
-    expect(getByTestId("ws-modal")).toBeTruthy();
+    expect(mockUpdateUiState).not.toHaveBeenCalledWith({ activeWorkspaceId: "" });
+    const modal = getByTestId("ws-modal");
+    expect(modal.getAttribute("data-load-error")).toBe(
+      "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
+    );
+    expect(modal.textContent).not.toContain("BIGMOUTH_SENTINEL");
   });
 });
 

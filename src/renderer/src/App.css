@@ -1840,6 +1840,18 @@ button:disabled,
   flex: 1;
 }
 
+.workspace-edit-stack {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-load-recovery {
+  display: grid;
+  gap: 10px;
+}
+
 .workspace-create {
   padding: 16px 20px 20px;
   border-top: 1px solid var(--bm-border-subtle);

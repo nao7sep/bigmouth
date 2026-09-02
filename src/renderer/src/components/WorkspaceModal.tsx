@@ -20,7 +20,6 @@ import {
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
-  reportProblem,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import type { Workspace } from "@shared/types";
@@ -39,6 +38,8 @@ interface WorkspaceModalProps {
   activeWorkspaceId: string | null;
   onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
+  initialLoadError?: string | null;
+  onLoadRecovered?: () => void;
 }
 
 export function WorkspaceModal({
@@ -48,6 +49,8 @@ export function WorkspaceModal({
   activeWorkspaceId,
   onWorkspaceDeleted,
   onWorkspaceUpdated,
+  initialLoadError = null,
+  onLoadRecovered,
 }: WorkspaceModalProps) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +60,9 @@ export function WorkspaceModal({
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [listError, setListError] = useState<string | null>(initialLoadError);
+  const [renameError, setRenameError] = useState<{ id: string; message: string } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const confirm = useConfirm();
 
   const renameComposing = useComposing();
@@ -114,12 +120,16 @@ export function WorkspaceModal({
     listWorkspaces()
       .then((ws) => {
         setWorkspaces(ws);
+        setListError(null);
+        onLoadRecovered?.();
         setLoading(false);
       })
       .catch((err: unknown) => {
-        // The list simply comes back empty, which reads as "no workspaces yet"
-        // rather than "the registry could not be read".
-        reportProblem("could not list workspaces", err);
+        setListError(presentFailure(
+          "Workspaces could not be loaded. The saved registry is unchanged; try again.",
+          "renderer: workspace registry load failed",
+          err,
+        ));
         setLoading(false);
       });
   };
@@ -149,12 +159,26 @@ export function WorkspaceModal({
 
   const handleRename = async (id: string) => {
     if (!editName.trim()) return;
-    const updated = await updateWorkspace(id, { name: editName.trim() });
-    if (updated && updated.id === activeWorkspaceId) {
-      onWorkspaceUpdated(updated);
+    setRenamingId(id);
+    setRenameError(null);
+    try {
+      const updated = await updateWorkspace(id, { name: editName.trim() });
+      if (updated && updated.id === activeWorkspaceId) onWorkspaceUpdated(updated);
+      setEditingId(null);
+      load();
+    } catch (err) {
+      setRenameError({
+        id,
+        message: presentFailure(
+          "The workspace name could not be saved. The current name is unchanged; try again.",
+          "renderer: workspace rename failed",
+          err,
+          { workspaceId: id },
+        ),
+      });
+    } finally {
+      setRenamingId(null);
     }
-    setEditingId(null);
-    load();
   };
 
   const handleDelete = (ws: Workspace) => {
@@ -251,6 +275,13 @@ export function WorkspaceModal({
       <div className="modal-body">
         {loading ? (
           <p className="modal-empty-message">Loading…</p>
+        ) : listError ? (
+          <div className="workspace-load-recovery">
+            <OperationalResult severity="error" className="modal-result">{listError}</OperationalResult>
+            <div className="dialog-actions">
+              <button className="btn-toolbar" type="button" onClick={load}>Retry</button>
+            </div>
+          </div>
         ) : sorted.length === 0 ? (
           <p className="modal-empty-message">
             No workspaces yet. Open or create one to get started.
@@ -273,13 +304,13 @@ export function WorkspaceModal({
                 >
                   {editing ? (
                     <div
-                      className="workspace-edit-row"
+                      className="workspace-edit-stack"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <input
+                      <div className="workspace-edit-row"><input
                         className="form-input"
                         value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
+                        onChange={(e) => { setRenameError(null); setEditName(e.target.value); }}
                         onCompositionStart={renameComposing.handlers.onCompositionStart}
                         onCompositionEnd={renameComposing.handlers.onCompositionEnd}
                         onKeyDown={(e) => {
@@ -287,21 +318,26 @@ export function WorkspaceModal({
                           e.stopPropagation();
                           if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
                           if (e.key === "Enter") handleRename(ws.id);
-                          if (e.key === "Escape") setEditingId(null);
+                          if (e.key === "Escape") { setRenameError(null); setEditingId(null); }
                         }}
                         autoFocus
+                        disabled={renamingId === ws.id}
                       />
-                      <button className="btn-toolbar" onClick={() => setEditingId(null)}>
+                      <button className="btn-toolbar" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
                         Cancel
                       </button>
                       <button
                         className="btn-primary"
                         style={{ width: "auto", padding: "4px 10px", fontSize: 12 }}
                         onClick={() => handleRename(ws.id)}
-                        disabled={!editName.trim()}
+                        disabled={!editName.trim() || renamingId === ws.id}
                       >
-                        Save
+                        {renamingId === ws.id ? "Saving…" : "Save"}
                       </button>
+                      </div>
+                      {renameError?.id === ws.id && (
+                        <OperationalResult severity="error" className="modal-result workspace-rename-result">{renameError.message}</OperationalResult>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -317,6 +353,7 @@ export function WorkspaceModal({
                             e.stopPropagation();
                             setEditingId(ws.id);
                             setEditName(ws.name);
+                            setRenameError(null);
                           }}
                         >
                           Rename

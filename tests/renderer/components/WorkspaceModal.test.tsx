@@ -28,12 +28,18 @@ const mockOpenOrCreate = vi.mocked(openOrCreateWorkspace);
 const mockUpdateWorkspace = vi.mocked(updateWorkspace);
 const mockDeleteWorkspace = vi.mocked(deleteWorkspace);
 const mockPickDirectory = vi.mocked(pickWorkspaceDirectory);
+const mockWriteRendererLog = vi.fn();
 
 const WORKSPACE: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/data/alpha" };
 
 // jsdom has no layout: the workspace listbox scrolls the active row into view,
 // so stub scrollIntoView so arrowing/loading never throws.
 beforeEach(() => {
+  mockWriteRendererLog.mockReset();
+  Object.defineProperty(window, "bigmouth", {
+    configurable: true,
+    value: { writeRendererLog: mockWriteRendererLog },
+  });
   if (!("scrollIntoView" in HTMLElement.prototype)) {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
@@ -177,14 +183,19 @@ describe("WorkspaceModal — loading and empty states", () => {
     expect(getByText("No workspaces yet. Open or create one to get started.")).toBeTruthy();
   });
 
-  it("leaves loading even when the list load fails (catch path)", async () => {
-    mockListWorkspaces.mockRejectedValue(new Error("disk gone"));
-    const { queryByText } = await renderWith();
+  it("shows authored recovery instead of a false empty state when loading fails", async () => {
+    mockListWorkspaces.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_SENTINEL"));
+    const { queryByText, getByRole } = await renderWith();
     await act(async () => {
       await Promise.resolve();
     });
-    // The empty-state shows once loading settles via the catch branch.
     expect(queryByText("Loading…")).toBeNull();
+    expect(queryByText("No workspaces yet. Open or create one to get started.")).toBeNull();
+    expect(getByRole("alert").textContent).toContain("saved registry is unchanged")
+    expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_SENTINEL")
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace registry load failed",
+    }));
   });
 });
 
@@ -294,6 +305,23 @@ describe("WorkspaceModal — Browse", () => {
 });
 
 describe("WorkspaceModal — inline rename save", () => {
+  it("keeps the editor open with authored copy and logs hostile rename diagnostics", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockUpdateWorkspace.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_RENAME_SENTINEL"));
+    const { getByText, getByDisplayValue, getByRole } = await renderWith();
+
+    fireEvent.click(getByText("Rename"));
+    fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
+    await act(async () => { fireEvent.click(getByText("Save")); await Promise.resolve(); });
+
+    expect(getByDisplayValue("Renamed")).toBeTruthy();
+    expect(getByRole("alert").textContent).toContain("current name is unchanged")
+    expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_RENAME_SENTINEL")
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace rename failed",
+    }));
+  });
+
   it("renames via the Save button and notifies when the active workspace changed", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const renamed: Workspace = { ...WORKSPACE, name: "Renamed" };

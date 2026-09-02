@@ -18,6 +18,7 @@ import {
   clampPaneWidth,
 } from "./paneConstants";
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
+import { presentFailure } from "./util/presentFailure";
 import "./App.css";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
@@ -44,6 +45,7 @@ export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
+  const [workspaceRegistryError, setWorkspaceRegistryError] = useState<string | null>(null);
 
   // Intent widths (px): what the user dragged each side pane to. Seeded with the
   // shared defaults and replaced by the persisted intents once state.json is
@@ -143,6 +145,7 @@ export function App() {
       try {
         const workspaces = await listWorkspaces();
         if (cancelled) return;
+        setWorkspaceRegistryError(null);
         const ws = workspaces.find((workspace) => workspace.id === storedId);
         if (ws) {
           setActiveWorkspace(ws.id);
@@ -153,11 +156,14 @@ export function App() {
           setWorkspaceModalOpen(true);
         }
       } catch (err) {
-        // The user sees the picker with no explanation of why their workspace
-        // did not reopen; the log is the only place that can say.
-        reportProblem("could not list workspaces at startup", err, { storedId });
-        await updateUiState({ activeWorkspaceId: "" });
+        const message = presentFailure(
+          "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
+          "renderer: workspace registry startup load failed",
+          err,
+          { storedId },
+        );
         if (cancelled) return;
+        setWorkspaceRegistryError(message);
         setWorkspaceModalOpen(true);
       } finally {
         if (!cancelled) setWsChecked(true);
@@ -174,6 +180,7 @@ export function App() {
 
     setActiveWorkspace(ws.id);
     setActiveWorkspaceState(ws);
+    setWorkspaceRegistryError(null);
     void updateUiState({ activeWorkspaceId: ws.id });
     setWorkspaceModalOpen(false);
   }, []);
@@ -265,6 +272,8 @@ export function App() {
       activeWorkspaceId={activeWorkspace?.id ?? null}
       onWorkspaceDeleted={handleActiveWorkspaceDeleted}
       onWorkspaceUpdated={handleActiveWorkspaceUpdated}
+      initialLoadError={workspaceRegistryError}
+      onLoadRecovered={() => setWorkspaceRegistryError(null)}
     />
   );
 
