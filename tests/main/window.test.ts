@@ -25,9 +25,11 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import {
   boundWindowMinimum,
   buildWindowOptions,
+  configureWindowActivity,
   isAllowedExternalUrl,
   zoomFactorForLevel,
 } from "@main/window.js";
+import { CHANNELS } from "@shared/ipc";
 
 describe("isAllowedExternalUrl", () => {
   it("allows the three schemes a link in a post can legitimately use", () => {
@@ -101,5 +103,42 @@ describe("buildWindowOptions", () => {
   it("opens hidden, so the first paint is never a blank white window", () => {
     expect(buildWindowOptions().show).toBe(false);
     expect(buildWindowOptions().backgroundColor).toBeTruthy();
+  });
+});
+
+describe("native window activity transport", () => {
+  it("publishes BrowserWindow focus, blur, and the post-load initial state", () => {
+    const windowListeners = new Map<string, () => void>();
+    const contentListeners = new Map<string, () => void>();
+    const send = vi.fn();
+    let focused = false;
+    let destroyed = false;
+    const window = {
+      on: vi.fn((event: string, listener: () => void) => {
+        windowListeners.set(event, listener);
+        return window;
+      }),
+      isFocused: () => focused,
+      webContents: {
+        on: vi.fn((event: string, listener: () => void) => {
+          contentListeners.set(event, listener);
+        }),
+        isDestroyed: () => destroyed,
+        send,
+      },
+    };
+
+    configureWindowActivity(window as unknown as Electron.BrowserWindow);
+    contentListeners.get("did-finish-load")?.();
+    expect(send).toHaveBeenLastCalledWith(CHANNELS.windowActivityChanged, false);
+    focused = true;
+    windowListeners.get("focus")?.();
+    expect(send).toHaveBeenLastCalledWith(CHANNELS.windowActivityChanged, true);
+    windowListeners.get("blur")?.();
+    expect(send).toHaveBeenLastCalledWith(CHANNELS.windowActivityChanged, false);
+
+    destroyed = true;
+    windowListeners.get("focus")?.();
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

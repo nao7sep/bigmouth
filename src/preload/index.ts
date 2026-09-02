@@ -46,6 +46,13 @@ const api = {
   // The running OS, read synchronously here in the Node-capable preload so the
   // renderer can resolve the platform without an IPC round-trip.
   platform: process.platform,
+  onWindowActivityChanged: (listener: (active: boolean) => void) => {
+    const wrapped = (_event: unknown, active: boolean): void => {
+      if (typeof active === "boolean") listener(active);
+    };
+    ipcRenderer.on(CHANNELS.windowActivityChanged, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.windowActivityChanged, wrapped);
+  },
 
   // --- Workspace management ---
   listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,

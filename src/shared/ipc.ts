@@ -55,6 +55,7 @@ export const CHANNELS = {
   // to log must never become a second failure the caller has to handle.
   writeRendererLog: "log:write",
   pickDirectory: "dialog:pickDirectory",
+  windowActivityChanged: "window:activityChanged",
 
   // UI state (state.json)
   getUiState: "state:get",
@@ -253,6 +254,8 @@ export type Platform =
 export interface BigMouthApi {
   /** The running OS, exposed synchronously from the preload (process.platform). */
   platform: Platform;
+  /** Native BrowserWindow activation, which is distinct from DOM document focus on macOS. */
+  onWindowActivityChanged(listener: (active: boolean) => void): () => void;
 
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;

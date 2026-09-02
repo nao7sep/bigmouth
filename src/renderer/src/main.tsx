@@ -5,16 +5,12 @@ import { ConfirmProvider } from "./components/ConfirmHost";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { reportProblem } from "./api";
 import { denyUnhandledExternalDrop } from "./util/externalDropBoundary";
+import { installWindowActivityState } from "./windowActivity";
 
 window.addEventListener("dragover", denyUnhandledExternalDrop);
 window.addEventListener("drop", denyUnhandledExternalDrop);
 
-const syncWindowActivity = (): void => {
-  document.documentElement.toggleAttribute("data-window-inactive", !document.hasFocus());
-};
-window.addEventListener("focus", syncWindowActivity);
-window.addEventListener("blur", syncWindowActivity);
-syncWindowActivity();
+installWindowActivityState(window.bigmouth.onWindowActivityChanged, document.documentElement);
 
 // Last-resort hooks: anything that escapes a component or a promise chain lands
 // in the session log instead of only the devtools console, which nobody has open

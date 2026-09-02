@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { windowMinimumForZoom } from "@shared/layout";
+import { CHANNELS } from "@shared/ipc";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
 import { error as logError, serializeError } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
@@ -20,6 +21,25 @@ function openExternalIfAllowed(rawUrl: string): void {
       logError("unowned external navigation failed", { url: rawUrl, error: serializeError(error) });
     });
   }
+}
+
+/**
+ * Projects the native window's activation into the sandboxed renderer.
+ *
+ * Chromium's `document.hasFocus()` remains true when another macOS application
+ * becomes active, so DOM focus cannot own inactive-window styling. BrowserWindow
+ * focus/blur is the platform activation boundary. `did-finish-load` seeds every
+ * fresh renderer (including a development reload) with the current native state.
+ */
+export function configureWindowActivity(window: BrowserWindow): void {
+  const send = (active: boolean): void => {
+    if (!window.webContents.isDestroyed()) {
+      window.webContents.send(CHANNELS.windowActivityChanged, active);
+    }
+  };
+  window.on("focus", () => send(true));
+  window.on("blur", () => send(false));
+  window.webContents.on("did-finish-load", () => send(window.isFocused()));
 }
 
 // The BrowserWindow construction options. Exported as a pure helper so the
@@ -121,6 +141,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow(
     buildWindowOptions(zoomFactor, screen.getPrimaryDisplay().workAreaSize),
   );
+  configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
     configureZoom(window);
