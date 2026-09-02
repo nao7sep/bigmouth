@@ -1894,6 +1894,10 @@ button:disabled,
   color: var(--bm-text);
 }
 
+.workspace-create > .modal-result + .dialog-actions {
+  margin-top: 12px;
+}
+
 /* The error boundary's last-resort screen. Deliberately plain: it renders when
    the app could not, so it leans on nothing the failure might have taken with
    it. */

@@ -124,6 +124,16 @@ describe("App.css modal close affordance", () => {
   });
 });
 
+describe("App.css workspace result placement", () => {
+  it("separates a create result from the action row without changing the no-result layout", () => {
+    const block = css.match(
+      /\.workspace-create\s*>\s*\.modal-result\s*\+\s*\.dialog-actions\s*\{[\s\S]*?\}/,
+    )?.[0] ?? "";
+
+    expect(block).toMatch(/margin-top:\s*12px/);
+  });
+});
+
 // App.css restates the pane minimums as literals, "kept in sync" with
 // @shared/layout by comment only — and the window minimum is derived from those
 // constants, so a CSS literal drifting upward makes the window draggable narrow
