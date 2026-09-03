@@ -128,7 +128,12 @@ beforeEach(() => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-ws-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // vi.resetModules() gives this file a fresh backup-store singleton, distinct
+  // from the one closed by tests/main/setup.ts. Close the active instance before
+  // removing its throwaway BIGMOUTH_HOME (Windows keeps the SQLite file locked).
+  const { closeBackupStore } = await import("@main/core/services/backupStore.js");
+  closeBackupStore();
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
   else process.env.BIGMOUTH_HOME = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
