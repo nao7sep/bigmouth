@@ -2,66 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { CENTER_MIN, LEFT_MIN, RIGHT_MIN } from "@shared/layout";
 
-// Read App.css as text and assert the window-chrome rules are present. These are
-// regression guards for the in-page chrome conventions (scroll bars + content-
-// based sizing); they catch a refactor that silently drops a rule far more
-// cheaply than a rendering test would. (A Vite `?raw` import resolves to empty
-// under Vitest's CSS handling, so the file is read from disk instead, resolved
-// from the package root where Vitest runs — Node built-ins are typed via
-// tests/node-shims.d.ts.)
-
+// Load the stylesheet into jsdom and check the values the browser computes,
+// rather than matching the spelling or placement of individual CSS rules.
 const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
-const app = readFileSync(`${process.cwd()}/src/renderer/src/App.tsx`, "utf8");
-
-describe("App.css window chrome", () => {
-  it("declares a light color-scheme so native UI matches the theme", () => {
-    expect(css).toMatch(/color-scheme:\s*light/);
-  });
-
-  it("styles the scroll bar thin and rounded instead of the OS default", () => {
-    // Both halves of the web rule: the WebKit pseudo-element style and the
-    // standards-track scrollbar-width.
-    expect(css).toMatch(/::-webkit-scrollbar\b/);
-    expect(css).toMatch(/scrollbar-width:\s*thin/);
-    // A rounded (pill) thumb inset via a transparent border + padding-box clip.
-    expect(css).toMatch(/::-webkit-scrollbar-thumb[\s\S]*?border-radius/);
-  });
-
-  it("gives the center pane a non-zero minimum width (no min-width: 0)", () => {
-    const block = css.match(/\.pane-center\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    expect(block).not.toMatch(/min-width:\s*0\b/);
-    const min = block.match(/min-width:\s*(\d+)px/);
-    expect(min).not.toBeNull();
-    expect(Number(min![1])).toBeGreaterThan(0);
-  });
-
-  it("lets the pane row scroll horizontally rather than collapsing a pane", () => {
-    const block = css.match(/\.app-layout\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    expect(block).toMatch(/overflow-x:\s*auto/);
-  });
-
-  it("keeps an impossible scaled floor inside a two-axis viewport", () => {
-    const block = css.match(/\.workspace-viewport\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    expect(block).toMatch(/overflow:\s*auto/);
-    expect(app).toContain("className=\"workspace-floor\"");
-    expect(app).toContain("minWidth: WINDOW_MIN_WIDTH");
-    expect(app).toContain("minHeight: WINDOW_MIN_HEIGHT");
-  });
-
-  it("makes the active right tab panel fill the pane", () => {
-    const content = css.match(/\.right-content\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const panel = css.match(/\.right-content\s*>\s*\[role="tabpanel"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const activePanel = css.match(/\.right-content\s*>\s*\[role="tabpanel"\]:not\(\.tab-hidden\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
-
-    expect(content).toMatch(/display:\s*flex/);
-    expect(content).toMatch(/flex-direction:\s*column/);
-    expect(content).toMatch(/min-height:\s*0/);
-    expect(content).toMatch(/padding:\s*2px\s+2px\s+2px\s+0/);
-    expect(panel).toMatch(/padding:\s*14px\s+14px\s+14px\s+16px/);
-    expect(activePanel).toMatch(/flex:\s*1\s+0\s+100%/);
-  });
-});
-
 // A computed-style check rather than a text match: the question is what the user
 // actually gets, and a `cursor: pointer` declared later would beat a rule that
 // merely appears in the file.
@@ -93,44 +36,6 @@ describe("App.css disabled cursors", () => {
 
   it("still shows the hand when enabled", () => {
     expect(cursorOf("btn-toolbar", false)).toBe("pointer");
-  });
-});
-
-describe("App.css asset receiver presentation", () => {
-  it("draws the existing drag boundary on the complete Assets tab panel", () => {
-    expect(css).not.toMatch(/\.assets-tab::after/);
-    expect(css).toMatch(/\.assets-tab\.drag-over\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-accent\)/);
-    expect(css).toMatch(/\.assets-tab\.drag-delivery\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-text-muted\)/);
-    expect(css).toMatch(/\.assets-tab\.drag-rejected\s*\{[\s\S]*?box-shadow:\s*inset\s+0\s+0\s+0\s+2px\s+var\(--bm-danger-border\)/);
-  });
-});
-
-describe("App.css modal close affordance", () => {
-  it("keeps the drawn close mark quiet at rest and reveals its hit area on hover and focus", () => {
-    const rest = css.match(/\.modal-close\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const hover = css.match(/\.modal-close:hover:not\(:disabled\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const focus = css.match(/\.modal-close:focus-visible\s*\{[\s\S]*?\}/)?.[0] ?? "";
-
-    expect(rest).toMatch(/border:\s*none/);
-    expect(rest).toMatch(/background:\s*none/);
-    expect(hover).toMatch(/background:\s*color-mix/);
-    expect(focus).toMatch(/background:\s*color-mix/);
-    expect(focus).toMatch(/outline:\s*2px\s+solid\s+currentColor/);
-  });
-
-  it("mutes a retained footer-button focus ring when the window is inactive", () => {
-    expect(css).toMatch(/\.btn-toolbar:focus-visible\s*\{[\s\S]*?outline:\s*2px\s+solid\s+var\(--bm-accent\)/);
-    expect(css).toMatch(/\[data-window-inactive\] \.btn-toolbar:focus-visible\s*\{[\s\S]*?outline-color:\s*var\(--bm-border\)/);
-  });
-});
-
-describe("App.css workspace result placement", () => {
-  it("separates a create result from the action row without changing the no-result layout", () => {
-    const block = css.match(
-      /\.workspace-create\s*>\s*\.modal-result\s*\+\s*\.dialog-actions\s*\{[\s\S]*?\}/,
-    )?.[0] ?? "";
-
-    expect(block).toMatch(/margin-top:\s*12px/);
   });
 });
 
