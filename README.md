@@ -44,7 +44,7 @@ Tests live under `tests/`, mirroring `src/` so each test's path names the file i
 
 ## License
 
-MIT © 2026 Yoshinao Inoguchi
+[GNU GPL v3 or later](LICENSE) © 2026 Yoshinao Inoguchi
 
 ## Contact
 

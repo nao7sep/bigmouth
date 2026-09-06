@@ -80,7 +80,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           </OperationalResult>
         ) : null}
         <p style={{ marginTop: 16, fontSize: 12, color: "var(--bm-text-faint)" }}>
-          &copy; 2026 Yoshinao Inoguchi &mdash; MIT License
+          &copy; 2026 Yoshinao Inoguchi &mdash; GNU GPL v3 or later
         </p>
       </div>
       <div className="modal-footer">

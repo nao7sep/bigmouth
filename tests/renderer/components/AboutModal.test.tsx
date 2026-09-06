@@ -43,7 +43,7 @@ describe("AboutModal", () => {
     const labelId = dialog.getAttribute("aria-labelledby");
     expect(document.getElementById(labelId!)?.textContent).toBe("About BigMouth");
     expect(getByText(new RegExp(`Version ${APP_VERSION.replace(/\./g, "\\.")}`))).toBeTruthy();
-    expect(getByText(/MIT License/)).toBeTruthy();
+    expect(getByText(/GNU GPL v3 or later/)).toBeTruthy();
   });
 
   it("routes the GitHub repo and issues page through the rejectable desktop bridge", async () => {
