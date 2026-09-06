@@ -10,6 +10,13 @@ directories:
 files:
   - out/**
   - package.json
+  # Runtime never consumes source maps or TypeScript declarations. Leaving the
+  # SDK copies in app.asar adds thousands of development-only entries and makes
+  # exact artifact review needlessly noisy.
+  - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/*.d.mts"
+  - "!**/*.d.cts"
 
 # Tahoe "Liquid Glass" icon: the liquid-glass-icon tool deploys build/Assets.car (committed in
 # company/assets) here. macOS 26 reads CFBundleIconName below → this catalog; older macOS reads

@@ -33,8 +33,8 @@
     "@anthropic-ai/sdk": "^0.120.0",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language-data": "^6.5.2",
-    "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.9",
+    "@codemirror/state": "^6.7.2",
+    "@codemirror/view": "^6.43.11",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.14",
     "exifr": "^7.1.3",
@@ -47,20 +47,21 @@
     "twitter-text": "^3.1.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^26.3.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@types/twitter-text": "^3.1.10",
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.11",
-    "electron": "^43.4.1",
+    "electron": "^43.6.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.0"
   },
   "allowScripts": {
     "core-js@2.6.12": false,
