@@ -156,8 +156,8 @@ export function configureWindowPlacement(
     flush: () => {
       try {
         cancel();
-        if (captureEnabled && ordinary()) capture();
-        else if (captureEnabled && win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) mode = "maximized";
+        if (!captureEnabled) return;
+        if (win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) mode = "maximized";
         save();
       } catch (error) {
         onError(error);

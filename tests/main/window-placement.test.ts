@@ -94,6 +94,11 @@ describe("window placement capture", () => {
     win.emit("resize");
     await vi.advanceTimersByTimeAsync(500);
     expect(saved).toEqual([]);
+    controller.flush();
+    expect(saved).toEqual([{
+      normalBounds: { x: 10, y: 20, width: 1200, height: 800 },
+      mode: "normal",
+    }]);
   });
 
   it("debounces manual move and resize streams", async () => {
