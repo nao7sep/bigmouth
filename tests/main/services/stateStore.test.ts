@@ -114,4 +114,19 @@ describe("stateStore — self-healing", () => {
     initStateStore();
     expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
   });
+
+  it("normalizes placement geometry and mode independently", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({
+      activeWorkspaceId: "ws-keep",
+      windowPlacements: {
+        main: {
+          normalBounds: { x: 10, y: 20, width: "wide", height: 800 },
+          mode: "maximized",
+        },
+      },
+    }));
+    initStateStore();
+    expect(getUiState().activeWorkspaceId).toBe("ws-keep");
+    expect(getUiState().windowPlacements.main).toEqual({ normalBounds: null, mode: "maximized" });
+  });
 });

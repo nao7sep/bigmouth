@@ -5,8 +5,13 @@ import { fileURLToPath } from "node:url";
 import { windowMinimumForZoom } from "@shared/layout";
 import { CHANNELS } from "@shared/ipc";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
-import { error as logError, serializeError } from "./core/services/logger.js";
+import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
+import {
+  applyRestoredWindowBounds,
+  configureWindowPlacement,
+  resolveWindowRestoration,
+} from "./windowPlacement.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
@@ -138,15 +143,55 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   nativeTheme.themeSource = "light";
 
   const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
-  const window = new BrowserWindow(
-    buildWindowOptions(zoomFactor, screen.getPrimaryDisplay().workAreaSize),
+  const options = buildWindowOptions(zoomFactor, screen.getPrimaryDisplay().workAreaSize);
+  const window = new BrowserWindow(options);
+  let workAreas: Electron.Rectangle[] = [];
+  try {
+    workAreas = screen.getAllDisplays().map((display) => display.workArea);
+  } catch (error) {
+    warn("display work areas unavailable; using opening window bounds", { error: serializeError(error) });
+  }
+  const restoration = resolveWindowRestoration(
+    getUiState().windowPlacements.main,
+    { width: options.minWidth ?? 0, height: options.minHeight ?? 0 },
+    workAreas,
+  );
+  if (restoration.normalBounds) {
+    applyRestoredWindowBounds(window, restoration.normalBounds, (error) => {
+      warn("saved window bounds rejected; using opening bounds", { error: serializeError(error) });
+    });
+  }
+  const placement = configureWindowPlacement(
+    window,
+    { normalBounds: window.getBounds(), mode: restoration.mode },
+    (record) => { updateUiState({ windowPlacements: { main: record } }); },
+    (error) => warn("window placement operation failed", { error: serializeError(error) }),
   );
   configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
     configureZoom(window);
+    if (restoration.mode === "maximized") {
+      try {
+        window.maximize();
+      } catch (error) {
+        placement.setInitialMode("normal");
+        warn("window could not be maximized during restoration", { error: serializeError(error) });
+      }
+    }
     window.show();
+    setTimeout(() => {
+      if (window.isDestroyed()) return;
+      if (restoration.mode === "maximized" && !window.isMaximized()) {
+        placement.setInitialMode("normal");
+        warn("window manager rejected maximized restoration");
+      }
+      placement.start();
+    }, 500);
   });
+  window.on("close", () => placement.flush());
+  window.on("session-end", () => placement.flush());
+  window.once("closed", () => placement.dispose());
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfAllowed(url);

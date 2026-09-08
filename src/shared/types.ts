@@ -24,6 +24,18 @@ export interface Workspace {
 export const DEFAULT_PANE_LEFT_WIDTH = 360;
 export const DEFAULT_PANE_RIGHT_WIDTH = 480;
 
+export type WindowPlacementMode = "normal" | "maximized";
+export interface WindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface WindowPlacementRecord {
+  normalBounds: WindowBounds | null;
+  mode: WindowPlacementMode;
+}
+
 /**
  * Ephemeral UI state persisted to `~/.bigmouth/state.json` — saved by the app on
  * the user's behalf, not authored as configuration. It has its own store, apart
@@ -42,6 +54,7 @@ export interface UiState {
   // menu's zoom roles mutate webContents in memory only, so without persisting it
   // a user who zoomed for readability was back at 100% every launch, silently.
   zoomLevel: number;
+  windowPlacements: { main: WindowPlacementRecord | null };
 }
 
 /** A fresh UI state: default pane widths and no remembered workspace. */
@@ -51,6 +64,7 @@ export function defaultUiState(): UiState {
     paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
     activeWorkspaceId: "",
     zoomLevel: 0,
+    windowPlacements: { main: null },
   };
 }
 
