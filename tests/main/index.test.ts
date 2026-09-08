@@ -28,6 +28,7 @@ const shell = vi.hoisted(() => ({
   dialogChoice: 0,
   windowLoadFailure: null as Error | null,
   loggedErrors: [] as unknown[][],
+  placementFlushes: 0,
 }));
 
 vi.mock("electron", () => ({
@@ -57,6 +58,7 @@ vi.mock("@main/window.js", () => ({
   createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : Promise.resolve({
     on: (event: string, cb: (...args: unknown[]) => unknown) => windowHandlers.set(event, cb),
   }),
+  flushMainWindowPlacement: () => { shell.placementFlushes++; },
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
 vi.mock("@main/assetProtocol.js", () => ({
@@ -101,6 +103,7 @@ async function bootApp(): Promise<PostStore> {
   shell.dialogChoice = 0;
   shell.windowLoadFailure = null;
   shell.loggedErrors.length = 0;
+  shell.placementFlushes = 0;
 
   const store = (await import("@main/core/services/postStore.js")) as PostStore;
   const { initializeWorkspaceData } = await import("@main/core/services/dataDir.js");
@@ -152,6 +155,7 @@ describe("quit flushes the write-behind buffer", () => {
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed a moment before quitting");
     expect(shell.dialogs).toEqual([]);
     expect(shell.exits).toEqual([0]);
+    expect(shell.placementFlushes).toBe(1);
   });
 
   it("stops and asks when a post's file vanished, instead of exiting in silence", async () => {

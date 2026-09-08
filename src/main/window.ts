@@ -19,6 +19,12 @@ export { isAllowedExternalUrl } from "./ipc/external.js";
 // background does not flash a different color before the page loads.
 const WINDOW_BACKGROUND = "#f4efe8";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+let flushCurrentWindowPlacement: (() => void) | null = null;
+
+/** Flushes the live window placement before app.exit() bypasses window close events. */
+export function flushMainWindowPlacement(): void {
+  flushCurrentWindowPlacement?.();
+}
 
 function openExternalIfAllowed(rawUrl: string): void {
   if (isAllowedExternalUrl(rawUrl)) {
@@ -167,6 +173,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     (record) => { updateUiState({ windowPlacements: { main: record } }); },
     (error) => warn("window placement operation failed", { error: serializeError(error) }),
   );
+  const flushThisWindowPlacement = () => placement.flush();
+  flushCurrentWindowPlacement = flushThisWindowPlacement;
   configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
@@ -191,7 +199,12 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   });
   window.on("close", () => placement.flush());
   window.on("session-end", () => placement.flush());
-  window.once("closed", () => placement.dispose());
+  window.once("closed", () => {
+    placement.dispose();
+    if (flushCurrentWindowPlacement === flushThisWindowPlacement) {
+      flushCurrentWindowPlacement = null;
+    }
+  });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfAllowed(url);
