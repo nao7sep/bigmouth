@@ -69,7 +69,12 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         ))}
       </div>
 
-      <pre className="export-preview">
+      <pre
+        className="export-preview"
+        role="region"
+        aria-label="Export preview"
+        tabIndex={0}
+      >
         {output || (
           <span style={{ color: "var(--bm-text-faint)", fontStyle: "italic" }}>
             No content yet

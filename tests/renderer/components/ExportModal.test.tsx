@@ -41,6 +41,7 @@ describe("ExportModal — render and format selection", () => {
     const htmlRadio = getByRole("radio", { name: "HTML" }) as HTMLInputElement;
     expect(htmlRadio.checked).toBe(true);
     const preview = container.querySelector(".export-preview")!;
+    expect(getByRole("region", { name: "Export preview" }).getAttribute("tabindex")).toBe("0");
     expect(preview.textContent).toContain("<h1>Heading</h1>");
     expect(preview.textContent).toContain("<strong>bold</strong>");
   });

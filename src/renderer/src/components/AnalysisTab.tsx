@@ -176,6 +176,9 @@ export function AnalysisTab({
       {html && (
         <div
           className="analysis-result preview-content"
+          role="region"
+          aria-label="Analysis result"
+          tabIndex={0}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       )}

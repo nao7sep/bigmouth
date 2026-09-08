@@ -134,6 +134,9 @@ describe("AnalysisTab run", () => {
     );
     const result = container.querySelector(".analysis-result");
     expect(result).toBeTruthy();
+    expect(result?.getAttribute("role")).toBe("region");
+    expect(result?.getAttribute("aria-label")).toBe("Analysis result");
+    expect(result?.getAttribute("tabindex")).toBe("0");
     expect(result!.querySelector("h1")?.textContent).toBe("Title");
     expect(result!.textContent).toContain("more text");
     expect(button.disabled).toBe(false);

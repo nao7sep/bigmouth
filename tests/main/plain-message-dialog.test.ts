@@ -11,6 +11,8 @@ describe("plain message dialog", () => {
     expect(html).toContain('id="dialog-header"');
     expect(html).toContain('id="dialog-body"');
     expect(html).toContain('id="dialog-footer"');
+    expect(html).toContain('role="region" aria-label="Message details" tabindex="0"');
+    expect(html).toContain("*::-webkit-scrollbar{width:16px;height:16px}");
     expect(html).toContain(".body{min-height:0;overflow:auto");
     expect(html).toContain("body{margin:0;height:100vh;overflow:hidden}");
   });

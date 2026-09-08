@@ -249,7 +249,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
       )}
 
       {items.length > 0 && (
-        <div className="imaging-results">
+        <div className="imaging-results" role="region" aria-label="Image prompts" tabIndex={0}>
           <div className="imaging-results-header">
             <div className="imaging-note">{items.length} prompts</div>
             <button

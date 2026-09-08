@@ -88,14 +88,15 @@ export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions,
   }).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#f7f4ef;color:#292524}
-    *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+    *{box-sizing:border-box;scrollbar-width:auto;scrollbar-color:#78716c transparent}*::-webkit-scrollbar{width:16px;height:16px}*::-webkit-scrollbar-thumb{background:#78716c;background-clip:padding-box;border:3px solid transparent;border-radius:999px}
+    body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
     .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}
     h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#57534e}
     .actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 24px}
     .button{color:#292524;border:1px solid #a8a29e;border-radius:6px;padding:7px 14px;background:#fafaf9;font:inherit}
     .button:hover,.button:focus{outline:2px solid #78716c;outline-offset:2px}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#e7e5e4}
     .primary{color:white;background:#2563eb;border-color:#1d4ed8}.primary:hover,.primary:focus{background:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}.destructive:hover,.destructive:focus{background:#991b1b}
-  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
+  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body" role="region" aria-label="Message details" tabindex="0"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
 }
 
 function escapeHtml(value: string): string {

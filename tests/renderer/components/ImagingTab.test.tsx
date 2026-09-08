@@ -124,6 +124,9 @@ describe("ImagingTab run", () => {
     expect(mockGenerate).toHaveBeenCalledWith("p1", "body text", DEFAULT_OPTIONS, expect.any(AbortSignal));
     expect(getByText("2 prompts")).toBeTruthy();
     expect(container.querySelectorAll(".image-prompt-card")).toHaveLength(2);
+    expect(container.querySelector(".imaging-results")?.getAttribute("role")).toBe("region");
+    expect(container.querySelector(".imaging-results")?.getAttribute("aria-label")).toBe("Image prompts");
+    expect(container.querySelector(".imaging-results")?.getAttribute("tabindex")).toBe("0");
     expect(getByText("a prompt")).toBeTruthy();
     expect(getByText("another prompt")).toBeTruthy();
   });
