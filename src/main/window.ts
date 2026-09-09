@@ -8,7 +8,7 @@ import { getUiState, updateUiState } from "./core/services/stateStore.js";
 import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
 import {
-  applyRestoredWindowBounds,
+  initializeWindowPlacement,
   configureWindowPlacement,
   resolveWindowRestoration,
 } from "./windowPlacement.js";
@@ -80,8 +80,8 @@ export function buildWindowOptions(
   const minimum =
     workArea === undefined ? required : boundWindowMinimum(required, workArea);
   return {
-    width: 1480,
-    height: 940,
+    width: Math.min(1480, workArea?.width ?? 1480),
+    height: Math.min(940, workArea?.height ?? 940),
     minWidth: minimum.width,
     minHeight: minimum.height,
     show: false,
@@ -112,12 +112,27 @@ function configureZoom(window: BrowserWindow): void {
   window.webContents.setZoomLevel(zoomLevel);
 
   const remember = (): void => {
-    const required = windowMinimumForZoom(window.webContents.getZoomFactor());
-    const workArea = screen.getDisplayMatching(window.getBounds()).workAreaSize;
-    const minimum = boundWindowMinimum(required, workArea);
-    window.setMinimumSize(minimum.width, minimum.height);
-    const level = window.webContents.getZoomLevel();
-    if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
+    if (window.isDestroyed()) return;
+    try {
+      const required = windowMinimumForZoom(window.webContents.getZoomFactor());
+      const workArea = screen.getDisplayMatching(window.getBounds()).workAreaSize;
+      const outer = window.getBounds();
+      const client = window.getContentBounds();
+      const minimum = boundWindowMinimum({
+        width: required.width + Math.max(0, outer.width - client.width),
+        height: required.height + Math.max(0, outer.height - client.height),
+      }, workArea);
+      if (!window.isMaximized() && !window.isMinimized() && !window.isFullScreen()) {
+        const [width, height] = window.getMinimumSize();
+        if (width !== minimum.width || height !== minimum.height) {
+          window.setMinimumSize(minimum.width, minimum.height);
+        }
+      }
+      const level = window.webContents.getZoomLevel();
+      if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
+    } catch (error) {
+      warn("window zoom or minimum could not be updated", { error: serializeError(error) });
+    }
   };
 
   // Apply the restored level's native floor before the hidden window is shown.
@@ -135,6 +150,9 @@ function configureZoom(window: BrowserWindow): void {
   window.on("focus", () => setTimeout(remember, 0));
   window.on("blur", remember);
   window.on("move", remember);
+  window.on("unmaximize", remember);
+  window.on("restore", remember);
+  window.on("leave-full-screen", remember);
   window.on("close", remember);
   const onDisplayMetricsChanged = (): void => remember();
   screen.on("display-metrics-changed", onDisplayMetricsChanged);
@@ -149,58 +167,53 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   nativeTheme.themeSource = "light";
 
   const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
-  const options = buildWindowOptions(zoomFactor, screen.getPrimaryDisplay().workAreaSize);
-  const window = new BrowserWindow(options);
   let workAreas: Electron.Rectangle[] = [];
   try {
     workAreas = screen.getAllDisplays().map((display) => display.workArea);
   } catch (error) {
     warn("display work areas unavailable; using opening window bounds", { error: serializeError(error) });
   }
+  const savedPlacement = getUiState().windowPlacements.main;
   const restoration = resolveWindowRestoration(
-    getUiState().windowPlacements.main,
-    { width: options.minWidth ?? 0, height: options.minHeight ?? 0 },
+    savedPlacement,
+    windowMinimumForZoom(zoomFactor),
     workAreas,
   );
-  if (restoration.normalBounds) {
-    applyRestoredWindowBounds(window, restoration.normalBounds, (error) => {
-      warn("saved window bounds rejected; using opening bounds", { error: serializeError(error) });
-    });
+  let workArea: { width: number; height: number } | undefined;
+  try {
+    workArea = restoration.normalBounds
+      ? screen.getDisplayMatching(restoration.normalBounds).workAreaSize
+      : screen.getPrimaryDisplay().workAreaSize;
+  } catch (error) {
+    warn("window work area unavailable; using designed size", { error: serializeError(error) });
   }
+  const window = new BrowserWindow(buildWindowOptions(zoomFactor, workArea));
+  const initialized = initializeWindowPlacement(window, savedPlacement, restoration,
+    (error) => warn("window placement restoration failed; retaining useful opening geometry and mode", { error: serializeError(error) }));
   const placement = configureWindowPlacement(
     window,
-    { normalBounds: window.getBounds(), mode: restoration.mode },
+    initialized.initial,
     (record) => { updateUiState({ windowPlacements: { main: record } }); },
     (error) => warn("window placement operation failed", { error: serializeError(error) }),
+    initialized.windows,
   );
   const flushThisWindowPlacement = () => placement.flush();
   flushCurrentWindowPlacement = flushThisWindowPlacement;
   configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
-    configureZoom(window);
+    try { configureZoom(window); }
+    catch (error) { warn("window zoom could not be restored", { error: serializeError(error) }); }
     window.show();
-    if (restoration.mode === "maximized") {
-      // Windows needs one native event-loop turn after show() before maximize()
-      // reliably reaches the HWND. Other platforms tolerate the same ordering.
-      setTimeout(() => {
-        if (window.isDestroyed()) return;
-        try {
-          window.maximize();
-        } catch (error) {
-          placement.setInitialMode("normal");
-          warn("window could not be maximized during restoration", { error: serializeError(error) });
-        }
-      }, 0);
-    }
+    // Windows requires a native event-loop turn between show and maximize.
     setTimeout(() => {
       if (window.isDestroyed()) return;
-      if (restoration.mode === "maximized" && !window.isMaximized()) {
-        placement.setInitialMode("normal");
-        warn("window manager rejected maximized restoration");
-      }
       placement.start();
-    }, 500);
+      if (restoration.mode === "maximized") {
+        try { window.maximize(); }
+        catch (error) { warn("window could not be maximized during restoration", { error: serializeError(error) }); }
+      }
+    }, 0);
   });
   window.on("close", () => placement.flush());
   window.on("session-end", () => placement.flush());

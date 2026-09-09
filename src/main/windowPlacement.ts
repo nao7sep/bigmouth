@@ -1,176 +1,157 @@
-import type {
-  WindowBounds,
-  WindowPlacementMode,
-  WindowPlacementRecord,
-} from "@shared/types";
+import type { WindowBounds, WindowPlacementMode, WindowPlacementRecord } from "@shared/types";
+import { createWindowsPlacement, type WindowsPlacement } from "./windows-placement";
 
 export const DEFAULT_MAIN_WINDOW_MODE: WindowPlacementMode = "maximized";
-const CAPTURE_DEBOUNCE_MS = 400;
 
-type MinimumSize = { width: number; height: number };
-type PlacementWindow = {
+export function resolveWindowRestoration(
+  saved: WindowPlacementRecord | null,
+  minimum: { width: number; height: number },
+  workAreas: readonly WindowBounds[],
+): { normalBounds: WindowBounds | null; mode: WindowPlacementMode } {
+  return {
+    normalBounds: saved?.normalBounds ? fitWindowBounds(saved.normalBounds, minimum, workAreas) : null,
+    mode: saved?.mode === "normal" || saved?.mode === "maximized" ? saved.mode : "maximized",
+  };
+}
+
+export function fitWindowBounds(
+  bounds: WindowBounds,
+  minimum: { width: number; height: number },
+  workAreas: readonly WindowBounds[],
+): WindowBounds | null {
+  if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger)
+    || bounds.width <= 0 || bounds.height <= 0) return null;
+  const area = workAreas.find((item) =>
+    [item.x, item.y, item.width, item.height].every(Number.isFinite)
+    && item.width > 0 && item.height > 0
+    && bounds.x < item.x + item.width && bounds.y < item.y + item.height
+    && bounds.x + bounds.width > item.x && bounds.y + bounds.height > item.y);
+  if (!area) return null;
+  const width = Math.min(area.width, Math.max(minimum.width, bounds.width));
+  const height = Math.min(area.height, Math.max(minimum.height, bounds.height));
+  return {
+    x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)),
+    y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - height)),
+    width, height,
+  };
+}
+
+export type PlacementWindow = {
   on(event: string, listener: () => void): unknown;
   off(event: string, listener: () => void): unknown;
   getBounds(): WindowBounds;
+  getNormalBounds(): WindowBounds;
   setBounds(bounds: WindowBounds): void;
   isMaximized(): boolean;
   isMinimized(): boolean;
   isFullScreen(): boolean;
 };
 
-export function resolveWindowRestoration(
-  saved: WindowPlacementRecord | null,
-  minimum: MinimumSize,
-  workAreas: readonly WindowBounds[],
-): { normalBounds: WindowBounds | null; mode: WindowPlacementMode } {
-  return {
-    normalBounds:
-      saved?.normalBounds && isUsableWindowBounds(saved.normalBounds, minimum, workAreas)
-        ? { ...saved.normalBounds }
-        : null,
-    mode:
-      saved?.mode === "normal" || saved?.mode === "maximized"
-        ? saved.mode
-        : DEFAULT_MAIN_WINDOW_MODE,
-  };
-}
-
-export function isUsableWindowBounds(
-  bounds: WindowBounds,
-  minimum: MinimumSize,
-  workAreas: readonly WindowBounds[],
-): boolean {
-  const values = [bounds.x, bounds.y, bounds.width, bounds.height];
-  if (!values.every(Number.isFinite) || !values.every(Number.isInteger)) return false;
-  if (bounds.width < minimum.width || bounds.height < minimum.height) return false;
-  return workAreas.some(
-    (area) =>
-      bounds.x >= area.x &&
-      bounds.y >= area.y &&
-      bounds.x + bounds.width <= area.x + area.width &&
-      bounds.y + bounds.height <= area.y + area.height,
-  );
-}
-
 export function applyRestoredWindowBounds(
   win: Pick<PlacementWindow, "getBounds" | "setBounds">,
   bounds: WindowBounds,
   onError: (error: unknown) => void,
 ): boolean {
-  const fallback = { ...win.getBounds() };
+  let opening: WindowBounds | undefined;
   try {
+    opening = win.getBounds();
     win.setBounds(bounds);
-    if (sameBounds(win.getBounds(), bounds)) return true;
-    throw new Error("Electron adjusted the restored window bounds");
+    return true;
   } catch (error) {
     onError(error);
-    try {
-      win.setBounds(fallback);
-    } catch (fallbackError) {
-      onError(fallbackError);
+    if (opening) {
+      try { win.setBounds(opening); } catch (fallbackError) { onError(fallbackError); }
     }
     return false;
   }
 }
 
+export function initializeWindowPlacement(
+  win: PlacementWindow & { getNativeWindowHandle(): Buffer },
+  saved: WindowPlacementRecord | null,
+  restoration: { normalBounds: WindowBounds | null; mode: WindowPlacementMode },
+  onError: (error: unknown) => void,
+): { initial: WindowPlacementRecord; windows: WindowsPlacement | undefined } {
+  let windows: WindowsPlacement | undefined;
+  try { windows = createWindowsPlacement(win); } catch (error) { onError(error); }
+  if (windows && saved?.windowsNormalBounds) {
+    try { windows.restoreHidden(saved.windowsNormalBounds); } catch (error) { onError(error); }
+  } else if (restoration.normalBounds) {
+    applyRestoredWindowBounds(win, restoration.normalBounds, onError);
+  }
+  // A geometry read failure leaves the useful opening window and valid mode
+  // intact. It does not require inventing a rectangle to persist.
+  const initial: WindowPlacementRecord = { normalBounds: null, mode: restoration.mode };
+  try { initial.normalBounds = win.getNormalBounds(); } catch (error) { onError(error); }
+  if (windows) {
+    try { initial.windowsNormalBounds = windows.read(); } catch (error) { onError(error); }
+  }
+  return { initial, windows };
+}
+
+// electron-window-state overwrites maximized intent during transient states and
+// owns a separate store. Keep matching platform geometry with our ordered store.
 export function configureWindowPlacement(
   win: PlacementWindow,
-  initial: { normalBounds: WindowBounds; mode: WindowPlacementMode },
+  initial: WindowPlacementRecord,
   persist: (record: WindowPlacementRecord) => void,
   onError: (error: unknown) => void,
-): { start(): void; setInitialMode(mode: WindowPlacementMode): void; flush(): void; dispose(): void } {
-  let normalBounds = { ...initial.normalBounds };
+  windows?: WindowsPlacement,
+): { start(): void; flush(): void; dispose(): void } {
+  let normalBounds = initial.normalBounds ? { ...initial.normalBounds } : null;
+  let windowsNormalBounds = initial.windowsNormalBounds ? { ...initial.windowsNormalBounds } : initial.windowsNormalBounds;
   let mode = initial.mode;
-  let captureEnabled = false;
-  let transient = false;
-  let manualMove = false;
-  let manualResize = false;
+  let enabled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const cancel = (): void => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-    manualMove = false;
-    manualResize = false;
-  };
-  const ordinary = (): boolean =>
-    !transient && !win.isMinimized() && !win.isFullScreen() && !win.isMaximized();
-  const save = (): void => persist({ normalBounds: { ...normalBounds }, mode });
+  const cancel = (): void => { clearTimeout(timer); timer = undefined; };
   const capture = (): void => {
-    if (!captureEnabled || !ordinary()) return;
-    normalBounds = { ...win.getBounds() };
-    mode = "normal";
+    if (win.isMinimized() || win.isFullScreen()) return;
+    mode = win.isMaximized() ? "maximized" : "normal";
+    // Native geometry is authoritative on Windows; logical bounds remain a
+    // compatible legacy/non-Windows hint, never a second restoration setter.
+    const nativeBounds = windows?.read();
+    const logicalBounds = win.getNormalBounds();
+    normalBounds = { ...logicalBounds };
+    windowsNormalBounds = nativeBounds ? { ...nativeBounds } : undefined;
+  };
+  const save = (): void => {
+    try { persist({ normalBounds: normalBounds ? { ...normalBounds } : null, mode,
+      ...(windows ? { windowsNormalBounds: windowsNormalBounds ? { ...windowsNormalBounds } : null } : {}),
+    }); }
+    catch (error) { onError(error); }
   };
   const schedule = (): void => {
-    if (!captureEnabled || !ordinary()) return;
-    capture();
-    if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = undefined;
-      manualMove = false;
-      manualResize = false;
-      try { save(); } catch (error) { onError(error); }
-    }, CAPTURE_DEBOUNCE_MS);
-  };
-  const enterTransient = (): void => {
-    transient = true;
+    if (!enabled || win.isMinimized() || win.isFullScreen()) return;
+    try { capture(); } catch (error) { onError(error); }
     cancel();
+    timer = setTimeout(() => { timer = undefined; save(); }, 400);
   };
-  const settle = (): void => {
-    transient = true;
+  const onMaximize = (): void => {
+    if (!enabled || win.isMinimized() || win.isFullScreen()) return;
+    try { capture(); } catch (error) { onError(error); }
     cancel();
-    timer = setTimeout(() => {
-      timer = undefined;
-      transient = false;
-      if (!ordinary()) return;
-      capture();
-      try { save(); } catch (error) { onError(error); }
-    }, CAPTURE_DEBOUNCE_MS);
+    save();
   };
-
   const listeners: Array<[string, () => void]> = [
-    ["will-move", () => { if (captureEnabled && ordinary()) manualMove = true; }],
-    ["move", () => { if (manualMove) schedule(); }],
-    ["will-resize", () => { if (captureEnabled && ordinary()) manualResize = true; }],
-    ["resize", () => { if (manualResize) schedule(); }],
-    ["maximize", () => {
-      if (!captureEnabled || transient || win.isMinimized() || win.isFullScreen()) return;
-      cancel();
-      mode = "maximized";
-      try { save(); } catch (error) { onError(error); }
-    }],
-    ["unmaximize", settle],
-    ["minimize", enterTransient],
-    ["restore", settle],
-    ["enter-full-screen", enterTransient],
-    ["leave-full-screen", settle],
+    ["move", schedule], ["resize", schedule], ["maximize", onMaximize],
+    ["unmaximize", schedule], ["restore", schedule], ["leave-full-screen", schedule],
+    ["minimize", cancel], ["enter-full-screen", cancel],
   ];
   for (const [event, listener] of listeners) win.on(event, listener);
 
   return {
-    start: () => {
-      captureEnabled = true;
-      transient = win.isMinimized() || win.isFullScreen();
-    },
-    setInitialMode: (next) => { mode = next; },
+    start: () => { enabled = true; },
     flush: () => {
-      try {
-        cancel();
-        if (!captureEnabled) return;
-        if (win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) mode = "maximized";
-        save();
-      } catch (error) {
-        onError(error);
-      }
+      cancel();
+      if (!enabled) return;
+      try { capture(); } catch (error) { onError(error); }
+      save();
     },
     dispose: () => {
-      captureEnabled = false;
+      enabled = false;
       cancel();
       for (const [event, listener] of listeners) win.off(event, listener);
     },
   };
-}
-
-function sameBounds(a: WindowBounds, b: WindowBounds): boolean {
-  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }

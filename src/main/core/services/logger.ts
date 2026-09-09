@@ -138,11 +138,16 @@ function serializeErrorInner(err: unknown, seen: WeakSet<object>): unknown {
     if (seen.has(err)) return "[circular]";
     seen.add(err);
     const out: Record<string, unknown> = {
+      ...err,
       name: err.name,
       message: err.message,
     };
     if (err.stack) out.stack = err.stack;
     if (err.cause !== undefined) out.cause = serializeErrorInner(err.cause, seen);
+    if (err instanceof AggregateError) {
+      out.errors = err.errors.map((error: unknown) => serializeErrorInner(error, seen));
+    }
+    seen.delete(err);
     return out;
   }
   if (err !== null && typeof err === "object") {

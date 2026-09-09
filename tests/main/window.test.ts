@@ -98,6 +98,11 @@ describe("buildWindowOptions", () => {
       height: 950,
     });
     expect(boundWindowMinimum(required, { width: 3200, height: 2000 })).toEqual(required);
+    const options = buildWindowOptions(2, { width: 1000, height: 700 });
+    expect(options.width).toBe(1000);
+    expect(options.height).toBe(700);
+    expect(options.minWidth).toBe(1000);
+    expect(options.minHeight).toBe(700);
   });
 
   it("opens hidden, so the first paint is never a blank white window", () => {

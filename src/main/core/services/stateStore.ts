@@ -24,6 +24,7 @@
 import fs from "node:fs";
 import type { UiState } from "../shared/types.js";
 import { defaultUiState, type WindowBounds, type WindowPlacementRecord } from "@shared/types";
+import { normalizeWindowsNormalBounds } from "@shared/windows-placement";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
@@ -79,6 +80,9 @@ function normalizeWindowPlacements(
   return {
     main: {
       normalBounds: normalizeWindowBounds(placement.normalBounds, fallback.main?.normalBounds ?? null),
+      ...(placement.windowsNormalBounds === undefined ? {} : {
+        windowsNormalBounds: normalizeWindowsNormalBounds(placement.windowsNormalBounds),
+      }),
       mode:
         placement.mode === "normal" || placement.mode === "maximized"
           ? placement.mode
@@ -105,7 +109,10 @@ function normalizeWindowBounds(raw: unknown, fallback: WindowBounds | null): Win
 
 function cloneWindowPlacement(value: WindowPlacementRecord | null): WindowPlacementRecord | null {
   return value
-    ? { normalBounds: value.normalBounds ? { ...value.normalBounds } : null, mode: value.mode }
+    ? { ...value, normalBounds: value.normalBounds ? { ...value.normalBounds } : null,
+      ...(value.windowsNormalBounds === undefined ? {} : {
+        windowsNormalBounds: normalizeWindowsNormalBounds(value.windowsNormalBounds),
+      }) }
     : null;
 }
 
