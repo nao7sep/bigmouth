@@ -179,15 +179,20 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
   window.once("ready-to-show", () => {
     configureZoom(window);
-    if (restoration.mode === "maximized") {
-      try {
-        window.maximize();
-      } catch (error) {
-        placement.setInitialMode("normal");
-        warn("window could not be maximized during restoration", { error: serializeError(error) });
-      }
-    }
     window.show();
+    if (restoration.mode === "maximized") {
+      // Windows needs one native event-loop turn after show() before maximize()
+      // reliably reaches the HWND. Other platforms tolerate the same ordering.
+      setTimeout(() => {
+        if (window.isDestroyed()) return;
+        try {
+          window.maximize();
+        } catch (error) {
+          placement.setInitialMode("normal");
+          warn("window could not be maximized during restoration", { error: serializeError(error) });
+        }
+      }, 0);
+    }
     setTimeout(() => {
       if (window.isDestroyed()) return;
       if (restoration.mode === "maximized" && !window.isMaximized()) {
