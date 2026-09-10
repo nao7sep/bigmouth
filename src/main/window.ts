@@ -7,11 +7,6 @@ import { CHANNELS } from "@shared/ipc";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
 import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
-import {
-  initializeWindowPlacement,
-  configureWindowPlacement,
-  resolveWindowRestoration,
-} from "./windowPlacement.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
@@ -19,13 +14,6 @@ export { isAllowedExternalUrl } from "./ipc/external.js";
 // background does not flash a different color before the page loads.
 const WINDOW_BACKGROUND = "#f4efe8";
 const __dirname = dirname(fileURLToPath(import.meta.url));
-let flushCurrentWindowPlacement: (() => void) | null = null;
-
-/** Flushes the live window placement before app.exit() bypasses window close events. */
-export function flushMainWindowPlacement(): void {
-  flushCurrentWindowPlacement?.();
-}
-
 function openExternalIfAllowed(rawUrl: string): void {
   if (isAllowedExternalUrl(rawUrl)) {
     void openExternalUrl(rawUrl).catch((error: unknown) => {
@@ -167,61 +155,19 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   nativeTheme.themeSource = "light";
 
   const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
-  let workAreas: Electron.Rectangle[] = [];
-  try {
-    workAreas = screen.getAllDisplays().map((display) => display.workArea);
-  } catch (error) {
-    warn("display work areas unavailable; using opening window bounds", { error: serializeError(error) });
-  }
-  const savedPlacement = getUiState().windowPlacements.main;
-  const restoration = resolveWindowRestoration(
-    savedPlacement,
-    windowMinimumForZoom(zoomFactor),
-    workAreas,
-  );
   let workArea: { width: number; height: number } | undefined;
   try {
-    workArea = restoration.normalBounds
-      ? screen.getDisplayMatching(restoration.normalBounds).workAreaSize
-      : screen.getPrimaryDisplay().workAreaSize;
+    workArea = screen.getPrimaryDisplay().workAreaSize;
   } catch (error) {
     warn("window work area unavailable; using designed size", { error: serializeError(error) });
   }
   const window = new BrowserWindow(buildWindowOptions(zoomFactor, workArea));
-  const initialized = initializeWindowPlacement(window, savedPlacement, restoration,
-    (error) => warn("window placement restoration failed; retaining useful opening geometry and mode", { error: serializeError(error) }));
-  const placement = configureWindowPlacement(
-    window,
-    initialized.initial,
-    (record) => { updateUiState({ windowPlacements: { main: record } }); },
-    (error) => warn("window placement operation failed", { error: serializeError(error) }),
-    initialized.windows,
-  );
-  const flushThisWindowPlacement = () => placement.flush();
-  flushCurrentWindowPlacement = flushThisWindowPlacement;
   configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
     try { configureZoom(window); }
     catch (error) { warn("window zoom could not be restored", { error: serializeError(error) }); }
     window.show();
-    // Windows requires a native event-loop turn between show and maximize.
-    setTimeout(() => {
-      if (window.isDestroyed()) return;
-      placement.start();
-      if (restoration.mode === "maximized") {
-        try { window.maximize(); }
-        catch (error) { warn("window could not be maximized during restoration", { error: serializeError(error) }); }
-      }
-    }, 0);
-  });
-  window.on("close", () => placement.flush());
-  window.on("session-end", () => placement.flush());
-  window.once("closed", () => {
-    placement.dispose();
-    if (flushCurrentWindowPlacement === flushThisWindowPlacement) {
-      flushCurrentWindowPlacement = null;
-    }
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {

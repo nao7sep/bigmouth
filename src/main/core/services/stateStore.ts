@@ -2,7 +2,7 @@
  * UI-state I/O.
  *
  * Manages ~/.bigmouth/state.json — the app's ephemeral view state (side-pane
- * intent widths + the last active workspace id). It is a distinct persisted KIND
+ * intent widths, zoom level, and last active workspace id). It is a distinct persisted KIND
  * from the workspace registry (workspaces.json) and every per-workspace
  * config.json, so it gets its own store and type (persisted-store-separation
  * conventions): a settings reset must not touch it, and its splitter-drag churn
@@ -23,8 +23,7 @@
 
 import fs from "node:fs";
 import type { UiState } from "../shared/types.js";
-import { defaultUiState, type WindowBounds, type WindowPlacementRecord } from "@shared/types";
-import { normalizeWindowsNormalBounds } from "@shared/windows-placement";
+import { defaultUiState } from "@shared/types";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
@@ -57,63 +56,7 @@ function normalizeUiState(raw: unknown): UiState {
       typeof source.zoomLevel === "number" && Number.isFinite(source.zoomLevel)
         ? source.zoomLevel
         : base.zoomLevel,
-    windowPlacements: normalizeWindowPlacements(source.windowPlacements, base.windowPlacements),
   };
-}
-
-function normalizeWindowPlacements(
-  raw: unknown,
-  fallback: UiState["windowPlacements"],
-): UiState["windowPlacements"] {
-  if (raw === undefined) return { main: cloneWindowPlacement(fallback.main) };
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { main: cloneWindowPlacement(fallback.main) };
-  }
-  const source = raw as Record<string, unknown>;
-  if (source.main === undefined) return { main: cloneWindowPlacement(fallback.main) };
-  if (source.main === null) return { main: null };
-  if (!source.main || typeof source.main !== "object" || Array.isArray(source.main)) {
-    return { main: cloneWindowPlacement(fallback.main) };
-  }
-
-  const placement = source.main as Record<string, unknown>;
-  return {
-    main: {
-      normalBounds: normalizeWindowBounds(placement.normalBounds, fallback.main?.normalBounds ?? null),
-      ...(placement.windowsNormalBounds === undefined ? {} : {
-        windowsNormalBounds: normalizeWindowsNormalBounds(placement.windowsNormalBounds),
-      }),
-      mode:
-        placement.mode === "normal" || placement.mode === "maximized"
-          ? placement.mode
-          : fallback.main?.mode ?? "maximized",
-    },
-  };
-}
-
-function normalizeWindowBounds(raw: unknown, fallback: WindowBounds | null): WindowBounds | null {
-  if (raw === null) return null;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fallback ? { ...fallback } : null;
-  const source = raw as Record<string, unknown>;
-  const values = [source.x, source.y, source.width, source.height];
-  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) {
-    return fallback ? { ...fallback } : null;
-  }
-  return {
-    x: source.x as number,
-    y: source.y as number,
-    width: source.width as number,
-    height: source.height as number,
-  };
-}
-
-function cloneWindowPlacement(value: WindowPlacementRecord | null): WindowPlacementRecord | null {
-  return value
-    ? { ...value, normalBounds: value.normalBounds ? { ...value.normalBounds } : null,
-      ...(value.windowsNormalBounds === undefined ? {} : {
-        windowsNormalBounds: normalizeWindowsNormalBounds(value.windowsNormalBounds),
-      }) }
-    : null;
 }
 
 /**

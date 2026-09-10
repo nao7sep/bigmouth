@@ -24,26 +24,13 @@ export interface Workspace {
 export const DEFAULT_PANE_LEFT_WIDTH = 360;
 export const DEFAULT_PANE_RIGHT_WIDTH = 480;
 
-export type WindowPlacementMode = "normal" | "maximized";
-export interface WindowBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-export interface WindowPlacementRecord {
-  normalBounds: WindowBounds | null;
-  mode: WindowPlacementMode;
-  windowsNormalBounds?: import("./windows-placement").WindowsNormalBounds | null;
-}
-
 /**
  * Ephemeral UI state persisted to `~/.bigmouth/state.json` — saved by the app on
  * the user's behalf, not authored as configuration. It has its own store, apart
  * from the workspace registry (workspaces.json) and each per-workspace config.json,
  * per persisted-store-separation-conventions: a settings reset must not touch it,
- * and its splitter-drag churn must not rewrite a config file. Machine-/display-
- * specific and disposable — losing it just reopens the picker and restores default
+ * and its splitter-drag churn must not rewrite a config file. It is disposable:
+ * losing it just reopens the picker and restores default
  * pane widths. (Was three keys in renderer localStorage: bm-pane-left-width,
  * bm-pane-right-width, bm-workspace-id.)
  */
@@ -55,7 +42,6 @@ export interface UiState {
   // menu's zoom roles mutate webContents in memory only, so without persisting it
   // a user who zoomed for readability was back at 100% every launch, silently.
   zoomLevel: number;
-  windowPlacements: { main: WindowPlacementRecord | null };
 }
 
 /** A fresh UI state: default pane widths and no remembered workspace. */
@@ -65,7 +51,6 @@ export function defaultUiState(): UiState {
     paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
     activeWorkspaceId: "",
     zoomLevel: 0,
-    windowPlacements: { main: null },
   };
 }
 

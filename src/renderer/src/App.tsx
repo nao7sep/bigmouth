@@ -139,7 +139,7 @@ export function App() {
         if (!cancelled) {
           reportShellResult(
             "ui-state-load",
-            "The saved window layout and last workspace could not be loaded. Defaults are in use for this launch.",
+            "The saved interface preferences and last workspace could not be loaded. Defaults are in use for this launch.",
           );
           setWorkspaceModalOpen(true);
           setWsChecked(true);

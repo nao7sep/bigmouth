@@ -47,24 +47,6 @@ describe("stateStore — first run", () => {
 });
 
 describe("stateStore — persistence", () => {
-  it("retains native placement across unrelated state writes and reloads", () => {
-    initStateStore();
-    const placement = { normalBounds: { x: 89, y: 81, width: 1201, height: 749 }, mode: "normal" as const,
-      windowsNormalBounds: { left: 111, top: 101, right: 1613, bottom: 1038 } };
-    updateUiState({ windowPlacements: { main: placement } });
-    updateUiState({ paneLeftWidth: 450 });
-    expect(initStateStore().windowPlacements.main).toEqual(placement);
-  });
-
-  it("discards only malformed native geometry and preserves the compatible record", () => {
-    const placement = { normalBounds: { x: 89, y: 81, width: 1201, height: 749 }, mode: "maximized",
-      windowsNormalBounds: { left: 100, top: 100, right: 100, bottom: 800 } };
-    fs.writeFileSync(statePath(), JSON.stringify({ paneLeftWidth: 450, windowPlacements: { main: placement } }));
-    const state = initStateStore();
-    expect(state.paneLeftWidth).toBe(450);
-    expect(state.windowPlacements.main).toEqual({ ...placement, windowsNormalBounds: null });
-  });
-
   it("writes state.json on the first update and reads it back on re-init", () => {
     initStateStore();
     const next = updateUiState({ activeWorkspaceId: "ws-42", paneLeftWidth: 500 });
@@ -131,20 +113,5 @@ describe("stateStore — self-healing", () => {
     );
     initStateStore();
     expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
-  });
-
-  it("normalizes placement geometry and mode independently", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({
-      activeWorkspaceId: "ws-keep",
-      windowPlacements: {
-        main: {
-          normalBounds: { x: 10, y: 20, width: "wide", height: 800 },
-          mode: "maximized",
-        },
-      },
-    }));
-    initStateStore();
-    expect(getUiState().activeWorkspaceId).toBe("ws-keep");
-    expect(getUiState().windowPlacements.main).toEqual({ normalBounds: null, mode: "maximized" });
   });
 });

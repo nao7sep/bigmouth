@@ -194,21 +194,21 @@ describe("redaction", () => {
 });
 
 describe("serializeError", () => {
-  it("preserves both native recovery failures and a reused cause through JSON", () => {
-    const original = Object.assign(new Error("client query failed"), {
-      operation: "GetClientRect", nativeCode: 6,
+  it("preserves nested recovery failures and a reused cause through JSON", () => {
+    const original = Object.assign(new Error("primary query failed"), {
+      operation: "ReadPrimaryIndex", nativeCode: 6,
     });
-    const fallback = Object.assign(new Error("opening restore failed"), {
-      operation: "SetWindowPlacement", nativeCode: 5,
+    const fallback = Object.assign(new Error("fallback query failed"), {
+      operation: "ReadBackupIndex", nativeCode: 5,
     });
-    const aggregate = new AggregateError([original, fallback], "placement recovery failed", { cause: original });
+    const aggregate = new AggregateError([original, fallback], "store recovery failed", { cause: original });
     const serialized = JSON.parse(JSON.stringify(serializeError(aggregate)));
     expect(serialized).toMatchObject({
       name: "AggregateError",
-      cause: { message: original.message, stack: original.stack, operation: "GetClientRect", nativeCode: 6 },
+      cause: { message: original.message, stack: original.stack, operation: "ReadPrimaryIndex", nativeCode: 6 },
       errors: [
-        { message: original.message, stack: original.stack, operation: "GetClientRect", nativeCode: 6 },
-        { message: fallback.message, stack: fallback.stack, operation: "SetWindowPlacement", nativeCode: 5 },
+        { message: original.message, stack: original.stack, operation: "ReadPrimaryIndex", nativeCode: 6 },
+        { message: fallback.message, stack: fallback.stack, operation: "ReadBackupIndex", nativeCode: 5 },
       ],
     });
   });

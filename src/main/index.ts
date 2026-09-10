@@ -15,7 +15,7 @@ import {
   getCurrentLogFilePath,
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
-import { createMainWindow, flushMainWindowPlacement } from "./window.js";
+import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { installApplicationMenu } from "./menu.js";
@@ -123,9 +123,6 @@ if (!ownsInstance) {
     shuttingDown = true;
     event.preventDefault();
 
-    // The deterministic app.exit() below bypasses BrowserWindow close events,
-    // so persist the final placement explicitly before any async quit work.
-    flushMainWindowPlacement();
     const failures = flushAllPendingContent();
     void (async () => {
       if (failures.length > 0 && !systemShutdown) {
