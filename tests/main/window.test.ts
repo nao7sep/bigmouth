@@ -80,6 +80,16 @@ describe("buildWindowOptions", () => {
     expect(options.height).toBeGreaterThanOrEqual(WINDOW_MIN_HEIGHT);
   });
 
+  it("uses Electron's bounds-only persistence for the main window", () => {
+    const options = buildWindowOptions();
+
+    expect(options.name).toBe("main");
+    expect(options.windowStatePersistence).toEqual({
+      bounds: true,
+      displayMode: false,
+    });
+  });
+
   it("constructs a restored zoom window with a matching native floor", () => {
     const zoomFactor = zoomFactorForLevel(2);
     const options = buildWindowOptions(zoomFactor);
