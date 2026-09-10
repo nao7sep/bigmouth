@@ -14,7 +14,7 @@ BigMouth is a local-first **desktop app** for writers who want a deliberate, sta
 
 ## Requirements
 
-- macOS or Windows.
+- macOS 13 or later, or Windows.
 - A Claude (Anthropic) API key for the AI features (analysis, metadata, imaging). Everything else works without one.
 - Node.js 22.12+ and npm, to build or run from source.
 
