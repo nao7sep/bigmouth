@@ -7,6 +7,7 @@ import { CHANNELS } from "@shared/ipc";
 import { getUiState, updateUiState } from "./core/services/stateStore.js";
 import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
+import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
@@ -163,7 +164,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   } catch (error) {
     warn("window work area unavailable; using designed size", { error: serializeError(error) });
   }
-  const window = new BrowserWindow(buildWindowOptions(zoomFactor, workArea));
+  const options = buildWindowOptions(zoomFactor, workArea);
+  const window = createWindowWithUsablePersistedBounds("main", () => new BrowserWindow(options));
   configureWindowActivity(window);
 
   window.once("ready-to-show", () => {
