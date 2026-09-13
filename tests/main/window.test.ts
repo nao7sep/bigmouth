@@ -86,7 +86,7 @@ describe("buildWindowOptions", () => {
     expect(options.name).toBe("main");
     expect(options.windowStatePersistence).toEqual({
       bounds: true,
-      displayMode: false,
+      displayMode: process.platform === "win32",
     });
   });
 

@@ -70,7 +70,10 @@ export function buildWindowOptions(
     workArea === undefined ? required : boundWindowMinimum(required, workArea);
   return {
     name: "main",
-    windowStatePersistence: { bounds: true, displayMode: false },
+    windowStatePersistence: {
+      bounds: true,
+      displayMode: process.platform === "win32",
+    },
     width: Math.min(1480, workArea?.width ?? 1480),
     height: Math.min(940, workArea?.height ?? 940),
     minWidth: minimum.width,
