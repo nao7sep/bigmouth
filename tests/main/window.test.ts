@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("electron", () => ({
   BrowserWindow: class {},
   Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
-  nativeTheme: { themeSource: "light" },
+  nativeTheme: { themeSource: "system", shouldUseDarkColors: false },
   screen: {
     getDisplayMatching: () => ({ workAreaSize: { width: 1440, height: 900 } }),
     getPrimaryDisplay: () => ({ workAreaSize: { width: 1440, height: 900 } }),

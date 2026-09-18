@@ -11,6 +11,7 @@ BigMouth is a local-first **desktop app** for writers who want a deliberate, sta
 - **Assets** — per-post image and file uploads, embedded directly in the editor.
 - **Multi-language** — write in any language; generate English supplement fields for non-English posts.
 - **Diff-friendly storage** — one Markdown file per post with a fixed name, so edits and status changes read as clean in-place git diffs.
+- **Light and dark themes** — follows the system by default; pick Light or Dark in Settings for every workspace at once.
 
 ## Requirements
 

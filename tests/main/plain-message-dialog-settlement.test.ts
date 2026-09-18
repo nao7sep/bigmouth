@@ -51,7 +51,10 @@ const electronMock = vi.hoisted(() => {
   };
 });
 
-vi.mock("electron", () => ({ BrowserWindow: electronMock.BrowserWindow }));
+vi.mock("electron", () => ({
+  BrowserWindow: electronMock.BrowserWindow,
+  nativeTheme: { shouldUseDarkColors: false },
+}));
 
 import { showPlainMessageDialog } from "@main/plain-message-dialog";
 

@@ -1,7 +1,8 @@
 :root {
-  /* Match the app theme so native form controls and the platform's built-in UI
-     render light. The color-scheme declaration alone leaves the default scroll
-     bar in place, so the bars are also styled explicitly below. */
+  /* Match the active theme so native form controls and the platform's built-in
+     UI render in it (the dark block below flips it). The color-scheme
+     declaration alone leaves the default scroll bar in place, so the bars are
+     also styled explicitly below. */
   color-scheme: light;
   /* UI font (app chrome). Explicit default stack; the Settings "UI font" field
      overrides this variable at runtime with a verbatim, engine-resolved family
@@ -18,14 +19,23 @@
   --bm-border: #d5c8bb;
   --bm-border-subtle: #e5d9ce;
   --bm-border-strong: #bdab99;
+  /* A form field's outline is its only boundary on a surface, so it holds 3:1;
+     the other borders are decorative dividers. */
+  --bm-input-border: #877a6c;
   --bm-text: #2a241f;
   --bm-text-soft: #51483f;
-  --bm-text-muted: #75695e;
-  --bm-text-faint: #9a8d81;
+  --bm-text-muted: #695d52;
+  /* Faint text still carries information (counts, empty states, line numbers,
+     placeholders), so it holds 4.5:1 on the sidebar panel. */
+  --bm-text-faint: #706459;
   --bm-scrollbar-thumb: var(--bm-text-muted);
   --bm-scrollbar-thumb-active: var(--bm-text-soft);
+  /* --bm-accent is the fill behind --bm-on-accent text; --bm-accent-fg is the
+     accent used as text, outline, cursor, and indicator. They share a value in
+     light but not in dark, where no one terracotta works both ways. */
   --bm-accent: #9a4f2f;
   --bm-accent-hover: #7f3f24;
+  --bm-accent-fg: #9a4f2f;
   --bm-accent-border: #c98764;
   --bm-accent-disabled: #d8b19c;
   --bm-accent-soft: #efdcca;
@@ -34,7 +44,7 @@
   --bm-accent-line: rgba(154, 79, 47, 0.08);
   --bm-on-accent: #fff8f0;
   --bm-link: #854629;
-  --bm-warning: #965b17;
+  --bm-warning: #8a5313;
   --bm-warning-soft: #fff6e7;
   --bm-warning-border: #ddb66f;
   --bm-danger: #b42318;
@@ -43,6 +53,81 @@
   --bm-backdrop: rgba(42, 33, 25, 0.42);
   --bm-shadow-popover: 0 12px 30px rgba(70, 48, 30, 0.14);
   --bm-shadow-modal: 0 24px 64px rgba(70, 48, 30, 0.2);
+  /* Editor syntax colors (editorHighlight.ts). The light values are
+     CodeMirror's defaults, three of them deepened to 4.5:1 on the surface. */
+  --bm-syntax-meta: #404740;
+  --bm-syntax-keyword: #770088;
+  --bm-syntax-atom: #221199;
+  --bm-syntax-literal: #116644;
+  --bm-syntax-string: #aa1111;
+  --bm-syntax-regexp: #c23a00;
+  --bm-syntax-definition: #0000ff;
+  --bm-syntax-local: #3300aa;
+  --bm-syntax-type: #007a4c;
+  --bm-syntax-class: #116677;
+  --bm-syntax-special: #225566;
+  --bm-syntax-property: #0000cc;
+  --bm-syntax-comment: #994400;
+  --bm-syntax-invalid: #d10000;
+}
+
+/* The dark theme: warm charcoal surfaces under the same terracotta identity.
+   prefers-color-scheme follows Electron's nativeTheme.themeSource, which the
+   main process sets from the saved choice before the window exists and again
+   on Save, so this block, not page script, decides the palette from the first
+   frame (app-chrome conventions, Theme). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bm-bg: #1d1915;
+    --bm-surface: #26211c;
+    --bm-surface-muted: #221d19;
+    --bm-surface-raised: #2d2721;
+    --bm-panel: #181512;
+    --bm-panel-hover: #221d18;
+    --bm-border: #3e352d;
+    --bm-border-subtle: #332c25;
+    --bm-border-strong: #56493d;
+    --bm-input-border: #827467;
+    --bm-text: #efe6dc;
+    --bm-text-soft: #d3c7ba;
+    --bm-text-muted: #b0a293;
+    --bm-text-faint: #a09283;
+    --bm-accent: #a3522e;
+    --bm-accent-hover: #8e4524;
+    --bm-accent-fg: #e39a74;
+    --bm-accent-border: #b5704f;
+    --bm-accent-disabled: #5a3a2b;
+    --bm-accent-soft: #4a3226;
+    --bm-accent-subtle: #33261f;
+    --bm-accent-ring: rgba(227, 154, 116, 0.28);
+    --bm-accent-line: rgba(227, 154, 116, 0.08);
+    --bm-on-accent: #fff8f0;
+    --bm-link: #e39a74;
+    --bm-warning: #e0a458;
+    --bm-warning-soft: #33280f;
+    --bm-warning-border: #7a5a23;
+    --bm-danger: #f28b7c;
+    --bm-danger-soft: #3a1f1b;
+    --bm-danger-border: #7d3a31;
+    --bm-backdrop: rgba(0, 0, 0, 0.55);
+    --bm-shadow-popover: 0 12px 30px rgba(0, 0, 0, 0.45);
+    --bm-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.55);
+    --bm-syntax-meta: #b8ab9d;
+    --bm-syntax-keyword: #d7a0ee;
+    --bm-syntax-atom: #93b8ff;
+    --bm-syntax-literal: #86d4ad;
+    --bm-syntax-string: #f2a093;
+    --bm-syntax-regexp: #f2b36f;
+    --bm-syntax-definition: #8ab4ff;
+    --bm-syntax-local: #b9a2ff;
+    --bm-syntax-type: #72d3b0;
+    --bm-syntax-class: #7fcbd6;
+    --bm-syntax-special: #94c4d4;
+    --bm-syntax-property: #9cbaff;
+    --bm-syntax-comment: #c7a877;
+    --bm-syntax-invalid: #ff8a80;
+  }
 }
 
 /* Reset */
@@ -355,7 +440,7 @@ body {
 
 .post-item.selected {
   background: var(--bm-accent-soft);
-  border-left-color: var(--bm-accent);
+  border-left-color: var(--bm-accent-fg);
 }
 
 /* Keyboard cursor on the active row, kept distinct from the persistent selected
@@ -364,7 +449,7 @@ body {
    lists). Inset so the scroll container never clips it. */
 .post-item.active,
 .section-header.active {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
 
@@ -458,12 +543,12 @@ button:disabled,
    group), distinct from the committed .active fill below. */
 .status-radio:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--bm-accent);
+  box-shadow: inset 0 0 0 2px var(--bm-accent-fg);
 }
 
 .status-radio.active {
   background: var(--bm-accent);
-  color: #fff;
+  color: var(--bm-on-accent);
 }
 
 .btn-toolbar {
@@ -483,7 +568,7 @@ button:disabled,
 }
 
 .btn-toolbar:focus-visible {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: 1px;
 }
 
@@ -692,7 +777,7 @@ button:disabled,
 }
 
 .cm-container .cm-cursor {
-  border-left-color: var(--bm-accent);
+  border-left-color: var(--bm-accent-fg);
 }
 
 .cm-container .cm-selectionBackground {
@@ -739,15 +824,15 @@ button:disabled,
 }
 
 .right-tab.active {
-  color: var(--bm-accent);
-  border-bottom-color: var(--bm-accent);
+  color: var(--bm-accent-fg);
+  border-bottom-color: var(--bm-accent-fg);
   background: var(--bm-surface-raised);
 }
 
 /* Keyboard focus cursor for the roving-tabindex active tab; shown only to
    keyboard users, inset so the tab strip's edges never clip it. */
 .right-tab:focus-visible {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
 
@@ -1074,7 +1159,7 @@ button:disabled,
 .meta-field-input {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--bm-border);
+  border: 1px solid var(--bm-input-border);
   border-radius: 4px;
   background: var(--bm-surface-raised);
   color: var(--bm-text);
@@ -1085,7 +1170,7 @@ button:disabled,
 }
 
 .meta-field-input:focus {
-  border-color: var(--bm-accent);
+  border-color: var(--bm-accent-fg);
   box-shadow: 0 0 0 3px var(--bm-accent-ring);
 }
 
@@ -1259,7 +1344,7 @@ button:disabled,
 /* Keyboard focus cursor: the focused radio's label shows the ring (the input
    itself is visually hidden), so keyboard users always see where they are. */
 .export-format-radio:focus-within {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
 
@@ -1316,7 +1401,7 @@ button:disabled,
 .form-select {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--bm-border);
+  border: 1px solid var(--bm-input-border);
   border-radius: 4px;
   background: var(--bm-surface-raised);
   color: var(--bm-text);
@@ -1327,7 +1412,7 @@ button:disabled,
 
 .form-input:focus,
 .form-select:focus {
-  border-color: var(--bm-accent);
+  border-color: var(--bm-accent-fg);
   box-shadow: 0 0 0 3px var(--bm-accent-ring);
 }
 
@@ -1343,7 +1428,7 @@ button:disabled,
   padding: 0;
   font: inherit;
   font-size: 12px;
-  color: var(--bm-accent);
+  color: var(--bm-accent-fg);
   cursor: pointer;
   text-decoration: none;
 }
@@ -1377,12 +1462,12 @@ button:disabled,
 }
 
 .settings-tab.active {
-  color: var(--bm-accent);
-  border-bottom-color: var(--bm-accent);
+  color: var(--bm-accent-fg);
+  border-bottom-color: var(--bm-accent-fg);
 }
 
 .settings-tab:focus-visible {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
 
@@ -1404,6 +1489,31 @@ button:disabled,
   margin-top: 12px;
   margin-bottom: 4px;
   color: var(--bm-text);
+}
+
+/* A fieldset-based radio group laid out like the neighboring labelled fields. */
+.settings-radio-group {
+  min-width: 0;
+  border: 0;
+}
+
+.settings-radio-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-bottom: 4px;
+}
+
+.settings-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bm-text);
+}
+
+.settings-radio input {
+  accent-color: var(--bm-accent);
 }
 
 .settings-hint {
@@ -1503,7 +1613,7 @@ button:disabled,
 }
 
 .assets-tab.drag-over {
-  box-shadow: inset 0 0 0 2px var(--bm-accent);
+  box-shadow: inset 0 0 0 2px var(--bm-accent-fg);
 }
 
 .assets-tab.drag-delivery {
@@ -1582,7 +1692,7 @@ button:disabled,
 
 .asset-meta-note {
   font-size: 11px;
-  color: var(--bm-accent);
+  color: var(--bm-accent-fg);
   margin-top: 2px;
 }
 
@@ -1670,7 +1780,7 @@ button:disabled,
   flex: 1;
   min-width: 0;
   padding: 5px 8px;
-  border: 1px solid var(--bm-border);
+  border: 1px solid var(--bm-input-border);
   border-radius: 4px;
   font-size: 13px;
   background: var(--bm-surface);
@@ -1823,7 +1933,7 @@ button:disabled,
 }
 
 .workspace-item:hover {
-  border-color: var(--bm-accent);
+  border-color: var(--bm-accent-fg);
   background: var(--bm-accent-subtle);
 }
 
@@ -1834,7 +1944,7 @@ button:disabled,
 
 /* Keyboard cursor, distinct from the persistent selection above. */
 .workspace-item.active {
-  outline: 2px solid var(--bm-accent);
+  outline: 2px solid var(--bm-accent-fg);
   outline-offset: 2px;
 }
 

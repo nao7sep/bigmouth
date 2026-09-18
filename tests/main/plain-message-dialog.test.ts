@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("electron", () => ({ BrowserWindow: {} }));
+vi.mock("electron", () => ({ BrowserWindow: {}, nativeTheme: { shouldUseDarkColors: false } }));
 
 import { renderPlainMessageDialogHtml } from "@main/plain-message-dialog";
 

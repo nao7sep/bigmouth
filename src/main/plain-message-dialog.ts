@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron";
+import { BrowserWindow, nativeTheme } from "electron";
 
 export interface PlainMessageDialogOptions {
   title: string;
@@ -33,7 +33,9 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
     fullscreenable: false,
     autoHideMenuBar: true,
     title: options.title,
-    backgroundColor: "#f7f4ef",
+    // The page below follows prefers-color-scheme, which follows
+    // nativeTheme.themeSource — the saved theme, or the OS before it is known.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1c1917" : "#f7f4ef",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
 
@@ -96,6 +98,7 @@ export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions,
     .button{color:#292524;border:1px solid #a8a29e;border-radius:6px;padding:7px 14px;background:#fafaf9;font:inherit}
     .button:hover,.button:focus{outline:2px solid #78716c;outline-offset:2px}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#e7e5e4}
     .primary{color:white;background:#2563eb;border-color:#1d4ed8}.primary:hover,.primary:focus{background:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}.destructive:hover,.destructive:focus{background:#991b1b}
+    @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:#1c1917;color:#e7e5e4}*{scrollbar-color:#a8a29e transparent}*::-webkit-scrollbar-thumb{background:#a8a29e;background-clip:padding-box}.detail{color:#a8a29e}.button{color:#e7e5e4;border-color:#78716c;background:#292524}.button:hover,.button:focus{outline-color:#a8a29e}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#44403c}}
   </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body" role="region" aria-label="Message details" tabindex="0"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
 }
 

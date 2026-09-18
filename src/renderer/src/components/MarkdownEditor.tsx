@@ -5,6 +5,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { basicSetup } from "codemirror";
 import type { ContentFont } from "@shared/types";
+import { editorHighlighting } from "./editorHighlight";
 
 export interface MarkdownEditorHandle {
   insertAtCursor: (text: string) => void;
@@ -93,6 +94,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       extensions: [
         basicSetup,
         markdown({ codeLanguages: languages }),
+        // Theme-token syntax colors; displaces basicSetup's fixed-color fallback.
+        editorHighlighting,
         placeholder(watermark),
         updateListener,
         readOnlyCompartmentRef.current.of(EditorState.readOnly.of(readOnly)),

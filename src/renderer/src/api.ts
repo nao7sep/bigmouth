@@ -1,4 +1,6 @@
 import type {
+  AppSettings,
+  AppSettingsLoad,
   Post,
   PostStatus,
   PostMutationResult,
@@ -89,6 +91,18 @@ export function getUiState(): Promise<UiState> {
 /** Persist a partial UI-state change (a pane drag, or the active workspace id). */
 export function updateUiState(patch: Partial<UiState>): Promise<UiState> {
   return bridge().updateUiState(patch);
+}
+
+// --- App settings (the storage root's config.json) ---
+
+/** The app-wide settings, and where an unreadable file was moved this launch. */
+export function getAppSettings(): Promise<AppSettingsLoad> {
+  return bridge().getAppSettings();
+}
+
+/** Saves the app-wide settings; the main process applies the theme to the app. */
+export function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+  return bridge().saveAppSettings(settings);
 }
 
 // --- Posts ---

@@ -8,6 +8,7 @@ import { defaultUiState, type UiState, type Workspace } from "@shared/types";
 // hydrated via getUiState and persisted via updateUiState.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getAppSettings: vi.fn(),
   listWorkspaces: vi.fn(),
   setActiveWorkspace: vi.fn(),
   getUiState: vi.fn(),
@@ -91,12 +92,13 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
 }));
 
 import { App } from "@renderer/App";
-import { listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
+import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
 
 const mockList = vi.mocked(listWorkspaces);
 const mockSetActive = vi.mocked(setActiveWorkspace);
 const mockGetUiState = vi.mocked(getUiState);
 const mockUpdateUiState = vi.mocked(updateUiState);
+const mockGetAppSettings = vi.mocked(getAppSettings);
 const mockWriteRendererLog = vi.fn();
 
 const WS1: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/d/a" };
@@ -122,6 +124,7 @@ beforeEach(() => {
   // Default: no remembered workspace. Each test overrides as needed. updateUiState
   // resolves with the merged state so the awaited persist paths settle.
   mockGetUiState.mockResolvedValue(uiState(""));
+  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system" }, quarantinedTo: null });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
 });
@@ -178,6 +181,25 @@ describe("App bootstrap — no stored workspace", () => {
     const result = getByRole("alert");
     expect(result.textContent).toContain("Defaults are in use for this launch");
     expect(result.textContent).not.toContain("BIGMOUTH-UI-LOAD-SENTINEL");
+  });
+});
+
+describe("App bootstrap — app settings recovery", () => {
+  it("names where an unreadable app settings file was moved and what the app started with", async () => {
+    mockGetAppSettings.mockResolvedValue({
+      settings: { theme: "system" },
+      quarantinedTo: "/home/me/.bigmouth/config-20260918-020000-000-utc.invalid",
+    });
+    const { findByText } = await renderApp();
+
+    expect(
+      await findByText(/moved to \/home\/me\/\.bigmouth\/config-20260918-020000-000-utc\.invalid.*back to System/),
+    ).toBeTruthy();
+  });
+
+  it("stays quiet when nothing was reset", async () => {
+    const { queryByText } = await renderApp();
+    expect(queryByText(/app settings file/)).toBeNull();
   });
 });
 

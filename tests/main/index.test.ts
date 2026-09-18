@@ -65,6 +65,13 @@ vi.mock("@main/assetProtocol.js", () => ({
 }));
 vi.mock("@main/menu.js", () => ({ installApplicationMenu: () => {} }));
 vi.mock("@main/core/services/stateStore.js", () => ({ initStateStore: () => {} }));
+vi.mock("@main/core/services/appSettingsStore.js", () => ({
+  initAppSettingsStore: () => ({ theme: "system" }),
+}));
+vi.mock("@main/theme.js", () => ({
+  applyThemePreference: () => {},
+  followOsThemeChanges: () => {},
+}));
 vi.mock("@main/core/services/logger.js", () => ({
   initLogger: () => {},
   closeLogger: () => {},

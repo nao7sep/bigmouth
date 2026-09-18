@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
-import { getUiState, listWorkspaces, reportProblem, setActiveWorkspace, updateUiState } from "./api";
+import { getAppSettings, getUiState, listWorkspaces, reportProblem, setActiveWorkspace, updateUiState } from "./api";
 import {
   DEFAULT_PANE_LEFT_WIDTH,
   DEFAULT_PANE_RIGHT_WIDTH,
@@ -123,6 +123,24 @@ export function App() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [activeWorkspace]);
+
+  // The app-wide settings file is read before the window exists (it carries the
+  // theme); a reset of an unreadable file is reported here, once, by path.
+  useEffect(() => {
+    let cancelled = false;
+    getAppSettings()
+      .then(({ quarantinedTo }) => {
+        if (cancelled || quarantinedTo === null) return;
+        reportShellResult(
+          "app-settings-recovered",
+          `The app settings file could not be read, so it was moved to ${quarantinedTo}. The theme is back to System.`,
+        );
+      })
+      .catch((err: unknown) => reportProblem("renderer: app settings load failed", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [reportShellResult]);
 
   useEffect(() => {
     let cancelled = false;

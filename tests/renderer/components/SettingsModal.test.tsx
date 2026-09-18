@@ -14,6 +14,8 @@ import { settingsFieldErrors } from "@shared/settingsValidation";
 // the whole module so the dialog renders against in-memory fixtures.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getAppSettings: vi.fn(),
+  saveAppSettings: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   listTargets: vi.fn(),
@@ -38,6 +40,8 @@ import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import * as api from "@renderer/api";
 
 const mock = {
+  getAppSettings: vi.mocked(api.getAppSettings),
+  saveAppSettings: vi.mocked(api.saveAppSettings),
   getSettings: vi.mocked(api.getSettings),
   saveSettings: vi.mocked(api.saveSettings),
   listTargets: vi.mocked(api.listTargets),
@@ -94,6 +98,8 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AiConfigsData = aiConfigs()) {
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system" }, quarantinedTo: null });
+  mock.saveAppSettings.mockImplementation((next) => Promise.resolve(next));
   mock.getSettings.mockResolvedValue(settings());
   mock.listAiConfigs.mockResolvedValue(ai);
   mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
@@ -432,6 +438,51 @@ function openTab(
   fireEvent.click(getByRole("tab", { name: label }));
   return getByRole("tabpanel");
 }
+
+describe("SettingsModal — theme", () => {
+  it("offers System, Light, and Dark as one radio group under Appearance", async () => {
+    const { getByRole } = await renderModal();
+    const group = getByRole("group", { name: "Theme" });
+    const radios = within(group).getAllByRole("radio") as HTMLInputElement[];
+    expect(radios.map((radio) => radio.value)).toEqual(["system", "light", "dark"]);
+    expect(radios.find((radio) => radio.checked)?.value).toBe("system");
+  });
+
+  it("stages the theme until Save, then saves it app-wide", async () => {
+    const { getByRole, onClose } = await renderModal();
+    fireEvent.click(getByRole("radio", { name: "Dark" }));
+    expect(mock.saveAppSettings).not.toHaveBeenCalled();
+
+    const save = getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveTargets.mockResolvedValue(targets());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
+    await act(async () => {
+      fireEvent.click(save);
+    });
+
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("leaves the app settings file alone when only workspace settings change", async () => {
+    const { getByRole } = await renderModal();
+    const watermark = getByRole("tabpanel").querySelectorAll("textarea")[0]!;
+    fireEvent.change(watermark, { target: { value: "draft" } });
+    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveTargets.mockResolvedValue(targets());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    expect(mock.saveSettings).toHaveBeenCalled();
+    expect(mock.saveAppSettings).not.toHaveBeenCalled();
+  });
+});
 
 describe("SettingsModal — General tab validation", () => {
   it("flags an invalid IANA timezone and a required (blank) timezone", async () => {

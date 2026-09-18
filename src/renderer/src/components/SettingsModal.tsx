@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import type { Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
+import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
+import { THEME_PREFERENCES } from "@shared/appSettings";
 import {
   AI_PROVIDERS,
   PROVIDER_LABELS,
@@ -18,6 +19,8 @@ import {
 } from "@shared/types";
 import { firstSettingsError, settingsFieldErrors } from "@shared/settingsValidation";
 import {
+  getAppSettings,
+  saveAppSettings,
   getSettings,
   saveSettings,
   listTargets,
@@ -91,6 +94,9 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
+  // App-wide (the storage root's config.json), edited and saved with the
+  // workspace's own settings so the theme applies on Save like everything else.
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
@@ -105,6 +111,7 @@ export function SettingsModal({
 
   // Snapshot of the loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
+  const initialAppSettings = useRef<AppSettings | null>(null);
   const initialAiConfigs = useRef<AiConfigsData | null>(null);
   const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
   const initialTargets = useRef<EditableTarget[]>([]);
@@ -117,6 +124,7 @@ export function SettingsModal({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
+      getAppSettings(),
       getSettings(),
       listAiConfigs(),
       getGenerationPromptDefaults(),
@@ -125,8 +133,10 @@ export function SettingsModal({
       listAnalysisPromptDefaults(),
       listAnalysisPrompts(),
     ])
-      .then(([s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
+      .then(([app, s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
         if (cancelled) return;
+        setAppSettings(app.settings);
+        initialAppSettings.current = app.settings;
         setSettings(s);
         initialSettings.current = s;
         setAiConfigs(ai);
@@ -155,7 +165,10 @@ export function SettingsModal({
     };
   }, []);
 
+  const appSettingsDirty =
+    JSON.stringify(appSettings) !== JSON.stringify(initialAppSettings.current);
   const isDirty =
+    appSettingsDirty ||
     JSON.stringify(settings) !== JSON.stringify(initialSettings.current) ||
     JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current) ||
     JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current) ||
@@ -287,7 +300,7 @@ export function SettingsModal({
   };
 
   const handleSaveAll = async () => {
-    if (!settings || !aiConfigs || !generationPrompts) return;
+    if (!appSettings || !settings || !aiConfigs || !generationPrompts) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -298,7 +311,8 @@ export function SettingsModal({
         }))
         .filter(({ oldName, newName }) => oldName && newName && oldName !== newName);
 
-      const [, savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
+      const [savedAppSettings, , savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
+        appSettingsDirty ? saveAppSettings(appSettings) : Promise.resolve(appSettings),
         saveSettings(settings),
         commitAiConfigChanges(),
         saveGenerationPrompts(generationPrompts),
@@ -310,6 +324,8 @@ export function SettingsModal({
       }
       const savedTargets = await saveTargets(targetPayload(targets));
 
+      setAppSettings(savedAppSettings);
+      initialAppSettings.current = savedAppSettings;
       if (savedAiConfigs) {
         setAiConfigs(savedAiConfigs);
         initialAiConfigs.current = savedAiConfigs;
@@ -371,10 +387,12 @@ export function SettingsModal({
           </div>
 
           <div className="modal-body" {...getPanelProps(tab)}>
-            {tab === "general" && settings && (
+            {tab === "general" && settings && appSettings && (
               <GeneralTab
                 settings={settings}
                 onChange={setSettings}
+                appSettings={appSettings}
+                onAppSettingsChange={setAppSettings}
               />
             )}
             {tab === "providers" && aiConfigs && (
@@ -480,9 +498,13 @@ function parseLanguages(text: string): string[] {
 function GeneralTab({
   settings,
   onChange,
+  appSettings,
+  onAppSettingsChange,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
+  appSettings: AppSettings;
+  onAppSettingsChange: (s: AppSettings) => void;
 }) {
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
@@ -580,7 +602,29 @@ function GeneralTab({
         />
       </div>
 
-      <div className="settings-subheading">Fonts</div>
+      <div className="settings-subheading">Appearance</div>
+      {/* A native radio group: one tab stop, arrow keys move and select
+          (composite-control conventions). App-wide, applied on Save. */}
+      <fieldset className="form-field settings-radio-group">
+        <legend className="form-label">Theme</legend>
+        <div className="settings-radio-options">
+          {THEME_PREFERENCES.map(({ value, label }) => (
+            <label key={value} className="settings-radio">
+              <input
+                type="radio"
+                name="theme"
+                value={value}
+                checked={appSettings.theme === value}
+                onChange={() => onAppSettingsChange({ ...appSettings, theme: value })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="settings-hint">
+          System follows the OS appearance. Applies to every workspace.
+        </p>
+      </fieldset>
       <FontsSection settings={settings} update={update} />
 
       <div className="settings-subheading">Maintenance</div>

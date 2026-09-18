@@ -6,6 +6,8 @@ import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir } from "./core/services/storagePaths.js";
 import { flushAllPendingContent } from "./core/services/postStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
+import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
+import { applyThemePreference, followOsThemeChanges } from "./theme.js";
 import {
   initLogger,
   closeLogger,
@@ -46,6 +48,11 @@ async function bootstrap(): Promise<void> {
   // the same storage root, so it must init after initAppDir(); after initLogger too,
   // so a self-heal warning on an invalid file is actually logged.
   initStateStore();
+  // App-wide settings carry the theme, applied before the window exists so its
+  // first frame, title bar, and background already match the saved choice.
+  const appSettings = initAppSettingsStore();
+  applyThemePreference(appSettings.theme);
+  followOsThemeChanges();
   info("app started", {
     version: app.getVersion(),
     workspaceCount: appConfig.workspaces.length,

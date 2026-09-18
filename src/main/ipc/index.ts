@@ -1,5 +1,6 @@
 import { registerWorkspaceHandlers } from "./workspaces.js";
 import { registerStateHandlers } from "./state.js";
+import { registerAppSettingsHandlers } from "./appSettings.js";
 import { registerLogHandlers } from "./logs.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerTargetHandlers } from "./targets.js";
@@ -21,6 +22,7 @@ import { registerExternalHandlers } from "./external.js";
 export function registerIpcHandlers(): void {
   registerWorkspaceHandlers();
   registerStateHandlers();
+  registerAppSettingsHandlers();
   registerLogHandlers();
   registerSettingsHandlers();
   registerTargetHandlers();

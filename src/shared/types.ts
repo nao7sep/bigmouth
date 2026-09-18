@@ -54,6 +54,28 @@ export function defaultUiState(): UiState {
   };
 }
 
+// --- App settings (the storage root's config.json) ---
+
+/** The saved appearance choice. System follows the OS appearance. */
+export type ThemePreference = "system" | "light" | "dark";
+
+/**
+ * The user's app-wide choices, persisted to `~/.bigmouth/config.json` and
+ * applied in every workspace. Its own store: each workspace keeps its settings
+ * in its own config.json, and view state lives in state.json
+ * (persisted-store-separation conventions).
+ */
+export interface AppSettings {
+  theme: ThemePreference;
+}
+
+/** App settings as the renderer reads them, plus where an unreadable file was
+ *  moved if this launch had to reset it (null when nothing was reset). */
+export interface AppSettingsLoad {
+  settings: AppSettings;
+  quarantinedTo: string | null;
+}
+
 // --- Post ---
 
 export type PostStatus = "draft" | "ready" | "published" | "expired";

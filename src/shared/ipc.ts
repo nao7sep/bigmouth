@@ -12,6 +12,8 @@
 import type {
   AiConfigsData,
   AiProvider,
+  AppSettings,
+  AppSettingsLoad,
   AnalysisPrompt,
   AssetMeta,
   EditablePostMetadata,
@@ -60,6 +62,10 @@ export const CHANNELS = {
   // UI state (state.json)
   getUiState: "state:get",
   updateUiState: "state:update",
+
+  // App-wide settings (the storage root's config.json)
+  getAppSettings: "appSettings:get",
+  saveAppSettings: "appSettings:save",
 
   // Posts
   listPosts: "post:list",
@@ -273,6 +279,11 @@ export interface BigMouthApi {
   // active workspace id. Its own store, separate from workspace config.
   getUiState(): Promise<UiState>;
   updateUiState(patch: Partial<UiState>): Promise<UiState>;
+
+  // App-wide settings (the storage root's config.json) — the theme, which
+  // applies in every workspace. Saving applies it to the whole app.
+  getAppSettings(): Promise<AppSettingsLoad>;
+  saveAppSettings(settings: AppSettings): Promise<AppSettings>;
 
   // Posts
   listPosts(wsId: string, publishedOffset: number, limit: number, expiredOffset: number): Promise<PostListResponse>;

@@ -8,12 +8,10 @@ import { getUiState, updateUiState } from "./core/services/stateStore.js";
 import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
+import { windowBackground } from "./theme.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
-// Matches the renderer `--bm-bg` (#f4efe8 in App.css) so the pre-paint window
-// background does not flash a different color before the page loads.
-const WINDOW_BACKGROUND = "#f4efe8";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function openExternalIfAllowed(rawUrl: string): void {
   if (isAllowedExternalUrl(rawUrl)) {
@@ -79,7 +77,9 @@ export function buildWindowOptions(
     minWidth: minimum.width,
     minHeight: minimum.height,
     show: false,
-    backgroundColor: WINDOW_BACKGROUND,
+    // The resolved theme's --bm-bg, so the pre-paint window background does not
+    // flash a different color before the page loads.
+    backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     titleBarStyle: "default",
     autoHideMenuBar: true,
     webPreferences: {
@@ -156,10 +156,6 @@ function configureZoom(window: BrowserWindow): void {
 }
 
 export async function createMainWindow(): Promise<BrowserWindow> {
-  // BigMouth is a light app; force the light theme so a dark-mode host still
-  // paints a light native title bar that matches the UI (app-chrome-conventions).
-  nativeTheme.themeSource = "light";
-
   const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
   let workArea: { width: number; height: number } | undefined;
   try {

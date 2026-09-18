@@ -218,6 +218,12 @@ export function getDefaultWorkspacesDir(): string {
   return required(defaultWorkspacesDir);
 }
 
+/** The app-wide settings store — the storage root's config.json, distinct from
+ *  each workspace's own config.json. */
+export function getAppConfigPath(): string {
+  return path.join(getAppRoot(), "config.json");
+}
+
 /** The view-state store. Named here rather than joined at its own call site. */
 export function getStateJsonPath(): string {
   return path.join(getAppRoot(), "state.json");

@@ -20,6 +20,8 @@ import {
 import type {
   AiConfigsData,
   AnalysisPrompt,
+  AppSettings,
+  AppSettingsLoad,
   AssetMeta,
   GenerationPromptsData,
   ImagingOptions,
@@ -72,6 +74,11 @@ const api = {
   getUiState: () => ipcRenderer.invoke(CHANNELS.getUiState) as Promise<UiState>,
   updateUiState: (patch: Partial<UiState>) =>
     ipcRenderer.invoke(CHANNELS.updateUiState, patch) as Promise<UiState>,
+
+  // --- App settings ---
+  getAppSettings: () => ipcRenderer.invoke(CHANNELS.getAppSettings) as Promise<AppSettingsLoad>,
+  saveAppSettings: (settings: AppSettings) =>
+    ipcRenderer.invoke(CHANNELS.saveAppSettings, settings) as Promise<AppSettings>,
 
   // --- Posts ---
   listPosts: (wsId: string, publishedOffset: number, limit: number, expiredOffset: number) =>
