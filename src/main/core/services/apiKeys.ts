@@ -31,12 +31,11 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
 
 import type { AiProvider } from "../shared/types.js";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
-import { utcNow, formatForFilenameMs } from "../shared/timestamps.js";
+import { moveAsideInvalid } from "../shared/quarantine.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 const SECRETS_FILE_MODE = 0o600;
@@ -88,24 +87,6 @@ function ensureSecureMode(filePath: string): void {
     fs.chmodSync(filePath, SECRETS_FILE_MODE);
   } catch {
     // Best-effort: the next write re-applies 0600 anyway.
-  }
-}
-
-// Move the unreadable file aside to a timestamped neighbour (handled once, not
-// re-flagged on every read), returning the new path or null on failure. The
-// quarantine name follows the derived-filename grammar: `<stem>-<millisecond
-// UTC stamp>.invalid`, never the target's full filename with `.invalid`
-// dot-appended.
-function moveAsideInvalid(filePath: string): string | null {
-  const dir = path.dirname(filePath);
-  const ext = path.extname(filePath);
-  const stem = path.basename(filePath, ext);
-  const movedTo = path.join(dir, `${stem}-${formatForFilenameMs(utcNow())}.invalid`);
-  try {
-    fs.renameSync(filePath, movedTo);
-    return movedTo;
-  } catch {
-    return null;
   }
 }
 
