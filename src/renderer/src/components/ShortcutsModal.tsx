@@ -77,7 +77,7 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
         ))}
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={onClose}>
+        <button className="btn-action" onClick={onClose}>
           Close
         </button>
       </div>

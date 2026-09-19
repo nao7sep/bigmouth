@@ -430,7 +430,7 @@ export function SettingsModal({
           )}
           <div className="modal-footer">
             <button
-              className="btn-toolbar"
+              className="btn-action"
               onClick={() => void handleRequestClose()}
               disabled={saving}
             >
@@ -438,7 +438,6 @@ export function SettingsModal({
             </button>
             <button
               className="btn-primary"
-              style={{ width: "auto" }}
               onClick={handleSaveAll}
               disabled={!canSave}
             >
@@ -795,7 +794,7 @@ function RebuildIndexSection() {
         The post index (<code>posts/index.json</code>) is rebuilt automatically from the Markdown
         files. Rebuild it by hand after editing or merging post files outside the app.
       </p>
-      <button className="btn-toolbar" style={{ width: "auto" }} onClick={() => void rebuild()} disabled={running}>
+      <button className="btn-action" onClick={() => void rebuild()} disabled={running}>
         {running ? "Rebuilding…" : "Rebuild index"}
       </button>
       {message && <p className="settings-hint">{message}</p>}

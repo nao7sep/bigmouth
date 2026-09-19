@@ -287,7 +287,7 @@ export function WorkspaceModal({
           <div className="workspace-load-recovery">
             <OperationalResult severity="error" className="modal-result">{listError}</OperationalResult>
             <div className="dialog-actions">
-              <button className="btn-toolbar" type="button" onClick={load}>Retry</button>
+              <button className="btn-action" type="button" onClick={load}>Retry</button>
             </div>
           </div>
         ) : sorted.length === 0 ? (
@@ -331,12 +331,11 @@ export function WorkspaceModal({
                         autoFocus
                         disabled={renamingId === ws.id}
                       />
-                      <button className="btn-toolbar" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
+                      <button className="btn-action" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
                         Cancel
                       </button>
                       <button
                         className="btn-primary"
-                        style={{ width: "auto", padding: "4px 10px", fontSize: 12 }}
                         onClick={() => handleRename(ws.id)}
                         disabled={!editName.trim() || renamingId === ws.id}
                       >
@@ -430,7 +429,7 @@ export function WorkspaceModal({
                 if (e.key === "Enter") void handleSubmit();
               }}
             />
-            <button className="btn-toolbar" type="button" onClick={() => void handleBrowse()}>
+            <button className="btn-action" type="button" onClick={() => void handleBrowse()}>
               Browse
             </button>
           </div>
@@ -446,7 +445,7 @@ export function WorkspaceModal({
         <div className="dialog-actions">
           {dismissable && (
             <button
-              className="btn-toolbar"
+              className="btn-action"
               onClick={handleRequestClose}
               disabled={submitting}
             >
@@ -455,7 +454,6 @@ export function WorkspaceModal({
           )}
           <button
             className="btn-primary"
-            style={{ width: "auto" }}
             onClick={() => void handleSubmit()}
             disabled={submitting}
           >

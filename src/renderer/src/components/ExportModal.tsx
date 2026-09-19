@@ -94,10 +94,10 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
       )}
 
       <div className="export-actions">
-        <button className="btn-toolbar" onClick={onClose}>
+        <button className="btn-action" onClick={onClose}>
           Close
         </button>
-        <button className="btn-export" onClick={handleCopy}>
+        <button className="btn-action" onClick={handleCopy}>
           {copiedKey === "copy" ? (
             <>
               <CheckIcon /> Copied
@@ -108,7 +108,6 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         </button>
         <button
           className="btn-primary"
-          style={{ width: "auto" }}
           onClick={handleDownload}
           autoFocus
         >

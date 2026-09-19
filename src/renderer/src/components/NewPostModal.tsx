@@ -187,12 +187,11 @@ export function NewPostModal({
         )}
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={() => void handleRequestClose()}>
+        <button className="btn-action" onClick={() => void handleRequestClose()}>
           Cancel
         </button>
         <button
           className="btn-primary"
-          style={{ width: "auto" }}
           onClick={handleCreate}
           disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
         >

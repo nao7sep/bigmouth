@@ -60,6 +60,18 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ["--bm-danger", "--bm-surface"],
   ["--bm-danger", "--bm-panel"],
   ["--bm-danger", "--bm-danger-soft"],
+  // Buttons and segmented controls: labels on every resting, hover, and
+  // pressed surface they take. A danger button hovers on --bm-danger-soft.
+  ...["--bm-control-bg", "--bm-control-hover", "--bm-control-pressed"].flatMap(
+    (surface): Array<[string, string]> => [
+      ["--bm-text", surface],
+      ["--bm-text-soft", surface],
+    ],
+  ),
+  ["--bm-danger", "--bm-control-bg"],
+  ["--bm-danger", "--bm-danger-pressed"],
+  ["--bm-text-soft", "--bm-track"],
+  ["--bm-on-accent", "--bm-accent-pressed"],
   // The editor draws on --bm-surface.
   ...SYNTAX.map((token): [string, string] => [token, "--bm-surface"]),
 ];

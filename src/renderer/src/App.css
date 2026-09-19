@@ -10,6 +10,19 @@
      separately on the CodeMirror surface, not from this variable. */
   --bm-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+  /* Control anatomy, shared by both themes. Spacing steps are multiples of 4px.
+     A standard control is 32px tall, a compact one (toolbars, card and list
+     rows) 28px, and an action on a field header or asset card 24px. Corners
+     grow with the surface: 6px on compact controls, rows, and menu items, 8px
+     on buttons and fields, 10px on cards and popovers, 14px on modals. */
+  --bm-control-h: 32px;
+  --bm-control-h-sm: 28px;
+  --bm-control-h-xs: 24px;
+  --bm-radius-sm: 6px;
+  --bm-radius-md: 8px;
+  --bm-radius-lg: 10px;
+  --bm-radius-xl: 14px;
+  --bm-motion: 120ms;
   --bm-bg: #f4efe8;
   --bm-surface: #fffaf4;
   --bm-surface-muted: #f7f0e8;
@@ -50,9 +63,23 @@
   --bm-danger: #b42318;
   --bm-danger-soft: #fff0ec;
   --bm-danger-border: #eea79a;
+  --bm-danger-pressed: #fbdcd5;
   --bm-backdrop: rgba(42, 33, 25, 0.42);
   --bm-shadow-popover: 0 12px 30px rgba(70, 48, 30, 0.14);
   --bm-shadow-modal: 0 24px 64px rgba(70, 48, 30, 0.2);
+  /* Control surfaces: a resting button, its hover and pressed steps, its
+     edge, and the lift that separates it from the surface it sits on. */
+  --bm-control-bg: #fffdf9;
+  --bm-control-hover: #f6eee5;
+  --bm-control-pressed: #ebdfd1;
+  --bm-control-border: #d3c4b4;
+  --bm-control-shadow: 0 1px 2px rgba(70, 48, 30, 0.08);
+  --bm-accent-pressed: #6c361f;
+  /* The recessed track a segmented control's segments sit in. */
+  --bm-track: #ebe0d3;
+  /* A select's drawn chevron; its stroke is --bm-text-muted, spelled out
+     because a data URI cannot read a custom property. */
+  --bm-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23695d52' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* Editor syntax colors (editorHighlight.ts). The light values are
      CodeMirror's defaults, three of them deepened to 4.5:1 on the surface. */
   --bm-syntax-meta: #404740;
@@ -110,9 +137,18 @@
     --bm-danger: #f28b7c;
     --bm-danger-soft: #3a1f1b;
     --bm-danger-border: #7d3a31;
+    --bm-danger-pressed: #4a2621;
     --bm-backdrop: rgba(0, 0, 0, 0.55);
     --bm-shadow-popover: 0 12px 30px rgba(0, 0, 0, 0.45);
     --bm-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.55);
+    --bm-control-bg: #342d27;
+    --bm-control-hover: #3d352e;
+    --bm-control-pressed: #473d35;
+    --bm-control-border: #564a3f;
+    --bm-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --bm-accent-pressed: #7a3b1e;
+    --bm-track: #1a1613;
+    --bm-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23b0a293' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --bm-syntax-meta: #b8ab9d;
     --bm-syntax-keyword: #d7a0ee;
     --bm-syntax-atom: #93b8ff;
@@ -130,6 +166,12 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bm-motion: 0ms;
+  }
+}
+
 /* Reset */
 *,
 *::before,
@@ -137,6 +179,12 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Native checkboxes and radios take the app's accent, not the OS blue. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--bm-accent);
 }
 
 html,
@@ -230,7 +278,7 @@ body {
   position: relative;
   padding: 10px 36px 10px 12px;
   border: 1px solid var(--bm-danger-border);
-  border-radius: 8px;
+  border-radius: var(--bm-radius-lg);
   background: var(--bm-danger-soft);
   color: var(--bm-text);
   box-shadow: var(--bm-shadow-popover);
@@ -322,11 +370,12 @@ body {
 
 /* Left pane sections */
 .left-header {
-  padding: 12px 16px;
+  min-height: 52px;
+  padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--bm-border);
-  background: linear-gradient(180deg, var(--bm-surface-raised), var(--bm-surface-muted));
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -341,7 +390,128 @@ body {
 .left-header-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────
+   One anatomy in three sizes. Standard (32px) for dialog and form actions:
+   .btn-primary and .action-button are the accent fill, .btn-action the
+   secondary. Compact (28px) for toolbars and actions inside a card or list
+   row: .btn-toolbar, .btn-generate-all. In-row (24px) for the actions on a
+   field header or asset card. .btn-delete turns any of them into danger text
+   on the ordinary surface. Every button shows hover, pressed, keyboard focus,
+   and disabled. */
+.btn-primary,
+.btn-action,
+.action-button,
+.btn-toolbar,
+.meta-field-copy,
+.meta-field-generate,
+.btn-generate-all,
+.asset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--bm-control-h);
+  padding: 0 14px;
+  border: 1px solid var(--bm-control-border);
+  border-radius: var(--bm-radius-md);
+  background: var(--bm-control-bg);
+  box-shadow: var(--bm-control-shadow);
+  color: var(--bm-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  /* An icon plus its words is one label: never break between them. */
+  white-space: nowrap;
+  transition:
+    background-color var(--bm-motion) ease,
+    border-color var(--bm-motion) ease,
+    color var(--bm-motion) ease;
+}
+
+.btn-toolbar,
+.meta-field-copy,
+.meta-field-generate,
+.btn-generate-all,
+.asset-btn {
+  height: var(--bm-control-h-sm);
+  padding: 0 10px;
+  border-radius: var(--bm-radius-sm);
+  font-size: 12px;
+}
+
+.btn-action {
+  align-self: flex-start;
+}
+
+:is(.btn-action, .btn-toolbar, .meta-field-copy, .meta-field-generate, .btn-generate-all, .asset-btn):hover:not(:disabled) {
+  background: var(--bm-control-hover);
+}
+
+:is(.btn-action, .btn-toolbar, .meta-field-copy, .meta-field-generate, .btn-generate-all, .asset-btn):active:not(:disabled) {
+  background: var(--bm-control-pressed);
+}
+
+.btn-primary,
+.action-button {
+  border-color: transparent;
+  background: var(--bm-accent);
+  color: var(--bm-on-accent);
+}
+
+.btn-primary:hover:not(:disabled),
+.action-button:hover:not(:disabled) {
+  background: var(--bm-accent-hover);
+}
+
+.btn-primary:active:not(:disabled),
+.action-button:active:not(:disabled) {
+  background: var(--bm-accent-pressed);
+}
+
+.btn-primary:disabled,
+.action-button:disabled {
+  background: var(--bm-accent-disabled);
+  box-shadow: none;
+}
+
+:is(.btn-action, .btn-toolbar, .meta-field-copy, .meta-field-generate, .btn-generate-all, .asset-btn):disabled {
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* One keyboard focus ring for every button: the accent, clear of the edge,
+   following its corners; muted while the window is inactive. */
+button:focus-visible {
+  outline: 2px solid var(--bm-accent-fg);
+  outline-offset: 2px;
+}
+
+[data-window-inactive] button:focus-visible {
+  outline-color: var(--bm-border-strong);
+}
+
+/* Icon buttons in the sidebar header: a filled accent square for New Post and
+   a quiet one for the menu, whose hit area appears on hover. */
+.btn-new-post-icon,
+.btn-hamburger {
+  width: var(--bm-control-h-sm);
+  height: var(--bm-control-h-sm);
+  padding: 0;
+  border: none;
+  border-radius: var(--bm-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background-color var(--bm-motion) ease,
+    color var(--bm-motion) ease;
 }
 
 .btn-new-post-icon {
@@ -349,62 +519,35 @@ body {
      size — the CSS-drawn plus it replaces was 12px. */
   font-size: 12px;
   background: var(--bm-accent);
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  border-radius: 5px;
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.btn-new-post-icon {
   color: var(--bm-on-accent);
+  box-shadow: var(--bm-control-shadow);
 }
 
 .btn-new-post-icon:hover {
   background: var(--bm-accent-hover);
 }
 
-.btn-new-post,
-.btn-primary {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bm-accent);
-  color: var(--bm-on-accent);
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.btn-new-post:hover,
-.btn-primary:hover {
-  background: var(--bm-accent-hover);
-}
-
-.btn-new-post:disabled,
-.btn-primary:disabled {
-  background: var(--bm-accent-disabled);
+.btn-new-post-icon:active {
+  background: var(--bm-accent-pressed);
 }
 
 .left-sections {
   flex: 1;
   overflow-y: auto;
+  padding: 6px 0 12px;
 }
 
+/* A section's summary row reads as a quiet group label, not a bar; it is still
+   a row of the listbox and toggles its group. */
 .section-header {
-  padding: 8px 16px;
+  margin: 8px 8px 2px;
+  padding: 6px 8px;
+  border-radius: var(--bm-radius-sm);
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--bm-text-muted);
-  background: var(--bm-panel);
-  border-bottom: 1px solid var(--bm-border-subtle);
   cursor: pointer;
   user-select: none;
   display: flex;
@@ -412,26 +555,61 @@ body {
   align-items: center;
   /* An icon plus its words is one label: never break between them. */
   white-space: nowrap;
+  transition:
+    background-color var(--bm-motion) ease,
+    color var(--bm-motion) ease;
+}
+
+.section-header:first-child {
+  margin-top: 0;
 }
 
 .section-header:hover {
   background: var(--bm-panel-hover);
+  color: var(--bm-text);
 }
 
 .section-count {
-  font-weight: 400;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--bm-text-faint);
 }
 
 .section-items {
-  border-bottom: 1px solid var(--bm-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section-empty {
+  padding: 6px 18px 8px;
+  color: var(--bm-text-faint);
+  font-size: 13px;
+}
+
+/* Pointer-only, so it reads as a quiet link row rather than a button. */
+.section-load-more {
+  margin: 0 8px;
+  height: var(--bm-control-h-sm);
+  border: none;
+  border-radius: var(--bm-radius-sm);
+  background: none;
+  color: var(--bm-accent-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.section-load-more:hover {
+  background: var(--bm-accent-subtle);
 }
 
 .post-item {
-  padding: 8px 16px;
+  margin: 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--bm-radius-sm);
   cursor: pointer;
-  border-bottom: 1px solid var(--bm-panel);
-  border-left: 3px solid transparent;
+  transition: background-color var(--bm-motion) ease;
 }
 
 .post-item:hover {
@@ -440,15 +618,16 @@ body {
 
 .post-item.selected {
   background: var(--bm-accent-soft);
-  border-left-color: var(--bm-accent-fg);
 }
 
 /* Keyboard cursor on the active row, kept distinct from the persistent selected
    state. With aria-activedescendant the rows are not focusable, so the cursor is
    shown via the .active class the listbox sets (as on the picker and workspace
-   lists). Inset so the scroll container never clips it. */
-.post-item.active,
-.section-header.active {
+   lists), and only while the list holds keyboard focus: Chromium matches
+   :focus-visible on the list once a key is pressed there, not after a click.
+   Inset so the scroll container never clips it. */
+.left-sections:focus-visible .post-item.active,
+.left-sections:focus-visible .section-header.active {
   outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
@@ -478,12 +657,13 @@ body {
 
 /* Center pane toolbar */
 .center-toolbar {
-  padding: 8px 16px;
+  min-height: 52px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--bm-border);
   background: var(--bm-surface-raised);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px 10px;
   font-size: 13px;
   flex-wrap: wrap;
 }
@@ -505,97 +685,64 @@ body {
   vertical-align: -3px;
 }
 
-.status-radios {
+/* ── Segmented controls ────────────────────────────────────
+   A recessed track holding its segments; the chosen segment is the accent
+   fill. The status radios and the export format share it. */
+.status-radios,
+.export-format-radios {
   display: inline-flex;
-  border: 1px solid var(--bm-border);
-  border-radius: 4px;
-  overflow: hidden;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--bm-radius-md);
+  background: var(--bm-track);
 }
 
-.status-radio {
+.status-radio,
+.export-format-radio {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  height: calc(var(--bm-control-h-sm) - 4px);
+  padding: 0 10px;
   border: 0;
+  border-radius: var(--bm-radius-sm);
   font: inherit;
   font-size: 13px;
+  font-weight: 500;
   color: var(--bm-text-soft);
-  background: var(--bm-surface-raised);
+  background: transparent;
   cursor: pointer;
   user-select: none;
+  transition:
+    background-color var(--bm-motion) ease,
+    color var(--bm-motion) ease;
 }
 
-.status-radio + .status-radio {
-  border-left: 1px solid var(--bm-border);
+.status-radio:hover:not(.active),
+.export-format-radio:hover:not(.active) {
+  background: var(--bm-control-hover);
+  color: var(--bm-text);
 }
 
-/* The one disabled-cursor rule for the whole app. It used to be reset per
-   button class in six places, which missed four more (.btn-toolbar, .asset-btn,
-   .meta-field-copy, .btn-export) and read-only pseudo-buttons — all of which kept
-   advertising the hand while dead. The cursor conventions ask for exactly one
-   place. */
+/* The one disabled-cursor rule for the whole app, as the cursor conventions
+   ask: a per-class reset misses buttons and read-only pseudo-buttons, which
+   then keep advertising the hand while dead. */
 button:disabled,
 [aria-disabled="true"] {
   cursor: default;
 }
 
-/* Keyboard cursor: an inset ring (clip-safe inside the rounded, overflow-hidden
-   group), distinct from the committed .active fill below. */
+/* Keyboard cursor: a ring inside the segment, distinct from the committed
+   .active fill below. */
 .status-radio:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--bm-accent-fg);
+  outline: 2px solid var(--bm-accent-fg);
+  outline-offset: -2px;
 }
 
-.status-radio.active {
+.status-radio.active,
+.export-format-radio.active {
   background: var(--bm-accent);
   color: var(--bm-on-accent);
-}
-
-.btn-toolbar {
-  padding: 4px 10px;
-  background: var(--bm-surface-raised);
-  border: 1px solid var(--bm-border-subtle);
-  border-radius: 4px;
-  color: var(--bm-text);
-  font-size: 12px;
-  cursor: pointer;
-  /* An icon plus its words is one label: never break between them. */
-  white-space: nowrap;
-}
-
-.btn-toolbar:hover {
-  background: var(--bm-panel);
-}
-
-.btn-toolbar:focus-visible {
-  outline: 2px solid var(--bm-accent-fg);
-  outline-offset: 1px;
-}
-
-[data-window-inactive] .btn-toolbar:focus-visible {
-  outline-color: var(--bm-border);
-}
-
-/* Solid, content-width action button (Add / Restore) — reads as a real button, not a
-   subtle toolbar pill, and never stretches to fill a flex-column settings section. */
-.btn-action {
-  align-self: flex-start;
-  padding: 6px 14px;
-  background: var(--bm-surface-raised);
-  border: 1px solid var(--bm-border);
-  border-radius: 6px;
-  color: var(--bm-text);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.btn-action:hover {
-  background: var(--bm-panel);
-}
-
-.btn-action:disabled {
-  opacity: 0.5;
+  box-shadow: var(--bm-control-shadow);
 }
 
 .settings-checkbox {
@@ -614,9 +761,9 @@ button:disabled,
 /* Reasoning is secondary to the analysis it precedes: readable, not competing. */
 .analysis-thinking {
   margin: 8px 0;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--bm-border);
-  border-radius: 6px;
+  border-radius: var(--bm-radius-md);
   background: var(--bm-surface-raised);
 }
 
@@ -635,13 +782,21 @@ button:disabled,
   color: var(--bm-text-muted, var(--bm-text));
 }
 
-.btn-delete {
+.btn-delete,
+.asset-btn-delete {
   color: var(--bm-danger);
+  border-color: var(--bm-danger-border);
 }
 
-.btn-delete:hover {
+.btn-delete:hover:not(:disabled),
+.asset-btn-delete:hover:not(:disabled) {
   background: var(--bm-danger-soft);
   border-color: var(--bm-danger);
+}
+
+.btn-delete:active:not(:disabled),
+.asset-btn-delete:active:not(:disabled) {
+  background: var(--bm-danger-pressed);
 }
 
 .toolbar-error {
@@ -677,7 +832,7 @@ button:disabled,
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-sm);
   background: transparent;
   color: currentColor;
   font-size: 12px;
@@ -701,7 +856,7 @@ button:disabled,
   gap: 8px;
   margin-top: 12px;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   font-size: 12px;
 }
 
@@ -718,8 +873,8 @@ button:disabled,
 }
 
 .modal-footer-result {
-  margin-right: 20px;
-  margin-left: 20px;
+  margin-right: 24px;
+  margin-left: 24px;
 }
 
 .modal-result-dismiss {
@@ -771,6 +926,12 @@ button:disabled,
   border-right: 1px solid var(--bm-border-subtle);
 }
 
+/* Line numbers sit clear of the gutter's edge rather than against it. The
+   extra .cm-editor outranks CodeMirror's scoped base theme. */
+.cm-container .cm-editor .cm-lineNumbers .cm-gutterElement {
+  padding: 0 12px 0 16px;
+}
+
 .cm-container .cm-activeLine,
 .cm-container .cm-activeLineGutter {
   background: var(--bm-accent-line);
@@ -801,39 +962,69 @@ button:disabled,
 /* Right pane tabs */
 .right-tabs {
   display: flex;
+  min-height: 52px;
+  align-items: flex-end;
+  padding: 0 8px;
   border-bottom: 1px solid var(--bm-border);
-  background: var(--bm-panel);
+  background: var(--bm-surface-raised);
 }
 
-.right-tab {
+/* ── Tabs ──────────────────────────────────────────────────
+   Underlined tabs: the chosen tab takes the accent text and a rounded 2px
+   underline; hover darkens the label only. The right pane and Settings share
+   them. */
+.right-tab,
+.settings-tab {
   flex: 1;
-  padding: 8px 4px;
+  position: relative;
+  height: 40px;
+  padding: 0 4px;
   text-align: center;
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border: none;
   background: transparent;
   color: var(--bm-text-muted);
-  border-bottom: 2px solid transparent;
+  transition: color var(--bm-motion) ease;
 }
 
-.right-tab:hover {
+.right-tab::after,
+.settings-tab::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color var(--bm-motion) ease;
+}
+
+.right-tab:hover,
+.settings-tab:hover {
   color: var(--bm-text);
-  background: var(--bm-panel-hover);
 }
 
-.right-tab.active {
+.right-tab.active,
+.settings-tab.active {
   color: var(--bm-accent-fg);
-  border-bottom-color: var(--bm-accent-fg);
-  background: var(--bm-surface-raised);
+}
+
+.right-tab.active::after,
+.settings-tab.active::after {
+  background: var(--bm-accent-fg);
 }
 
 /* Keyboard focus cursor for the roving-tabindex active tab; shown only to
    keyboard users, inset so the tab strip's edges never clip it. */
-.right-tab:focus-visible {
+.right-tab:focus-visible,
+.settings-tab:focus-visible {
   outline: 2px solid var(--bm-accent-fg);
-  outline-offset: -2px;
+  outline-offset: -4px;
+  border-radius: var(--bm-radius-md);
 }
 
 .right-content {
@@ -871,17 +1062,13 @@ button:disabled,
   /* The mark's size directly, the icon filling its box — the CSS-drawn hamburger
      it replaces was 18px wide. */
   font-size: 18px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 5px;
+  background: transparent;
   color: var(--bm-text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.btn-hamburger:hover {
+.btn-hamburger:hover,
+.btn-hamburger[aria-expanded="true"] {
+  background: var(--bm-panel-hover);
   color: var(--bm-text);
 }
 
@@ -892,26 +1079,30 @@ button:disabled,
 
 .menu-popup {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
   background: var(--bm-surface-raised);
   border: 1px solid var(--bm-border);
-  border-radius: 6px;
+  border-radius: var(--bm-radius-lg);
   box-shadow: var(--bm-shadow-popover);
-  min-width: 180px;
+  min-width: 200px;
   z-index: 50;
   overflow: hidden;
-  padding: 4px 0;
+  padding: 4px;
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 8px 16px;
+  height: 30px;
+  padding: 0 10px;
   text-align: left;
   background: none;
   border: none;
-  font-size: 14px;
+  border-radius: var(--bm-radius-sm);
+  font: inherit;
+  font-size: 13px;
   color: var(--bm-text);
   cursor: pointer;
 }
@@ -929,12 +1120,12 @@ button:disabled,
 }
 
 .menu-label {
-  padding: 8px 16px;
+  padding: 6px 10px 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--bm-text-muted);
   border-bottom: 1px solid var(--bm-border-subtle);
-  margin-bottom: 4px;
+  margin: 0 -4px 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -960,10 +1151,11 @@ button:disabled,
 
 .shortcut-key kbd {
   display: inline-block;
-  padding: 2px 7px;
-  background: var(--bm-bg);
-  border: 1px solid var(--bm-border);
-  border-radius: 4px;
+  padding: 1px 7px;
+  background: var(--bm-control-bg);
+  border: 1px solid var(--bm-control-border);
+  border-bottom-width: 2px;
+  border-radius: var(--bm-radius-sm);
   font-family: inherit;
   font-size: 12px;
   color: var(--bm-text);
@@ -1025,7 +1217,7 @@ button:disabled,
 .preview-content pre {
   background: var(--bm-panel);
   padding: 10px 12px;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   overflow-x: auto;
   font-size: 13px;
   margin: 1.5em 0;
@@ -1033,8 +1225,8 @@ button:disabled,
 
 .preview-content code {
   background: var(--bm-panel);
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
   font-size: 13px;
 }
 
@@ -1070,7 +1262,7 @@ button:disabled,
 
 .preview-content img {
   max-width: 100%;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
 }
 
 /* Metadata tab */
@@ -1088,7 +1280,7 @@ button:disabled,
   padding: 8px 12px;
   background: var(--bm-danger-soft);
   border: 1px solid var(--bm-danger-border);
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   color: var(--bm-danger);
   font-size: 12px;
 }
@@ -1112,7 +1304,7 @@ button:disabled,
 .meta-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .meta-field-header {
@@ -1133,45 +1325,12 @@ button:disabled,
   gap: 4px;
 }
 
+/* The row actions above a field sit a step smaller than the toolbar's. */
 .meta-field-copy,
 .meta-field-generate {
-  padding: 1px 6px;
-  font-size: 12px;
-  background: none;
-  border: 1px solid var(--bm-border);
-  border-radius: 3px;
-  color: var(--bm-text-muted);
-  cursor: pointer;
-  /* An icon plus its words is one label: never break between them. */
-  white-space: nowrap;
-}
-
-.meta-field-copy:hover,
-.meta-field-generate:hover:not(:disabled) {
-  background: var(--bm-panel);
-  color: var(--bm-text);
-}
-
-.meta-field-generate:disabled {
-  opacity: 0.5;
-}
-
-.meta-field-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--bm-input-border);
-  border-radius: 4px;
-  background: var(--bm-surface-raised);
-  color: var(--bm-text);
-  font-size: 13px;
-  font-family: inherit;
-  line-height: 1.4;
-  outline: none;
-}
-
-.meta-field-input:focus {
-  border-color: var(--bm-accent-fg);
-  box-shadow: 0 0 0 3px var(--bm-accent-ring);
+  height: var(--bm-control-h-xs);
+  padding: 0 8px;
+  color: var(--bm-text-soft);
 }
 
 .meta-field-textarea {
@@ -1181,27 +1340,7 @@ button:disabled,
 }
 
 .metadata-generate-all-row {
-  padding: 4px 0 8px;
-}
-
-.btn-generate-all {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: none;
-  border: 1px solid var(--bm-border);
-  border-radius: 3px;
-  color: var(--bm-text-soft);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-generate-all:hover:not(:disabled) {
-  background: var(--bm-panel);
-  color: var(--bm-text);
-}
-
-.btn-generate-all:disabled {
-  opacity: 0.5;
+  padding: 2px 0 4px;
 }
 
 /* Modal */
@@ -1218,7 +1357,7 @@ button:disabled,
 .modal {
   background: var(--bm-surface-raised);
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--bm-radius-xl);
   width: 600px;
   max-width: 90vw;
   max-height: 80vh;
@@ -1231,7 +1370,7 @@ button:disabled,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 16px 16px 16px 24px;
   border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
 }
@@ -1242,16 +1381,23 @@ button:disabled,
 }
 
 .modal-close {
+  display: inline-grid;
+  place-items: center;
+  width: var(--bm-control-h-sm);
+  height: var(--bm-control-h-sm);
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-sm);
   /* Matches the modal title beside it. Was 22px, inflated because the × glyph it
      used to hold renders at 0.468em; a drawn icon fills 0.696em, so the same
      22px put a 15px mark against an 11px title. */
   font-size: 16px;
   cursor: pointer;
   color: var(--bm-text-muted);
-  padding: 4px 6px;
+  padding: 0;
+  transition:
+    background-color var(--bm-motion) ease,
+    color var(--bm-motion) ease;
 }
 
 .modal-close:hover:not(:disabled) {
@@ -1263,7 +1409,7 @@ button:disabled,
   color: var(--bm-text);
   background: color-mix(in srgb, currentColor 12%, transparent);
   outline: 2px solid currentColor;
-  outline-offset: 1px;
+  outline-offset: 0;
 }
 
 .modal-close:disabled {
@@ -1275,7 +1421,7 @@ button:disabled,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px;
+  padding: 20px 24px;
 }
 
 .modal-empty-message {
@@ -1285,7 +1431,7 @@ button:disabled,
 }
 
 .modal-footer {
-  padding: 12px 20px;
+  padding: 14px 24px;
   border-top: 1px solid var(--bm-border-subtle);
   display: flex;
   justify-content: flex-end;
@@ -1304,25 +1450,8 @@ button:disabled,
    Mirrors the CenterPane status radios — the native input is the real control
    (one tab stop, arrow navigation, accessibility); the label is its surface. */
 .export-format-radios {
-  display: inline-flex;
-  margin: 12px 20px 0;
-  border: 1px solid var(--bm-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.export-format-radio {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 16px;
-  font-size: 13px;
-  background: var(--bm-bg);
-  cursor: pointer;
-  user-select: none;
-}
-
-.export-format-radio + .export-format-radio {
-  border-left: 1px solid var(--bm-border);
+  align-self: flex-start;
+  margin: 16px 24px 0;
 }
 
 /* Visually-hidden native input; the label is the control surface. The input
@@ -1336,14 +1465,9 @@ button:disabled,
   pointer-events: none;
 }
 
-.export-format-radio.active {
-  background: var(--bm-accent);
-  color: var(--bm-on-accent);
-}
-
 /* Keyboard focus cursor: the focused radio's label shows the ring (the input
    itself is visually hidden), so keyboard users always see where they are. */
-.export-format-radio:focus-within {
+.export-format-radio:has(input:focus-visible) {
   outline: 2px solid var(--bm-accent-fg);
   outline-offset: -2px;
 }
@@ -1352,32 +1476,17 @@ button:disabled,
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px 20px;
-}
-
-.btn-export {
-  padding: 6px 14px;
-  border: 1px solid var(--bm-border);
-  border-radius: 4px;
-  background: var(--bm-surface);
-  cursor: pointer;
-  font-size: 13px;
-  /* An icon plus its words is one label: never break between them. */
-  white-space: nowrap;
-}
-
-.btn-export:hover {
-  background: var(--bm-panel);
+  padding: 16px 24px 20px;
 }
 
 .export-preview {
   flex: 1;
   overflow: auto;
-  margin: 12px 20px 0;
-  padding: 12px;
+  margin: 12px 24px 0;
+  padding: 12px 14px;
   background: var(--bm-surface-muted);
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   font-size: 12px;
   font-family: "SF Mono", "Menlo", monospace;
   white-space: pre-wrap;
@@ -1386,7 +1495,7 @@ button:disabled,
 
 /* Form fields (modals) */
 .form-field {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .form-label {
@@ -1394,30 +1503,56 @@ button:disabled,
   font-size: 12px;
   font-weight: 600;
   color: var(--bm-text-soft);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
+/* ── Fields ────────────────────────────────────────────────
+   One anatomy for every text field and select: 32px single-line height, 8px
+   corners, the 3:1 input outline, a hover step, and the accent border plus
+   soft ring on focus. Selects drop the OS popup-button look for a drawn
+   chevron; their option list stays native. */
 .form-input,
-.form-select {
+.form-select,
+.meta-field-input,
+.prompt-select {
   width: 100%;
-  padding: 6px 8px;
+  min-height: var(--bm-control-h);
+  padding: 6px 10px;
   border: 1px solid var(--bm-input-border);
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   background: var(--bm-surface-raised);
   color: var(--bm-text);
   font-size: 13px;
   font-family: inherit;
+  line-height: 1.4;
   outline: none;
+  transition:
+    border-color var(--bm-motion) ease,
+    box-shadow var(--bm-motion) ease;
 }
 
-.form-input:focus,
-.form-select:focus {
+:is(.form-input, .form-select, .meta-field-input, .prompt-select):hover:not(:disabled):not(:focus) {
+  border-color: var(--bm-text-muted);
+}
+
+:is(.form-input, .form-select, .meta-field-input, .prompt-select):focus {
   border-color: var(--bm-accent-fg);
   box-shadow: 0 0 0 3px var(--bm-accent-ring);
 }
 
-.form-input:disabled {
-  background: var(--bm-bg);
+select:is(.form-select, .prompt-select) {
+  appearance: none;
+  padding-right: 32px;
+  background-image: var(--bm-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+
+.form-input:disabled,
+.form-select:disabled {
+  background-color: var(--bm-bg);
   color: var(--bm-text-muted);
 }
 
@@ -1440,35 +1575,8 @@ button:disabled,
 /* Settings modal */
 .settings-tabs {
   display: flex;
+  padding: 0 12px;
   border-bottom: 1px solid var(--bm-border-subtle);
-}
-
-.settings-tab {
-  flex: 1;
-  padding: 8px 12px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: var(--bm-text-muted);
-  border-bottom: 2px solid transparent;
-}
-
-.settings-tab:hover {
-  color: var(--bm-text);
-  background: var(--bm-surface-muted);
-}
-
-.settings-tab.active {
-  color: var(--bm-accent-fg);
-  border-bottom-color: var(--bm-accent-fg);
-}
-
-.settings-tab:focus-visible {
-  outline: 2px solid var(--bm-accent-fg);
-  outline-offset: -2px;
 }
 
 .settings-section {
@@ -1486,8 +1594,8 @@ button:disabled,
 .settings-subheading {
   font-size: 14px;
   font-weight: 600;
-  margin-top: 12px;
-  margin-bottom: 4px;
+  margin-top: 16px;
+  margin-bottom: 8px;
   color: var(--bm-text);
 }
 
@@ -1512,10 +1620,6 @@ button:disabled,
   color: var(--bm-text);
 }
 
-.settings-radio input {
-  accent-color: var(--bm-accent);
-}
-
 .settings-hint {
   font-size: 12px;
   color: var(--bm-text-muted);
@@ -1529,18 +1633,18 @@ button:disabled,
 }
 
 .settings-list-item {
-  padding: 12px;
+  padding: 16px;
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 6px;
-  margin-bottom: 8px;
+  border-radius: var(--bm-radius-lg);
+  margin-bottom: 12px;
   background: var(--bm-surface-muted);
 }
 
 /* ── Source Picker Modal ─────────────────────────────────── */
 
 .post-picker-item {
-  padding: 10px 12px;
-  border-radius: 4px;
+  padding: 8px 10px;
+  border-radius: var(--bm-radius-sm);
   cursor: pointer;
   margin-bottom: 2px;
 }
@@ -1563,8 +1667,8 @@ button:disabled,
 }
 
 .post-picker-list {
-  border: 1px solid var(--bm-border-subtle);
-  border-radius: 4px;
+  border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius-md);
   max-height: 180px;
   overflow-y: auto;
   margin-top: 4px;
@@ -1583,7 +1687,7 @@ button:disabled,
   gap: 8px;
   padding: 6px 10px;
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   background: var(--bm-surface-muted);
 }
 
@@ -1637,7 +1741,7 @@ button:disabled,
   gap: 8px;
   margin: 8px 0;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   font-size: 12px;
 }
 
@@ -1670,10 +1774,10 @@ button:disabled,
 .asset-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px;
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--bm-radius-lg);
   background: var(--bm-surface);
 }
 
@@ -1684,7 +1788,7 @@ button:disabled,
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--bm-radius-sm);
   overflow: hidden;
   background: var(--bm-panel);
   position: relative;
@@ -1736,26 +1840,9 @@ button:disabled,
 }
 
 .asset-btn {
-  padding: 3px 8px;
-  font-size: 12px;
-  background: none;
-  border: 1px solid var(--bm-border);
-  border-radius: 3px;
+  height: var(--bm-control-h-xs);
+  padding: 0 8px;
   color: var(--bm-text-soft);
-  cursor: pointer;
-}
-
-.asset-btn:hover {
-  background: var(--bm-panel);
-}
-
-.asset-btn-delete {
-  color: var(--bm-danger);
-  border-color: var(--bm-danger-border);
-}
-
-.asset-btn-delete:hover {
-  background: var(--bm-danger-soft);
 }
 
 /* ── Analysis + Imaging ──────────────────────────────────── */
@@ -1771,7 +1858,7 @@ button:disabled,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 0;
+  padding: 2px 0 14px;
   border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
 }
@@ -1779,30 +1866,6 @@ button:disabled,
 .prompt-select {
   flex: 1;
   min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--bm-input-border);
-  border-radius: 4px;
-  font-size: 13px;
-  background: var(--bm-surface);
-}
-
-.action-button {
-  padding: 5px 14px;
-  background: var(--bm-accent);
-  color: var(--bm-on-accent);
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.action-button:hover:not(:disabled) {
-  background: var(--bm-accent-hover);
-}
-
-.action-button:disabled {
-  opacity: 0.5;
 }
 
 .panel-error {
@@ -1810,7 +1873,7 @@ button:disabled,
   padding: 8px 12px;
   background: var(--bm-danger-soft);
   border: 1px solid var(--bm-danger-border);
-  border-radius: 4px;
+  border-radius: var(--bm-radius-md);
   color: var(--bm-danger);
   font-size: 13px;
   overflow-wrap: break-word;
@@ -1841,7 +1904,7 @@ button:disabled,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
+  padding: 2px 0 14px;
   border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
 }
@@ -1849,8 +1912,8 @@ button:disabled,
 .imaging-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  padding: 12px 0;
+  gap: 12px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
 }
@@ -1858,7 +1921,7 @@ button:disabled,
 .imaging-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .imaging-field label {
@@ -1892,10 +1955,10 @@ button:disabled,
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 14px;
   background: var(--bm-surface-raised);
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--bm-radius-lg);
 }
 
 .image-prompt-header {
@@ -1925,11 +1988,14 @@ button:disabled,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 14px;
   border: 1px solid var(--bm-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--bm-radius-lg);
   background: var(--bm-surface-muted);
   cursor: pointer;
+  transition:
+    background-color var(--bm-motion) ease,
+    border-color var(--bm-motion) ease;
 }
 
 .workspace-item:hover {
@@ -1942,8 +2008,9 @@ button:disabled,
   background: var(--bm-accent-subtle);
 }
 
-/* Keyboard cursor, distinct from the persistent selection above. */
-.workspace-item.active {
+/* Keyboard cursor, distinct from the persistent selection above; shown while
+   the list holds keyboard focus, as in the sidebar. */
+.workspace-list:focus-visible .workspace-item.active {
   outline: 2px solid var(--bm-accent-fg);
   outline-offset: 2px;
 }
@@ -2008,7 +2075,7 @@ button:disabled,
 }
 
 .workspace-create {
-  padding: 16px 20px 20px;
+  padding: 16px 24px 20px;
   border-top: 1px solid var(--bm-border-subtle);
 }
 

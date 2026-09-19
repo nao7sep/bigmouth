@@ -269,9 +269,7 @@ function Section({
       {open && (
         <div className="section-items">
           {posts.length === 0 ? (
-            <div style={{ padding: "12px 16px", color: "var(--bm-text-faint)", fontSize: 13 }}>
-              {emptyText}
-            </div>
+            <div className="section-empty">{emptyText}</div>
           ) : (
             posts.map((p) => (
               <PostItem
@@ -292,16 +290,8 @@ function Section({
               // single tab stop. Keyboard users reach more posts by arrowing to
               // the end, which auto-loads.
               tabIndex={-1}
+              className="section-load-more"
               onClick={onLoadMore}
-              style={{
-                width: "100%",
-                padding: "8px",
-                background: "none",
-                border: "none",
-                color: "var(--bm-accent)",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
             >
               Load more…
             </button>

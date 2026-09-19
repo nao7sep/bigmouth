@@ -27,7 +27,7 @@ describe("App.css disabled cursors", () => {
 
   // Every one of these kept the hand while dead, because the reset was written
   // per button class in six places and these were not among them.
-  it.each(["btn-toolbar", "asset-btn", "meta-field-copy", "btn-export", "btn-primary", "action-button"])(
+  it.each(["btn-toolbar", "btn-action", "asset-btn", "meta-field-copy", "btn-primary", "action-button"])(
     "%s shows the arrow when disabled",
     (className) => {
       expect(cursorOf(className, true)).toBe("default");

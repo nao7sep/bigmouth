@@ -84,7 +84,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
         </p>
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={onClose}>
+        <button className="btn-action" onClick={onClose}>
           Close
         </button>
       </div>

@@ -33,7 +33,7 @@ export function SourcePickerModal({
         />
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={onClose}>
+        <button className="btn-action" onClick={onClose}>
           Cancel
         </button>
       </div>

@@ -45,12 +45,11 @@ export function ConfirmModal({
         )}
       </div>
       <div className="modal-footer">
-        <button className="btn-toolbar" onClick={onCancel} autoFocus disabled={busy}>
+        <button className="btn-action" onClick={onCancel} autoFocus disabled={busy}>
           {cancelLabel}
         </button>
         <button
-          className={danger ? "btn-toolbar btn-delete" : "btn-primary"}
-          style={{ width: "auto" }}
+          className={danger ? "btn-action btn-delete" : "btn-primary"}
           onClick={onConfirm}
           disabled={busy}
         >
