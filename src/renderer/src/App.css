@@ -929,7 +929,7 @@ button:disabled,
 /* Line numbers sit clear of the gutter's edge rather than against it. The
    extra .cm-editor outranks CodeMirror's scoped base theme. */
 .cm-container .cm-editor .cm-lineNumbers .cm-gutterElement {
-  padding: 0 12px 0 16px;
+  padding: 0 12px 0 8px;
 }
 
 .cm-container .cm-activeLine,
