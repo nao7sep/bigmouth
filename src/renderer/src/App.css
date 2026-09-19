@@ -18,6 +18,10 @@
   --bm-control-h: 32px;
   --bm-control-h-sm: 28px;
   --bm-control-h-xs: 24px;
+  /* The one gap between separate controls that sit together, side by side or
+     stacked: toolbars, dialog footers, row actions. Parts of a single control
+     (segments, list rows, menu items) may sit closer. */
+  --bm-control-gap: 8px;
   --bm-radius-sm: 6px;
   --bm-radius-md: 8px;
   --bm-radius-lg: 10px;
@@ -390,7 +394,7 @@ body {
 .left-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--bm-control-gap);
 }
 
 /* ── Buttons ───────────────────────────────────────────────
@@ -663,7 +667,7 @@ button:focus-visible {
   background: var(--bm-surface-raised);
   display: flex;
   align-items: center;
-  gap: 8px 10px;
+  gap: var(--bm-control-gap);
   font-size: 13px;
   flex-wrap: wrap;
 }
@@ -1318,7 +1322,7 @@ button:disabled,
 .meta-field-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--bm-control-gap);
 }
 
 /* The row actions above a field sit a step smaller than the toolbar's. */
@@ -1431,14 +1435,14 @@ button:disabled,
   border-top: 1px solid var(--bm-border-subtle);
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--bm-control-gap);
   flex-shrink: 0;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--bm-control-gap);
 }
 
 /* Export modal */
@@ -1471,7 +1475,7 @@ button:disabled,
 .export-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--bm-control-gap);
   padding: 16px 24px 20px;
 }
 
@@ -1705,11 +1709,21 @@ select:is(.form-select, .prompt-select) {
   overflow: hidden;
 }
 
+/* Laid out like the Analysis and Imaging toolbars: a note on the left, the
+   tab's primary action on the right, a divider below. */
 .assets-toolbar {
   display: flex;
-  justify-content: flex-end;
-  padding: 0 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0 14px;
+  border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
+}
+
+.assets-note {
+  font-size: 12px;
+  color: var(--bm-text-muted);
 }
 
 .assets-tab.drag-over {
@@ -1761,7 +1775,7 @@ select:is(.form-select, .prompt-select) {
 .assets-grid {
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 12px;
+  padding: 14px 0 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1831,7 +1845,7 @@ select:is(.form-select, .prompt-select) {
 .asset-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--bm-control-gap);
   flex-shrink: 0;
 }
 
@@ -1853,7 +1867,7 @@ select:is(.form-select, .prompt-select) {
 .analysis-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--bm-control-gap);
   padding: 2px 0 14px;
   border-bottom: 1px solid var(--bm-border-subtle);
   flex-shrink: 0;
@@ -2043,13 +2057,13 @@ select:is(.form-select, .prompt-select) {
 
 .workspace-item-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--bm-control-gap);
   flex-shrink: 0;
 }
 
 .workspace-edit-row {
   display: flex;
-  gap: 6px;
+  gap: var(--bm-control-gap);
   align-items: center;
   flex: 1;
 }

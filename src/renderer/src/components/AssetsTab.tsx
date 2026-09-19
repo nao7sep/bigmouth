@@ -370,6 +370,9 @@ export function AssetsTab({
       onDrop={handleDrop}
     >
       <div className="assets-toolbar">
+        <div className="assets-note">
+          {readOnly ? "Read-only while the post is locked." : "Drop files here or use Add."}
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -379,7 +382,7 @@ export function AssetsTab({
         />
         <button
           type="button"
-          className="btn-toolbar"
+          className="action-button"
           disabled={readOnly || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -401,7 +404,7 @@ export function AssetsTab({
       {/* Asset grid */}
       {assets.length === 0 ? (
         <div className="assets-empty">
-          {readOnly ? "No assets yet" : "No assets yet. Drop files here or use Add."}
+          No assets yet.
         </div>
       ) : (
           <div className="assets-grid">

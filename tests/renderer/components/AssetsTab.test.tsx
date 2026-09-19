@@ -82,7 +82,8 @@ describe("AssetsTab loading", () => {
   it("shows the empty state when there are no assets", async () => {
     mockListAssets.mockResolvedValue([]);
     const { getByText } = await renderTab();
-    expect(getByText("No assets yet. Drop files here or use Add.")).toBeTruthy();
+    expect(getByText("No assets yet.")).toBeTruthy();
+    expect(getByText("Drop files here or use Add.")).toBeTruthy();
   });
 
   it("surfaces a load failure in the error banner", async () => {
