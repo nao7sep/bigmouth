@@ -1157,7 +1157,7 @@ function GenerationTab({
               rows={3}
               value={current}
               onChange={(e) => updatePrompt(key, e.target.value)}
-              style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+              style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}
             />
           </div>
         );
@@ -1226,7 +1226,7 @@ function AnalysisPromptsTab({
               rows={6}
               value={p.text}
               onChange={(e) => updatePrompt(i, { text: e.target.value })}
-              style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+              style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}
             />
             {!p.text.trim() && <FieldError msg="Prompt text is required." />}
           </div>

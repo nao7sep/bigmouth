@@ -8,8 +8,8 @@
      overrides this variable at runtime with a verbatim, engine-resolved family
      string. Family only — no UI font-size knob. The editor's content font is set
      separately on the CodeMirror surface, not from this variable. */
-  --bm-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --bm-font-ui: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bm-font-mono: ui-monospace, "Menlo", "Consolas", monospace;
   /* Control anatomy, shared by both themes. Spacing steps are multiples of 4px.
      A standard control is 32px tall, a compact one (toolbars, card and list
      rows) 28px, and an action on a field header or asset card 24px. Corners
@@ -1488,7 +1488,7 @@ button:disabled,
   border: 1px solid var(--bm-border-subtle);
   border-radius: var(--bm-radius-md);
   font-size: 12px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--bm-font-mono);
   white-space: pre-wrap;
   word-break: break-word;
 }
