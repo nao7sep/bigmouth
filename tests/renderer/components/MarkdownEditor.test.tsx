@@ -65,6 +65,12 @@ describe("MarkdownEditor mounting", () => {
     expect(container.querySelector(".cm-content")?.textContent).toContain("seed text");
   });
 
+  it("numbers its lines but offers no section folding", () => {
+    const { container } = renderEditor({ initialContent: "# Heading\n\nBody\n\n## Next\n" });
+    expect(container.querySelector(".cm-lineNumbers")).toBeTruthy();
+    expect(container.querySelector(".cm-foldGutter")).toBeNull();
+  });
+
   it("renders the watermark as the placeholder when empty", () => {
     const { container } = renderEditor({ initialContent: "", watermark: "Start typing" });
     // CodeMirror renders the placeholder text into the content area when empty.

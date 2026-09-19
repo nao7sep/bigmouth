@@ -1,11 +1,67 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, placeholder } from "@codemirror/view";
+import {
+  EditorView,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  placeholder,
+  rectangularSelection,
+} from "@codemirror/view";
+import {
+  bracketMatching,
+  defaultHighlightStyle,
+  indentOnInput,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from "@codemirror/autocomplete";
+import { lintKeymap } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { basicSetup } from "codemirror";
 import type { ContentFont } from "@shared/types";
 import { editorHighlighting } from "./editorHighlight";
+
+// CodeMirror's basicSetup without folding: a post is short enough that
+// collapsing a section under its heading rarely helps, and the fold gutter put
+// a typed mark beside every heading. Everything else basicSetup provides stays.
+const editorSetup = [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
+];
 
 export interface MarkdownEditorHandle {
   insertAtCursor: (text: string) => void;
@@ -92,9 +148,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     const state = EditorState.create({
       doc: initialContent,
       extensions: [
-        basicSetup,
+        editorSetup,
         markdown({ codeLanguages: languages }),
-        // Theme-token syntax colors; displaces basicSetup's fixed-color fallback.
+        // Theme-token syntax colors; displaces the setup's fixed-color fallback.
         editorHighlighting,
         placeholder(watermark),
         updateListener,

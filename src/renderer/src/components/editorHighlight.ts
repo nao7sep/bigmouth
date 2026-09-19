@@ -2,9 +2,9 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
 // CodeMirror's default highlight style with every color read from a palette
-// token (App.css --bm-syntax-*), so syntax colors follow the theme. Installed
-// ahead of basicSetup, it replaces basicSetup's fallback default style rather
-// than layering on it.
+// token (App.css --bm-syntax-*), so syntax colors follow the theme. As a
+// non-fallback style it replaces the editor setup's fallback default style
+// rather than layering on it.
 export const editorHighlightStyle = HighlightStyle.define([
   { tag: tags.meta, color: "var(--bm-syntax-meta)" },
   { tag: tags.link, textDecoration: "underline" },
