@@ -1,7 +1,7 @@
 // The three AI features through their real IPC handlers and the real Anthropic
 // API, with only Electron's ipcMain substituted: metadata generation, image
 // prompts, and the streamed analysis, on a real workspace and post in a
-// throwaway home. Run only by npm run check:full, through vitest.live.config.ts.
+// throwaway home. Run only by npm run test:full, through vitest.live.config.ts.
 // The key comes from ANTHROPIC_API_KEY, which the app's own resolver reads
 // before any stored key; the throwaway home stores none.
 
@@ -53,7 +53,7 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 beforeAll(() => {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set. The full check calls the real Anthropic API; export ANTHROPIC_API_KEY and run it again.",
+      "ANTHROPIC_API_KEY is not set. The full run calls the real Anthropic API; export ANTHROPIC_API_KEY and run it again.",
     );
   }
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-live-"));
