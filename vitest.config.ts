@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -11,6 +11,10 @@ const { version } = JSON.parse(readFileSync(new URL("./package.json", import.met
 // core) under Node, and the renderer tests (React components + DOM utilities)
 // under jsdom. Two projects keep each in its own environment while sharing the
 // app's path aliases.
+// Vitest reruns everything when a root setup file changes, but not a project's
+// own, so the main project's setup is named once and added to the triggers.
+const mainSetup = "tests/main/setup.ts";
+
 const alias = {
   "@shared": resolve("src/shared"),
   "@main": resolve("src/main"),
@@ -28,6 +32,7 @@ export default defineConfig({
     // test file's temp-directory cleanup. Run hooks in registration order so
     // Windows releases SQLite before removing the directory it holds.
     sequence: { hooks: "list" },
+    forceRerunTriggers: [...configDefaults.forceRerunTriggers, `**/${mainSetup}`],
     coverage: {
       // One V8 coverage report across both projects (main + renderer). `include`
       // spans all source so the report flags logic no test reaches, not just a
@@ -56,7 +61,7 @@ export default defineConfig({
           include: ["tests/main/**/*.test.ts", "tests/shared/**/*.test.ts"],
           // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_HOME root
           // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
-          setupFiles: ["tests/main/setup.ts"],
+          setupFiles: [mainSetup],
         },
       },
       {
