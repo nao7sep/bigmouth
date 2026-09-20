@@ -462,7 +462,7 @@ describe("CenterPane delete", () => {
     // The confirm dialog's Delete button lives in the modal footer.
     const confirmBtn = document
       .querySelector(".modal-footer")!
-      .querySelector("button.btn-delete") as HTMLButtonElement;
+      .querySelector("button.btn-delete-confirm") as HTMLButtonElement;
     fireEvent.click(confirmBtn);
     await waitFor(() => expect(mockDeletePost).toHaveBeenCalledWith("p1", "w1"));
     await waitFor(() => expect(onPostDeleted).toHaveBeenCalledTimes(1));
@@ -483,7 +483,7 @@ describe("CenterPane delete", () => {
 
     const confirmBtn = document
       .querySelector(".modal-footer")!
-      .querySelector("button.btn-delete") as HTMLButtonElement;
+      .querySelector("button.btn-delete-confirm") as HTMLButtonElement;
     fireEvent.click(confirmBtn);
 
     await waitFor(() => expect(mockDeletePost).toHaveBeenCalledTimes(1));

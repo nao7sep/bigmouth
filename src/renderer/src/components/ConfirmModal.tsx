@@ -49,7 +49,7 @@ export function ConfirmModal({
           {cancelLabel}
         </button>
         <button
-          className={danger ? "btn-action btn-delete" : "btn-primary"}
+          className={danger ? "btn-action btn-delete-confirm" : "btn-primary"}
           onClick={onConfirm}
           disabled={busy}
         >

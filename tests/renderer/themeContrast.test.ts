@@ -51,6 +51,9 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
     (ink): Array<[string, string]> => SURFACES.map((surface) => [ink, surface]),
   ),
   ["--bm-on-accent", "--bm-accent"],
+  // A destructive CONFIRM button is filled, so its ink is read on the fill.
+  ["--bm-on-danger", "--bm-danger"],
+  ["--bm-on-danger", "--bm-danger-hover"],
   ["--bm-on-accent", "--bm-accent-hover"],
   ["--bm-text", "--bm-accent-soft"],
   ["--bm-text", "--bm-accent-subtle"],

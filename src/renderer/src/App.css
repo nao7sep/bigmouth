@@ -65,6 +65,11 @@
   --bm-warning-soft: #fff6e7;
   --bm-warning-border: #ddb66f;
   --bm-danger: #b42318;
+  /* The fill and ink of a destructive CONFIRM button (the one in the dialog that
+     asks). In dark the danger colour turns light so it can be read as letters,
+     which is why the ink beside it turns dark rather than staying white. */
+  --bm-danger-hover: #96190f;
+  --bm-on-danger: #fff8f0;
   --bm-danger-soft: #fff0ec;
   --bm-danger-border: #eea79a;
   --bm-danger-pressed: #fbdcd5;
@@ -139,6 +144,8 @@
     --bm-warning-soft: #33280f;
     --bm-warning-border: #7a5a23;
     --bm-danger: #f28b7c;
+    --bm-danger-hover: #f7a89b;
+    --bm-on-danger: #2a1210;
     --bm-danger-soft: #3a1f1b;
     --bm-danger-border: #7d3a31;
     --bm-danger-pressed: #4a2621;
@@ -790,6 +797,20 @@ button:disabled,
 .asset-btn-delete {
   color: var(--bm-danger);
   border-color: var(--bm-danger-border);
+}
+
+/* The confirming button of the dialog that asks is filled, so a solid red marks
+   the last step; every other destructive button in the app stays outlined. */
+.btn-delete-confirm {
+  border-color: var(--bm-danger);
+  background: var(--bm-danger);
+  color: var(--bm-on-danger);
+}
+
+.btn-delete-confirm:hover:not(:disabled) {
+  border-color: var(--bm-danger-hover);
+  background: var(--bm-danger-hover);
+  color: var(--bm-on-danger);
 }
 
 .btn-delete:hover:not(:disabled),
