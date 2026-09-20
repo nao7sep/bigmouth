@@ -68,3 +68,64 @@ describe("App.css pane minimums match the shared layout", () => {
     expect(minWidthOf(className)).toBe(expected);
   });
 });
+
+// A state a control does not state for itself is answered by the browser — or,
+// where an app rule already pinned that control's fill, not answered at all.
+// Neither shows in the resting stylesheet, and jsdom cannot resolve var() to a
+// colour, so these read the rules themselves.
+describe("App.css button states", () => {
+  const sheet = (() => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const rules = [...(style.sheet!.cssRules as unknown as CSSStyleRule[])]
+      .filter((rule): rule is CSSStyleRule => rule.type === CSSRule.STYLE_RULE)
+      .map((rule, order) => ({ order, selector: rule.selectorText, style: rule.style }));
+    style.remove();
+    return rules;
+  })();
+
+  // The buttons that carry a surface of their own. The quiet controls — the menu
+  // items, the hamburger, the modal close, the load-more row — are left out on
+  // purpose: they have no fill to step, and they all behave alike.
+  const FILLED = [
+    "btn-primary", "action-button", "btn-action", "btn-toolbar", "asset-btn",
+    "meta-field-copy", "meta-field-generate", "btn-generate-all",
+    "btn-delete", "asset-btn-delete", "btn-delete-confirm", "btn-new-post-icon",
+  ];
+  const namesOne = (selector: string) => FILLED.some((role) => selector.includes(`.${role}`));
+
+  // A pointer that is down is also over the control, so a pressed rule only ever
+  // shows if it beats the hover rule for the same button. Spelling it the same
+  // way, one pseudo-class apart, is what guarantees that: same specificity, and
+  // later in the file. `.btn-delete-confirm` had no pressed rule at all, so the
+  // button that commits a deletion looked the same pressed as hovered.
+  it("gives every filled button a pressed rule that beats its own hover rule", () => {
+    const hovers = sheet.filter((rule) => rule.selector.includes(":hover") && namesOne(rule.selector));
+    expect(hovers.length).toBeGreaterThan(0);
+    for (const hover of hovers) {
+      const mirrored = hover.selector.replaceAll(":hover", ":active");
+      const pressed = sheet.find((rule) => rule.selector === mirrored);
+      expect(pressed, `${hover.selector} has no matching ${mirrored}`).toBeDefined();
+      expect(pressed!.order, `${mirrored} must come after the hover rule it beats`)
+        .toBeGreaterThan(hover.order);
+    }
+  });
+
+  // Off, a button is its resting self faded: same fill, outline, ink and
+  // footprint, so it stays the control it will be again and the roles stay told
+  // apart while they are off. The accent button used to swap its fill for a pale
+  // tan instead, which left its near-white label at 1.87:1 in the light theme.
+  it("lets a disabled button keep its own fill, outline and ink", () => {
+    const fades = ["opacity", "box-shadow", "cursor"];
+    for (const rule of sheet) {
+      // `:not(:disabled)` names the state it excludes, not the state it styles.
+      const targetsDisabled = rule.selector.replaceAll(":not(:disabled)", "").includes(":disabled");
+      if (!targetsDisabled || !namesOne(rule.selector)) continue;
+      const declared = [...(rule.style as unknown as string[])];
+      const restated = declared.filter((property) => !fades.includes(property));
+      expect(restated, `${rule.selector} may only recede, not restate ${restated.join(", ")}`)
+        .toEqual([]);
+    }
+  });
+});

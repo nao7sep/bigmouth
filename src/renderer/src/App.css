@@ -54,7 +54,6 @@
   --bm-accent-hover: #7f3f24;
   --bm-accent-fg: #9a4f2f;
   --bm-accent-border: #c98764;
-  --bm-accent-disabled: #d8b19c;
   --bm-accent-soft: #efdcca;
   --bm-accent-subtle: #f8eadf;
   --bm-accent-ring: rgba(154, 79, 47, 0.18);
@@ -69,10 +68,13 @@
      asks). In dark the danger colour turns light so it can be read as letters,
      which is why the ink beside it turns dark rather than staying white. */
   --bm-danger-hover: #96190f;
+  --bm-danger-pressed: #7d140c;
   --bm-on-danger: #fff8f0;
+  /* The hover and pressed tints of the OUTLINED destructive trigger, which
+     keeps the ordinary surface and only deepens a wash of the danger colour. */
   --bm-danger-soft: #fff0ec;
   --bm-danger-border: #eea79a;
-  --bm-danger-pressed: #fbdcd5;
+  --bm-danger-soft-pressed: #fbdcd5;
   --bm-backdrop: rgba(42, 33, 25, 0.42);
   --bm-shadow-popover: 0 12px 30px rgba(70, 48, 30, 0.14);
   --bm-shadow-modal: 0 24px 64px rgba(70, 48, 30, 0.2);
@@ -133,7 +135,6 @@
     --bm-accent-hover: #8e4524;
     --bm-accent-fg: #e39a74;
     --bm-accent-border: #b5704f;
-    --bm-accent-disabled: #5a3a2b;
     --bm-accent-soft: #4a3226;
     --bm-accent-subtle: #33261f;
     --bm-accent-ring: rgba(227, 154, 116, 0.28);
@@ -145,10 +146,11 @@
     --bm-warning-border: #7a5a23;
     --bm-danger: #f28b7c;
     --bm-danger-hover: #f7a89b;
+    --bm-danger-pressed: #fbc0b5;
     --bm-on-danger: #2a1210;
     --bm-danger-soft: #3a1f1b;
     --bm-danger-border: #7d3a31;
-    --bm-danger-pressed: #4a2621;
+    --bm-danger-soft-pressed: #4a2621;
     --bm-backdrop: rgba(0, 0, 0, 0.55);
     --bm-shadow-popover: 0 12px 30px rgba(0, 0, 0, 0.45);
     --bm-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.55);
@@ -484,13 +486,12 @@ body {
   background: var(--bm-accent-pressed);
 }
 
-.btn-primary:disabled,
-.action-button:disabled {
-  background: var(--bm-accent-disabled);
-  box-shadow: none;
-}
-
-:is(.btn-action, .btn-toolbar, .meta-field-copy, .meta-field-generate, .btn-generate-all, .asset-btn):disabled {
+/* A disabled button is the resting button, faded: it keeps its own fill, outline,
+   ink and footprint, so it stays recognisably the control that will come back and
+   the roles stay told apart while they are off. One value for every button here.
+   The accent button used to swap its fill for a pale tan instead, which left its
+   near-white label at 1.87:1 in the light theme. */
+button:disabled {
   opacity: 0.5;
   box-shadow: none;
 }
@@ -813,6 +814,12 @@ button:disabled,
   color: var(--bm-on-danger);
 }
 
+.btn-delete-confirm:active:not(:disabled) {
+  border-color: var(--bm-danger-pressed);
+  background: var(--bm-danger-pressed);
+  color: var(--bm-on-danger);
+}
+
 .btn-delete:hover:not(:disabled),
 .asset-btn-delete:hover:not(:disabled) {
   background: var(--bm-danger-soft);
@@ -821,7 +828,7 @@ button:disabled,
 
 .btn-delete:active:not(:disabled),
 .asset-btn-delete:active:not(:disabled) {
-  background: var(--bm-danger-pressed);
+  background: var(--bm-danger-soft-pressed);
 }
 
 .toolbar-error {
@@ -1431,11 +1438,6 @@ button:disabled,
   background: color-mix(in srgb, currentColor 12%, transparent);
   outline: 2px solid currentColor;
   outline-offset: 0;
-}
-
-.modal-close:disabled {
-  color: var(--bm-text-muted);
-  opacity: 0.5;
 }
 
 .modal-body {

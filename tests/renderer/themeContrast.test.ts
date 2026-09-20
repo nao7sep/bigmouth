@@ -72,7 +72,10 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
     ],
   ),
   ["--bm-danger", "--bm-control-bg"],
-  ["--bm-danger", "--bm-danger-pressed"],
+  ["--bm-danger", "--bm-danger-soft-pressed"],
+  // The destructive CONFIRM button is filled, so its ink is read on the fill in
+  // every state it takes, the press included.
+  ["--bm-on-danger", "--bm-danger-pressed"],
   ["--bm-text-soft", "--bm-track"],
   ["--bm-on-accent", "--bm-accent-pressed"],
   // The editor draws on --bm-surface.
