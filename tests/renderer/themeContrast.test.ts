@@ -52,8 +52,8 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ),
   ["--bm-on-accent", "--bm-accent"],
   // A destructive CONFIRM button is filled, so its ink is read on the fill.
-  ["--bm-on-danger", "--bm-danger"],
-  ["--bm-on-danger", "--bm-danger-hover"],
+  ["--bm-on-danger", "--bm-danger-fill"],
+  ["--bm-on-danger", "--bm-danger-fill-hover"],
   ["--bm-on-accent", "--bm-accent-hover"],
   ["--bm-text", "--bm-accent-soft"],
   ["--bm-text", "--bm-accent-subtle"],
@@ -75,7 +75,7 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ["--bm-danger", "--bm-danger-soft-pressed"],
   // The destructive CONFIRM button is filled, so its ink is read on the fill in
   // every state it takes, the press included.
-  ["--bm-on-danger", "--bm-danger-pressed"],
+  ["--bm-on-danger", "--bm-danger-fill-pressed"],
   ["--bm-text-soft", "--bm-track"],
   ["--bm-on-accent", "--bm-accent-pressed"],
   // The editor draws on --bm-surface.

@@ -64,11 +64,17 @@
   --bm-warning-soft: #fff6e7;
   --bm-warning-border: #ddb66f;
   --bm-danger: #b42318;
+  /* The fill of a destructive CONFIRM button, named apart from the text red
+     above: a dark theme's danger text is pale because it is read as LETTERS on
+     the dark surface, and filling a button with it gives a pastel slab. The fill
+     is a real red in both themes under --bm-on-danger, deepening under the
+     pointer and again under the finger. */
+  --bm-danger-fill: #b42318;
+  --bm-danger-fill-hover: #96190f;
+  --bm-danger-fill-pressed: #7d140c;
   /* The fill and ink of a destructive CONFIRM button (the one in the dialog that
      asks). In dark the danger colour turns light so it can be read as letters,
      which is why the ink beside it turns dark rather than staying white. */
-  --bm-danger-hover: #96190f;
-  --bm-danger-pressed: #7d140c;
   --bm-on-danger: #fff8f0;
   /* The hover and pressed tints of the OUTLINED destructive trigger, which
      keeps the ordinary surface and only deepens a wash of the danger colour. */
@@ -145,9 +151,10 @@
     --bm-warning-soft: #33280f;
     --bm-warning-border: #7a5a23;
     --bm-danger: #f28b7c;
-    --bm-danger-hover: #f7a89b;
-    --bm-danger-pressed: #fbc0b5;
-    --bm-on-danger: #2a1210;
+    --bm-danger-fill: #c04234;
+    --bm-danger-fill-hover: #a7382b;
+    --bm-danger-fill-pressed: #8f2f23;
+    --bm-on-danger: #fff8f0;
     --bm-danger-soft: #3a1f1b;
     --bm-danger-border: #7d3a31;
     --bm-danger-soft-pressed: #4a2621;
@@ -803,20 +810,20 @@ button:disabled,
 /* The confirming button of the dialog that asks is filled, so a solid red marks
    the last step; every other destructive button in the app stays outlined. */
 .btn-delete-confirm {
-  border-color: var(--bm-danger);
-  background: var(--bm-danger);
+  border-color: var(--bm-danger-fill);
+  background: var(--bm-danger-fill);
   color: var(--bm-on-danger);
 }
 
 .btn-delete-confirm:hover:not(:disabled) {
-  border-color: var(--bm-danger-hover);
-  background: var(--bm-danger-hover);
+  border-color: var(--bm-danger-fill-hover);
+  background: var(--bm-danger-fill-hover);
   color: var(--bm-on-danger);
 }
 
 .btn-delete-confirm:active:not(:disabled) {
-  border-color: var(--bm-danger-pressed);
-  background: var(--bm-danger-pressed);
+  border-color: var(--bm-danger-fill-pressed);
+  background: var(--bm-danger-fill-pressed);
   color: var(--bm-on-danger);
 }
 
