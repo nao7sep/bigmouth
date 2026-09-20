@@ -584,7 +584,7 @@ function GeneralTab({
         <label className="form-label">Editor watermark</label>
         <textarea
           className="form-input"
-          rows={3}
+          rows={5}
           value={settings.editorWatermark}
           onChange={(e) => update({ editorWatermark: e.target.value })}
           style={{ resize: "vertical" }}
@@ -594,7 +594,7 @@ function GeneralTab({
         <label className="form-label">Extra field watermark</label>
         <textarea
           className="form-input"
-          rows={2}
+          rows={3}
           value={settings.extraFieldWatermark}
           onChange={(e) => update({ extraFieldWatermark: e.target.value })}
           style={{ resize: "vertical" }}
@@ -1154,7 +1154,7 @@ function GenerationTab({
             <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
             <textarea
               className="form-input"
-              rows={3}
+              rows={6}
               value={current}
               onChange={(e) => updatePrompt(key, e.target.value)}
               style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}
