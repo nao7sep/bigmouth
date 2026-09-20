@@ -7,10 +7,11 @@ import { resolve } from "node:path";
 // build; mirror it here so renderer tests that render the About modal resolve it.
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
-// The tests run in two environments: the main-process tests (the framework-free
-// core) under Node, and the renderer tests (React components + DOM utilities)
-// under jsdom. Two projects keep each in its own environment while sharing the
-// app's path aliases.
+// The tests run in two environments: the renderer tests (React components + DOM
+// utilities) under jsdom, and everything else — the framework-free main-process
+// core and the shared modules — under Node. Two projects keep each in its own
+// environment while sharing the app's path aliases. Between them the two includes
+// cover the whole tests tree, so no test file can fall outside both and go unrun.
 // Vitest reruns everything when a root setup file changes, but not a project's
 // own, so the main project's setup is named once and added to the triggers.
 const mainSetup = "tests/main/setup.ts";
@@ -51,10 +52,13 @@ export default defineConfig({
         test: {
           name: "main",
           environment: "node",
-          // tests/shared covers src/shared — the environment-neutral modules both
-          // processes import. It runs under Node with the main-process project
-          // because those modules must hold there too, and nothing in them is DOM.
-          include: ["tests/main/**/*.test.ts", "tests/shared/**/*.test.ts"],
+          // Everything the renderer project does not take, so a test in a new folder — or at the
+          // root of tests/ — runs under Node instead of matching no project and never running at
+          // all. Naming the folders here instead let a file outside them be type-checked, look
+          // fine, and be silently skipped. tests/shared covers src/shared, the environment-neutral
+          // modules both processes import: they must hold under Node and nothing in them is DOM.
+          include: ["tests/**/*.test.{ts,tsx}"],
+          exclude: [...configDefaults.exclude, "tests/renderer/**", "tests/live/**"],
           // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_HOME root
           // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
           setupFiles: [mainSetup],
