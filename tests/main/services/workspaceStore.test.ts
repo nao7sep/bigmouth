@@ -196,10 +196,55 @@ describe("workspace identity", () => {
 });
 
 describe("createWorkspace gating", () => {
-  it("rejects a non-empty folder that is not a workspace", () => {
-    const dir = tempDir("nonempty");
+  // What blocks creation is content the app would take over, not content as
+  // such. An emptiness test refused a folder the user had merely opened in
+  // Finder (.DS_Store) or prepared for versioning (.git), which is the workflow
+  // per-post files exist to support.
+  it("creates in a folder holding files it does not own", () => {
+    const dir = tempDir("unrelated");
+    fs.writeFileSync(path.join(dir, ".DS_Store"), "finder");
     fs.writeFileSync(path.join(dir, "stray.txt"), "not a workspace");
-    expect(() => createWorkspace("WS", dir)).toThrow(/empty folder/);
+    fs.mkdirSync(path.join(dir, ".git"));
+
+    const ws = createWorkspace("WS", dir);
+
+    expect(ws.dataDirectory).toBe(dir);
+    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(true);
+    // The folder's own contents survive untouched.
+    expect(fs.readFileSync(path.join(dir, "stray.txt"), "utf-8")).toBe("not a workspace");
+  });
+
+  // initializeWorkspaceData makes posts/ and assets/ before writing config.json,
+  // and the registry entry lands only after both. A failed config write used to
+  // leave a folder that was neither a workspace to open nor empty to create in.
+  it("completes a half-made workspace whose config write did not land", () => {
+    const dir = tempDir("halfmade");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.mkdirSync(path.join(dir, "assets"));
+
+    expect(createWorkspace("WS", dir).dataDirectory).toBe(dir);
+    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(true);
+  });
+
+  it("rejects a folder holding a config.json the app did not write", () => {
+    const dir = tempDir("foreign-config");
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog" }));
+    expect(() => createWorkspace("WS", dir)).toThrow(/"config.json"/);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("rejects a folder whose posts already hold content", () => {
+    const dir = tempDir("foreign-posts");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.writeFileSync(path.join(dir, "posts", "hello.md"), "# Someone else's post");
+    expect(() => createWorkspace("WS", dir)).toThrow(/"posts"/);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("rejects a folder where a name the app needs is taken by a file", () => {
+    const dir = tempDir("assets-file");
+    fs.writeFileSync(path.join(dir, "assets"), "not a directory");
+    expect(() => createWorkspace("WS", dir)).toThrow(/"assets"/);
     expect(listWorkspaces()).toHaveLength(0);
   });
 
@@ -321,10 +366,17 @@ describe("openOrCreateWorkspace", () => {
     expect(ws.dataDirectory).toBe(dir);
   });
 
-  it("rejects a non-empty directory that is not a workspace", () => {
+  it("creates in a directory holding content the app would not take over", () => {
     const dir = tempDir("nonempty");
     fs.writeFileSync(path.join(dir, "junk.txt"), "x");
-    expect(() => openOrCreateWorkspace("X", dir)).toThrow(/empty or already contain/i);
+    expect(openOrCreateWorkspace("X", dir).dataDirectory).toBe(dir);
+  });
+
+  it("rejects a directory holding content the app would take over", () => {
+    const dir = tempDir("foreign");
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog" }));
+    expect(() => openOrCreateWorkspace("X", dir)).toThrow(/would take over/i);
+    expect(listWorkspaces()).toHaveLength(0);
   });
 
   it("rejects a path that exists but is a file", () => {

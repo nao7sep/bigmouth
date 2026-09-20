@@ -434,7 +434,8 @@ export function WorkspaceModal({
             </button>
           </div>
           <p className="settings-hint">
-            An existing folder must be empty or a BigMouth workspace.
+            An existing folder must be a BigMouth workspace, or have no posts,
+            assets or config.json of its own.
           </p>
         </div>
         {error && (

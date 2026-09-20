@@ -169,11 +169,55 @@ function isWorkspaceDirectory(dir: string): boolean {
   return isWorkspaceConfig(parsed);
 }
 
-function isEmptyDirectory(dir: string): boolean {
-  if (!fs.existsSync(dir)) return false;
-  const stat = fs.statSync(dir);
-  if (!stat.isDirectory()) return false;
-  return fs.readdirSync(dir).length === 0;
+/**
+ * The entry that stops a new workspace being created in `dir`, or null when
+ * nothing does.
+ *
+ * The question is not "is this folder empty" but "would creating a workspace
+ * here take over something already in it". Those two come apart constantly. A
+ * folder the user has merely looked at in Finder holds a `.DS_Store`; a folder
+ * prepared for versioning — which this app's whole per-post-file storage exists
+ * to support — holds a `.git`. An emptiness test refused both, and the refusal
+ * read as a flat contradiction of what the user could see in the folder.
+ *
+ * So only the three names the app writes are consulted: `config.json` must be
+ * absent, and `posts`/`assets` must be absent or empty directories. That is the
+ * storage-path conventions' create-only-when-missing rule applied to a folder —
+ * fill a gap, never adopt or overwrite content the app did not write — and
+ * everything else in the folder stays the user's business.
+ *
+ * It also unsticks a half-made workspace. `initializeWorkspaceData` creates
+ * `posts/` and `assets/` before writing `config.json`, and the registry entry is
+ * pushed only after both land, so a failed config write left a folder that was
+ * neither a workspace to open nor an empty folder to create in — unrecoverable
+ * from the UI, which offers no third thing to do. Under this rule the two empty
+ * directories block nothing and the next attempt completes.
+ */
+function blockingEntry(dir: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+
+  // First, so a folder carrying an unrelated config.json is reported by the file
+  // that actually stops it rather than by whichever subdirectory came next.
+  if (fs.existsSync(path.join(dir, "config.json"))) return "config.json";
+
+  for (const sub of ["posts", "assets"]) {
+    const subPath = path.join(dir, sub);
+    if (!fs.existsSync(subPath)) continue;
+    if (!fs.statSync(subPath).isDirectory()) return sub;
+    if (fs.readdirSync(subPath).length > 0) return sub;
+  }
+
+  return null;
+}
+
+/** One rule, one sentence: both creation paths refuse for the same reason. */
+function assertCreatable(dir: string): void {
+  const blocker = blockingEntry(dir);
+  if (blocker === null) return;
+  throw new Error(
+    `That folder already has its own "${blocker}", which a new workspace would take over. ` +
+      "Choose a different folder, or one that already holds a BigMouth workspace.",
+  );
 }
 
 function assertNoWorkspaceOverlap(dir: string): void {
@@ -236,9 +280,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
         // so this is reached only by a direct createWorkspace call.
         throw new Error("That folder already contains a workspace.");
       }
-      if (!isEmptyDirectory(dir)) {
-        throw new Error("New workspaces can only be created in an empty folder.");
-      }
+      assertCreatable(dir);
     }
     assertNoWorkspaceOverlap(dir);
   } else {
@@ -303,9 +345,7 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
     if (isWorkspaceDirectory(dir)) {
       return openWorkspace(dir, name);
     }
-    if (!isEmptyDirectory(dir)) {
-      throw new Error("Location must be empty or already contain a BigMouth workspace.");
-    }
+    assertCreatable(dir);
   }
 
   return createWorkspace(resolveWorkspaceName(name, dir), dir);

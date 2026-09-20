@@ -104,10 +104,10 @@ describe("workspace IPC handlers", () => {
     expect(fs.existsSync(path.join(parent, "Workspace"))).toBe(false);
   });
 
-  it("maps a store rejection (non-empty, non-workspace folder) to a thrown Error", () => {
-    const dir = tempDir("nonempty");
-    fs.writeFileSync(path.join(dir, "stray.txt"), "not a workspace");
-    expect(() => invoke(CHANNELS.openOrCreateWorkspace, "WS", dir)).toThrow(/empty/i);
+  it("maps a store rejection (a folder whose config.json the app did not write) to a thrown Error", () => {
+    const dir = tempDir("foreign-config");
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog" }));
+    expect(() => invoke(CHANNELS.openOrCreateWorkspace, "WS", dir)).toThrow(/would take over/i);
     expect(listWorkspaces()).toHaveLength(0);
   });
 
