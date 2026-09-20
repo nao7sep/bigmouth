@@ -26,6 +26,25 @@ export function isMetadataField(value: unknown): value is MetadataField {
 }
 
 /**
+ * The fields whose value is English whatever language the draft is written in.
+ * The rest are always in the draft's language.
+ *
+ * Declared here, beside the field list, because it is a property of the fields
+ * themselves rather than of any one consumer. It had previously been stated
+ * only inside the per-field generation prompts ("Write the English title…"),
+ * which a user can edit — so the one place the app said a field must be English
+ * was also the one place a user could delete it. The generator now states the
+ * rule at the top of its own system prompt and holds the response to it, and
+ * both read the set from here.
+ */
+export const ENGLISH_METADATA_FIELDS: ReadonlySet<MetadataField> = new Set<MetadataField>([
+  "titleEn",
+  "slug",
+  "tagsEn",
+  "metaDescriptionEn",
+]);
+
+/**
  * The slug rule, in the two forms the app needs.
  *
  * `GENERATED_SLUG` is what the model is asked for and held to: strict kebab

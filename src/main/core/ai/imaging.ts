@@ -1,4 +1,5 @@
 import type { PostFrontMatter } from "../shared/types.js";
+import { isEnglishScript } from "./englishText.js";
 
 export const IMAGING_RELATIONS = ["direct", "domain", "abstract"] as const;
 export const IMAGING_MOODS = [
@@ -133,6 +134,12 @@ export function normalizeImagingOutput(raw: unknown, expectedCount: number): str
     if (!prompt) {
       throw new Error("Structured imaging response contained an empty prompt");
     }
+    // The prompts are English whatever the draft's language is — they are pasted
+    // into an image model, not read by the author — and the schema said so
+    // without anything checking it.
+    if (!isEnglishScript(prompt)) {
+      throw new Error("Structured imaging response contained a prompt that was not in English");
+    }
     return prompt;
   });
 
@@ -154,7 +161,8 @@ export function buildImagingSystemPrompt(count: number): string {
     "- Each item must be one standalone English prompt that can be pasted into an image model.",
     "- Make the prompts materially different concepts, not minor rewrites of the same image.",
     "- Every prompt should specify the subject, setting, composition/framing, lighting, style or medium, mood, and a few concrete visual details.",
-    "- Use English only as the prompt language. Do not shift the depicted place, culture, institutions, architecture, clothing, or everyday details away from the source context.",
+    "- Use English only as the prompt language, whatever language the draft is written in. draftLanguage is context and never selects the output language.",
+    "- Do not shift the depicted place, culture, institutions, architecture, clothing, or everyday details away from the source context. That is a separate matter from the prompt's language.",
     "- Use draft content as the primary source. Existing metadata is secondary context for consistency.",
     "- Stay close to what the post actually says or strongly implies. Do not invent claims, events, brands, named people, or locations.",
     "- Reflect the post's overall tone and direction, not only its most alarming or emotional detail.",
@@ -199,7 +207,10 @@ function buildSourceMetadata(context: ImagingContext): Record<string, unknown> {
   }
 
   return compactRecord({
-    language: frontMatter.language,
+    // `draftLanguage`, not `language`, for the reason metadataGeneration renamed
+    // it: a bare `language: "ja"` in a request whose output must be English
+    // reads as the language to answer in.
+    draftLanguage: frontMatter.language,
     target: frontMatter.target,
     title: frontMatter.title,
     titleEn: frontMatter.titleEn,

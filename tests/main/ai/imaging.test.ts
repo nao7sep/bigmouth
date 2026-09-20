@@ -156,7 +156,7 @@ describe("buildImagingUserContent — option-driven guidance fragments", () => {
       updatedAtUtc: "x",
     };
     const content = buildImagingUserContent("d", options(), { frontMatter });
-    expect(content).toContain('"language": "ja"');
+    expect(content).toContain('"draftLanguage": "ja"');
     expect(content).toContain('"title": "Spaced Title"'); // trimmed
     expect(content).toContain('"metaDescription": "A description."');
     expect(content).toContain('"one"');
@@ -211,5 +211,22 @@ describe("normalizeImagingOutput", () => {
 
   it("throws on duplicate prompts", () => {
     expect(() => normalizeImagingOutput({ items: ["a", "a", "c"] }, 3)).toThrow(/duplicate prompts/);
+  });
+
+  // The prompts are pasted into an image model rather than read by the author,
+  // so they are English whatever the draft's language is. The schema said so
+  // without anything checking it.
+  it("throws on a prompt that came back in the draft's language", () => {
+    expect(() =>
+      normalizeImagingOutput({ items: ["a", "夕暮れの教室、窓際に置かれた一冊のノート", "c"] }, 3)
+    ).toThrow(/not in English/i);
+  });
+
+  it("accepts an English prompt naming something in its own script", () => {
+    const out = normalizeImagingOutput(
+      { items: ["A quiet classroom at dusk, a 鬼滅の刃 volume left on a desk, soft window light"] },
+      1
+    );
+    expect(out).toHaveLength(1);
   });
 });
