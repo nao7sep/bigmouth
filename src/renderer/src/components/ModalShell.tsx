@@ -5,6 +5,9 @@ import { XIcon } from "./Icon";
 
 interface ModalShellProps {
   title: string;
+  /** Keeps the title as the dialog's spoken name but takes it off the screen,
+   * for a surface whose own content already says what it is (About). */
+  titleHidden?: boolean;
   onClose: () => void;
   children: ReactNode;
   width?: number;
@@ -34,6 +37,7 @@ const FOCUSABLE_SELECTOR =
 
 export function ModalShell({
   title,
+  titleHidden = false,
   onClose,
   children,
   width,
@@ -108,7 +112,7 @@ export function ModalShell({
         tabIndex={-1}
       >
         <div className="modal-header">
-          <h2 id={titleId}>{title}</h2>
+          <h2 id={titleId} className={titleHidden ? "bm-visually-hidden" : undefined}>{title}</h2>
           {showClose && (
             <button
               className="modal-close"

@@ -40,11 +40,12 @@ export function AboutModal({ onClose }: AboutModalProps) {
   };
 
   return (
-    <ModalShell title="About BigMouth" onClose={onClose} width={380} autoFocusClose>
+    <ModalShell title="About BigMouth" titleHidden onClose={onClose} width={380} autoFocusClose>
       <div className="modal-body">
-        <p style={{ marginBottom: 4 }}>
-          <strong>BigMouth</strong> — Version {__APP_VERSION__}
-        </p>
+        <div className="about-identity">
+          <p className="about-name">BigMouth</p>
+          <p className="about-version">Version {__APP_VERSION__}</p>
+        </div>
         <p style={{ marginTop: 8, fontSize: 13, color: "var(--bm-text-soft)", lineHeight: 1.6 }}>
           A local-first writing preflight tool for composing blog and social media posts.
           Your data stays on your machine.

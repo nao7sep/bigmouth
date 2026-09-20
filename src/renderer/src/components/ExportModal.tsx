@@ -51,6 +51,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
       {/* Native radio group: one composite control, one tab stop, arrow
           navigation and accessibility for free; activation follows focus
           (native). Mirrors the CenterPane status radios. */}
+      <div className="modal-strip">
       <div className="export-format-radios" role="radiogroup" aria-label="Export format">
         {EXPORT_FORMATS.map(({ value, label }) => (
           <label
@@ -68,7 +69,9 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
           </label>
         ))}
       </div>
+      </div>
 
+      <div className="modal-body">
       <pre
         className="export-preview"
         role="region"
@@ -93,7 +96,9 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
         </OperationalResult>
       )}
 
-      <div className="export-actions">
+      </div>
+
+      <div className="modal-footer">
         <button className="btn-action" onClick={onClose}>
           Close
         </button>

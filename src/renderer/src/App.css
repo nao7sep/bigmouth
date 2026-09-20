@@ -1451,7 +1451,6 @@ button:disabled,
    (one tab stop, arrow navigation, accessibility); the label is its surface. */
 .export-format-radios {
   align-self: flex-start;
-  margin: 16px 24px 0;
 }
 
 /* Visually-hidden native input; the label is the control surface. The input
@@ -1472,17 +1471,58 @@ button:disabled,
   outline-offset: -2px;
 }
 
-.export-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--bm-control-gap);
-  padding: 16px 24px 20px;
+/* Off the screen, still spoken: for a heading a surface names itself. */
+.bm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A hidden title leaves the close control alone in the band: it keeps its
+   corner, and with no title there is nothing to divide from the content. */
+.modal-header:has(> .bm-visually-hidden) {
+  border-bottom: 0;
+}
+
+.modal-header > .bm-visually-hidden + .modal-close {
+  margin-left: auto;
+}
+
+/* About opens with the app's name, its version tied to it. */
+.about-identity {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.about-name {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.about-version {
+  font-size: 13px;
+  color: var(--bm-text-soft);
+}
+
+/* A strip between the header and the body — Export's format choice — is its
+   own band, with space on either side of its controls. */
+.modal-strip {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--bm-border-subtle);
 }
 
 .export-preview {
   flex: 1;
   overflow: auto;
-  margin: 12px 24px 0;
   padding: 12px 14px;
   background: var(--bm-surface-muted);
   border: 1px solid var(--bm-border-subtle);
