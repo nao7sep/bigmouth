@@ -54,7 +54,7 @@ async function bootstrap(): Promise<void> {
   applyThemePreference(appSettings.theme);
   followOsThemeChanges();
   info("app started", {
-    version: app.getVersion(),
+    version: __APP_VERSION__,
     workspaceCount: appConfig.workspaces.length,
     debug: isDebugLoggingEnabled(),
     logFile: getCurrentLogFilePath(),

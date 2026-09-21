@@ -49,6 +49,9 @@ export default defineConfig({
     projects: [
       {
         resolve: { alias },
+        define: {
+          __APP_VERSION__: JSON.stringify(version),
+        },
         test: {
           name: "main",
           environment: "node",
