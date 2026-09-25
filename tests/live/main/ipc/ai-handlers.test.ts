@@ -87,10 +87,15 @@ let wsId: string;
 let postId: string;
 let jaPostId: string;
 
+// The window a request comes from, as the AI request registry sees it.
+const ownerWindow = { id: 1, once: () => {}, on: () => {} };
+let nextRequestId = 1;
+
+/** Invokes a cancellable AI handler the way the preload does: window, then request id. */
 function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const handler = handlers.get(channel);
   if (!handler) throw new Error(`No IPC handler for ${channel}`);
-  return handler({}, ...args) as Promise<T>;
+  return handler({ sender: ownerWindow }, `live-${nextRequestId++}`, ...args) as Promise<T>;
 }
 
 beforeAll(() => {
@@ -182,6 +187,7 @@ describe("the live AI handlers", () => {
     const finished = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`No final frame after ${ANALYSIS_TIMEOUT_MS} ms.`)), ANALYSIS_TIMEOUT_MS);
       const sender = {
+        ...ownerWindow,
         isDestroyed: () => false,
         send: (_channel: string, frame: AnalysisStreamFrame) => {
           frames.push(frame);
