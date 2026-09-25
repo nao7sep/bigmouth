@@ -339,8 +339,8 @@ describe("renameTarget", () => {
   it("retargets every post carrying the old target name", () => {
     const a = createPost(dataDir, "blogger", "en");
     const b = createPost(dataDir, "blogger", "en");
-    const count = renameTarget(dataDir, "blogger", "journal");
-    expect(count).toBe(2);
+    const result = renameTarget(dataDir, "blogger", "journal");
+    expect(result).toEqual({ updated: 2, skipped: [] });
     expect(getPost(dataDir, a.frontMatter.id)?.frontMatter.target).toBe("journal");
     expect(getPost(dataDir, b.frontMatter.id)?.frontMatter.target).toBe("journal");
   });
@@ -356,6 +356,33 @@ describe("renameTarget", () => {
     // surviving post (no all-or-nothing failure leaving some posts behind).
     expect(() => renameTarget(dataDir, "blogger", "journal")).not.toThrow();
     expect(getPost(dataDir, keep.frontMatter.id)?.frontMatter.target).toBe("journal");
+  });
+
+  // The index is one file, and every write of it is a full backup row; a rename
+  // must not rewrite it once per post.
+  it("writes the index once for the whole rename", () => {
+    for (let i = 0; i < 5; i += 1) createPost(dataDir, "blogger", "en");
+    const indexFile = path.join(dataDir, "posts", "index.json");
+    const renames = vi.spyOn(fs, "renameSync");
+    try {
+      renameTarget(dataDir, "blogger", "journal");
+      expect(renames.mock.calls.filter(([, to]) => String(to) === indexFile)).toHaveLength(1);
+    } finally {
+      renames.mockRestore();
+    }
+    expect(listDrafts(dataDir).every((d) => d.frontMatter.target === "journal")).toBe(true);
+  });
+
+  it("skips and reports a post file that cannot be read, and renames the rest", () => {
+    const broken = createPost(dataDir, "blogger", "en");
+    const fine = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(broken.filePath, "---\ntitle: [unclosed\n---\nbody\n");
+
+    const result = renameTarget(dataDir, "blogger", "journal");
+
+    expect(result.updated).toBe(1);
+    expect(result.skipped).toEqual([{ fileName: path.basename(broken.filePath), reason: expect.any(String) }]);
+    expect(getPost(dataDir, fine.frontMatter.id)?.frontMatter.target).toBe("journal");
   });
 });
 

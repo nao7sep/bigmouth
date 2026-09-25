@@ -7,8 +7,9 @@
  * to (1) serve the published archive cheaply, (2) resolve id → file, and
  * (3) back search — all without reading thousands of bodies.
  *
- * Every mutation is a single row operation (`upsertEntry`, `removeEntry`),
- * backed by an in-memory map plus a canonical JSON file.
+ * Every mutation is a row operation (`upsertEntry`, `upsertEntries`,
+ * `removeEntry`) that writes the file once, backed by an in-memory map plus a
+ * canonical JSON file.
  *
  * `upsertEntry` is write-gated: an entry equal to the stored one is a no-op, so
  * a content-only autosave (which changes only updatedAtUtc, not the projection)
@@ -80,6 +81,23 @@ export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
   if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) return;
   map.set(entry.id, entry);
   persist(dataDir, map);
+}
+
+/**
+ * Inserts or updates many rows and writes the index once. A bulk change (a
+ * target rename, clearing a deleted source) must not rewrite the whole file —
+ * and add a full backup row — once per post.
+ */
+export function upsertEntries(dataDir: string, entries: readonly PostIndexEntry[]): void {
+  const map = state(dataDir);
+  let changed = false;
+  for (const entry of entries) {
+    const existing = map.get(entry.id);
+    if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) continue;
+    map.set(entry.id, entry);
+    changed = true;
+  }
+  if (changed) persist(dataDir, map);
 }
 
 export function removeEntry(dataDir: string, id: string): void {

@@ -63,16 +63,20 @@ export function registerTargetHandlers(): void {
       throw new Error("A target with that name already exists");
     }
 
+    // Posts first, the target list last: a rename that fails partway leaves the
+    // old target in place, so the posts still on it keep a valid target and the
+    // same rename can be run again.
+    const renamed = renameTarget(ws.dataDirectory, normalizedOldName, normalizedNewName);
     target.name = normalizedNewName;
     const savedTargets = saveTargets(ws.dataDirectory, targets);
-    const postsUpdated = renameTarget(ws.dataDirectory, normalizedOldName, normalizedNewName);
 
     info("target renamed", {
       workspace: ws.id,
       oldName: normalizedOldName,
       newName: normalizedNewName,
-      postsUpdated,
+      postsUpdated: renamed.updated,
+      postsSkipped: renamed.skipped.length,
     });
-    return { targets: savedTargets, postsUpdated };
+    return { targets: savedTargets, postsUpdated: renamed.updated };
   });
 }

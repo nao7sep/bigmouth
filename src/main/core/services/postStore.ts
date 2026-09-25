@@ -41,6 +41,7 @@ import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry } from "./postFile.js";
 import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
+import { serializeError, warn as logWarn } from "./logger.js";
 
 export function clearCache(dataDir: string): void {
   index.clearCache(dataDir);
@@ -565,33 +566,71 @@ export function deletePost(dataDir: string, id: string): boolean {
 }
 
 function clearSourceReferences(dataDir: string, sourceId: string): void {
-  for (const entry of index.allEntries(dataDir)) {
-    if (entry.sourceId !== sourceId) continue;
-    const filePath = filePathFor(dataDir, entry);
-    if (!fs.existsSync(filePath)) continue;
-    const post = readPost(filePath);
-    delete post.frontMatter.sourceId;
-    writePost(filePath, post.frontMatter, post.content);
-    index.upsertEntry(dataDir, projectIndexEntry(post.frontMatter, entry.fileName, post.content));
+  const updated: PostIndexEntry[] = [];
+  try {
+    for (const entry of index.allEntries(dataDir)) {
+      if (entry.sourceId !== sourceId) continue;
+      const filePath = filePathFor(dataDir, entry);
+      if (!fs.existsSync(filePath)) continue;
+      const post = readPost(filePath);
+      delete post.frontMatter.sourceId;
+      writePost(filePath, post.frontMatter, post.content);
+      updated.push(projectIndexEntry(post.frontMatter, entry.fileName, post.content));
+    }
+  } finally {
+    // One index write for the whole pass, including a pass cut short.
+    index.upsertEntries(dataDir, updated);
   }
 }
 
 // --- Target rename ---
 
-export function renameTarget(dataDir: string, oldName: string, newName: string): number {
-  let count = 0;
-  for (const entry of index.allEntries(dataDir)) {
-    if (entry.target !== oldName) continue;
-    const filePath = filePathFor(dataDir, entry);
-    // Tolerate an index entry whose file vanished out of band — skip it (the next
-    // load reconciles the stale entry away) instead of throwing partway through
-    // and leaving some posts renamed and others not. Mirrors clearSourceReferences.
-    if (!fs.existsSync(filePath)) continue;
-    const post = readPost(filePath);
-    post.frontMatter.target = newName;
-    writePost(filePath, post.frontMatter, post.content);
-    index.upsertEntry(dataDir, projectIndexEntry(post.frontMatter, entry.fileName, post.content));
-    count++;
+/** What a target rename did: posts rewritten, and files it could not read. */
+export interface TargetRenameResult {
+  updated: number;
+  skipped: { fileName: string; reason: string }[];
+}
+
+/**
+ * Rewrites every post on `oldName` to `newName`. The caller saves the target
+ * list only after this returns, so a rename that fails partway leaves the old
+ * target valid and can simply be run again: posts already on the new name no
+ * longer match and are passed over.
+ *
+ * A post file that cannot be read (hand-edited into invalid YAML) is skipped
+ * and reported, not thrown, as the index skips such a file; it is not a post
+ * the app can show anyway. A failed write does throw, which stops the rename
+ * before the target list changes.
+ */
+export function renameTarget(dataDir: string, oldName: string, newName: string): TargetRenameResult {
+  const renamed: PostIndexEntry[] = [];
+  const skipped: { fileName: string; reason: string }[] = [];
+  try {
+    for (const entry of index.allEntries(dataDir)) {
+      if (entry.target !== oldName) continue;
+      const filePath = filePathFor(dataDir, entry);
+      // An index entry whose file vanished out of band is skipped; the next
+      // load reconciles it away.
+      if (!fs.existsSync(filePath)) continue;
+      let post: Post;
+      let projected: PostIndexEntry;
+      try {
+        post = readPost(filePath);
+        post.frontMatter.target = newName;
+        projected = projectIndexEntry(post.frontMatter, entry.fileName, post.content);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        logWarn("post file skipped by target rename", { fileName: entry.fileName, reason, error: serializeError(err) });
+        skipped.push({ fileName: entry.fileName, reason });
+        continue;
+      }
+      writePost(filePath, post.frontMatter, post.content);
+      renamed.push(projected);
+    }
+  } finally {
+    // One index write for the whole rename, including one cut short, so the
+    // index matches every file already rewritten.
+    index.upsertEntries(dataDir, renamed);
   }
-  return count;
+  return { updated: renamed.length, skipped };
 }

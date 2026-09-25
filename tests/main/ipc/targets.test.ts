@@ -112,6 +112,34 @@ describe("targets IPC handlers", () => {
     expect(getPost(dir, other)!.frontMatter.target).toBe("Other");
   });
 
+  // A rename that fails on one post must leave the old target in place, so the
+  // posts not yet renamed keep a valid target and the rename can be re-run.
+  it("keeps the old target when a post write fails, and a re-run completes the rename", () => {
+    invoke<Target[]>(CHANNELS.saveTargets, wsId, [target("Blog")]);
+    const dir = getWorkspace(wsId)!.dataDirectory;
+    const first = createPost(dir, "Blog", "en");
+    const second = createPost(dir, "Blog", "en");
+
+    const realRename = fs.renameSync;
+    const failing = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(to) === second.filePath) throw Object.assign(new Error("EBUSY: file is locked"), { code: "EBUSY" });
+      return realRename(from, to);
+    });
+    try {
+      expect(() => invoke(CHANNELS.renameTarget, wsId, "Blog", "Journal")).toThrow(/EBUSY/);
+    } finally {
+      failing.mockRestore();
+    }
+    expect(invoke<Target[]>(CHANNELS.listTargets, wsId).map((t) => t.name)).toEqual(["Blog"]);
+    expect(getPost(dir, second.frontMatter.id)!.frontMatter.target).toBe("Blog");
+
+    const retried = invoke<{ targets: Target[]; postsUpdated: number }>(CHANNELS.renameTarget, wsId, "Blog", "Journal");
+
+    expect(retried.targets.map((t) => t.name)).toEqual(["Journal"]);
+    expect(getPost(dir, first.frontMatter.id)!.frontMatter.target).toBe("Journal");
+    expect(getPost(dir, second.frontMatter.id)!.frontMatter.target).toBe("Journal");
+  });
+
   it("trims the rename arguments before matching", () => {
     invoke<Target[]>(CHANNELS.saveTargets, wsId, [target("Blog")]);
     const result = invoke<{ targets: Target[]; postsUpdated: number }>(
