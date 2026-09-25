@@ -263,7 +263,7 @@ describe("analysis stream handlers", () => {
     expect(framesFor(event, channel)).toEqual([{ type: "error", message: "provider exploded" }]);
   });
 
-  // BM-4: a stream must not outlive the window that asked for it — the app stays
+  // A stream must not outlive the window that asked for it — the app stays
   // alive on macOS after its window closes, and the stream would bill to the end.
   it("aborts a stream when its window is destroyed", () => {
     const event = makeEvent();
@@ -274,7 +274,7 @@ describe("analysis stream handlers", () => {
     expect(provider.abort).toHaveBeenCalledTimes(1);
   });
 
-  // BM-4: request ids are counted per renderer, so two windows can hold the
+  // Request ids are counted per renderer, so two windows can hold the
   // same id; one window's abort must never reach the other's stream.
   it("keeps the same request id from two windows apart", async () => {
     const first = makeEvent();

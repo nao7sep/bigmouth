@@ -120,7 +120,7 @@ afterEach(() => {
 });
 
 describe("imaging generation IPC handler", () => {
-  // BM-1/BM-5: the renderer's abort must reach the paid call itself, not only
+  // The renderer's abort must reach the paid call itself, not only
   // stop the renderer waiting for it.
   it("cancels the paid call when the renderer aborts the request", async () => {
     let signal: AbortSignal | undefined;

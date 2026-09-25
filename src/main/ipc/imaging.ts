@@ -23,7 +23,15 @@ import { info as logInfo, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
 
-const IMAGING_GENERATION_TIMEOUT_MS = 60_000;
+// A generous outer cap, not the bound that matters: the call is bounded by
+// inactivity in the provider, so a thinking-enabled config that is still
+// producing output is never cut off after its tokens are billed, and the user
+// can stop it at any time.
+const IMAGING_GENERATION_MAX_MS = 10 * 60_000;
+// This app's retry policy for the call (the client itself never retries): one
+// retry, which the SDK makes only when no response arrived or the API answered
+// with a retryable status such as overloaded — never after an abort, so neither
+// the user's Stop nor the inactivity watchdog can resend a billed request.
 const IMAGING_GENERATION_MAX_RETRIES = 1;
 
 export function registerImagingHandlers(): void {
@@ -100,7 +108,7 @@ async function generateImaging(
 
   try {
     const raw = await provider.generateJson(systemPrompt, userContent, buildImagingSchema(options.count), {
-      timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
+      maxDurationMs: IMAGING_GENERATION_MAX_MS,
       maxRetries: IMAGING_GENERATION_MAX_RETRIES,
       signal,
     });
@@ -127,7 +135,7 @@ async function generateImaging(
         extra: {
           ...options,
           mode: "structured",
-          timeoutMs: IMAGING_GENERATION_TIMEOUT_MS,
+          maxDurationMs: IMAGING_GENERATION_MAX_MS,
           maxRetries: IMAGING_GENERATION_MAX_RETRIES,
           contentLength: postContent.length,
           metadataKeys: metadataKeys(post.frontMatter),

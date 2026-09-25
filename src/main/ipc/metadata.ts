@@ -18,7 +18,15 @@ import { info as logInfo, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
 
-const METADATA_GENERATION_TIMEOUT_MS = 45_000;
+// A generous outer cap, not the bound that matters: the call is bounded by
+// inactivity in the provider, so a thinking-enabled config that is still
+// producing output is never cut off after its tokens are billed, and the user
+// can stop it at any time.
+const METADATA_GENERATION_MAX_MS = 10 * 60_000;
+// This app's retry policy for the call (the client itself never retries): one
+// retry, which the SDK makes only when no response arrived or the API answered
+// with a retryable status such as overloaded — never after an abort, so neither
+// the user's Stop nor the inactivity watchdog can resend a billed request.
 const METADATA_GENERATION_MAX_RETRIES = 1;
 
 export function registerMetadataHandlers(): void {
@@ -95,7 +103,7 @@ async function generateMetadata(
       customPrompts,
     });
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
-      timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
+      maxDurationMs: METADATA_GENERATION_MAX_MS,
       maxRetries: METADATA_GENERATION_MAX_RETRIES,
       signal,
     });
@@ -128,7 +136,7 @@ async function generateMetadata(
         extra: {
           fields: validFields,
           mode: "structured",
-          timeoutMs: METADATA_GENERATION_TIMEOUT_MS,
+          maxDurationMs: METADATA_GENERATION_MAX_MS,
           maxRetries: METADATA_GENERATION_MAX_RETRIES,
           contentSource,
           contentLength: postContent.length,

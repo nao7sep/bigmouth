@@ -19,7 +19,9 @@ export interface AiProvider {
     userContent: string,
     schema: Record<string, unknown>,
     options?: {
-      timeoutMs?: number;
+      /** A generous outer cap on the whole call; inactivity is what bounds it. */
+      maxDurationMs?: number;
+      /** The caller's retry policy; the client itself never retries a paid call. */
       maxRetries?: number;
       signal?: AbortSignal;
     }

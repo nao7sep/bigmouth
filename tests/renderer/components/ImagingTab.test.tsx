@@ -154,7 +154,7 @@ describe("ImagingTab run", () => {
     expect(button.disabled).toBe(false);
   });
 
-  // BM-5: a user waiting on a paid call can cancel it.
+  // A user waiting on a paid call can cancel it.
   it("Stop aborts the in-flight generation and shows no error", async () => {
     let signal: AbortSignal | undefined;
     mockGenerate.mockImplementation(

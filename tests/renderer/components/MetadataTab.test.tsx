@@ -344,7 +344,7 @@ describe("MetadataTab single-field generation", () => {
     expect(container.querySelector(".metadata-error")).toBeNull();
   });
 
-  // BM-1: leaving the post must not queue behind a paid call.
+  // Leaving the post must not queue behind a paid call.
   it("flushPendingChanges cancels an in-flight generation instead of waiting for it", async () => {
     let signal: AbortSignal | undefined;
     mockGenerateMetadataField.mockImplementation(

@@ -10,32 +10,49 @@ import type { AiProvider } from "./provider.js";
  * How long a stream may go with NO output at all before it is abandoned.
  *
  * A stream is bounded by inactivity rather than by total time: analysing a long
- * post legitimately runs for minutes, so a whole-operation deadline would cut
- * off work that is going fine. A gap with no delta whatsoever is the shape a
- * stalled connection takes — a dropped VPN, a sleeping laptop, a proxy that
- * stops forwarding — where the socket stays open and nothing ever settles.
+ * post legitimately runs for minutes, and a thinking-enabled model can reason
+ * well past any fixed deadline, so a whole-operation deadline would cut off work
+ * that is going fine — after its tokens were billed. A gap with no delta
+ * whatsoever is the shape a stalled connection takes — a dropped VPN, a sleeping
+ * laptop, a proxy that stops forwarding — where the socket stays open and
+ * nothing ever settles.
+ *
+ * The watchdog is the only timer on a call: the SDK's own `timeout` option is
+ * armed around fetch and cleared the moment the response headers arrive, so it
+ * guards time-to-first-byte and nothing after it, and `signal` is the only
+ * option the SDK applies to the body. The watchdog is armed before the request
+ * leaves, so it covers the wait for the headers as well.
  */
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 /**
- * The signal that actually bounds a call.
- *
- * The SDK's own `timeout` option is NOT an operation bound: it is armed around
- * fetch and cleared the moment the response headers arrive, so it guards
- * time-to-first-byte and nothing after it. Measured against a stalling server, a
- * request carrying `timeout: 3000` was still pending past 15 seconds after a
- * mid-stream stall, while the same request given a signal gave up at 3.0.
- * `signal` is the only option the SDK applies to the body, so every call here
- * carries one.
+ * An inactivity watchdog over one streamed call. `progress` restarts the clock;
+ * `signal` aborts when the clock runs out; `tripped` says it was the watchdog,
+ * not the caller, that gave up — the SDK reports both aborts the same way.
  */
-function operationBound(
-  timeoutMs: number | undefined,
-  caller: AbortSignal | undefined,
-): AbortSignal | undefined {
-  if (timeoutMs === undefined) return caller;
-  const budget = AbortSignal.timeout(timeoutMs);
-  return caller ? AbortSignal.any([caller, budget]) : budget;
+function idleWatchdog(): { signal: AbortSignal; progress: () => void; stop: () => void; tripped: () => boolean } {
+  const idle = new AbortController();
+  let tripped = false;
+  let timer: NodeJS.Timeout | undefined;
+  const stop = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+  };
+  const progress = (): void => {
+    stop();
+    timer = setTimeout(() => {
+      tripped = true;
+      idle.abort();
+    }, STREAM_IDLE_TIMEOUT_MS);
+    // Never hold the process open waiting to give up on a stream.
+    timer.unref();
+  };
+  progress();
+  return { signal: idle.signal, progress, stop, tripped: () => tripped };
 }
+
+const idleMessage = (what: string): string =>
+  `Claude stopped sending output for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s, so the ${what} was abandoned.`;
 
 /**
  * The model fields of an AI config, resolved against MODEL_DEFS by the factory. A
@@ -53,7 +70,10 @@ export class ClaudeProvider implements AiProvider {
   private request: ClaudeRequest;
 
   constructor(apiKey: string, request: ClaudeRequest) {
-    this.client = new Anthropic({ apiKey });
+    // Every call here is paid, so retries are the caller's policy, never the
+    // SDK's default of two: a retried request can bill again. A call that wants
+    // one passes `maxRetries` itself.
+    this.client = new Anthropic({ apiKey, maxRetries: 0 });
     this.request = request;
   }
 
@@ -85,13 +105,12 @@ export class ClaudeProvider implements AiProvider {
     userContent: string,
     options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<string> {
-    const signal = operationBound(options.timeoutMs, options.signal);
+    // A whole-call deadline: a non-streaming call has no deltas to watch.
+    const budget = options.timeoutMs !== undefined ? AbortSignal.timeout(options.timeoutMs) : undefined;
+    const signal = budget && options.signal ? AbortSignal.any([budget, options.signal]) : (budget ?? options.signal);
     const message = await this.client.messages.create(
       this.baseParams(systemPrompt, userContent),
-      {
-        ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-        ...(signal !== undefined ? { signal } : {}),
-      },
+      signal !== undefined ? { signal } : {},
     );
 
     // Surface a truncated/refused response as an error rather than returning a
@@ -118,16 +137,23 @@ export class ClaudeProvider implements AiProvider {
     userContent: string,
     schema: Record<string, unknown>,
     options: {
-      timeoutMs?: number;
+      maxDurationMs?: number;
       maxRetries?: number;
       signal?: AbortSignal;
     } = {}
   ): Promise<unknown> {
-    // timeoutMs becomes BOTH: the SDK's connect-phase timeout, which produces a
-    // retryable connection error, and a real deadline on the whole call. Before
-    // this it was only the first, so a stall after the headers arrived hung the
-    // caller for ever while the log recorded a timeout that had never applied.
-    const signal = operationBound(options.timeoutMs, options.signal);
+    // Bounded like the analysis stream, by inactivity, so a thinking-enabled
+    // config is never cut off mid-answer by a deadline sized for a fast model.
+    // `maxDurationMs` is only a generous outer cap; the caller's signal is the
+    // user's Stop.
+    const watchdog = idleWatchdog();
+    const cap = new AbortController();
+    const capTimer =
+      options.maxDurationMs !== undefined ? setTimeout(() => cap.abort(), options.maxDurationMs) : undefined;
+    capTimer?.unref();
+    const signal = AbortSignal.any(
+      [watchdog.signal, cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined),
+    );
     const stream = this.client.messages.stream(
       {
         ...this.baseParams(systemPrompt, userContent),
@@ -137,18 +163,32 @@ export class ClaudeProvider implements AiProvider {
       },
       {
         // An omitted option must be an omitted KEY, not a key set to undefined: the SDK
-        // validates request options on the way in and rejects `timeout: undefined` outright
-        // ("timeout must be an integer") rather than reading it as absent. So the spreads
-        // are what keep this signature's optionality honest — a call with no options at all
-        // would otherwise throw before a request ever left the process. Surfaced by the
-        // 0.111 -> 0.120 bump; a mocked SDK validates nothing, so the suite could not see it.
-        ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+        // validates request options on the way in and rejects a key set to undefined
+        // outright rather than reading it as absent. So the spread is what keeps this
+        // signature's optionality honest. Surfaced by the 0.111 -> 0.120 bump; a mocked
+        // SDK validates nothing, so the suite could not see it.
         ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
-        ...(signal !== undefined ? { signal } : {}),
+        signal,
       }
     );
+    stream.on("text", watchdog.progress);
+    stream.on("thinking", watchdog.progress);
 
-    const message = await stream.finalMessage();
+    let message: Anthropic.Message;
+    try {
+      message = await stream.finalMessage();
+    } catch (err) {
+      if (watchdog.tripped()) throw new Error(idleMessage("request"));
+      if (cap.signal.aborted && !options.signal?.aborted) {
+        throw new Error(
+          `Claude did not finish within ${Math.round(options.maxDurationMs! / 60_000)} minutes, so the request was abandoned.`,
+        );
+      }
+      throw err;
+    } finally {
+      watchdog.stop();
+      clearTimeout(capTimer);
+    }
 
     // The same allowlist the text paths use, so a stop reason the SDK adds later
     // cannot slip through here either.
@@ -176,32 +216,14 @@ export class ClaudeProvider implements AiProvider {
     // because nothing else bounds a stream: the SDK's timeout is spent once the
     // headers land, so a connection that goes quiet afterwards leaves
     // finalMessage() pending for ever, and with it the caller's whole feature.
-    const idle = new AbortController();
-    let idleTripped = false;
-    let idleTimer: NodeJS.Timeout | undefined;
-
-    const stopWatchdog = (): void => {
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = undefined;
-    };
-
-    const restartWatchdog = (): void => {
-      stopWatchdog();
-      idleTimer = setTimeout(() => {
-        idleTripped = true;
-        idle.abort();
-      }, STREAM_IDLE_TIMEOUT_MS);
-      // Never hold the process open waiting to give up on a stream.
-      idleTimer.unref();
-    };
+    const watchdog = idleWatchdog();
 
     const stream = this.client.messages.stream(this.baseParams(systemPrompt, userContent), {
-      signal: idle.signal,
+      signal: watchdog.signal,
     });
-    restartWatchdog();
 
     stream.on("text", (delta) => {
-      restartWatchdog();
+      watchdog.progress();
       onText(delta);
     });
 
@@ -210,7 +232,7 @@ export class ClaudeProvider implements AiProvider {
     // counts as progress: a model can reason for a long time before its first
     // answer token, and that is a working stream, not a stalled one.
     stream.on("thinking", (delta) => {
-      restartWatchdog();
+      watchdog.progress();
       onThinking?.(delta);
     });
 
@@ -218,27 +240,23 @@ export class ClaudeProvider implements AiProvider {
     // a complete analysis from one cut short — even after deltas have streamed.
     const finished = stream.finalMessage().then(
       (message) => {
-        stopWatchdog();
+        watchdog.stop();
         assertCompleteStop(message);
         return textOf(message);
       },
       (err: unknown) => {
-        stopWatchdog();
+        watchdog.stop();
         // The SDK reports the watchdog's abort the same way it reports the
         // user's, so say which one it was — otherwise a stall reads to the user
         // as though they cancelled.
-        if (idleTripped) {
-          throw new Error(
-            `Claude stopped sending output for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s, so the analysis was abandoned.`,
-          );
-        }
+        if (watchdog.tripped()) throw new Error(idleMessage("analysis"));
         throw err;
       },
     );
 
     return {
       abort: () => {
-        stopWatchdog();
+        watchdog.stop();
         stream.abort();
       },
       finished,

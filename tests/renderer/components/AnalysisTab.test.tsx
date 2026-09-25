@@ -209,7 +209,7 @@ describe("AnalysisTab run", () => {
 });
 
 describe("AnalysisTab Stop", () => {
-  // BM-5: a user waiting on a paid stream can cancel it.
+  // A user waiting on a paid stream can cancel it.
   it("Stop aborts the in-flight stream and shows no error", async () => {
     mockListPrompts.mockResolvedValue(PROMPTS);
     let signal: AbortSignal | undefined;

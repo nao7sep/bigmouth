@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // The fake SDK surface. Hoisted so the vi.mock factory can close over it.
 const sdk = vi.hoisted(() => ({
-  ctorArgs: null as null | { apiKey: string },
+  ctorArgs: null as null | { apiKey: string; maxRetries?: number },
   create: vi.fn(),
   stream: vi.fn(),
 }));
@@ -23,7 +23,7 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@anthropic-ai/sdk", () => {
   class FakeAnthropic {
     messages: { create: typeof sdk.create; stream: typeof sdk.stream };
-    constructor(opts: { apiKey: string }) {
+    constructor(opts: { apiKey: string; maxRetries?: number }) {
       sdk.ctorArgs = opts;
       this.messages = { create: sdk.create, stream: sdk.stream };
     }
@@ -100,9 +100,11 @@ beforeEach(() => {
 });
 
 describe("ClaudeProvider construction", () => {
-  it("passes the api key to the Anthropic client", () => {
+  // Every call is paid: the SDK's default of two retries could bill a request
+  // up to three times, so the client never retries on its own.
+  it("passes the api key and turns off the SDK's own retries", () => {
     new ClaudeProvider("sk-test", req("claude-test-model"));
-    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test" });
+    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", maxRetries: 0 });
   });
 });
 
@@ -219,7 +221,7 @@ describe("generateJson", () => {
     const provider = new ClaudeProvider("k", req("json-model", { maxTokens: 555 }));
 
     const result = await jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "end_turn" }), {
-      timeoutMs: 1234,
+      maxDurationMs: 1234,
       maxRetries: 2,
     });
 
@@ -232,11 +234,9 @@ describe("generateJson", () => {
     expect(body.system).toBe("sys");
     // The schema is wrapped by the (mocked) jsonSchemaOutputFormat helper.
     expect(body.output_config).toEqual({ format: { __outputFormat: schema } });
-    // timeoutMs travels as BOTH the SDK's connect-phase timeout and a real
-    // deadline on the whole call. The SDK's own `timeout` is cleared the moment
-    // the response headers arrive, so without the signal a stall after that hung
-    // the caller for ever while the log recorded a timeout that never applied.
-    expect(requestOptions.timeout).toBe(1234);
+    // The call is bounded by a signal (inactivity plus the outer cap), never by
+    // the SDK's own `timeout`, which is cleared once the response headers arrive.
+    expect("timeout" in requestOptions).toBe(false);
     expect(requestOptions.maxRetries).toBe(2);
     expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
   });
@@ -261,13 +261,79 @@ describe("generateJson", () => {
     expect("system" in sdk.stream.mock.calls[0][0]).toBe(false);
   });
 
-  it("forwards an abort signal through the request options", async () => {
+  it("aborts the request when the caller's signal aborts", async () => {
     const provider = new ClaudeProvider("k", req());
-    const signal = new AbortController().signal;
+    const controller = new AbortController();
 
-    await jsonRun(provider, message({ parsed_output: {}, stop_reason: "end_turn" }), { signal });
+    await jsonRun(provider, message({ parsed_output: {}, stop_reason: "end_turn" }), { signal: controller.signal });
+    const requestSignal = sdk.stream.mock.calls[0][1].signal as AbortSignal;
+    expect(requestSignal.aborted).toBe(false);
+    controller.abort();
 
-    expect(sdk.stream.mock.calls[0][1].signal).toBe(signal);
+    expect(requestSignal.aborted).toBe(true);
+  });
+
+  // A thinking-enabled call can run far past any fixed deadline, so it is bounded
+  // by inactivity, as analysis is, and never cut off after its tokens are billed.
+  describe("inactivity bound", () => {
+    const IDLE_MS = 120_000;
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    function start(provider: ClaudeProvider, options?: Parameters<ClaudeProvider["generateJson"]>[3]) {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const promise = provider.generateJson("sys", "usr", schema, options);
+      const [, requestOptions] = sdk.stream.mock.calls[0] as [unknown, { signal: AbortSignal }];
+      requestOptions.signal.addEventListener("abort", () => f.rejectFinal(new Error("Request was aborted.")));
+      return { f, promise };
+    }
+
+    it("keeps a call alive for as long as reasoning or output keeps arriving", async () => {
+      const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+      const { f, promise } = start(provider, { maxDurationMs: 10 * 60_000 });
+
+      for (let i = 0; i < 4; i += 1) {
+        await vi.advanceTimersByTimeAsync(IDLE_MS * 0.75);
+        f.emitThinking("still reasoning");
+      }
+      f.emitText("{}");
+      f.resolveFinal(message({ parsed_output: { a: "b" }, stop_reason: "end_turn" }));
+
+      await expect(promise).resolves.toEqual({ a: "b" });
+    });
+
+    it("abandons a call that goes silent, and says so", async () => {
+      const provider = new ClaudeProvider("k", req());
+      const { promise } = start(provider);
+
+      const rejection = expect(promise).rejects.toThrow(/stopped sending output for 120s/);
+      await vi.advanceTimersByTimeAsync(IDLE_MS);
+      await rejection;
+    });
+
+    it("gives up at the outer cap even while output keeps arriving", async () => {
+      const provider = new ClaudeProvider("k", req());
+      const { f, promise } = start(provider, { maxDurationMs: 5 * 60_000 });
+
+      const rejection = expect(promise).rejects.toThrow(/did not finish within 5 minutes/);
+      for (let i = 0; i < 6; i += 1) {
+        f.emitText("x");
+        await vi.advanceTimersByTimeAsync(60_000);
+      }
+      await rejection;
+    });
+
+    it("reports the caller's abort as itself", async () => {
+      const provider = new ClaudeProvider("k", req());
+      const controller = new AbortController();
+      const { promise } = start(provider, { signal: controller.signal });
+
+      const rejection = expect(promise).rejects.toThrow(/Request was aborted/);
+      controller.abort();
+      await rejection;
+    });
   });
 
   it("throws when structured generation hit the token cap", async () => {
@@ -309,7 +375,10 @@ describe("generateJson", () => {
 // only fails against the real client.
 describe("generateJson request options", () => {
   function streamReturning(parsed: unknown) {
-    return { finalMessage: async () => ({ stop_reason: "end_turn", parsed_output: parsed }) };
+    return {
+      on: () => {},
+      finalMessage: async () => ({ stop_reason: "end_turn", parsed_output: parsed }),
+    };
   }
 
   it("omits the KEY for an option the caller did not give", async () => {
@@ -319,7 +388,8 @@ describe("generateJson request options", () => {
     const opts = sdk.stream.mock.calls[0]?.[1] ?? {};
     expect("timeout" in opts).toBe(false);
     expect("maxRetries" in opts).toBe(false);
-    expect("signal" in opts).toBe(false);
+    // Always present: the inactivity bound rides on it.
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("passes each option through when the caller does give it", async () => {
@@ -327,8 +397,8 @@ describe("generateJson request options", () => {
     const controller = new AbortController();
     const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 });
     await provider.generateJson("sys", "user", { type: "object" },
-      { timeoutMs: 12_345, maxRetries: 2, signal: controller.signal });
-    expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ timeout: 12_345, maxRetries: 2, signal: controller.signal });
+      { maxDurationMs: 12_345, maxRetries: 2, signal: controller.signal });
+    expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 2 });
   });
 });
 

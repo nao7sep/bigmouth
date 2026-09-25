@@ -557,7 +557,7 @@ describe("api wrappers — call-through and argument shape", () => {
       );
     });
 
-    // BM-5: aborting must cancel the paid call in the main process, not only
+    // Aborting must cancel the paid call in the main process, not only
     // reject the renderer's promise while generation runs on.
     it("aborts the bridge request when the signal aborts", async () => {
       const handle = handleOf(new Promise<never>(() => {}));
