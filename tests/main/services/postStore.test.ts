@@ -148,6 +148,21 @@ describe("updatePost", () => {
     expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
   });
 
+  // A slug autosave runs this check on the main process, so it must not read and
+  // parse every post body in the workspace.
+  it("checks a slug without reading the other posts' files", () => {
+    const others = Array.from({ length: 10 }, () => createPost(dataDir, "blogger", "en"));
+    const editable = createPost(dataDir, "blogger", "en");
+    const read = vi.spyOn(fs, "readFileSync");
+    try {
+      updatePost(dataDir, editable.frontMatter.id, { frontMatter: { slug: "fresh-slug" } });
+      const otherFiles = new Set(others.map((post) => post.filePath));
+      expect(read.mock.calls.filter(([file]) => otherFiles.has(String(file)))).toEqual([]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it("skips an externally edited non-string slug while scanning for conflicts", () => {
     const malformed = createPost(dataDir, "blogger", "en");
     const editable = createPost(dataDir, "blogger", "en");

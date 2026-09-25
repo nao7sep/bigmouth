@@ -411,12 +411,9 @@ export function updatePost(
   const fm = post.frontMatter;
   if (updates.frontMatter) {
     const requestedSlug = updates.frontMatter.slug;
-    if (
-      typeof requestedSlug === "string" &&
-      requestedSlug.length > 0 &&
-      index.findSlugConflictOnDisk(dataDir, requestedSlug, path.basename(post.filePath))
-    ) {
-      throw new Error(`Another post already uses the slug "${requestedSlug}"`);
+    if (typeof requestedSlug === "string" && requestedSlug.length > 0) {
+      const conflict = slugConflictMessage(dataDir, id, requestedSlug);
+      if (conflict) throw new Error(conflict);
     }
     for (const [key, value] of Object.entries(updates.frontMatter)) {
       if (value === null) {
@@ -438,6 +435,22 @@ export function updatePost(
   // getPost or an explicit updates.content that supersedes it.
   clearPending(dataDir, id);
   return post;
+}
+
+/**
+ * Why `slug` cannot be given to post `id`, or null when it is free. Slugs
+ * compare case-insensitively. Checked against the index after reconciling it
+ * with the files, so an out-of-band edit is seen without reading every post
+ * body — a slug autosave runs this on the main process.
+ */
+function slugConflictMessage(dataDir: string, id: string, slug: string): string | null {
+  index.refresh(dataDir);
+  const normalized = slug.toLowerCase();
+  for (const entry of index.allEntries(dataDir)) {
+    if (entry.id === id) continue;
+    if (entry.slug?.toLowerCase() === normalized) return `Another post already uses the slug "${slug}"`;
+  }
+  return null;
 }
 
 // --- Status change ---

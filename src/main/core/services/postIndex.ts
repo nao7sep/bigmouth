@@ -118,25 +118,13 @@ export function rebuild(dataDir: string): RebuildResult {
 }
 
 /**
- * Finds a post that currently owns a slug by reading the Markdown source of
- * truth, rather than the derived in-memory index. Bigmouth explicitly supports
- * editing those files outside the app, so the cache can be stale for the whole
- * lifetime of an open window.
+ * Brings the in-memory index up to date with the Markdown files, which BigMouth
+ * explicitly lets the user edit outside the app. Cheap: a `stat` per file, and a
+ * read only of the files written since the index was (see reconcile).
  */
-export function findSlugConflictOnDisk(
-  dataDir: string,
-  slug: string,
-  excludingFileName: string,
-): PostIndexEntry | null {
-  const normalized = slug.toLowerCase();
-  for (const fileName of postFileNames(dataDir)) {
-    if (fileName === excludingFileName) continue;
-    const result = tryEntryFromFile(dataDir, fileName);
-    if ("entry" in result && result.entry.slug?.toLowerCase() === normalized) {
-      return result.entry;
-    }
-  }
-  return null;
+export function refresh(dataDir: string): void {
+  const map = state(dataDir);
+  if (reconcile(dataDir, map)) persist(dataDir, map);
 }
 
 // --- Internal ---
