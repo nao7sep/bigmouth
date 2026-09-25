@@ -11,7 +11,7 @@ import type { Post, PostFrontMatter, PostMutationResult } from "@shared/types";
 import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
-import { extractFields, parseFieldValue } from "../util/metadataFields";
+import { extractFields, parseFieldValue, untouchedGeneratedFields } from "../util/metadataFields";
 import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
@@ -215,9 +215,14 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         generationLockRef.current = true;
         const controller = new AbortController();
         generationAbortRef.current = controller;
+        const atStart = { ...fieldsRef.current };
         setGenerating((prev) => ({ ...prev, [key]: true }));
         try {
           const value = await generateMetadataField(postId, key, content, controller.signal);
+          // The field stays editable while generation runs; if the user typed
+          // into it meanwhile, their text wins and the result is dropped.
+          const apply = untouchedGeneratedFields(atStart, fieldsRef.current, { [key]: value });
+          if (!(key in apply)) return { key, ok: true as const };
           clearTimer(key);
           setFields((prev) => ({ ...prev, [key]: value }));
           await persistField(key, value);
@@ -265,16 +270,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       clearGenError();
       const controller = new AbortController();
       generationAbortRef.current = controller;
-      for (const key of allFieldKeys) clearTimer(key);
+      const atStart = { ...fieldsRef.current };
 
       setGeneratingAll(true);
       try {
         const results = await generateMetadataFields(postId, allFieldKeys, content, controller.signal);
-        const generatedFields: Record<string, string> = {};
-        const frontMatterPatch = {} as {
-          [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
-        };
-        const savedKeys: string[] = [];
+        const allGenerated: Record<string, string> = {};
         const failed: string[] = [];
 
         for (const key of allFieldKeys) {
@@ -283,11 +284,20 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             failed.push(key);
             continue;
           }
+          allGenerated[key] = result.value;
+        }
 
-          generatedFields[key] = result.value;
-          (frontMatterPatch as Record<string, string | string[]>)[key] =
-            parseFieldValue(key, result.value);
-          savedKeys.push(key);
+        // The fields stay editable while generation runs; a field the user
+        // typed into meanwhile keeps the typed value, and only untouched fields
+        // take the generated one.
+        const generatedFields = untouchedGeneratedFields(atStart, fieldsRef.current, allGenerated);
+        const savedKeys = Object.keys(generatedFields);
+        const frontMatterPatch = {} as {
+          [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
+        };
+        for (const key of savedKeys) {
+          clearTimer(key);
+          (frontMatterPatch as Record<string, string | string[]>)[key] = parseFieldValue(key, generatedFields[key]);
         }
 
         if (savedKeys.length > 0) {

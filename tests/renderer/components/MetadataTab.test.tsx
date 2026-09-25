@@ -444,6 +444,55 @@ describe("MetadataTab Generate All", () => {
   });
 });
 
+describe("MetadataTab generation keeps what the user typed", () => {
+  it("Generate All fills only the fields left untouched while it ran", async () => {
+    let release!: (value: Record<string, { value: string }>) => void;
+    mockGenerateMetadataFields.mockImplementation(
+      () => new Promise((resolve) => (release = resolve))
+    );
+    mockUpdatePost.mockResolvedValue(result());
+    const { container, titleInput } = renderTab();
+
+    await act(async () => {
+      fireEvent.click(container.querySelector(".btn-generate-all") as HTMLButtonElement);
+    });
+    fireEvent.change(titleInput, { target: { value: "My Own Title" } });
+    await act(async () => {
+      release({
+        title: { value: "GenTitle" },
+        slug: { value: "gen-slug" },
+        tags: { value: "a, b" },
+        metaDescription: { value: "GenDesc" },
+      });
+    });
+
+    expect(titleInput.value).toBe("My Own Title");
+    const slugInput = container.querySelectorAll("textarea")[1] as HTMLTextAreaElement;
+    expect(slugInput.value).toBe("gen-slug");
+    const saved = mockUpdatePost.mock.calls.map(([, update]) => update.frontMatter ?? {});
+    expect(saved.some((fm) => fm.title === "GenTitle")).toBe(false);
+    expect(saved.some((fm) => fm.slug === "gen-slug")).toBe(true);
+  });
+
+  it("a single-field Generate drops its result when the field was typed into", async () => {
+    let release!: (value: string) => void;
+    mockGenerateMetadataField.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    mockUpdatePost.mockResolvedValue(result());
+    const { container, titleInput } = renderTab();
+
+    await act(async () => {
+      fireEvent.click(titleGenerate(container));
+    });
+    fireEvent.change(titleInput, { target: { value: "Typed" } });
+    await act(async () => {
+      release("GenTitle");
+    });
+
+    expect(titleInput.value).toBe("Typed");
+    expect(mockUpdatePost.mock.calls.some(([, update]) => update.frontMatter?.title === "GenTitle")).toBe(false);
+  });
+});
+
 describe("MetadataTab non-English fields", () => {
   function jaFrontMatter(): PostFrontMatter {
     return { ...frontMatter(), language: "ja", titleEn: "Seed En" };

@@ -81,3 +81,21 @@ export function parseFieldValue(key: string, value: string): string | string[] {
   }
   return value;
 }
+
+/**
+ * The generated values that may be applied: only to fields the user left alone
+ * while generation ran. A field whose current value differs from its value when
+ * generation started was typed into meanwhile, and the typed value wins — the
+ * user's own text is never replaced by a result they did not wait for.
+ */
+export function untouchedGeneratedFields(
+  atStart: Record<string, string>,
+  current: Record<string, string>,
+  generated: Record<string, string>,
+): Record<string, string> {
+  const apply: Record<string, string> = {};
+  for (const [key, value] of Object.entries(generated)) {
+    if ((current[key] ?? "") === (atStart[key] ?? "")) apply[key] = value;
+  }
+  return apply;
+}

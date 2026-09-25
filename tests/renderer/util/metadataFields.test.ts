@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { extractFields, parseFieldValue } from "@renderer/util/metadataFields";
+import { extractFields, parseFieldValue, untouchedGeneratedFields } from "@renderer/util/metadataFields";
 import type { PostFrontMatter } from "@shared/types";
 
 function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
@@ -77,5 +77,19 @@ describe("a value with nothing visible in it", () => {
     const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
     expect(parseFieldValue("title", family)).toBe(family);
     expect(parseFieldValue("tags", family)).toEqual([family]);
+  });
+});
+
+describe("untouchedGeneratedFields", () => {
+  it("applies a generated value only where the field is unchanged since generation started", () => {
+    const atStart = { title: "", slug: "old", tags: "" };
+    const current = { title: "typed meanwhile", slug: "old", tags: "" };
+    const generated = { title: "Gen", slug: "gen-slug", tags: "a, b" };
+
+    expect(untouchedGeneratedFields(atStart, current, generated)).toEqual({ slug: "gen-slug", tags: "a, b" });
+  });
+
+  it("treats a missing value as empty on either side", () => {
+    expect(untouchedGeneratedFields({}, { titleEn: "" }, { titleEn: "Gen" })).toEqual({ titleEn: "Gen" });
   });
 });
