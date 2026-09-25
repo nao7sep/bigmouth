@@ -154,7 +154,7 @@ describe("AnalysisTab run", () => {
     expect(getByText("The analysis could not be completed. No result was saved; try again.")).toBeTruthy();
   });
 
-  it("disables controls while a run is in flight", async () => {
+  it("turns Analyze into Stop and disables the prompt picker while a run is in flight", async () => {
     mockListPrompts.mockResolvedValue(PROMPTS);
     let release!: () => void;
     mockRunStream.mockImplementation(
@@ -167,8 +167,8 @@ describe("AnalysisTab run", () => {
     await act(async () => {
       fireEvent.click(button);
     });
-    expect(button.textContent).toBe("Analyzing…");
-    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Stop");
+    expect(button.disabled).toBe(false);
     expect(select.disabled).toBe(true);
 
     await act(async () => {
@@ -204,6 +204,33 @@ describe("AnalysisTab run", () => {
     await act(async () => {
       await Promise.resolve();
     });
+    expect(container.querySelector(".panel-error")).toBeNull();
+  });
+});
+
+describe("AnalysisTab Stop", () => {
+  // BM-5: a user waiting on a paid stream can cancel it.
+  it("Stop aborts the in-flight stream and shows no error", async () => {
+    mockListPrompts.mockResolvedValue(PROMPTS);
+    let signal: AbortSignal | undefined;
+    mockRunStream.mockImplementation(
+      (_postId, _prompt, _content, opts) =>
+        new Promise<void>((_resolve, reject) => {
+          signal = opts.signal;
+          opts.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        })
+    );
+    const { container } = await renderTab();
+    const button = container.querySelector(".action-button") as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(signal?.aborted).toBe(true);
+    expect(button.textContent).toBe("Analyze");
     expect(container.querySelector(".panel-error")).toBeNull();
   });
 });

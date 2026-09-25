@@ -53,6 +53,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
 import { deleteAiConfig, getAiConfigsForClient } from "@main/core/services/configStore.js";
+import { registerAiRequestHandlers } from "@main/ipc/aiRequests.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 
 let home: string;
@@ -76,7 +77,15 @@ function validOptions(): ImagingOptions {
 }
 
 function invoke(channel: string, ...args: unknown[]): Promise<string[]> {
-  return handlers.get(channel)!({}, ...args) as Promise<string[]>;
+  return handlers.get(channel)!(fakeEvent, "req-1", ...args) as Promise<string[]>;
+}
+
+// The window the request comes from, as the AI request registry sees it.
+const fakeEvent = { sender: { id: 1, once: () => {}, on: () => {} } };
+
+/** The renderer's abort for request "req-1", as it arrives on the shared channel. */
+function sendAbort(): void {
+  handlers.get(CHANNELS.aiRequestAbort)!(fakeEvent, "req-1");
 }
 
 beforeEach(() => {
@@ -98,6 +107,7 @@ beforeEach(() => {
   updatePost(dataDir, postId, { content: "A reflective post about quiet mornings." });
 
   registerImagingHandlers();
+  registerAiRequestHandlers();
 });
 
 afterEach(() => {
@@ -110,6 +120,24 @@ afterEach(() => {
 });
 
 describe("imaging generation IPC handler", () => {
+  // BM-1/BM-5: the renderer's abort must reach the paid call itself, not only
+  // stop the renderer waiting for it.
+  it("cancels the paid call when the renderer aborts the request", async () => {
+    let signal: AbortSignal | undefined;
+    ai.generateJsonImpl = (_s, _u, _schema, opts) => {
+      signal = (opts as { signal?: AbortSignal }).signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    };
+
+    const pending = invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions());
+    sendAbort();
+
+    expect(signal?.aborted).toBe(true);
+    await expect(pending).rejects.toThrow(/cancelled/);
+  });
+
   it("returns the normalized prompt list on success", async () => {
     ai.generateJsonImpl = () => ({
       items: ["A quiet sunrise over still water", "An empty cup on a wooden table", "Soft light through a curtain"],

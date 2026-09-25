@@ -7,6 +7,7 @@ import {
   analysisStreamChannel,
   type AiConfigInput,
   type AiConfigPatch,
+  type AiRequestHandle,
   type AnalysisStreamFrame,
   type AnalysisStreamHandle,
   type AnalysisStreamParams,
@@ -35,9 +36,34 @@ import type {
   Workspace,
 } from "@shared/types";
 
-// Per-window counter for analysis-stream request ids. Generated renderer-side so
-// the renderer can subscribe to the per-request channel before the stream starts.
-let nextStreamId = 1;
+// Per-window counter for AI request ids. Generated renderer-side so the renderer
+// can subscribe to a stream's channel, or send an abort, before the request
+// settles. The main process keys requests by window as well as by id, so two
+// windows counting from 1 never reach each other's calls.
+let nextRequestId = 1;
+
+function sendAiAbort(requestId: string): void {
+  ipcRenderer.send(CHANNELS.aiRequestAbort, requestId);
+}
+
+/**
+ * Starts an invoke-based AI request whose paid call the caller can cancel. The
+ * abort may be sent at once: the main handler registers the request before it
+ * first awaits, and this window's messages arrive in order (see aiRequests.ts).
+ */
+function startAiRequest<T>(channel: string, ...args: unknown[]): AiRequestHandle<T> {
+  const requestId = `ai-${nextRequestId++}`;
+  let settled = false;
+  const done = (ipcRenderer.invoke(channel, requestId, ...args) as Promise<T>).finally(() => {
+    settled = true;
+  });
+  return {
+    done,
+    abort: () => {
+      if (!settled) sendAiAbort(requestId);
+    },
+  };
+}
 
 // The bridge the renderer talks to over IPC. Each method forwards to an ipcMain
 // handler by channel; the analysis stream subscribes to a per-request event
@@ -168,13 +194,13 @@ const api = {
 
   // --- AI generation ---
   generateMetadata: (wsId: string, postId: string, fields: string[], content: string) =>
-    ipcRenderer.invoke(CHANNELS.generateMetadata, wsId, postId, fields, content) as Promise<MetadataGenerationResults>,
+    startAiRequest<MetadataGenerationResults>(CHANNELS.generateMetadata, wsId, postId, fields, content),
   runAnalysisStream: (
     params: AnalysisStreamParams,
     onDelta: (delta: string) => void,
     onThinking?: (delta: string) => void,
   ): AnalysisStreamHandle => {
-    const requestId = `astream-${nextStreamId++}`;
+    const requestId = `ai-${nextRequestId++}`;
     const channel = analysisStreamChannel(requestId);
     let settled = false;
     let started = false;
@@ -201,7 +227,7 @@ const api = {
     // Subscribe before starting so an early frame is never missed.
     ipcRenderer.on(channel, listener);
 
-    const sendAbort = (): void => ipcRenderer.send(CHANNELS.analysisStreamAbort, requestId);
+    const sendAbort = (): void => sendAiAbort(requestId);
 
     void (ipcRenderer.invoke(CHANNELS.analysisStreamStart, requestId, params) as Promise<void>)
       .then(() => {
@@ -228,7 +254,7 @@ const api = {
     return { done, abort };
   },
   generateImaging: (wsId: string, postId: string, content: string, options: ImagingOptions) =>
-    ipcRenderer.invoke(CHANNELS.generateImaging, wsId, postId, content, options) as Promise<string[]>,
+    startAiRequest<string[]>(CHANNELS.generateImaging, wsId, postId, content, options),
 } satisfies BigMouthApi;
 
 contextBridge.exposeInMainWorld("bigmouth", api);

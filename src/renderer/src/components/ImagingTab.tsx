@@ -94,6 +94,10 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
 
+  const stop = () => {
+    abortRef.current?.abort();
+  };
+
   const run = async () => {
     if (loading || !content.trim()) return;
 
@@ -136,12 +140,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
         <div className="imaging-note">
           English only. Not saved.
         </div>
+        {/* While it runs, Generate becomes Stop, which cancels the paid call. */}
         <button
           className="action-button"
-          onClick={run}
-          disabled={loading || !content.trim()}
+          onClick={loading ? stop : run}
+          disabled={!loading && !content.trim()}
         >
-          {loading ? "Generating…" : "Generate"}
+          {loading ? "Stop" : "Generate"}
         </button>
       </div>
 

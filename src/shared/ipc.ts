@@ -116,8 +116,9 @@ export const CHANNELS = {
   // AI generation
   generateMetadata: "metadata:generate",
   analysisStreamStart: "analysis:stream:start",
-  analysisStreamAbort: "analysis:stream:abort",
   generateImaging: "imaging:generate",
+  // Cancels any in-flight AI request (analysis, metadata, imaging) by its id.
+  aiRequestAbort: "ai:request:abort",
 } as const;
 
 // --- Content-save events (main -> renderer) ---
@@ -232,12 +233,15 @@ export type AnalysisStreamFrame =
   | { type: "done" }
   | { type: "error"; message: string };
 
-/** Handle returned by `runAnalysisStream`: a promise that settles with the stream
- * and an `abort` to cancel the in-flight generation. */
-export interface AnalysisStreamHandle {
-  done: Promise<void>;
+/** Handle for an in-flight AI request: `done` settles with its result, and
+ * `abort` cancels the paid call itself in the main process, not only the wait. */
+export interface AiRequestHandle<T> {
+  done: Promise<T>;
   abort: () => void;
 }
+
+/** Handle returned by `runAnalysisStream`: settles when the stream completes. */
+export type AnalysisStreamHandle = AiRequestHandle<void>;
 
 // --- The bridge surface ---
 
@@ -343,11 +347,16 @@ export interface BigMouthApi {
   deleteAsset(wsId: string, postId: string, filename: string): Promise<void>;
 
   // AI generation
-  generateMetadata(wsId: string, postId: string, fields: string[], content: string): Promise<MetadataGenerationResults>;
+  generateMetadata(
+    wsId: string,
+    postId: string,
+    fields: string[],
+    content: string,
+  ): AiRequestHandle<MetadataGenerationResults>;
   runAnalysisStream(
     params: AnalysisStreamParams,
     onDelta: (delta: string) => void,
     onThinking?: (delta: string) => void,
   ): AnalysisStreamHandle;
-  generateImaging(wsId: string, postId: string, content: string, options: ImagingOptions): Promise<string[]>;
+  generateImaging(wsId: string, postId: string, content: string, options: ImagingOptions): AiRequestHandle<string[]>;
 }

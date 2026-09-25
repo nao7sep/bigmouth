@@ -294,12 +294,12 @@ describe("MetadataTab single-field generation", () => {
       fireEvent.click(titleGenerate(container));
     });
 
-    expect(mockGenerateMetadataField).toHaveBeenCalledWith("p1", "title", "some body text");
+    expect(mockGenerateMetadataField).toHaveBeenCalledWith("p1", "title", "some body text", expect.any(AbortSignal));
     expect(titleInput.value).toBe("AI Title");
     expect(mockUpdatePost).toHaveBeenCalledWith("p1", { frontMatter: { title: "AI Title" } }, "w1");
   });
 
-  it("shows the field's generating label while in flight", async () => {
+  it("turns the field's Generate into Stop while in flight", async () => {
     let release!: (value: string) => void;
     mockGenerateMetadataField.mockImplementation(
       () => new Promise<string>((resolve) => (release = resolve))
@@ -311,13 +311,61 @@ describe("MetadataTab single-field generation", () => {
     await act(async () => {
       fireEvent.click(btn);
     });
-    expect(btn.textContent).toBe("Generating…");
-    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe("Stop");
+    expect(btn.disabled).toBe(false);
 
     await act(async () => {
       release("done");
     });
     expect(btn.textContent).toBe("Generate");
+  });
+
+  it("Stop cancels the paid call and keeps the field unchanged", async () => {
+    let signal: AbortSignal | undefined;
+    mockGenerateMetadataField.mockImplementation(
+      (_postId, _field, _content, s) =>
+        new Promise<string>((_resolve, reject) => {
+          signal = s;
+          s?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        })
+    );
+    const { container, titleInput } = renderTab();
+    const btn = titleGenerate(container);
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    expect(signal?.aborted).toBe(true);
+    expect(btn.textContent).toBe("Generate");
+    expect(titleInput.value).toBe("");
+    expect(container.querySelector(".metadata-error")).toBeNull();
+  });
+
+  // BM-1: leaving the post must not queue behind a paid call.
+  it("flushPendingChanges cancels an in-flight generation instead of waiting for it", async () => {
+    let signal: AbortSignal | undefined;
+    mockGenerateMetadataField.mockImplementation(
+      (_postId, _field, _content, s) =>
+        new Promise<string>((_resolve, reject) => {
+          signal = s;
+          s?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        })
+    );
+    const { container, ref } = renderTab();
+    await act(async () => {
+      fireEvent.click(titleGenerate(container));
+    });
+
+    let flushed: boolean | undefined;
+    await act(async () => {
+      flushed = await ref.current!.flushPendingChanges();
+    });
+
+    expect(flushed).toBe(true);
+    expect(signal?.aborted).toBe(true);
   });
 
   it("surfaces a generation failure and does not save", async () => {

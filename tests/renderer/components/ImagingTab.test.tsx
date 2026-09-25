@@ -131,7 +131,7 @@ describe("ImagingTab run", () => {
     expect(getByText("another prompt")).toBeTruthy();
   });
 
-  it("shows the loading label and disables controls while generating", async () => {
+  it("turns Generate into Stop and disables the options while generating", async () => {
     let release!: (items: string[]) => void;
     mockGenerate.mockImplementation(
       () => new Promise<string[]>((resolve) => (release = resolve))
@@ -142,8 +142,8 @@ describe("ImagingTab run", () => {
     await act(async () => {
       fireEvent.click(button);
     });
-    expect(button.textContent).toBe("Generating…");
-    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Stop");
+    expect(button.disabled).toBe(false);
     const firstSelect = container.querySelector(".imaging-controls select") as HTMLSelectElement;
     expect(firstSelect.disabled).toBe(true);
 
@@ -152,6 +152,30 @@ describe("ImagingTab run", () => {
     });
     expect(button.textContent).toBe("Generate");
     expect(button.disabled).toBe(false);
+  });
+
+  // BM-5: a user waiting on a paid call can cancel it.
+  it("Stop aborts the in-flight generation and shows no error", async () => {
+    let signal: AbortSignal | undefined;
+    mockGenerate.mockImplementation(
+      (_postId, _content, _options, s) =>
+        new Promise<string[]>((_resolve, reject) => {
+          signal = s;
+          s?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        })
+    );
+    const { container } = renderTab();
+    const button = container.querySelector(".action-button") as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(signal?.aborted).toBe(true);
+    expect(button.textContent).toBe("Generate");
+    expect(container.querySelector(".panel-error")).toBeNull();
   });
 
   it("surfaces a generation error in the error panel", async () => {

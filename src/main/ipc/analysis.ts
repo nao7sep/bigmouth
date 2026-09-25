@@ -10,13 +10,7 @@ import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
 import { safeAiConfigLogContext, safePostLogContext } from "../core/shared/logSummaries.js";
 import { debug as logDebug, info as logInfo, warn as logWarn, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-
-// In-flight streams keyed by the renderer-supplied request id, so an abort
-// message can cancel the matching generation. The renderer holds its abort until
-// the start invoke has resolved (see preload), so an abort can never reach this
-// process before the stream is registered. An abort for an id that is no longer
-// active therefore means the stream has already finished, and is safely ignored.
-const activeStreams = new Map<string, { abort: () => void }>();
+import { trackAiRequest } from "./aiRequests.js";
 
 function resolveAnalysisRequest(
   ws: Workspace,
@@ -95,12 +89,12 @@ export function registerAnalysisHandlers(): void {
       },
     );
 
-    activeStreams.set(requestId, {
-      abort: () => {
-        aborted = true;
-        stream.abort();
-        logWarn("analysis stream aborted", { workspace: params.wsId, postId: request.postId, wroteDelta });
-      },
+    // Registered with the window that asked, so the renderer's abort and the
+    // window's own teardown both reach this stream (see aiRequests.ts).
+    const release = trackAiRequest(event.sender, requestId, () => {
+      aborted = true;
+      stream.abort();
+      logWarn("analysis stream aborted", { workspace: params.wsId, postId: request.postId, wroteDelta });
     });
 
     void stream.finished
@@ -136,15 +130,6 @@ export function registerAnalysisHandlers(): void {
         );
         send({ type: "error", message: err instanceof Error ? err.message : message });
       })
-      .finally(() => {
-        activeStreams.delete(requestId);
-      });
-  });
-
-  ipcMain.on(CHANNELS.analysisStreamAbort, (_event, requestId: string) => {
-    const active = activeStreams.get(requestId);
-    if (!active) return; // already finished, or never registered — nothing to cancel
-    active.abort();
-    activeStreams.delete(requestId);
+      .finally(release);
   });
 }

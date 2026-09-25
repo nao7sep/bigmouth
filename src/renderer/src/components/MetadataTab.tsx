@@ -62,7 +62,10 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const [genError, setGenError] = useState<string | null>(null);
     const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const generationLockRef = useRef(false);
-    const generationPromisesRef = useRef<Set<Promise<unknown>>>(new Set());
+    // The in-flight generation's cancel. Navigation never waits on a paid call:
+    // leaving the post, changing status or switching workspace aborts it, and
+    // so does the Stop button that replaces Generate while it runs.
+    const generationAbortRef = useRef<AbortController | null>(null);
     const {
       copiedKey,
       copy: copyToClipboard,
@@ -148,10 +151,15 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       [postId, showGenError, workspaceId]
     );
 
+    const stopGeneration = useCallback(() => {
+      generationAbortRef.current?.abort();
+      generationAbortRef.current = null;
+    }, []);
+
     const flushPendingChanges = useCallback(async (): Promise<boolean> => {
-      while (generationPromisesRef.current.size > 0) {
-        await Promise.all(Array.from(generationPromisesRef.current));
-      }
+      // The caller is leaving this post: cancel generation rather than wait for
+      // it, and save only what was typed, which is local and fast.
+      stopGeneration();
 
       for (const key of Object.keys(saveTimers.current)) clearTimer(key);
 
@@ -160,7 +168,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       // persisted before we report success, because the caller unmounts this tab
       // on a true result. See flushDirtyFields for the convergence/failure rules.
       return flushDirtyFields(dirtyKeys, persistField);
-    }, [dirtyKeys, persistField]);
+    }, [dirtyKeys, persistField, stopGeneration]);
 
     useImperativeHandle(
       ref,
@@ -171,14 +179,16 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     );
 
     // Drop pending debounce timers on unmount so a stray save never fires after
-    // the post is gone. Intentional teardowns (post switch, status change,
-    // workspace switch) are flushed explicitly via flushPendingChanges first; a
-    // delete deliberately discards unsaved edits.
+    // the post is gone, and cancel any generation, whose result has nowhere to
+    // go. Intentional teardowns (post switch, status change, workspace switch)
+    // are flushed explicitly via flushPendingChanges first; a delete
+    // deliberately discards unsaved edits.
     useEffect(() => {
       return () => {
         for (const key of Object.keys(saveTimers.current)) clearTimer(key);
+        stopGeneration();
       };
-    }, []);
+    }, [stopGeneration]);
 
     const updateField = (key: string, value: string) => {
       if (readOnly) return;
@@ -198,39 +208,35 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     };
 
     const runGeneration = useCallback(
-      (key: string) => {
-        const task = (async () => {
-          if (generationLockRef.current) {
-            return { key, ok: false as const, skipped: true as const };
-          }
-          generationLockRef.current = true;
-          setGenerating((prev) => ({ ...prev, [key]: true }));
-          try {
-            const value = await generateMetadataField(postId, key, content);
-            clearTimer(key);
-            setFields((prev) => ({ ...prev, [key]: value }));
-            await persistField(key, value);
-            return { key, ok: true as const };
-          } catch (err) {
-            const message = presentFailure(
-              "Metadata could not be generated. Existing metadata is unchanged; try again.",
-              "renderer: metadata generation failed",
-              err,
-              { postId, field: key },
-            );
-            showGenError(message);
-            return { key, ok: false as const, error: message };
-          } finally {
-            setGenerating((prev) => ({ ...prev, [key]: false }));
-            generationLockRef.current = false;
-          }
-        })();
-
-        generationPromisesRef.current.add(task);
-        task.finally(() => {
-          generationPromisesRef.current.delete(task);
-        });
-        return task;
+      async (key: string) => {
+        if (generationLockRef.current) {
+          return { key, ok: false as const, skipped: true as const };
+        }
+        generationLockRef.current = true;
+        const controller = new AbortController();
+        generationAbortRef.current = controller;
+        setGenerating((prev) => ({ ...prev, [key]: true }));
+        try {
+          const value = await generateMetadataField(postId, key, content, controller.signal);
+          clearTimer(key);
+          setFields((prev) => ({ ...prev, [key]: value }));
+          await persistField(key, value);
+          return { key, ok: true as const };
+        } catch (err) {
+          if (controller.signal.aborted) return { key, ok: false as const, cancelled: true as const };
+          const message = presentFailure(
+            "Metadata could not be generated. Existing metadata is unchanged; try again.",
+            "renderer: metadata generation failed",
+            err,
+            { postId, field: key },
+          );
+          showGenError(message);
+          return { key, ok: false as const, error: message };
+        } finally {
+          if (generationAbortRef.current === controller) generationAbortRef.current = null;
+          setGenerating((prev) => ({ ...prev, [key]: false }));
+          generationLockRef.current = false;
+        }
       },
       [content, persistField, postId, showGenError]
     );
@@ -257,80 +263,75 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       if (readOnly || !content.trim() || generationLockRef.current) return;
       generationLockRef.current = true;
       clearGenError();
-      const task = (async () => {
-        for (const key of allFieldKeys) clearTimer(key);
+      const controller = new AbortController();
+      generationAbortRef.current = controller;
+      for (const key of allFieldKeys) clearTimer(key);
 
-        setGeneratingAll(true);
-        try {
-          const results = await generateMetadataFields(postId, allFieldKeys, content);
-          const generatedFields: Record<string, string> = {};
-          const frontMatterPatch = {} as {
-            [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
-          };
-          const savedKeys: string[] = [];
-          const failed: string[] = [];
-
-          for (const key of allFieldKeys) {
-            const result = results[key];
-            if (!result || !("value" in result)) {
-              failed.push(key);
-              continue;
-            }
-
-            generatedFields[key] = result.value;
-            (frontMatterPatch as Record<string, string | string[]>)[key] =
-              parseFieldValue(key, result.value);
-            savedKeys.push(key);
-          }
-
-          if (savedKeys.length > 0) {
-            // setFields makes the generated values current; until the batch save
-            // confirms, they differ from the saved snapshot and so read as dirty.
-            setFields((prev) => ({ ...prev, ...generatedFields }));
-            try {
-              const updated = await updatePost(
-                postId,
-                { frontMatter: frontMatterPatch },
-                workspaceId
-              );
-              // Advance the saved snapshot to the generated values. A field the
-              // user edited while this save was in flight now differs and stays
-              // dirty, so the edit survives for the next save instead of being
-              // dropped. On failure the snapshot is untouched, so every generated
-              // field stays dirty and a later flush retries it.
-              for (const key of savedKeys) savedRef.current[key] = generatedFields[key];
-              onPostUpdatedRef.current(updated);
-            } catch (err) {
-              showGenError(presentFailure(
-                "Generated metadata could not be saved. The generated values are still shown; try again before leaving the post.",
-                "renderer: generated metadata save failed",
-                err,
-                { postId },
-              ));
-            }
-          }
-
-          if (failed.length > 0) {
-            showGenError(`Failed to generate: ${failed.join(", ")}`);
-          }
-        } catch (err) {
-          showGenError(presentFailure(
-            "Metadata could not be generated. Existing metadata is unchanged; try again.",
-            "renderer: metadata batch generation failed",
-            err,
-            { postId },
-          ));
-        } finally {
-          setGeneratingAll(false);
-          generationLockRef.current = false;
-        }
-      })();
-
-      generationPromisesRef.current.add(task);
+      setGeneratingAll(true);
       try {
-        await task;
+        const results = await generateMetadataFields(postId, allFieldKeys, content, controller.signal);
+        const generatedFields: Record<string, string> = {};
+        const frontMatterPatch = {} as {
+          [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
+        };
+        const savedKeys: string[] = [];
+        const failed: string[] = [];
+
+        for (const key of allFieldKeys) {
+          const result = results[key];
+          if (!result || !("value" in result)) {
+            failed.push(key);
+            continue;
+          }
+
+          generatedFields[key] = result.value;
+          (frontMatterPatch as Record<string, string | string[]>)[key] =
+            parseFieldValue(key, result.value);
+          savedKeys.push(key);
+        }
+
+        if (savedKeys.length > 0) {
+          // setFields makes the generated values current; until the batch save
+          // confirms, they differ from the saved snapshot and so read as dirty.
+          setFields((prev) => ({ ...prev, ...generatedFields }));
+          try {
+            const updated = await updatePost(
+              postId,
+              { frontMatter: frontMatterPatch },
+              workspaceId
+            );
+            // Advance the saved snapshot to the generated values. A field the
+            // user edited while this save was in flight now differs and stays
+            // dirty, so the edit survives for the next save instead of being
+            // dropped. On failure the snapshot is untouched, so every generated
+            // field stays dirty and a later flush retries it.
+            for (const key of savedKeys) savedRef.current[key] = generatedFields[key];
+            onPostUpdatedRef.current(updated);
+          } catch (err) {
+            showGenError(presentFailure(
+              "Generated metadata could not be saved. The generated values are still shown; try again before leaving the post.",
+              "renderer: generated metadata save failed",
+              err,
+              { postId },
+            ));
+          }
+        }
+
+        if (failed.length > 0) {
+          showGenError(`Failed to generate: ${failed.join(", ")}`);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        showGenError(presentFailure(
+          "Metadata could not be generated. Existing metadata is unchanged; try again.",
+          "renderer: metadata batch generation failed",
+          err,
+          { postId },
+        ));
       } finally {
-        generationPromisesRef.current.delete(task);
+        if (generationAbortRef.current === controller) generationAbortRef.current = null;
+        setGeneratingAll(false);
+        generationLockRef.current = false;
       }
     };
 
@@ -352,12 +353,14 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           </p>
         )}
         <div className="metadata-generate-all-row">
-            <button
-              className="btn-generate-all"
-              onClick={generateAll}
-              disabled={readOnly || generationLocked || noContent}
-            >
-            {generatingAll ? "Generating All…" : "Generate All"}
+          {/* While it runs, Generate All becomes its own Stop: the paid call is
+              cancelled, not merely ignored. */}
+          <button
+            className="btn-generate-all"
+            onClick={generatingAll ? stopGeneration : generateAll}
+            disabled={!generatingAll && (readOnly || generationLocked || noContent)}
+          >
+            {generatingAll ? "Stop Generating" : "Generate All"}
           </button>
         </div>
         <MetaField
@@ -371,6 +374,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onDismissCopyError={() => dismissCopyError("title")}
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
+          onStop={stopGeneration}
           generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
@@ -387,6 +391,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onDismissCopyError={() => dismissCopyError("titleEn")}
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
+            onStop={stopGeneration}
             generateDisabled={readOnly || generationLocked || noContent}
             readOnly={readOnly}
             isActive={isActive}
@@ -403,6 +408,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onDismissCopyError={() => dismissCopyError("slug")}
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
+          onStop={stopGeneration}
           generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
@@ -418,6 +424,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onDismissCopyError={() => dismissCopyError("tags")}
           onGenerate={() => generate("tags")}
           generating={isGenerating("tags")}
+          onStop={stopGeneration}
           generateDisabled={readOnly || generationLocked || noContent}
           placeholder="tag1, tag2, tag3"
           readOnly={readOnly}
@@ -435,6 +442,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onDismissCopyError={() => dismissCopyError("tagsEn")}
             onGenerate={() => generate("tagsEn")}
             generating={isGenerating("tagsEn")}
+            onStop={stopGeneration}
             generateDisabled={readOnly || generationLocked || noContent}
             placeholder="tag1, tag2, tag3"
             readOnly={readOnly}
@@ -452,6 +460,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onDismissCopyError={() => dismissCopyError("metaDescription")}
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
+          onStop={stopGeneration}
           generateDisabled={readOnly || generationLocked || noContent}
           readOnly={readOnly}
           isActive={isActive}
@@ -468,6 +477,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onDismissCopyError={() => dismissCopyError("metaDescriptionEn")}
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
+            onStop={stopGeneration}
             generateDisabled={readOnly || generationLocked || noContent}
             readOnly={readOnly}
             isActive={isActive}
@@ -501,6 +511,7 @@ function MetaField({
   copyError,
   onDismissCopyError,
   onGenerate,
+  onStop,
   generating,
   generateDisabled,
   placeholder,
@@ -516,6 +527,7 @@ function MetaField({
   copyError?: string;
   onDismissCopyError: () => void;
   onGenerate?: () => void;
+  onStop?: () => void;
   generating?: boolean;
   generateDisabled?: boolean;
   placeholder?: string;
@@ -530,11 +542,11 @@ function MetaField({
           {onGenerate && (
             <button
               className="meta-field-generate"
-              onClick={onGenerate}
-              disabled={generating || generateDisabled}
-              title="Generate with AI"
+              onClick={generating ? onStop : onGenerate}
+              disabled={!generating && generateDisabled}
+              title={generating ? "Stop generating" : "Generate with AI"}
             >
-              {generating ? "Generating…" : "Generate"}
+              {generating ? "Stop" : "Generate"}
             </button>
           )}
           <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">

@@ -88,14 +88,39 @@ vi.mock("@main/core/services/logger.js", () => ({
 }));
 
 const { registerAnalysisHandlers } = await import("@main/ipc/analysis.js");
+const { registerAiRequestHandlers } = await import("@main/ipc/aiRequests.js");
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-function makeEvent() {
-  return { sender: { isDestroyed: () => false, send: vi.fn() } };
+let nextSenderId = 1;
+
+interface FakeEvent {
+  sender: {
+    id: number;
+    isDestroyed: () => boolean;
+    send: ReturnType<typeof vi.fn>;
+    once: (name: string, cb: () => void) => unknown;
+    on: (name: string, cb: () => void) => unknown;
+    emit: (name: string) => void;
+  };
 }
 
-function framesFor(event: ReturnType<typeof makeEvent>, channel: string): AnalysisStreamFrame[] {
+/** A fake window: its id, and the teardown events the request registry listens to. */
+function makeEvent(): FakeEvent {
+  const listeners = new Map<string, () => void>();
+  const sender = {
+    id: nextSenderId++,
+    isDestroyed: () => false,
+    send: vi.fn(),
+    once: (name: string, cb: () => void) => listeners.set(name, cb),
+    on: (name: string, cb: () => void) => listeners.set(name, cb),
+    emit: (name: string) => listeners.get(name)?.(),
+  };
+  lastEvent = { sender };
+  return lastEvent;
+}
+
+function framesFor(event: FakeEvent, channel: string): AnalysisStreamFrame[] {
   return event.sender.send.mock.calls
     .filter(([ch]) => ch === channel)
     .map(([, frame]) => frame as AnalysisStreamFrame);
@@ -104,6 +129,7 @@ function framesFor(event: ReturnType<typeof makeEvent>, channel: string): Analys
 const params = { wsId: "w", postId: "p1", promptName: "P", content: "live content" };
 
 let start: (...args: unknown[]) => unknown;
+let lastEvent: FakeEvent | null = null;
 let abort: (...args: unknown[]) => unknown;
 
 beforeEach(() => {
@@ -115,8 +141,12 @@ beforeEach(() => {
   provider.resolveFinished = null;
   provider.rejectFinished = null;
   registerAnalysisHandlers();
+  registerAiRequestHandlers();
   start = ipc.handlers.get(CHANNELS.analysisStreamStart)!;
-  abort = ipc.listeners.get(CHANNELS.analysisStreamAbort)!;
+  const abortListener = ipc.listeners.get(CHANNELS.aiRequestAbort)!;
+  // An abort arrives from the window that started the stream.
+  abort = (event: unknown, requestId: unknown) =>
+    abortListener(event ?? { sender: lastEvent!.sender }, requestId);
 });
 
 describe("analysis stream handlers", () => {
@@ -181,7 +211,7 @@ describe("analysis stream handlers", () => {
     const channel = analysisStreamChannel("req-think-abort");
     start(event, "req-think-abort", params);
 
-    abort(null, "req-think-abort");
+    abort(undefined, "req-think-abort");
     provider.onThinking!("late reasoning");
     await tick();
 
@@ -231,5 +261,32 @@ describe("analysis stream handlers", () => {
     await tick();
 
     expect(framesFor(event, channel)).toEqual([{ type: "error", message: "provider exploded" }]);
+  });
+
+  // BM-4: a stream must not outlive the window that asked for it — the app stays
+  // alive on macOS after its window closes, and the stream would bill to the end.
+  it("aborts a stream when its window is destroyed", () => {
+    const event = makeEvent();
+    start(event, "req-closed", params);
+
+    event.sender.emit("destroyed");
+
+    expect(provider.abort).toHaveBeenCalledTimes(1);
+  });
+
+  // BM-4: request ids are counted per renderer, so two windows can hold the
+  // same id; one window's abort must never reach the other's stream.
+  it("keeps the same request id from two windows apart", async () => {
+    const first = makeEvent();
+    start(first, "ai-1", params);
+    const firstAbort = provider.abort!;
+    const second = makeEvent();
+    start(second, "ai-1", params);
+    const secondAbort = provider.abort!;
+
+    abort({ sender: first.sender }, "ai-1");
+
+    expect(firstAbort).toHaveBeenCalledTimes(1);
+    expect(secondAbort).not.toHaveBeenCalled();
   });
 });

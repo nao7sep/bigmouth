@@ -68,6 +68,10 @@ export function AnalysisTab({
     };
   }, []);
 
+  const stop = () => {
+    abortRef.current?.abort();
+  };
+
   const run = async () => {
     if (!selectedPrompt || loading || !content.trim()) return;
     abortRef.current?.abort();
@@ -149,12 +153,13 @@ export function AnalysisTab({
             </option>
           ))}
         </select>
+        {/* While it runs, Analyze becomes Stop, which cancels the paid stream. */}
         <button
           className="action-button"
-          onClick={run}
-          disabled={loading || !selectedPrompt || !content.trim()}
+          onClick={loading ? stop : run}
+          disabled={!loading && (!selectedPrompt || !content.trim())}
         >
-          {loading ? "Analyzing…" : "Analyze"}
+          {loading ? "Stop" : "Analyze"}
         </button>
       </div>
 

@@ -520,11 +520,17 @@ describe("api wrappers — call-through and argument shape", () => {
     });
   });
 
+  /** A bridge AI-request handle that settles with `result`. */
+  function handleOf<T>(done: Promise<T>) {
+    return { done, abort: vi.fn() };
+  }
+
   describe("metadata generation", () => {
     beforeEach(() => setActiveWorkspace("w1"));
 
     it("generateMetadataFields forwards ws + postId + fields + content", () => {
       const b = bridge();
+      b.generateMetadata = vi.fn(() => handleOf(Promise.resolve({})));
       installBridge(b);
       void generateMetadataFields("p1", ["title", "slug"], "body");
       expect(b.generateMetadata).toHaveBeenCalledWith("w1", "p1", ["title", "slug"], "body");
@@ -532,23 +538,35 @@ describe("api wrappers — call-through and argument shape", () => {
 
     it("generateMetadataField returns the value for a single field on success", async () => {
       installBridge({
-        generateMetadata: vi.fn().mockResolvedValue({ title: { value: "Generated" } }),
+        generateMetadata: vi.fn(() => handleOf(Promise.resolve({ title: { value: "Generated" } }))),
       });
       await expect(generateMetadataField("p1", "title", "body")).resolves.toBe("Generated");
     });
 
     it("generateMetadataField throws the field's error when generation fails", async () => {
       installBridge({
-        generateMetadata: vi.fn().mockResolvedValue({ title: { error: "no key" } }),
+        generateMetadata: vi.fn(() => handleOf(Promise.resolve({ title: { error: "no key" } }))),
       });
       await expect(generateMetadataField("p1", "title", "body")).rejects.toThrow("no key");
     });
 
     it("generateMetadataField throws a default message when the field is missing", async () => {
-      installBridge({ generateMetadata: vi.fn().mockResolvedValue({}) });
+      installBridge({ generateMetadata: vi.fn(() => handleOf(Promise.resolve({}))) });
       await expect(generateMetadataField("p1", "slug", "body")).rejects.toThrow(
         "Failed to generate slug",
       );
+    });
+
+    // BM-5: aborting must cancel the paid call in the main process, not only
+    // reject the renderer's promise while generation runs on.
+    it("aborts the bridge request when the signal aborts", async () => {
+      const handle = handleOf(new Promise<never>(() => {}));
+      installBridge({ generateMetadata: vi.fn(() => handle) });
+      const controller = new AbortController();
+      const promise = generateMetadataFields("p1", ["title"], "body", controller.signal);
+      controller.abort();
+      await expect(promise).rejects.toThrow(/aborted/i);
+      expect(handle.abort).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -565,28 +583,32 @@ describe("api wrappers — call-through and argument shape", () => {
     };
 
     it("forwards ws + postId + content + options and resolves the bridge result", async () => {
-      const generateImagingBridge = vi.fn().mockResolvedValue(["url1", "url2"]);
+      const generateImagingBridge = vi.fn(() => handleOf(Promise.resolve(["url1", "url2"])));
       installBridge({ generateImaging: generateImagingBridge });
       await expect(generateImaging("p1", "body", options)).resolves.toEqual(["url1", "url2"]);
       expect(generateImagingBridge).toHaveBeenCalledWith("w1", "p1", "body", options);
     });
 
-    it("rejects immediately when the signal is already aborted", async () => {
-      installBridge({ generateImaging: vi.fn().mockResolvedValue([]) });
+    it("rejects immediately, and cancels the request, when the signal is already aborted", async () => {
+      const handle = handleOf(Promise.resolve<string[]>([]));
+      installBridge({ generateImaging: vi.fn(() => handle) });
       const controller = new AbortController();
       controller.abort();
       await expect(generateImaging("p1", "body", options, controller.signal)).rejects.toThrow(
         /aborted/i,
       );
+      expect(handle.abort).toHaveBeenCalledTimes(1);
     });
 
-    it("rejects when the signal aborts while in flight", async () => {
+    it("rejects, and cancels the paid call, when the signal aborts while in flight", async () => {
       // A never-settling bridge promise so the abort wins the race.
-      installBridge({ generateImaging: vi.fn(() => new Promise<string[]>(() => {})) });
+      const handle = handleOf(new Promise<string[]>(() => {}));
+      installBridge({ generateImaging: vi.fn(() => handle) });
       const controller = new AbortController();
       const promise = generateImaging("p1", "body", options, controller.signal);
       controller.abort();
       await expect(promise).rejects.toThrow(/aborted/i);
+      expect(handle.abort).toHaveBeenCalledTimes(1);
     });
   });
 

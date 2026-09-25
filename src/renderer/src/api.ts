@@ -29,6 +29,7 @@ import {
   assetUrl as buildAssetUrl,
   type AiConfigInput,
   type AiConfigPatch,
+  type AiRequestHandle,
   type MetadataGenerationResults,
   type PostUpdate,
 } from "@shared/ipc";
@@ -336,8 +337,35 @@ export function deleteAsset(postId: string, filename: string, workspaceId?: stri
 
 // --- AI generation ---
 
-export async function generateMetadataField(postId: string, field: string, content: string): Promise<string> {
-  const results = await generateMetadataFields(postId, [field], content);
+/**
+ * Settles with an AI request, and cancels its paid call in the main process when
+ * `signal` aborts — rejecting with an AbortError at once, so the caller never
+ * waits on work it has abandoned.
+ */
+function settleOrCancel<T>(handle: AiRequestHandle<T>, signal: AbortSignal | undefined, what: string): Promise<T> {
+  if (!signal) return handle.done;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      handle.abort();
+      reject(new DOMException(`${what} aborted`, "AbortError"));
+    };
+    if (signal.aborted) {
+      onAbort();
+      handle.done.catch(() => {});
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    handle.done.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+export async function generateMetadataField(
+  postId: string,
+  field: string,
+  content: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const results = await generateMetadataFields(postId, [field], content, signal);
   const result = results[field];
   if (!result || !("value" in result)) {
     throw new Error(result?.error ?? `Failed to generate ${field}`);
@@ -349,8 +377,9 @@ export function generateMetadataFields(
   postId: string,
   fields: string[],
   content: string,
+  signal?: AbortSignal,
 ): Promise<MetadataGenerationResults> {
-  return bridge().generateMetadata(requireWs(), postId, fields, content);
+  return settleOrCancel(bridge().generateMetadata(requireWs(), postId, fields, content), signal, "Metadata generation");
 }
 
 export function runAnalysisStream(
@@ -392,19 +421,7 @@ export function generateImaging(
   options: ImagingOptions,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const result = bridge().generateImaging(requireWs(), postId, content, options);
-  if (!signal) return result;
-  // The underlying generation can't be cancelled mid-call, but the caller's
-  // abort still rejects this promise; the in-flight result is then discarded.
-  return new Promise<string[]>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Imaging aborted", "AbortError"));
-      return;
-    }
-    const onAbort = () => reject(new DOMException("Imaging aborted", "AbortError"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    result.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-  });
+  return settleOrCancel(bridge().generateImaging(requireWs(), postId, content, options), signal, "Imaging");
 }
 
 /** The URL for serving a raw asset file through the custom protocol. */

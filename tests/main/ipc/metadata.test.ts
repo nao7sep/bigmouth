@@ -54,6 +54,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
 import { deleteAiConfig, getAiConfigsForClient } from "@main/core/services/configStore.js";
+import { registerAiRequestHandlers } from "@main/ipc/aiRequests.js";
 import { registerMetadataHandlers } from "@main/ipc/metadata.js";
 
 let home: string;
@@ -65,7 +66,15 @@ const SAVED_HOME = process.env.BIGMOUTH_HOME;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 function invoke(channel: string, ...args: unknown[]): Promise<MetadataGenerationResults> {
-  return handlers.get(channel)!({}, ...args) as Promise<MetadataGenerationResults>;
+  return handlers.get(channel)!(fakeEvent, "req-1", ...args) as Promise<MetadataGenerationResults>;
+}
+
+// The window the request comes from, as the AI request registry sees it.
+const fakeEvent = { sender: { id: 1, once: () => {}, on: () => {} } };
+
+/** The renderer's abort for request "req-1", as it arrives on the shared channel. */
+function sendAbort(): void {
+  handlers.get(CHANNELS.aiRequestAbort)!(fakeEvent, "req-1");
 }
 
 beforeEach(() => {
@@ -87,6 +96,7 @@ beforeEach(() => {
   updatePost(dataDir, postId, { content: "A draft about gardening in spring." });
 
   registerMetadataHandlers();
+  registerAiRequestHandlers();
 });
 
 afterEach(() => {
@@ -99,6 +109,24 @@ afterEach(() => {
 });
 
 describe("metadata generation IPC handler", () => {
+  // BM-1/BM-5: the renderer's abort must reach the paid call itself, not only
+  // stop the renderer waiting for it.
+  it("cancels the paid call when the renderer aborts the request", async () => {
+    let signal: AbortSignal | undefined;
+    ai.generateJsonImpl = (_s, _u, _schema, opts) => {
+      signal = (opts as { signal?: AbortSignal }).signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    };
+
+    const pending = invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
+    sendAbort();
+
+    expect(signal?.aborted).toBe(true);
+    await expect(pending).rejects.toThrow(/cancelled/);
+  });
+
   it("generates the requested fields from the structured AI response", async () => {
     ai.generateJsonImpl = () => ({
       title: "Spring Gardening",
