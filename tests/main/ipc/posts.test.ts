@@ -413,6 +413,48 @@ describe("queuePostContent (the content stream)", () => {
   });
 });
 
+describe("queuePostMetadata (the metadata stream)", () => {
+  function postFilePath(id: string): string {
+    const dir = path.join(dataDir, "posts");
+    const fileName = fs.readdirSync(dir).find((f) => f.includes(id));
+    return path.join(dir, fileName ?? id);
+  }
+
+  it("buffers a field edit and writes it after the store's debounce", () => {
+    vi.useFakeTimers();
+    try {
+      const id = createDraft();
+      expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Streamed Title" })).toBeNull();
+      expect(fs.readFileSync(postFilePath(id), "utf8")).not.toContain("Streamed Title");
+
+      vi.advanceTimersByTime(1_000);
+
+      expect(fs.readFileSync(postFilePath(id), "utf8")).toContain("Streamed Title");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refuses an invalid slug, a slug another post uses, and a non-metadata key", () => {
+    const first = createDraft();
+    const second = createDraft();
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, first, { slug: "shared" })).toBeNull();
+
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "has space" })).toMatch(/Invalid slug/);
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "Shared" })).toMatch(/already uses the slug/);
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { target: "other" })).toMatch(/Not metadata fields: target/);
+  });
+
+  it("refuses edits to a locked post and to one that is not there", () => {
+    const id = createDraft();
+    invoke(CHANNELS.changePostStatus, wsId, id, "ready");
+    invoke(CHANNELS.changePostStatus, wsId, id, "published");
+
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Late" })).toMatch(/locked/);
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, "missing", { title: "X" })).toBe("Post not found");
+  });
+});
+
 describe("rebuildPostIndex", () => {
   it("rebuilds the index and reports the post count", () => {
     createDraft();

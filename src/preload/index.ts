@@ -24,6 +24,7 @@ import type {
   AppSettings,
   AppSettingsLoad,
   AssetMeta,
+  EditablePostMetadata,
   GenerationPromptsData,
   ImagingOptions,
   Post,
@@ -131,6 +132,8 @@ const api = {
   queuePostContent: (wsId: string, id: string, content: string) => {
     ipcRenderer.send(CHANNELS.queuePostContent, wsId, id, content);
   },
+  queuePostMetadata: (wsId: string, id: string, edits: EditablePostMetadata) =>
+    ipcRenderer.invoke(CHANNELS.queuePostMetadata, wsId, id, edits) as Promise<string | null>,
   onPostContentSaved: (listener: (event: PostContentSavedEvent) => void) => {
     const wrapped = (_event: unknown, payload: PostContentSavedEvent): void => listener(payload);
     ipcRenderer.on(CHANNELS.postContentSaved, wrapped);

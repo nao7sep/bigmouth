@@ -4,7 +4,7 @@ import { confirmQuitWithUnsavedChanges, showStartupFailure } from "./dialogs.js"
 
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir } from "./core/services/storagePaths.js";
-import { flushAllPendingContent } from "./core/services/postStore.js";
+import { flushAllPendingEdits } from "./core/services/postStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
@@ -118,10 +118,10 @@ if (!ownsInstance) {
     }
   });
 
-  // Clean shutdown: hold the quit once, write any buffered content edits, flush
-  // the log file by closing it, then exit deterministically. The post store owns
-  // pending content (write-behind), so this flush — not a renderer round-trip —
-  // is what guarantees the newest keystroke is on disk. A second quit during
+  // Clean shutdown: hold the quit once, write any buffered content and metadata
+  // edits, flush the log file by closing it, then exit deterministically. The
+  // post store owns pending edits (write-behind), so this flush — not a renderer
+  // round-trip — is what guarantees the newest keystroke is on disk. A second quit during
   // shutdown falls through (force-quit).
   app.on("before-quit", (event) => {
     if (shuttingDown) {
@@ -130,10 +130,10 @@ if (!ownsInstance) {
     shuttingDown = true;
     event.preventDefault();
 
-    const failures = flushAllPendingContent();
+    const failures = flushAllPendingEdits();
     void (async () => {
       if (failures.length > 0 && !systemShutdown) {
-        logError("pending content flush failed at quit", { failures });
+        logError("pending edits flush failed at quit", { failures });
         if (await confirmQuitWithUnsavedChanges() === "cancel") {
           shuttingDown = false;
           return;

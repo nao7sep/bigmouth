@@ -7,12 +7,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Post, PostFrontMatter, PostMutationResult } from "@shared/types";
-import { updatePost, generateMetadataField, generateMetadataFields } from "../api";
+import type { EditablePostMetadata, PostFrontMatter } from "@shared/types";
+import { queuePostMetadata, generateMetadataField, generateMetadataFields } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue, untouchedGeneratedFields } from "../util/metadataFields";
-import { dirtyFieldKeys, flushDirtyFields, isFieldDirty } from "../util/dirtyFields";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
 
@@ -22,16 +21,20 @@ interface MetadataTabProps {
   frontMatter: PostFrontMatter;
   content: string;
   extraFieldWatermark: string;
-  onPostUpdated: (result: PostMutationResult) => void;
+  /** Edits the main process has buffered, for views that show them (the export's slug). */
+  onMetadataEdited: (postId: string, edits: EditablePostMetadata) => void;
   isActive?: boolean;
   readOnly?: boolean;
 }
 
 export interface MetadataTabHandle {
+  /**
+   * Readies the tab for the post to be left: cancels any generation, waits for
+   * the edits already sent, and returns false (showing why) while a field holds
+   * a value the store refused, such as a slug another post uses.
+   */
   flushPendingChanges: () => Promise<boolean>;
 }
-
-const AUTOSAVE_DELAY_MS = 1_000;
 
 export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
   function MetadataTab(
@@ -41,7 +44,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       frontMatter,
       content,
       extraFieldWatermark,
-      onPostUpdated,
+      onMetadataEdited,
       isActive = false,
       readOnly = false,
     },
@@ -53,198 +56,185 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     // `fields` is the single source of truth for the editable values while this
     // tab is mounted. The component is keyed by postId (see RightPane), so it
-    // remounts for each post and seeds from front matter exactly once; it is
-    // also the only writer of these fields, so persisted echoes never need to be
-    // merged back in.
+    // remounts for each post and seeds from front matter exactly once.
+    //
+    // Every edit streams to the main-process post store as it happens, exactly
+    // like the editor's content: the store owns the debounce, the disk write and
+    // the flush at quit, so closing the window or quitting the moment after a
+    // keystroke cannot lose it. `fieldsRef` mirrors `fields` for async readers
+    // and is assigned at each mutation site, eagerly.
     const [fields, setFields] = useState(() => extractFields(frontMatter));
+    const fieldsRef = useRef(fields);
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
     const [generatingAll, setGeneratingAll] = useState(false);
-    const [genError, setGenError] = useState<string | null>(null);
-    const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    // `field` marks a refusal of that field's value, so fixing the field clears it.
+    const [genError, setGenError] = useState<{ message: string; field?: string } | null>(null);
     const generationLockRef = useRef(false);
     // The in-flight generation's cancel. Navigation never waits on a paid call:
     // leaving the post, changing status or switching workspace aborts it, and
     // so does the Stop button that replaces Generate while it runs.
     const generationAbortRef = useRef<AbortController | null>(null);
+    // The latest queue round-trip per field, and the value of a field the store
+    // refused with the reason. Replies arrive in the order the edits were sent,
+    // so the last reply for a field is about its newest value.
+    const queuedRef = useRef<Record<string, Promise<void>>>({});
+    const refusedRef = useRef<Record<string, { raw: string; message: string }>>({});
     const {
       copiedKey,
       copy: copyToClipboard,
       copyErrors,
       dismissCopyError,
     } = useCopyFeedback();
-    const fieldsRef = useRef(fields);
-    // The value last confirmed saved for each field, in the same
-    // raw string form as `fields` and seeded from the same front matter, so
-    // nothing starts dirty. A field is dirty exactly when its current value
-    // differs from this snapshot. Deriving dirtiness from one saved snapshot —
-    // rather than juggling a separate dirty set across every save path — is what
-    // keeps the debounce, blur, generation, and flush paths consistent: a value
-    // typed while a save is in flight simply differs from what we recorded and
-    // stays dirty, with no per-path guard to forget.
-    const savedRef = useRef<Record<string, string>>({ ...fields });
-    const onPostUpdatedRef = useRef(onPostUpdated);
+    const onMetadataEditedRef = useRef(onMetadataEdited);
 
     useEffect(() => {
-      fieldsRef.current = fields;
-    }, [fields]);
+      onMetadataEditedRef.current = onMetadataEdited;
+    }, [onMetadataEdited]);
 
-    useEffect(() => {
-      onPostUpdatedRef.current = onPostUpdated;
-    }, [onPostUpdated]);
-
-    const showGenError = useCallback((msg: string) => {
-      setGenError(msg);
+    const showGenError = useCallback((message: string) => {
+      setGenError({ message });
     }, []);
 
     const clearGenError = useCallback(() => {
       setGenError(null);
     }, []);
 
-    const clearTimer = (key: string) => {
-      const timer = saveTimers.current[key];
-      if (timer) {
-        clearTimeout(timer);
-        delete saveTimers.current[key];
-      }
+    const setFieldValues = (values: Record<string, string>) => {
+      fieldsRef.current = { ...fieldsRef.current, ...values };
+      setFields(fieldsRef.current);
     };
 
-    // A field is dirty when its current value differs from the last value we
-    // confirmed saved. Both refs hold raw strings, so the comparison is exact
-    // (no parse round-trip) and tag normalization never makes a field look
-    // perpetually unsaved.
-    const isDirty = useCallback(
-      (key: string) => isFieldDirty(fieldsRef.current[key], savedRef.current[key]),
-      []
-    );
-
-    const dirtyKeys = useCallback(
-      () => dirtyFieldKeys(fieldsRef.current, savedRef.current),
-      []
-    );
-
-    // Persists one field. `rawValue` is supplied only by generation, where the
-    // generated value has not yet propagated into fieldsRef; all other callers
-    // read the latest typed value from fieldsRef.
-    const persistField = useCallback(
-      async (key: string, rawValue?: string): Promise<boolean> => {
-        const raw = rawValue ?? fieldsRef.current[key] ?? "";
-        const value = parseFieldValue(key, raw);
-        try {
-          const updated = await updatePost(postId, { frontMatter: { [key]: value } }, workspaceId);
-          // Record exactly what we persisted. Because dirtiness is derived from
-          // this snapshot, a value the user typed while the save was in flight
-          // still differs from `raw` and stays dirty — the newer value is never
-          // mistaken for saved, and the next debounce or flush picks it up.
-          savedRef.current[key] = raw;
-          onPostUpdatedRef.current(updated);
-          return true;
-        } catch (err) {
-          showGenError(presentFailure(
-            "Metadata could not be saved. Your edit is still shown and will be retried before leaving the post.",
-            "renderer: metadata field save failed",
-            err,
-            { postId, field: key },
-          ));
-          return false;
-        }
+    // Sends one field's value to the store's buffer. Commit-time cleanup (tags
+    // split, single-line collapse) applies to what is stored; the textarea keeps
+    // what was typed.
+    const queueField = useCallback(
+      (key: string, raw: string): Promise<void> => {
+        const edits = { [key]: parseFieldValue(key, raw) } as EditablePostMetadata;
+        const round = queuePostMetadata(postId, edits, workspaceId).then(
+          (refusal) => {
+            if (refusal === null) {
+              delete refusedRef.current[key];
+              onMetadataEditedRef.current(postId, edits);
+              setGenError((prev) => (prev?.field === key ? null : prev));
+            } else {
+              refusedRef.current[key] = { raw, message: refusal };
+            }
+          },
+          (err: unknown) => {
+            refusedRef.current[key] = {
+              raw,
+              message: presentFailure(
+                "Metadata could not be saved. Your edit is still shown; edit the field again to retry.",
+                "renderer: metadata edit queue failed",
+                err,
+                { postId, field: key },
+              ),
+            };
+          },
+        );
+        queuedRef.current[key] = round;
+        return round;
       },
-      [postId, showGenError, workspaceId]
+      [postId, workspaceId]
     );
+
+    // The refusal for a field, when the value it refused is still the field's.
+    const refusalFor = (key: string): string | null => {
+      const refused = refusedRef.current[key];
+      return refused && refused.raw === (fieldsRef.current[key] ?? "") ? refused.message : null;
+    };
+
+    const showFirstRefusal = (keys: string[]): boolean => {
+      for (const key of keys) {
+        const message = refusalFor(key);
+        if (message) {
+          setGenError({ message, field: key });
+          return true;
+        }
+      }
+      return false;
+    };
 
     const stopGeneration = useCallback(() => {
       generationAbortRef.current?.abort();
       generationAbortRef.current = null;
     }, []);
 
-    const flushPendingChanges = useCallback(async (): Promise<boolean> => {
+    const flushPendingChanges = async (): Promise<boolean> => {
       // The caller is leaving this post: cancel generation rather than wait for
-      // it, and save only what was typed, which is local and fast.
+      // it. The edits themselves are already in the store's buffer; wait only
+      // for the replies, so a refused value is reported before the post goes.
       stopGeneration();
+      await Promise.all(Object.values(queuedRef.current));
+      return !showFirstRefusal(Object.keys(refusedRef.current));
+    };
 
-      for (const key of Object.keys(saveTimers.current)) clearTimer(key);
-
-      // Save every dirty field, re-checking until none remain — a field edited
-      // while one of these saves was in flight stays dirty and must also be
-      // persisted before we report success, because the caller unmounts this tab
-      // on a true result. See flushDirtyFields for the convergence/failure rules.
-      return flushDirtyFields(dirtyKeys, persistField);
-    }, [dirtyKeys, persistField, stopGeneration]);
+    const flushPendingChangesRef = useRef(flushPendingChanges);
+    flushPendingChangesRef.current = flushPendingChanges;
 
     useImperativeHandle(
       ref,
       () => ({
-        flushPendingChanges,
+        flushPendingChanges: () => flushPendingChangesRef.current(),
       }),
-      [flushPendingChanges]
+      []
     );
 
-    // Drop pending debounce timers on unmount so a stray save never fires after
-    // the post is gone, and cancel any generation, whose result has nowhere to
-    // go. Intentional teardowns (post switch, status change, workspace switch)
-    // are flushed explicitly via flushPendingChanges first; a delete
-    // deliberately discards unsaved edits.
-    useEffect(() => {
-      return () => {
-        for (const key of Object.keys(saveTimers.current)) clearTimer(key);
-        stopGeneration();
-      };
-    }, [stopGeneration]);
+    // A generation's result has nowhere to go once the tab is gone.
+    useEffect(() => stopGeneration, [stopGeneration]);
 
     const updateField = (key: string, value: string) => {
       if (readOnly) return;
-      setFields((prev) => ({ ...prev, [key]: value }));
-      clearTimer(key);
-      saveTimers.current[key] = setTimeout(() => {
-        delete saveTimers.current[key];
-        void persistField(key);
-      }, AUTOSAVE_DELAY_MS);
+      setFieldValues({ [key]: value });
+      void queueField(key, value);
     };
 
-    // Blur fast-forwards the debounce: save now instead of waiting out the timer.
+    // Blur is where a refused value is reported: while typing, a slug passes
+    // through values another post uses, and flagging each would only flicker.
     const flushField = (key: string) => {
       if (readOnly) return;
-      clearTimer(key);
-      if (isDirty(key)) void persistField(key);
+      void (async () => {
+        await queuedRef.current[key];
+        showFirstRefusal([key]);
+      })();
     };
 
-    const runGeneration = useCallback(
-      async (key: string) => {
-        if (generationLockRef.current) {
-          return { key, ok: false as const, skipped: true as const };
-        }
-        generationLockRef.current = true;
-        const controller = new AbortController();
-        generationAbortRef.current = controller;
-        const atStart = { ...fieldsRef.current };
-        setGenerating((prev) => ({ ...prev, [key]: true }));
-        try {
-          const value = await generateMetadataField(postId, key, content, controller.signal);
-          // The field stays editable while generation runs; if the user typed
-          // into it meanwhile, their text wins and the result is dropped.
-          const apply = untouchedGeneratedFields(atStart, fieldsRef.current, { [key]: value });
-          if (!(key in apply)) return { key, ok: true as const };
-          clearTimer(key);
-          setFields((prev) => ({ ...prev, [key]: value }));
-          await persistField(key, value);
-          return { key, ok: true as const };
-        } catch (err) {
-          if (controller.signal.aborted) return { key, ok: false as const, cancelled: true as const };
-          const message = presentFailure(
-            "Metadata could not be generated. Existing metadata is unchanged; try again.",
-            "renderer: metadata generation failed",
-            err,
-            { postId, field: key },
-          );
-          showGenError(message);
-          return { key, ok: false as const, error: message };
-        } finally {
-          if (generationAbortRef.current === controller) generationAbortRef.current = null;
-          setGenerating((prev) => ({ ...prev, [key]: false }));
-          generationLockRef.current = false;
-        }
-      },
-      [content, persistField, postId, showGenError]
-    );
+    // Shows generated values and queues them like typed ones, then reports a
+    // value the store refused (a generated slug another post already uses).
+    const applyGenerated = async (values: Record<string, string>) => {
+      const keys = Object.keys(values);
+      if (keys.length === 0) return;
+      setFieldValues(values);
+      await Promise.all(keys.map((key) => queueField(key, values[key])));
+      showFirstRefusal(keys);
+    };
+
+    const runGeneration = async (key: string) => {
+      if (generationLockRef.current) return;
+      generationLockRef.current = true;
+      const controller = new AbortController();
+      generationAbortRef.current = controller;
+      const atStart = { ...fieldsRef.current };
+      setGenerating((prev) => ({ ...prev, [key]: true }));
+      try {
+        const value = await generateMetadataField(postId, key, content, controller.signal);
+        // The field stays editable while generation runs; if the user typed
+        // into it meanwhile, their text wins and the result is dropped.
+        await applyGenerated(untouchedGeneratedFields(atStart, fieldsRef.current, { [key]: value }));
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        showGenError(presentFailure(
+          "Metadata could not be generated. Existing metadata is unchanged; try again.",
+          "renderer: metadata generation failed",
+          err,
+          { postId, field: key },
+        ));
+      } finally {
+        if (generationAbortRef.current === controller) generationAbortRef.current = null;
+        setGenerating((prev) => ({ ...prev, [key]: false }));
+        generationLockRef.current = false;
+      }
+    };
 
     const generate = async (key: string) => {
       if (readOnly || !content.trim() || generationLockRef.current) return;
@@ -277,7 +267,6 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         const results = await generateMetadataFields(postId, allFieldKeys, content, controller.signal);
         const allGenerated: Record<string, string> = {};
         const failed: string[] = [];
-
         for (const key of allFieldKeys) {
           const result = results[key];
           if (!result || !("value" in result)) {
@@ -290,42 +279,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         // The fields stay editable while generation runs; a field the user
         // typed into meanwhile keeps the typed value, and only untouched fields
         // take the generated one.
-        const generatedFields = untouchedGeneratedFields(atStart, fieldsRef.current, allGenerated);
-        const savedKeys = Object.keys(generatedFields);
-        const frontMatterPatch = {} as {
-          [K in keyof Post["frontMatter"]]?: Post["frontMatter"][K] | null;
-        };
-        for (const key of savedKeys) {
-          clearTimer(key);
-          (frontMatterPatch as Record<string, string | string[]>)[key] = parseFieldValue(key, generatedFields[key]);
-        }
-
-        if (savedKeys.length > 0) {
-          // setFields makes the generated values current; until the batch save
-          // confirms, they differ from the saved snapshot and so read as dirty.
-          setFields((prev) => ({ ...prev, ...generatedFields }));
-          try {
-            const updated = await updatePost(
-              postId,
-              { frontMatter: frontMatterPatch },
-              workspaceId
-            );
-            // Advance the saved snapshot to the generated values. A field the
-            // user edited while this save was in flight now differs and stays
-            // dirty, so the edit survives for the next save instead of being
-            // dropped. On failure the snapshot is untouched, so every generated
-            // field stays dirty and a later flush retries it.
-            for (const key of savedKeys) savedRef.current[key] = generatedFields[key];
-            onPostUpdatedRef.current(updated);
-          } catch (err) {
-            showGenError(presentFailure(
-              "Generated metadata could not be saved. The generated values are still shown; try again before leaving the post.",
-              "renderer: generated metadata save failed",
-              err,
-              { postId },
-            ));
-          }
-        }
+        await applyGenerated(untouchedGeneratedFields(atStart, fieldsRef.current, allGenerated));
 
         if (failed.length > 0) {
           showGenError(`Failed to generate: ${failed.join(", ")}`);
@@ -354,7 +308,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             dismissClassName="metadata-error-dismiss"
             onDismiss={clearGenError}
           >
-            {genError}
+            {genError.message}
           </OperationalResult>
         )}
         {readOnly && (

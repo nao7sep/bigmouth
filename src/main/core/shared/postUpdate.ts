@@ -118,3 +118,37 @@ export function validatePostUpdate(
 
   return { ok: true, edits };
 }
+
+/** The fields the Metadata tab edits, and so the only keys a queued metadata edit may carry. */
+const METADATA_EDIT_KEYS: ReadonlySet<string> = new Set([
+  "title",
+  "titleEn",
+  "slug",
+  "tags",
+  "tagsEn",
+  "metaDescription",
+  "metaDescriptionEn",
+  "extra",
+]);
+
+/**
+ * The pure validation behind a queued metadata edit: the post's lock and the
+ * slug format, exactly as for `updatePost`, and only Metadata-tab fields — a
+ * queued edit never changes a post's target, language or source.
+ */
+export function validateMetadataEdit(
+  existing: { id: string; status: PostStatus },
+  edits: unknown,
+): PostUpdateValidation {
+  if (edits && typeof edits === "object" && !Array.isArray(edits)) {
+    const foreign = Object.keys(edits).filter((key) => !METADATA_EDIT_KEYS.has(key));
+    if (foreign.length > 0) {
+      return {
+        ok: false,
+        reason: "not-metadata",
+        message: `Not metadata fields: ${foreign.join(", ")}`,
+      };
+    }
+  }
+  return validatePostUpdate(existing, { frontMatter: edits });
+}

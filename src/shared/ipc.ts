@@ -79,6 +79,9 @@ export const CHANNELS = {
   // Content streaming: renderer fires every editor change at the main process,
   // which owns coalescing and disk writes (write-behind in the post store).
   queuePostContent: "post:queueContent",
+  // Metadata field edits stream the same way; the reply says whether the edit
+  // was buffered or refused (a slug that is invalid or taken).
+  queuePostMetadata: "post:queueMetadata",
   postContentSaved: "post:contentSaved",
   postContentSaveFailed: "post:contentSaveFailed",
 
@@ -298,6 +301,8 @@ export interface BigMouthApi {
    *  debounce, the disk write, and the flush at quit. Post ids are unique
    *  nanoids, so saved/failed events are matched by post id alone. */
   queuePostContent(wsId: string, id: string, content: string): void;
+  /** Resolves null when the edit was buffered, else the reason it was refused. */
+  queuePostMetadata(wsId: string, id: string, edits: EditablePostMetadata): Promise<string | null>;
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
   onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;

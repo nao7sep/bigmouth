@@ -129,6 +129,12 @@ vi.mock("@renderer/components/CenterPane", () => {
           >
             updated
           </button>
+          <button
+            data-testid="center-published"
+            onClick={() => (p.onPostUpdated as (r: PostMutationResult) => void)(MUTATION_A_PUB)}
+          >
+            published
+          </button>
           <button data-testid="center-deleted" onClick={() => (p.onPostDeleted as () => void)()}>
             deleted
           </button>
@@ -172,11 +178,22 @@ vi.mock("@renderer/components/RightPane", () => {
           <span data-testid="right-loading">{String(p.loading)}</span>
           <span data-testid="right-trigger">{String(p.analysisTrigger)}</span>
           <span data-testid="right-prompts-version">{String(p.analysisPromptsVersion)}</span>
+          <span data-testid="right-slug">{String((p.frontMatter as { slug?: string } | null)?.slug)}</span>
           <button
-            data-testid="right-updated"
-            onClick={() => (p.onPostUpdated as (r: PostMutationResult) => void)(MUTATION_A_PUB)}
+            data-testid="right-metadata-a"
+            onClick={() =>
+              (p.onMetadataEdited as (id: string, edits: { slug: string }) => void)("a", { slug: "edited-slug" })
+            }
           >
-            r-updated
+            r-metadata-a
+          </button>
+          <button
+            data-testid="right-metadata-b"
+            onClick={() =>
+              (p.onMetadataEdited as (id: string, edits: { slug: string }) => void)("b", { slug: "late-slug" })
+            }
+          >
+            r-metadata-b
           </button>
           <button
             data-testid="right-insert"
@@ -512,19 +529,40 @@ describe("WorkspaceSession post mutation", () => {
     expect(getByTestId("left-ready").textContent).toBe("c,a");
   });
 
-  it("applies a status change from the right pane (publish)", async () => {
+  it("applies a status change to published", async () => {
     const { getByTestId } = await mountLoaded();
     await act(async () => {
       fireEvent.click(getByTestId("left-select-a"));
       await Promise.resolve();
     });
     act(() => {
-      fireEvent.click(getByTestId("right-updated")); // a: draft -> published
+      fireEvent.click(getByTestId("center-published")); // a: draft -> published
     });
     expect(getByTestId("left-drafts").textContent).toBe("b");
     expect(getByTestId("left-published").textContent).toBe("a,p1");
     // publishedTotal incremented for the newly published post.
     expect(getByTestId("left-published-total").textContent).toBe("4");
+  });
+
+  it("folds a buffered metadata edit into the open post, and only into its own post", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    act(() => {
+      fireEvent.click(getByTestId("center-loaded")); // onPostLoaded(POST_A)
+    });
+
+    act(() => {
+      fireEvent.click(getByTestId("right-metadata-b")); // a late reply for another post
+    });
+    expect(getByTestId("right-slug").textContent).toBe("undefined");
+
+    act(() => {
+      fireEvent.click(getByTestId("right-metadata-a"));
+    });
+    expect(getByTestId("right-slug").textContent).toBe("edited-slug");
   });
 
   it("removes a deleted post and selects its neighbour", async () => {

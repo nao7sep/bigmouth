@@ -5,7 +5,7 @@ import { AssetsTab } from "./AssetsTab";
 import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
-import type { ContentFont, PostFrontMatter, PostMutationResult, Target } from "@shared/types";
+import type { ContentFont, EditablePostMetadata, PostFrontMatter, Target } from "@shared/types";
 import { isEditLocked } from "@shared/postStatus";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
@@ -18,7 +18,7 @@ interface RightPaneProps {
   frontMatter: PostFrontMatter | null;
   target: Target | null;
   extraFieldWatermark: string;
-  onPostUpdated: (result: PostMutationResult) => void;
+  onMetadataEdited: (postId: string, edits: EditablePostMetadata) => void;
   activeTab: RightTab;
   onTabChange: (tab: RightTab) => void;
   analysisTrigger: number;
@@ -41,7 +41,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
     frontMatter,
     target,
     extraFieldWatermark,
-    onPostUpdated,
+    onMetadataEdited,
     activeTab,
     onTabChange,
     analysisTrigger,
@@ -156,7 +156,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
                 frontMatter={frontMatter}
                 content={content}
                 extraFieldWatermark={extraFieldWatermark}
-                onPostUpdated={onPostUpdated}
+                onMetadataEdited={onMetadataEdited}
                 isActive={effectiveTab === "Metadata"}
                 readOnly={locked}
               />

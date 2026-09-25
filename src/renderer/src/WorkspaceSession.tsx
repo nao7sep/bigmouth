@@ -30,6 +30,7 @@ import { AboutModal } from "./components/AboutModal";
 import type {
   ContentFont,
   Post,
+  EditablePostMetadata,
   PostMutationResult,
   PostStatus,
   PostSummary,
@@ -144,8 +145,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       []
     );
 
-    // Only metadata still flushes renderer-side; content edits stream to the
-    // main-process post store as they happen, so navigation cannot orphan them.
+    // Content and metadata edits both stream to the main-process post store as
+    // they happen, so navigation cannot orphan them. What remains is cancelling
+    // metadata generation and reporting a metadata value the store refused.
     const flushPendingChanges = useCallback(async () => {
       return (await flushRightPaneChanges()) ?? true;
     }, [flushRightPaneChanges]);
@@ -274,11 +276,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      *
      * The posts are not optional here. Renaming a target rewrites the `target`
      * field in every post file, so reloading only the targets left the open post
-     * carrying a name that matched nothing: `currentTarget` went null, the
-     * Metadata tab vanished from the strip, and MetadataTab's unmount cleared its
-     * one-second autosave timers WITHOUT persisting — anything typed in the last
-     * second was gone. The left list and the centre toolbar kept showing the old
-     * name too.
+     * carrying a name that matched nothing: `currentTarget` went null and the
+     * Metadata tab vanished from the strip. The left list and the centre toolbar
+     * kept showing the old name too.
      */
     const reloadConfig = useCallback(() => {
       setLoadError(null);
@@ -287,8 +287,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         try {
           // Flush FIRST. Renaming a target can make the Metadata tab disappear
           // (its target no longer requires metadata, or no longer matches), and
-          // MetadataTab's unmount clears its one-second autosave timers without
-          // persisting — so anything typed in the last second went with it.
+          // a refused value in it must be reported while it is still on screen.
           const flushed = await flushRightPaneChanges();
           if (!flushed) {
             setLoadError("Metadata changes could not be saved. Resolve them before reloading settings.");
@@ -537,6 +536,22 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       }
     }, [applyMutatedPost]);
 
+    // A metadata edit the store has buffered: fold it into the open post, so
+    // views reading its front matter (the export's slug) show it at once. The
+    // list catches up from the save event once the store writes it.
+    const handleMetadataEdited = useCallback((postId: string, edits: EditablePostMetadata) => {
+      setCurrentPost((post) => {
+        // A reply can land after the user moved to another post.
+        if (!post || post.frontMatter.id !== postId) return post;
+        const frontMatter = { ...post.frontMatter };
+        for (const [key, value] of Object.entries(edits)) {
+          if (value === null) delete frontMatter[key];
+          else if (value !== undefined) frontMatter[key] = value;
+        }
+        return { ...post, frontMatter };
+      });
+    }, []);
+
     // Background content saves (the main process owns the write cadence) update
     // the same list buckets; there is no full post payload and no need for one —
     // the editor already shows the text, only the projection changed.
@@ -687,7 +702,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 }
                 target={currentTarget}
                 extraFieldWatermark={extraFieldWatermark}
-                onPostUpdated={handlePostUpdated}
+                onMetadataEdited={handleMetadataEdited}
                 activeTab={rightTab}
                 onTabChange={setRightTab}
                 analysisTrigger={analysisTrigger}

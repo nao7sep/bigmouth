@@ -11,6 +11,7 @@ import type {
   AssetMeta,
   AiConfig,
   AiConfigsData,
+  EditablePostMetadata,
   GenerationPromptsData,
   ImagingOptions,
   UiState,
@@ -122,6 +123,18 @@ export function createPost(target: string, language: string, sourceId?: string):
 
 export function queuePostContent(id: string, content: string, workspaceId?: string): void {
   bridge().queuePostContent(requireWs(workspaceId), id, content);
+}
+
+/**
+ * Buffers metadata field edits in the main process, which owns the write and
+ * the flush at quit. Resolves null when buffered, else why the edit was refused.
+ */
+export function queuePostMetadata(
+  id: string,
+  edits: EditablePostMetadata,
+  workspaceId?: string,
+): Promise<string | null> {
+  return bridge().queuePostMetadata(requireWs(workspaceId), id, edits);
 }
 
 export function onPostContentSaved(

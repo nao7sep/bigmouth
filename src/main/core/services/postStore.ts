@@ -7,15 +7,16 @@
  * then updates the derived index. Listing reads from the index alone — no post
  * bodies are read to render a list, so the published archive stays cheap.
  *
- * Content edits stream through a write-behind buffer owned by this store: the
- * renderer sends every editor change via queueContent, the store coalesces
- * them into one disk write per debounce window, and getPost overlays the
- * pending content so every reader — metadata patches, status changes, AI
- * analysis, export — always sees the newest text without knowing the buffer
- * exists. Because updatePost and changeStatus read through getPost, any full
- * write persists the pending content as a side effect and clears the buffer.
- * The main process therefore never depends on the renderer to flush: quit
- * calls flushAllPendingContent and the newest keystroke is on disk.
+ * Edits stream through a write-behind buffer owned by this store: the renderer
+ * sends every editor change via queueContent and every metadata field edit via
+ * queueMetadata, the store coalesces them into one disk write per debounce
+ * window, and getPost overlays the pending content and metadata so every
+ * reader — status changes, AI calls, export — always sees the newest edit
+ * without knowing the buffer exists. Because updatePost and changeStatus read
+ * through getPost, any full write persists the pending edits as a side effect
+ * and clears the buffer. The main process therefore never depends on the
+ * renderer to flush: quit calls flushAllPendingEdits and the newest keystroke,
+ * in the editor or a metadata field, is on disk.
  *
  * The rule the buffer is built on: the store never reports success for text it
  * did not persist. Text that is not on disk is either retried (a failed write)
@@ -81,13 +82,14 @@ function filePathFor(dataDir: string, entry: PostIndexEntry): string {
   return path.join(postsDir(dataDir), entry.fileName);
 }
 
-// --- Pending content (write-behind buffer) ---
+// --- Pending edits (write-behind buffer) ---
 
 const PENDING_FLUSH_DELAY_MS = 750;
 const PENDING_RETRY_DELAY_MS = 5000;
 
 /**
- * One post's newest text not yet on disk.
+ * One post's newest edits not yet on disk: its content, when the editor changed
+ * it, and the metadata fields changed since the last write.
  *
  * `terminal` is why no write from this path can land — the post is gone from
  * the index, or it is locked — and null while the edit is still savable. The
@@ -96,7 +98,8 @@ const PENDING_RETRY_DELAY_MS = 5000;
  * once rather than on every keystroke.
  */
 interface PendingEdit {
-  content: string;
+  content?: string;
+  frontMatter: EditablePostMetadata;
   terminal: string | null;
 }
 
@@ -106,8 +109,8 @@ function lockedReason(status: PostStatus): string {
   return `post is ${status} and locked`;
 }
 
-// dataDir -> post id -> newest content not yet on disk.
-const pendingContent = new Map<string, Map<string, PendingEdit>>();
+// dataDir -> post id -> newest edits not yet on disk.
+const pendingEdits = new Map<string, Map<string, PendingEdit>>();
 const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
 
 /**
@@ -131,24 +134,22 @@ export function setContentSaveListener(listener: ((event: ContentSaveEvent) => v
   contentSaveListener = listener;
 }
 
-function getPending(dataDir: string, id: string): string | undefined {
-  return pendingContent.get(dataDir)?.get(id)?.content;
+function getPending(dataDir: string, id: string): PendingEdit | undefined {
+  return pendingEdits.get(dataDir)?.get(id);
 }
 
-function setPending(dataDir: string, id: string, content: string): PendingEdit {
-  let posts = pendingContent.get(dataDir);
+function pendingFor(dataDir: string, id: string): PendingEdit {
+  let posts = pendingEdits.get(dataDir);
   if (!posts) {
     posts = new Map();
-    pendingContent.set(dataDir, posts);
+    pendingEdits.set(dataDir, posts);
   }
-  const existing = posts.get(id);
-  if (existing) {
-    existing.content = content;
-    return existing;
+  let pending = posts.get(id);
+  if (!pending) {
+    pending = { frontMatter: {}, terminal: null };
+    posts.set(id, pending);
   }
-  const created: PendingEdit = { content, terminal: null };
-  posts.set(id, created);
-  return created;
+  return pending;
 }
 
 function cancelFlush(dataDir: string, id: string): void {
@@ -161,7 +162,7 @@ function cancelFlush(dataDir: string, id: string): void {
 }
 
 function clearPending(dataDir: string, id: string): void {
-  pendingContent.get(dataDir)?.delete(id);
+  pendingEdits.get(dataDir)?.delete(id);
   cancelFlush(dataDir, id);
 }
 
@@ -177,7 +178,7 @@ function reportTerminal(
   reason: string,
   event: ContentSaveEvent,
 ): void {
-  const pending = pendingContent.get(dataDir)?.get(id);
+  const pending = pendingEdits.get(dataDir)?.get(id);
   if (!pending || pending.terminal !== null) return;
   pending.terminal = reason;
   cancelFlush(dataDir, id);
@@ -194,7 +195,7 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
     timers.delete(id);
-    flushPostContent(dataDir, id);
+    flushPostEdits(dataDir, id);
   }, delayMs);
   // Never hold the process open for a debounce timer; quit flushes explicitly.
   timer.unref();
@@ -208,7 +209,36 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
  * failure is reported — never dropped in silence.
  */
 export function queueContent(dataDir: string, id: string, content: string): void {
-  const pending = setPending(dataDir, id, content);
+  const pending = pendingFor(dataDir, id);
+  pending.content = content;
+  scheduleIfSavable(dataDir, id, pending);
+}
+
+/**
+ * Buffer metadata field edits and (re)start the debounce, exactly as content
+ * is buffered: from here the store owns them, so quitting or closing the window
+ * the moment after a keystroke cannot lose them.
+ *
+ * Returns why the edit was refused, or null when it was buffered. The caller
+ * has already validated the edit's shape; the one rule left is the slug's
+ * uniqueness, which needs the index and the other posts' pending edits. A
+ * refused edit is not buffered, so the buffer never holds a value that could
+ * not be written.
+ */
+export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata): string | null {
+  if (!index.getEntry(dataDir, id)) return "Post not found";
+  const slug = edits.slug;
+  if (typeof slug === "string" && slug.length > 0) {
+    const conflict = slugConflictMessage(dataDir, id, slug);
+    if (conflict) return conflict;
+  }
+  const pending = pendingFor(dataDir, id);
+  Object.assign(pending.frontMatter, edits);
+  scheduleIfSavable(dataDir, id, pending);
+  return null;
+}
+
+function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): void {
   const entry = index.getEntry(dataDir, id);
   if (!entry) {
     reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
@@ -230,13 +260,13 @@ export function queueContent(dataDir: string, id: string, content: string): void
 }
 
 /**
- * Write a post's pending content to disk now. Returns true only when the text
- * is durable — flushed, or nothing was pending — so `true` can be trusted to
- * mean saved. A failed write keeps the buffer and schedules a retry; a post
+ * Write a post's pending edits to disk now. Returns true only when they are
+ * durable — flushed, or nothing was pending — so `true` can be trusted to mean
+ * saved. A failed write keeps the buffer and schedules a retry; a post
  * that left the index keeps the buffer with no retry (terminal). Both tell the
  * listener, and both return false.
  */
-export function flushPostContent(dataDir: string, id: string): boolean {
+export function flushPostEdits(dataDir: string, id: string): boolean {
   if (getPending(dataDir, id) === undefined) return true;
 
   // Re-checked at write time, not only when the edit was queued. The debounce
@@ -256,7 +286,7 @@ export function flushPostContent(dataDir: string, id: string): boolean {
 
   try {
     // updatePost reads through the overlay, so an empty update persists the
-    // pending content and clears the buffer.
+    // pending edits and clears the buffer.
     const post = updatePost(dataDir, id, {});
     if (!post) {
       // The post's file vanished out of band. Retrying cannot bring it back, so
@@ -281,16 +311,16 @@ export function flushPostContent(dataDir: string, id: string): boolean {
 
 /**
  * Flush every buffered edit, everywhere. Used at quit: the returned failures
- * are every post whose text is still only in memory — a write that failed and a
- * post whose file is gone alike — so the quit path can never exit silently on
+ * are every post whose edits are still only in memory — a write that failed and
+ * a post whose file is gone alike — so the quit path can never exit silently on
  * either.
  */
-export function flushAllPendingContent(): { id: string; message: string }[] {
+export function flushAllPendingEdits(): { id: string; message: string }[] {
   const failures: { id: string; message: string }[] = [];
-  for (const [dataDir, posts] of pendingContent) {
+  for (const [dataDir, posts] of pendingEdits) {
     for (const id of [...posts.keys()]) {
       try {
-        if (flushPostContent(dataDir, id)) continue;
+        if (flushPostEdits(dataDir, id)) continue;
         failures.push({
           id,
           message: posts.get(id)?.terminal ?? "save failed",
@@ -361,11 +391,22 @@ export function getPost(dataDir: string, id: string): Post | null {
     return null;
   }
   const post = readPost(filePath);
-  // Read through the write-behind buffer: every reader sees the newest content,
-  // and any full write (updatePost, changeStatus) persists it as a side effect.
-  const pending = post ? getPending(dataDir, id) : undefined;
-  if (post && pending !== undefined) post.content = pending;
+  // Read through the write-behind buffer: every reader sees the newest edits,
+  // and any full write (updatePost, changeStatus) persists them as a side effect.
+  const pending = getPending(dataDir, id);
+  if (pending) {
+    if (pending.content !== undefined) post.content = pending.content;
+    applyMetadata(post.frontMatter, pending.frontMatter);
+  }
   return post;
+}
+
+/** Applies metadata edits to front matter: null removes a key, undefined leaves it. */
+function applyMetadata(fm: PostFrontMatter, edits: EditablePostMetadata): void {
+  for (const [key, value] of Object.entries(edits)) {
+    if (value === null) delete fm[key];
+    else if (value !== undefined) fm[key] = value;
+  }
 }
 
 // --- Create ---
@@ -415,13 +456,7 @@ export function updatePost(
       const conflict = slugConflictMessage(dataDir, id, requestedSlug);
       if (conflict) throw new Error(conflict);
     }
-    for (const [key, value] of Object.entries(updates.frontMatter)) {
-      if (value === null) {
-        delete fm[key];
-      } else if (value !== undefined) {
-        fm[key] = value;
-      }
-    }
+    applyMetadata(fm, updates.frontMatter);
   }
   fm.updatedAtUtc = formatUtcIso(utcNow());
 
@@ -431,24 +466,30 @@ export function updatePost(
   writePost(post.filePath, fm, post.content);
   index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
-  // What was written is the newest content — either the overlay carried in by
-  // getPost or an explicit updates.content that supersedes it.
+  // What was written is the newest of everything — the overlay carried in by
+  // getPost, or an explicit update that supersedes it.
   clearPending(dataDir, id);
   return post;
 }
 
 /**
  * Why `slug` cannot be given to post `id`, or null when it is free. Slugs
- * compare case-insensitively. Checked against the index after reconciling it
- * with the files, so an out-of-band edit is seen without reading every post
- * body — a slug autosave runs this on the main process.
+ * compare case-insensitively, against each post's newest slug: the one buffered
+ * for it, else its index entry. The index is reconciled with the files first,
+ * so an out-of-band edit is seen without reading every post body — a slug
+ * edit runs this on the main process.
  */
 function slugConflictMessage(dataDir: string, id: string, slug: string): string | null {
   index.refresh(dataDir);
   const normalized = slug.toLowerCase();
+  const pending = pendingEdits.get(dataDir);
   for (const entry of index.allEntries(dataDir)) {
     if (entry.id === id) continue;
-    if (entry.slug?.toLowerCase() === normalized) return `Another post already uses the slug "${slug}"`;
+    const buffered = pending?.get(entry.id)?.frontMatter;
+    const current = buffered && "slug" in buffered ? buffered.slug : entry.slug;
+    if (typeof current === "string" && current.toLowerCase() === normalized) {
+      return `Another post already uses the slug "${slug}"`;
+    }
   }
   return null;
 }
@@ -469,7 +510,7 @@ export function changeStatus(dataDir: string, id: string, newStatus: PostStatus)
   writePost(post.filePath, fm, post.content);
   index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
 
-  // The write carried the overlay content (getPost applied it above).
+  // The write carried the overlay (getPost applied it above).
   clearPending(dataDir, id);
   return post;
 }

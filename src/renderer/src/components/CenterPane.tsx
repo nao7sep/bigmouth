@@ -158,8 +158,9 @@ export function CenterPane({
   const applyStatusChange = async (newStatus: PostStatus) => {
     try {
       setStatusError(null);
-      // Content needs no renderer-side flush: the main-process store writes
-      // through its pending buffer as part of the status change itself.
+      // No edit needs a renderer-side flush: the main-process store writes its
+      // pending content and metadata as part of the status change itself. The
+      // Metadata tab only reports a value the store refused.
       const flushedMetadata = (await onBeforeStatusChange?.()) ?? true;
       if (!flushedMetadata) {
         setStatusError("Metadata changes could not be saved. Resolve them before changing status.");

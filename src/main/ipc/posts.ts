@@ -24,11 +24,12 @@ import {
   listReferrers,
   getPostSummary,
   queueContent,
+  queueMetadata,
   setContentSaveListener,
 } from "../core/services/postStore.js";
 import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
-import { validatePostUpdate } from "../core/shared/postUpdate.js";
+import { validateMetadataEdit, validatePostUpdate } from "../core/shared/postUpdate.js";
 import { isPostStatus } from "../core/shared/postLifecycle.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
@@ -101,6 +102,20 @@ export function registerPostHandlers(): void {
       };
       broadcast(CHANNELS.postContentSaveFailed, failure);
     }
+  });
+
+  // Buffer a metadata field edit, as content is buffered. Checked against the
+  // index row, never the post file, because it runs per keystroke. The reply is
+  // the refusal (null when buffered) so the field can say why it will not save;
+  // save outcomes after that ride the same events as content.
+  ipcMain.handle(CHANNELS.queuePostMetadata, (_event, wsId: string, id: string, edits: unknown) => {
+    const dir = resolveWorkspace(wsId).dataDirectory;
+    const entry = getPostSummary(dir, id);
+    if (!entry) return "Post not found";
+    const validation = validateMetadataEdit(entry, edits);
+    if (!validation.ok) return validation.message;
+    logDebug("post metadata queued", { workspace: wsId, postId: id, keys: Object.keys(validation.edits) });
+    return queueMetadata(dir, id, validation.edits);
   });
 
   ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, publishedOffset: number, limit: number, expiredOffset: number) => {

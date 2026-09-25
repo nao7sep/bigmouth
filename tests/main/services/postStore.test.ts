@@ -7,8 +7,9 @@ import {
   createPost,
   getPost,
   queueContent,
-  flushPostContent,
-  flushAllPendingContent,
+  queueMetadata,
+  flushPostEdits,
+  flushAllPendingEdits,
   setContentSaveListener,
   type ContentSaveEvent,
   updatePost,
@@ -366,7 +367,7 @@ describe("renameTarget", () => {
 describe("pending content (write-behind buffer)", () => {
   afterEach(() => {
     setContentSaveListener(null);
-    flushAllPendingContent();
+    flushAllPendingEdits();
   });
 
   function diskContent(filePath: string): string {
@@ -381,7 +382,7 @@ describe("pending content (write-behind buffer)", () => {
    * earlier test's unsaveable post; scoping by id keeps each test honest.
    */
   function quitFailures(...ids: string[]): { id: string; message: string }[] {
-    return flushAllPendingContent().filter((failure) => ids.includes(failure.id));
+    return flushAllPendingEdits().filter((failure) => ids.includes(failure.id));
   }
 
   it("getPost reads through the buffer while the disk still has the old content", () => {
@@ -391,13 +392,13 @@ describe("pending content (write-behind buffer)", () => {
     expect(diskContent(post.filePath)).not.toContain("typed but not yet flushed");
   });
 
-  it("flushPostContent writes the buffered content and empties the buffer", () => {
+  it("flushPostEdits writes the buffered content and empties the buffer", () => {
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "now durable");
-    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
     expect(diskContent(post.filePath)).toContain("now durable");
     // A second flush has nothing to do and must not rewrite.
-    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
   });
 
   it("a metadata update persists the buffered content as a side effect", () => {
@@ -426,10 +427,52 @@ describe("pending content (write-behind buffer)", () => {
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "doomed");
     deletePost(dataDir, post.frontMatter.id);
-    expect(flushAllPendingContent()).toEqual([]);
+    expect(flushAllPendingEdits()).toEqual([]);
   });
 
-  it("flushAllPendingContent flushes every buffered post (the quit path)", () => {
+  // Metadata streams into the same buffer as content, so a field typed the
+  // moment before quitting is written by the quit flush.
+  it("buffers metadata edits, reads them through, and writes them at quit", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    expect(queueMetadata(dataDir, post.frontMatter.id, { title: "Typed Title", tags: ["a", "b"] })).toBeNull();
+
+    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.title).toBe("Typed Title");
+    expect(diskContent(post.filePath)).not.toContain("Typed Title");
+
+    expect(quitFailures(post.frontMatter.id)).toEqual([]);
+    const reread = getPost(dataDir, post.frontMatter.id);
+    expect(reread?.frontMatter.title).toBe("Typed Title");
+    expect(reread?.frontMatter.tags).toEqual(["a", "b"]);
+  });
+
+  it("writes buffered content and metadata together, and a status change carries both", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "body text");
+    queueMetadata(dataDir, post.frontMatter.id, { slug: "my-slug" });
+
+    changeStatus(dataDir, post.frontMatter.id, "ready");
+
+    const disk = diskContent(post.filePath);
+    expect(disk).toContain("body text");
+    expect(disk).toContain("slug: my-slug");
+  });
+
+  it("refuses a slug another post holds, on disk or still buffered", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const second = createPost(dataDir, "blogger", "en");
+    const third = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, first.frontMatter.id, { frontMatter: { slug: "on-disk" } });
+    queueMetadata(dataDir, second.frontMatter.id, { slug: "Buffered" });
+
+    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "ON-DISK" })).toMatch(/already uses the slug/);
+    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "buffered" })).toMatch(/already uses the slug/);
+    // A refused edit is not buffered.
+    expect(getPost(dataDir, third.frontMatter.id)?.frontMatter.slug).toBeUndefined();
+    // A post may keep its own slug.
+    expect(queueMetadata(dataDir, second.frontMatter.id, { slug: "buffered" })).toBeNull();
+  });
+
+  it("flushAllPendingEdits flushes every buffered post (the quit path)", () => {
     const a = createPost(dataDir, "blogger", "en");
     const b = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, a.frontMatter.id, "post a text");
@@ -480,7 +523,7 @@ describe("pending content (write-behind buffer)", () => {
 
       setContentSaveListener((e) => events.push(e));
       queueContent(dataDir, post.frontMatter.id, "typed one keystroke too late");
-      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+      expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
 
       expect(diskContent(post.filePath)).toBe(published);
       expect(events.map((e) => e.kind)).toEqual(["locked"]);
@@ -502,11 +545,11 @@ describe("pending content (write-behind buffer)", () => {
       const post = createPost(dataDir, "blogger", "en");
       changeStatus(dataDir, post.frontMatter.id, "published");
       queueContent(dataDir, post.frontMatter.id, "refused while published");
-      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+      expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
 
       changeStatus(dataDir, post.frontMatter.id, "draft");
       queueContent(dataDir, post.frontMatter.id, "allowed once back in draft");
-      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+      expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
       expect(diskContent(post.filePath)).toContain("allowed once back in draft");
     });
   });
@@ -516,7 +559,7 @@ describe("pending content (write-behind buffer)", () => {
     setContentSaveListener((e) => events.push(e));
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "listened");
-    flushPostContent(dataDir, post.frontMatter.id);
+    flushPostEdits(dataDir, post.frontMatter.id);
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe("saved");
     expect(events[0].id).toBe(post.frontMatter.id);
@@ -531,14 +574,14 @@ describe("pending content (write-behind buffer)", () => {
     const postsDir = path.dirname(post.filePath);
     fs.chmodSync(postsDir, 0o555);
     try {
-      expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(false);
+      expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
     } finally {
       fs.chmodSync(postsDir, 0o755);
     }
     expect(events.some((e) => e.kind === "save-failed")).toBe(true);
     // The text was never dropped: it is still readable and now flushable.
     expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("held through failure");
-    expect(flushPostContent(dataDir, post.frontMatter.id)).toBe(true);
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
     expect(diskContent(post.filePath)).toContain("held through failure");
   });
 
@@ -555,7 +598,7 @@ describe("pending content (write-behind buffer)", () => {
       queueContent(dataDir, id, "typed after the file was gone");
 
       fs.unlinkSync(post.filePath);
-      expect(flushPostContent(dataDir, id)).toBe(false);
+      expect(flushPostEdits(dataDir, id)).toBe(false);
 
       expect(events).toContainEqual({ kind: "post-missing", dataDir, id });
       expect(events.some((e) => e.kind === "saved")).toBe(false);
@@ -573,7 +616,7 @@ describe("pending content (write-behind buffer)", () => {
 
       queueContent(dataDir, id, "first burst");
       fs.unlinkSync(post.filePath);
-      flushPostContent(dataDir, id);
+      flushPostEdits(dataDir, id);
       // The editor keeps streaming; the newest text must still be taken in.
       queueContent(dataDir, id, "the newest keystrokes");
 
@@ -581,7 +624,7 @@ describe("pending content (write-behind buffer)", () => {
       // still there to be written, which is only true if it was never dropped.
       fs.writeFileSync(post.filePath, onDisk);
       rebuildIndex(dataDir);
-      expect(flushPostContent(dataDir, id)).toBe(true);
+      expect(flushPostEdits(dataDir, id)).toBe(true);
       expect(diskContent(post.filePath)).toContain("the newest keystrokes");
     });
 

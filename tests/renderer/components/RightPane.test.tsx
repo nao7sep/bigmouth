@@ -86,7 +86,7 @@ function baseProps() {
     frontMatter: fm() as PostFrontMatter | null,
     target: target(true) as Target | null,
     extraFieldWatermark: "",
-    onPostUpdated: vi.fn(),
+    onMetadataEdited: vi.fn(),
     activeTab: "Analysis" as RightTab,
     onTabChange: vi.fn(),
     analysisTrigger: 0,
