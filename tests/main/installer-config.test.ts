@@ -8,6 +8,9 @@ const config = parse(
   extraResources?: Array<{ from: string; to: string }>;
   files?: string[];
   nsis?: Record<string, unknown>;
+  mac?: { artifactName?: string };
+  dmg?: { artifactName?: string };
+  win?: { artifactName?: string };
 };
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -57,5 +60,17 @@ describe("Windows installer configuration", () => {
       createStartMenuShortcut: true,
       runAfterFinish: true,
     });
+  });
+});
+
+// app-release-conventions: <app>-<version>.dmg, <app>-<version>-setup.exe,
+// <app>-<version>-mac.zip / -win.zip. electron-builder's defaults add the arch
+// for anything but x64, so every shipped name is set explicitly.
+describe("release artifact names", () => {
+  it("names every shipped artifact by the release contract", () => {
+    expect(config.dmg?.artifactName).toBe("${productName}-${version}.${ext}");
+    expect(config.mac?.artifactName).toBe("${productName}-${version}-mac.${ext}");
+    expect(config.nsis?.artifactName).toBe("${productName}-${version}-setup.${ext}");
+    expect(config.win?.artifactName).toBe("${productName}-${version}-win.${ext}");
   });
 });
