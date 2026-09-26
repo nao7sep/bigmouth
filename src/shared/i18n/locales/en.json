@@ -336,7 +336,7 @@
   "assets.replace": "Replace",
   "assets.addFailed": "Assets could not be added. The current asset list is unchanged; try again.",
   "assets.readOnly": "Assets are read-only.",
-  "assets.filesOnly": "The Assets collection accepts files from Finder or Add.",
+  "assets.filesOnly": "The Assets collection accepts files from your file manager or from Add.",
   "assets.deleteMessage": "Delete \"{name}\"?",
   "assets.deleteFailed": "{name} could not be deleted. It remains attached to this post; try again.",
   "assets.lockedNote": "Read-only while the post is locked.",

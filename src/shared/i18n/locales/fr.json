@@ -344,7 +344,7 @@
   "assets.replace": "Remplacer",
   "assets.addFailed": "Les ressources n’ont pas pu être ajoutées. La liste actuelle est inchangée\u00a0; réessayez.",
   "assets.readOnly": "Les ressources sont en lecture seule.",
-  "assets.filesOnly": "La collection de ressources accepte les fichiers venant du Finder ou du bouton Ajouter.",
+  "assets.filesOnly": "La collection de ressources accepte les fichiers venant de votre gestionnaire de fichiers ou du bouton Ajouter.",
   "assets.deleteMessage": "Supprimer «\u00a0{name}\u00a0»\u00a0?",
   "assets.deleteFailed": "{name} n’a pas pu être supprimé. Il reste associé à cette publication\u00a0; réessayez.",
   "assets.lockedNote": "Lecture seule tant que la publication est verrouillée.",

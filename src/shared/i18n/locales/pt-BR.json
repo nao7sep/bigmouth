@@ -344,7 +344,7 @@
   "assets.replace": "Substituir",
   "assets.addFailed": "Não foi possível adicionar os recursos. A lista atual não mudou; tente novamente.",
   "assets.readOnly": "Os recursos são somente leitura.",
-  "assets.filesOnly": "A coleção de recursos aceita arquivos do Finder ou de Adicionar.",
+  "assets.filesOnly": "A coleção de recursos aceita arquivos do seu gerenciador de arquivos ou pelo botão Adicionar.",
   "assets.deleteMessage": "Apagar “{name}”?",
   "assets.deleteFailed": "Não foi possível apagar {name}. Ele continua anexado a esta publicação; tente novamente.",
   "assets.lockedNote": "Somente leitura enquanto a publicação está bloqueada.",

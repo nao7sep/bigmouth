@@ -449,7 +449,7 @@ describe("AssetsTab drag and drop", () => {
 
     expect(droppedText.defaultPrevented).toBe(true);
     expect((droppedText as DragEvent).dataTransfer?.dropEffect).toBe("none");
-    expect(getByText("The Assets collection accepts files from Finder or Add.")).toBeTruthy();
+    expect(getByText("The Assets collection accepts files from your file manager or from Add.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });

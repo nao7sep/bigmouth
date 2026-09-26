@@ -336,7 +336,7 @@
   "assets.replace": "Ersetzen",
   "assets.addFailed": "Assets konnten nicht hinzugefügt werden. Die aktuelle Asset-Liste bleibt unverändert; versuchen Sie es erneut.",
   "assets.readOnly": "Assets sind schreibgeschützt.",
-  "assets.filesOnly": "Die Asset-Sammlung nimmt Dateien aus dem Finder oder über „Hinzufügen“ an.",
+  "assets.filesOnly": "Die Asset-Sammlung nimmt Dateien aus Ihrem Dateimanager oder über „Hinzufügen“ an.",
   "assets.deleteMessage": "„{name}“ löschen?",
   "assets.deleteFailed": "{name} konnte nicht gelöscht werden. Die Datei bleibt diesem Beitrag zugeordnet; versuchen Sie es erneut.",
   "assets.lockedNote": "Schreibgeschützt, solange der Beitrag gesperrt ist.",

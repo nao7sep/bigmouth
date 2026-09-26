@@ -344,7 +344,7 @@
   "assets.replace": "Sostituisci",
   "assets.addFailed": "Non è stato possibile aggiungere le risorse. L’elenco attuale non è cambiato; riprova.",
   "assets.readOnly": "Le risorse sono di sola lettura.",
-  "assets.filesOnly": "La raccolta delle risorse accetta file dal Finder o da Aggiungi.",
+  "assets.filesOnly": "La raccolta delle risorse accetta file dal gestore di file o da Aggiungi.",
   "assets.deleteMessage": "Eliminare «{name}»?",
   "assets.deleteFailed": "Non è stato possibile eliminare {name}. Resta allegato a questo post; riprova.",
   "assets.lockedNote": "Sola lettura finché il post è bloccato.",

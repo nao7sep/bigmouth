@@ -328,7 +328,7 @@
   "assets.replace": "替换",
   "assets.addFailed": "无法添加素材。当前素材列表没有改变；请重试。",
   "assets.readOnly": "素材为只读。",
-  "assets.filesOnly": "素材只接受来自访达或“添加”按钮的文件。",
+  "assets.filesOnly": "素材只接受来自文件管理器或“添加”按钮的文件。",
   "assets.deleteMessage": "要删除“{name}”吗？",
   "assets.deleteFailed": "无法删除 {name}。它仍附加在这篇文章上；请重试。",
   "assets.lockedNote": "文章锁定期间为只读。",

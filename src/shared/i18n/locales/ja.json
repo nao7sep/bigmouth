@@ -328,7 +328,7 @@
   "assets.replace": "置き換える",
   "assets.addFailed": "アセットを追加できませんでした。現在のアセット一覧は変わっていません。もう一度お試しください。",
   "assets.readOnly": "アセットは読み取り専用です。",
-  "assets.filesOnly": "アセットには、Finder からのファイルか「追加」で選んだファイルを追加できます。",
+  "assets.filesOnly": "アセットには、ファイルマネージャからのファイルか「追加」で選んだファイルを追加できます。",
   "assets.deleteMessage": "「{name}」を削除しますか？",
   "assets.deleteFailed": "{name} を削除できませんでした。この投稿に添付されたままです。もう一度お試しください。",
   "assets.lockedNote": "投稿がロックされている間は読み取り専用です。",

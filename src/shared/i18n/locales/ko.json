@@ -328,7 +328,7 @@
   "assets.replace": "대치",
   "assets.addFailed": "에셋을 추가할 수 없습니다. 현재 에셋 목록은 바뀌지 않았습니다. 다시 시도하십시오.",
   "assets.readOnly": "에셋은 읽기 전용입니다.",
-  "assets.filesOnly": "에셋에는 Finder에서 가져온 파일이나 ‘추가’로 선택한 파일만 넣을 수 있습니다.",
+  "assets.filesOnly": "에셋에는 파일 관리자에서 가져온 파일이나 ‘추가’로 선택한 파일만 넣을 수 있습니다.",
   "assets.deleteMessage": "“{name}”을(를) 삭제하시겠습니까?",
   "assets.deleteFailed": "{name}을(를) 삭제할 수 없습니다. 이 게시물에 첨부된 채로 남아 있습니다. 다시 시도하십시오.",
   "assets.lockedNote": "게시물이 잠겨 있는 동안은 읽기 전용입니다.",
