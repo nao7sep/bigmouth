@@ -317,6 +317,8 @@ export const DEFAULT_CONTENT_FONT: ContentFont = {
 };
 
 export interface Settings {
+  // "system" (SYSTEM_TIME_ZONE in ./timeZone), which follows the computer on
+  // every launch, or an IANA zone chosen from the Settings list.
   timezone: string;
   supportedLanguages: string[];
   publishedPostsPerLoad: number;

@@ -9,7 +9,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function isWorkspaceConfig(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    value.schemaVersion === CONFIG_SCHEMA_VERSION &&
+    Number.isInteger(value.schemaVersion) &&
+    (value.schemaVersion as number) >= 1 &&
+    (value.schemaVersion as number) <= CONFIG_SCHEMA_VERSION &&
     Array.isArray(value.aiConfigs) &&
     Array.isArray(value.targets) &&
     Array.isArray(value.analysisPrompts) &&

@@ -19,8 +19,8 @@ import { resolveWorkspace } from "./context.js";
  */
 function validateSettings(body: unknown): asserts body is Settings {
   const s = body as Partial<Record<keyof Settings, unknown>>;
-  if (typeof s.timezone !== "string" || !s.timezone.trim()) {
-    throw new Error("timezone must be a non-empty string");
+  if (typeof s.timezone !== "string") {
+    throw new Error("timezone must be a string");
   }
   if (!Array.isArray(s.supportedLanguages) || !s.supportedLanguages.every((l) => typeof l === "string")) {
     throw new Error("supportedLanguages must be an array of strings");

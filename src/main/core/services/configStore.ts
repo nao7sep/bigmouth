@@ -29,7 +29,8 @@ import type {
   WorkspaceConfig,
   Workspace,
 } from "../shared/types.js";
-import { CONFIG_SCHEMA_VERSION } from "../shared/types.js";
+import { CONFIG_SCHEMA_VERSION, RETIRED_DEFAULT_TIME_ZONE } from "../shared/types.js";
+import { SYSTEM_TIME_ZONE, normalizeTimeZonePreference } from "@shared/timeZone";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { DEFAULT_SETTINGS } from "../shared/defaults.js";
@@ -55,7 +56,7 @@ function normalizeSettings(raw: unknown): Settings {
   const s = { ...DEFAULT_SETTINGS, ...asObject(raw) } as Settings;
   const cf = { ...DEFAULT_SETTINGS.contentFont, ...asObject((raw as { contentFont?: unknown }).contentFont) };
   return {
-    timezone: s.timezone,
+    timezone: normalizeTimeZonePreference(s.timezone),
     supportedLanguages: [...new Set(s.supportedLanguages)].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     ),
@@ -125,13 +126,23 @@ function normalizeGenerationPrompts(raw: unknown): GenerationPromptsData {
   return { prompts };
 }
 
+// Version 1 seeded every workspace with Asia/Tokyo and offered no System, so
+// that value is the old default rather than a choice, and follows the computer
+// now. Any other zone a version-1 file names was typed by the user and stays.
+function migrateSettings(settings: Settings, recordedVersion: number | null): Settings {
+  if ((recordedVersion ?? 1) < 2 && settings.timezone === RETIRED_DEFAULT_TIME_ZONE) {
+    return { ...settings, timezone: SYSTEM_TIME_ZONE };
+  }
+  return settings;
+}
+
 // Build the whole config in modal order: schemaVersion, general settings, then
 // targets, aiConfigs, analysisPrompts, generationPrompts.
 function normalizeConfig(raw: unknown): WorkspaceConfig {
   const o = asObject(raw);
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
-    ...normalizeSettings(o),
+    ...migrateSettings(normalizeSettings(o), recordedSchemaVersion(raw)),
     targets: normalizeTargets(o.targets),
     aiConfigs: normalizeAiConfigs(o.aiConfigs),
     analysisPrompts: normalizeAnalysisPrompts(o.analysisPrompts),

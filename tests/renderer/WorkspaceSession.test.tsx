@@ -384,6 +384,13 @@ describe("WorkspaceSession initial load", () => {
     expect(getByTestId("left-timezone").textContent).toBe("America/New_York");
   });
 
+  it("shows times in the computer's zone when the workspace follows System", async () => {
+    mockGetSettings.mockResolvedValue({ ...SETTINGS, timezone: "system" });
+    const { getByTestId } = await mountLoaded();
+    // The renderer project pins TZ to Asia/Tokyo.
+    expect(getByTestId("left-timezone").textContent).toBe("Asia/Tokyo");
+  });
+
   it("shows the empty center until a post is selected", async () => {
     const { getByText, queryByTestId } = await mountLoaded();
     expect(getByText("Select a post or create a new one")).toBeTruthy();

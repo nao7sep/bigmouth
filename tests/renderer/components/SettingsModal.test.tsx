@@ -186,7 +186,7 @@ describe("SettingsModal — render and tab switching", () => {
       expect(getByRole("tab", { name: label })).toBeTruthy();
     }
     // General is the default panel.
-    expect(getByText("Timezone (IANA)")).toBeTruthy();
+    expect(getByText("Time zone")).toBeTruthy();
 
     // Switch to AI Configs.
     const panel = openAiTab(getByRole);
@@ -485,23 +485,19 @@ describe("SettingsModal — theme", () => {
 });
 
 describe("SettingsModal — General tab validation", () => {
-  it("flags an invalid IANA timezone and a required (blank) timezone", async () => {
-    const { getByRole, getByDisplayValue, queryByText } = await renderModal();
-    const tz = getByDisplayValue("UTC");
+  it("offers the time zone as a list that starts with System", async () => {
+    const { getByRole, getByLabelText } = await renderModal();
+    const tz = getByLabelText("Time zone") as HTMLSelectElement;
+    expect(tz.tagName).toBe("SELECT");
+    expect(tz.value).toBe("UTC");
+    const options = [...tz.options];
+    // The renderer project pins TZ to Asia/Tokyo, so System names that zone.
+    expect(options[0]).toMatchObject({ value: "system", textContent: "System (Asia/Tokyo)" });
+    expect(options.map((option) => option.value)).toContain("America/New_York");
 
-    // A nonsense zone fails the Intl probe.
-    fireEvent.change(tz, { target: { value: "Not/AZone" } });
-    expect(queryByText('"Not/AZone" is not a valid IANA timezone.')).toBeTruthy();
-
-    // Clearing it triggers the required message instead.
-    fireEvent.change(tz, { target: { value: "" } });
-    expect(queryByText("Timezone is required.")).toBeTruthy();
-
-    // A valid zone clears the error and the form is dirty → Save enabled.
-    fireEvent.change(getByRole("tabpanel").querySelector("input")!, {
-      target: { value: "Asia/Tokyo" },
-    });
-    expect(queryByText("Timezone is required.")).toBeNull();
+    fireEvent.change(tz, { target: { value: "system" } });
+    expect(tz.value).toBe("system");
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("validates the supported-languages list: empty and bad code", async () => {

@@ -52,6 +52,42 @@ afterEach(() => {
   fs.rmSync(homeDir, { recursive: true, force: true });
 });
 
+describe("time zone", () => {
+  function writeConfig(fields: Record<string, unknown>): void {
+    const configPath = path.join(dataDir, "config.json");
+    const current = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    fs.writeFileSync(configPath, JSON.stringify({ ...current, ...fields }), "utf-8");
+  }
+
+  it("defaults a new workspace to System", () => {
+    expect(getSettings(dataDir).timezone).toBe("system");
+  });
+
+  it("reads a version-1 Asia/Tokyo, the old seeded default, as System and saves it so", () => {
+    writeConfig({ schemaVersion: 1, timezone: "Asia/Tokyo" });
+    expect(getSettings(dataDir).timezone).toBe("system");
+
+    saveSettings(dataDir, getSettings(dataDir));
+    const saved = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
+    expect(saved).toMatchObject({ schemaVersion: 2, timezone: "system" });
+  });
+
+  it("keeps any other zone a version-1 file names, because the user typed it", () => {
+    writeConfig({ schemaVersion: 1, timezone: "Europe/Berlin" });
+    expect(getSettings(dataDir).timezone).toBe("Europe/Berlin");
+  });
+
+  it("keeps Asia/Tokyo once it was chosen from the list", () => {
+    writeConfig({ schemaVersion: 2, timezone: "Asia/Tokyo" });
+    expect(getSettings(dataDir).timezone).toBe("Asia/Tokyo");
+  });
+
+  it("follows the computer for a zone the runtime cannot resolve", () => {
+    writeConfig({ timezone: "Mars/Olympus" });
+    expect(getSettings(dataDir).timezone).toBe("system");
+  });
+});
+
 describe("corrupt config files", () => {
   it("surfaces a clear error naming the file rather than a bare SyntaxError", () => {
     fs.writeFileSync(path.join(dataDir, "config.json"), "{ not valid json", "utf-8");

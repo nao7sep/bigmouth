@@ -44,7 +44,7 @@ import { isComposingEvent } from "./hooks/useComposing";
 import { hasMod, isEditableTarget, shadowsMacTextBinding } from "./util/shortcuts";
 import { pickAdjacentPostId } from "./util/selection";
 import { applyPostMutationToBuckets } from "./util/postBuckets";
-import { isValidTimeZone } from "./util/timestamps";
+import { effectiveTimeZone, systemTimeZone } from "@shared/timeZone";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -97,7 +97,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
     const [contentFont, setContentFont] = useState<ContentFont>(DEFAULT_CONTENT_FONT);
     const [uiFontFamily, setUiFontFamily] = useState("");
-    const [timezone, setTimezone] = useState("Asia/Tokyo");
+    const [timezone, setTimezone] = useState(systemTimeZone);
     const [editorContent, setEditorContent] = useState("");
     const [currentPost, setCurrentPost] = useState<Post | null>(null);
     const [exportOpen, setExportOpen] = useState(false);
@@ -228,7 +228,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
-      if (settings.timezone?.trim() && isValidTimeZone(settings.timezone)) setTimezone(settings.timezone);
+      setTimezone(effectiveTimeZone(settings.timezone));
       setContentFont(settings.contentFont);
       setUiFontFamily(settings.uiFontFamily?.trim() ?? "");
     }, []);

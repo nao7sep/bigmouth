@@ -119,7 +119,17 @@ export interface StoredAiConfig {
   maxTokens: number;
 }
 
-export const CONFIG_SCHEMA_VERSION = 1;
+/**
+ * The config.json schema this build writes. Every earlier version is read and
+ * migrated on load; the file is rewritten at this version by the next save.
+ *   2 — `timezone` may be "system". A version-1 `timezone` of "Asia/Tokyo" was
+ *       the seeded default, never a choice the list could record, so it reads
+ *       as System.
+ */
+export const CONFIG_SCHEMA_VERSION = 2;
+
+/** The zone every version-1 workspace was created with. */
+export const RETIRED_DEFAULT_TIME_ZONE = "Asia/Tokyo";
 
 /**
  * The single per-workspace config file (`config.json`): all of a workspace's

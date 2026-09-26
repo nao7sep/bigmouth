@@ -18,6 +18,7 @@
  */
 
 import type { Settings } from "./types.js";
+import { SYSTEM_TIME_ZONE, isValidTimeZone } from "./timeZone.js";
 import {
   CONTENT_FONT_SIZE_MAX,
   CONTENT_FONT_SIZE_MIN,
@@ -52,14 +53,10 @@ function withinBounds(value: number, min: number, max: number): boolean {
   return Number.isFinite(value) && value >= min && value <= max;
 }
 
+// The list offers only System and zones the runtime resolves, so this guards
+// the IPC boundary against anything else.
 function timezoneError(timezone: string): string | null {
-  if (!timezone.trim()) return "Timezone is required.";
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: timezone });
-    return null;
-  } catch {
-    return `"${timezone}" is not a valid IANA timezone.`;
-  }
+  return timezone === SYSTEM_TIME_ZONE || isValidTimeZone(timezone) ? null : "Choose a time zone from the list.";
 }
 
 /**

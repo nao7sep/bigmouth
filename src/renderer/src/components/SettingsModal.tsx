@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
 import { THEME_PREFERENCES } from "@shared/appSettings";
+import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
 import {
   AI_PROVIDERS,
   PROVIDER_LABELS,
@@ -540,6 +541,10 @@ function GeneralTab({
   // message can never appear beside a value one of them would accept.
   const errors = settingsFieldErrors(settings);
 
+  // Offered once per opening: neither list changes while Settings is open.
+  const [zones] = useState(() => timeZoneOptions(settings.timezone));
+  const [systemZone] = useState(systemTimeZone);
+
   const persistedLanguages = settings.supportedLanguages.join(", ");
   const [languagesText, setLanguagesText] = useFieldDraft(
     persistedLanguages,
@@ -556,14 +561,23 @@ function GeneralTab({
 
   return (
     <div className="settings-section">
+      {/* Chosen from the list, never typed. System follows the computer's zone
+          on every launch. */}
       <div className="form-field">
-        <label className="form-label">Timezone (IANA)</label>
-        <input
-          className="form-input"
+        <label className="form-label" htmlFor="settings-timezone">Time zone</label>
+        <select
+          id="settings-timezone"
+          className="form-select"
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
-        />
-        {errors.timezone && <FieldError msg={errors.timezone} />}
+        >
+          <option value={SYSTEM_TIME_ZONE}>System ({systemZone})</option>
+          {zones.map((zone) => (
+            <option key={zone} value={zone}>
+              {zone}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="form-field">
         <label className="form-label">Supported languages</label>

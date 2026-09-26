@@ -25,7 +25,7 @@ describe("initializeWorkspaceData", () => {
   it("writes the default config.json as valid JSON with every section present", () => {
     initializeWorkspaceData(dataDir);
     const config = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
-    expect(config.schemaVersion).toBe(1);
+    expect(config.schemaVersion).toBe(2);
     for (const section of ["targets", "aiConfigs", "analysisPrompts", "generationPrompts"]) {
       expect(config).toHaveProperty(section);
     }

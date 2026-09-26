@@ -53,6 +53,10 @@ describe("settings value rules", () => {
     expect(settingsFieldErrors(settings({ timezone: "Asia/Tokyo" }))).not.toHaveProperty("timezone");
   });
 
+  it("accepts System, which follows the computer's zone", () => {
+    expect(settingsFieldErrors(settings({ timezone: "system" }))).not.toHaveProperty("timezone");
+  });
+
   it("names the content-font fields by their path, so a boundary error says which one", () => {
     const font = { ...DEFAULT_CONTENT_FONT, size: 999, lineHeight: 0.1, padding: -1 };
     const errors = settingsFieldErrors(settings({ contentFont: font }));

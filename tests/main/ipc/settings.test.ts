@@ -71,7 +71,7 @@ afterEach(() => {
 describe("settings IPC handlers", () => {
   it("returns the default settings for a fresh workspace", () => {
     const settings = invoke(CHANNELS.getSettings, wsId);
-    expect(settings.timezone).toBe("Asia/Tokyo");
+    expect(settings.timezone).toBe("system");
     expect(Array.isArray(settings.supportedLanguages)).toBe(true);
     expect(settings.publishedPostsPerLoad).toBe(50);
   });

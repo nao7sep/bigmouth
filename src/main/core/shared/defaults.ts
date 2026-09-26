@@ -6,6 +6,7 @@ import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, W
 import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { nanoid } from "nanoid";
 import { DEFAULT_CONTENT_FONT, DEFAULT_MODEL_ID, defaultMaxTokens, findModelDef } from "@shared/types";
+import { SYSTEM_TIME_ZONE } from "@shared/timeZone";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
 /**
@@ -52,7 +53,8 @@ export const DEFAULT_GENERATION_PROMPTS_DATA: GenerationPromptsData = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  timezone: "Asia/Tokyo",
+  // Follows the computer on every launch; a fixed zone is only ever the user's choice.
+  timezone: SYSTEM_TIME_ZONE,
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
   publishedPostsPerLoad: 50,
   maxUploadMb: 500,

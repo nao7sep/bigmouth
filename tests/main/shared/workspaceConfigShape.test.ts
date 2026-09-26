@@ -21,7 +21,12 @@ describe("isWorkspaceConfig", () => {
     expect(isWorkspaceConfig({ title: "My Blog", theme: "dark" })).toBe(false);
   });
 
+  it("accepts every earlier schema version, which the store migrates on read", () => {
+    expect(isWorkspaceConfig({ ...configShape(), schemaVersion: 1 })).toBe(true);
+  });
+
   it("rejects unsupported schema versions", () => {
+    expect(isWorkspaceConfig({ ...configShape(), schemaVersion: 0 })).toBe(false);
     expect(isWorkspaceConfig({ ...configShape(), schemaVersion: CONFIG_SCHEMA_VERSION + 1 })).toBe(false);
   });
 
