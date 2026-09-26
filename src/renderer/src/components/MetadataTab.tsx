@@ -19,6 +19,26 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue, untouchedGeneratedFields } from "../util/metadataFields";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
+import type { MessageKey } from "@shared/i18n/catalogues";
+
+// Each field's name on screen.
+const FIELD_LABELS: Record<string, MessageKey> = {
+  title: "metadata.title",
+  titleEn: "metadata.titleEn",
+  slug: "metadata.slug",
+  tags: "metadata.tags",
+  tagsEn: "metadata.tagsEn",
+  metaDescription: "metadata.description",
+  metaDescriptionEn: "metadata.descriptionEn",
+  extra: "metadata.extra",
+};
+
+// What the error line says: a message, or the fields a batch left ungenerated,
+// named in whatever language is showing. `field` marks a refusal of that
+// field's value, so fixing the field clears it.
+type GenError = { message: Message; field?: string } | { failedFields: string[]; field?: undefined };
 
 interface MetadataTabProps {
   workspaceId: string;
@@ -55,6 +75,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     },
     ref
   ) {
+    const { t, text, list } = useI18n();
     const lang = frontMatter.language;
     const isNonEnglish = lang !== "en";
     const noContent = !content.trim();
@@ -73,7 +94,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
     const [generatingAll, setGeneratingAll] = useState(false);
     // `field` marks a refusal of that field's value, so fixing the field clears it.
-    const [genError, setGenError] = useState<{ message: string; field?: string } | null>(null);
+    const [genError, setGenError] = useState<GenError | null>(null);
     const generationLockRef = useRef(false);
     // The in-flight generation's cancel. Navigation never waits on a paid call:
     // leaving the post, changing status or switching workspace aborts it, and
@@ -83,7 +104,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // refused with the reason. Replies arrive in the order the edits were sent,
     // so the last reply for a field is about its newest value.
     const queuedRef = useRef<Record<string, Promise<void>>>({});
-    const refusedRef = useRef<Record<string, { raw: string; message: string }>>({});
+    const refusedRef = useRef<Record<string, { raw: string; message: Message }>>({});
     // Whether main was last told this tab shows a refused value. A refused value
     // was never buffered, so it exists only on screen: main asks before quitting
     // or closing the window while any tab reports one.
@@ -106,8 +127,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       onMetadataEditedRef.current = onMetadataEdited;
     }, [onMetadataEdited]);
 
-    const showGenError = useCallback((message: string) => {
-      setGenError({ message });
+    const showGenError = useCallback((failure: Message) => {
+      setGenError({ message: failure });
     }, []);
 
     const clearGenError = useCallback(() => {
@@ -140,7 +161,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             refusedRef.current[key] = {
               raw,
               message: presentFailure(
-                "Metadata could not be saved. Your edit is still shown; edit the field again to retry.",
+                message("metadata.queueFailed"),
                 "renderer: metadata edit queue failed",
                 err,
                 { postId, field: key },
@@ -166,16 +187,16 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     );
 
     // The refusal for a field, when the value it refused is still the field's.
-    const refusalFor = (key: string): string | null => {
+    const refusalFor = (key: string): Message | null => {
       const refused = refusedRef.current[key];
       return refused && refused.raw === (fieldsRef.current[key] ?? "") ? refused.message : null;
     };
 
     const showFirstRefusal = (keys: string[]): boolean => {
       for (const key of keys) {
-        const message = refusalFor(key);
-        if (message) {
-          setGenError({ message, field: key });
+        const refusal = refusalFor(key);
+        if (refusal) {
+          setGenError({ message: refusal, field: key });
           return true;
         }
       }
@@ -251,7 +272,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       } catch (err) {
         if (controller.signal.aborted) return;
         showGenError(presentFailure(
-          "Metadata could not be generated. Existing metadata is unchanged; try again.",
+          message("metadata.generateFailed"),
           "renderer: metadata generation failed",
           err,
           { postId, field: key },
@@ -309,12 +330,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         await applyGenerated(untouchedGeneratedFields(atStart, fieldsRef.current, allGenerated));
 
         if (failed.length > 0) {
-          showGenError(`Failed to generate: ${failed.join(", ")}`);
+          setGenError({ failedFields: failed });
         }
       } catch (err) {
         if (controller.signal.aborted) return;
         showGenError(presentFailure(
-          "Metadata could not be generated. Existing metadata is unchanged; try again.",
+          message("metadata.generateFailed"),
           "renderer: metadata batch generation failed",
           err,
           { postId },
@@ -335,13 +356,15 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             dismissClassName="metadata-error-dismiss"
             onDismiss={clearGenError}
           >
-            {genError.message}
+            {"failedFields" in genError
+              ? t("metadata.generateFailedFields", {
+                  fields: list(genError.failedFields.map((key) => (FIELD_LABELS[key] ? t(FIELD_LABELS[key]) : key))),
+                })
+              : text(genError.message)}
           </OperationalResult>
         )}
         {readOnly && (
-          <p className="meta-field-hint">
-            Metadata is read-only.
-          </p>
+          <p className="meta-field-hint">{t("metadata.readOnly")}</p>
         )}
         <div className="metadata-generate-all-row">
           {/* While it runs, Generate All becomes its own Stop: the paid call is
@@ -351,11 +374,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onClick={generatingAll ? stopGeneration : generateAll}
             disabled={!generatingAll && (readOnly || generationLocked || noContent)}
           >
-            {generatingAll ? "Stop Generating" : "Generate All"}
+            {generatingAll ? t("metadata.stopGenerating") : t("metadata.generateAll")}
           </button>
         </div>
         <MetaField
-          label="Title"
+          label={t(FIELD_LABELS.title!)}
           value={fields.title}
           onChange={(v) => updateField("title", v)}
           onBlur={() => flushField("title")}
@@ -372,7 +395,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         />
         {isNonEnglish && (
           <MetaField
-            label="Title (English)"
+            label={t(FIELD_LABELS.titleEn!)}
             value={fields.titleEn ?? ""}
             onChange={(v) => updateField("titleEn", v)}
             onBlur={() => flushField("titleEn")}
@@ -389,7 +412,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           />
         )}
         <MetaField
-          label="Slug"
+          label={t(FIELD_LABELS.slug!)}
           value={fields.slug}
           onChange={(v) => updateField("slug", v)}
           onBlur={() => flushField("slug")}
@@ -405,7 +428,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           isActive={isActive}
         />
         <MetaField
-          label="Tags"
+          label={t(FIELD_LABELS.tags!)}
           value={fields.tags}
           onChange={(v) => updateField("tags", v)}
           onBlur={() => flushField("tags")}
@@ -417,13 +440,13 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           generating={isGenerating("tags")}
           onStop={stopGeneration}
           generateDisabled={readOnly || generationLocked || noContent}
-          placeholder="tag1, tag2, tag3"
+          placeholder={t("metadata.tagsPlaceholder")}
           readOnly={readOnly}
           isActive={isActive}
         />
         {isNonEnglish && (
           <MetaField
-            label="Tags (English)"
+            label={t(FIELD_LABELS.tagsEn!)}
             value={fields.tagsEn ?? ""}
             onChange={(v) => updateField("tagsEn", v)}
             onBlur={() => flushField("tagsEn")}
@@ -435,13 +458,13 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             generating={isGenerating("tagsEn")}
             onStop={stopGeneration}
             generateDisabled={readOnly || generationLocked || noContent}
-            placeholder="tag1, tag2, tag3"
+            placeholder={t("metadata.tagsPlaceholder")}
             readOnly={readOnly}
             isActive={isActive}
           />
         )}
         <MetaField
-          label="Description"
+          label={t(FIELD_LABELS.metaDescription!)}
           value={fields.metaDescription}
           onChange={(v) => updateField("metaDescription", v)}
           onBlur={() => flushField("metaDescription")}
@@ -458,7 +481,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         />
         {isNonEnglish && (
           <MetaField
-            label="Description (English)"
+            label={t(FIELD_LABELS.metaDescriptionEn!)}
             value={fields.metaDescriptionEn ?? ""}
             onChange={(v) => updateField("metaDescriptionEn", v)}
             onBlur={() => flushField("metaDescriptionEn")}
@@ -475,7 +498,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           />
         )}
         <MetaField
-          label="Extra"
+          label={t(FIELD_LABELS.extra!)}
           value={fields.extra}
           onChange={(v) => updateField("extra", v)}
           onBlur={() => flushField("extra")}
@@ -515,7 +538,7 @@ function MetaField({
   onBlur: () => void;
   onCopy: () => void;
   copied?: boolean;
-  copyError?: string;
+  copyError?: Message;
   onDismissCopyError: () => void;
   onGenerate?: () => void;
   onStop?: () => void;
@@ -525,6 +548,7 @@ function MetaField({
   readOnly?: boolean;
   isActive?: boolean;
 }) {
+  const { t, text } = useI18n();
   return (
     <div className="meta-field">
       <div className="meta-field-header">
@@ -535,18 +559,18 @@ function MetaField({
               className="meta-field-generate"
               onClick={generating ? onStop : onGenerate}
               disabled={!generating && generateDisabled}
-              title={generating ? "Stop generating" : "Generate with AI"}
+              title={generating ? t("metadata.stopGeneratingTitle") : t("metadata.generateTitle")}
             >
-              {generating ? "Stop" : "Generate"}
+              {generating ? t("common.stop") : t("imaging.generate")}
             </button>
           )}
-          <button className="meta-field-copy" onClick={onCopy} title="Copy to clipboard">
+          <button className="meta-field-copy" onClick={onCopy} title={t("metadata.copyTitle")}>
             {copied ? (
               <>
-                <CheckIcon /> Copied
+                <CheckIcon /> {t("common.copied")}
               </>
             ) : (
-              "Copy"
+              t("common.copy")
             )}
           </button>
         </div>
@@ -558,7 +582,7 @@ function MetaField({
           dismissClassName="metadata-error-dismiss"
           onDismiss={onDismissCopyError}
         >
-          {copyError}
+          {text(copyError)}
         </OperationalResult>
       )}
       <AutoGrowTextarea

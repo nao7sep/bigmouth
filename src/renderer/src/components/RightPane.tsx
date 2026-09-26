@@ -7,9 +7,20 @@ import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
 import type { ContentFont, EditablePostMetadata, PostFrontMatter, Target } from "@shared/types";
 import { isEditLocked } from "@shared/postStatus";
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 export const RIGHT_TABS = ["Analysis", "Imaging", "Assets", "Preview", "Metadata"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
+
+// The tab ids are English words; what the tab says comes from the catalogue.
+const TAB_LABELS: Record<RightTab, MessageKey> = {
+  Analysis: "tabs.analysis",
+  Imaging: "tabs.imaging",
+  Assets: "tabs.assets",
+  Preview: "tabs.preview",
+  Metadata: "tabs.metadata",
+};
 
 interface RightPaneProps {
   workspaceId: string;
@@ -53,6 +64,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   },
   ref
 ) {
+  const { t } = useI18n();
   const metadataRef = useRef<MetadataTabHandle>(null);
   const locked = frontMatter ? isEditLocked(frontMatter.status) : false;
 
@@ -84,7 +96,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
 
   return (
     <div className="pane-right">
-      <div className="right-tabs" aria-label="Tools" {...tablistProps}>
+      <div className="right-tabs" aria-label={t("right.tools")} {...tablistProps}>
         {visibleTabs.map((tab) => {
           const { onClick, ...tabProps } = getTabProps(tab);
           return (
@@ -94,7 +106,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
               onClick={onClick}
               {...tabProps}
             >
-              {tab}
+              {t(TAB_LABELS[tab])}
             </button>
           );
         })}
@@ -105,7 +117,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
           className={effectiveTab === "Analysis" ? "" : "tab-hidden"}
         >
           {loading ? (
-            <RightPanePlaceholder message="Loading post…" />
+            <RightPanePlaceholder message={t("center.loadingPost")} />
           ) : (
             <AnalysisTab
               postId={postId}
@@ -120,7 +132,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
           className={effectiveTab === "Imaging" ? "" : "tab-hidden"}
         >
           {loading ? (
-            <RightPanePlaceholder message="Loading post…" />
+            <RightPanePlaceholder message={t("center.loadingPost")} />
           ) : (
             <ImagingTab postId={postId} content={content} />
           )}
@@ -130,7 +142,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
           className={effectiveTab === "Preview" ? "" : "tab-hidden"}
         >
           {loading ? (
-            <RightPanePlaceholder message="Loading post…" />
+            <RightPanePlaceholder message={t("center.loadingPost")} />
           ) : (
             <PreviewTab
               workspaceId={workspaceId}
@@ -146,7 +158,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             className={effectiveTab === "Metadata" ? "" : "tab-hidden"}
           >
             {loading || !frontMatter ? (
-              <RightPanePlaceholder message="Loading metadata…" />
+              <RightPanePlaceholder message={t("right.loadingMetadata")} />
             ) : (
               <MetadataTab
                 ref={metadataRef}
@@ -168,7 +180,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             {...getPanelProps("Assets")}
             className={effectiveTab === "Assets" ? "" : "tab-hidden"}
           >
-            <RightPanePlaceholder message="Loading assets…" />
+            <RightPanePlaceholder message={t("right.loadingAssets")} />
           </div>
         ) : (
           <AssetsTab

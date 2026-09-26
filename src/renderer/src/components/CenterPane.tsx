@@ -12,7 +12,9 @@ import {
   reportProblem,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
-import { isEditLocked } from "@shared/postStatus";
+import { POST_STATUSES, POST_STATUS_LABELS, isEditLocked } from "@shared/postStatus";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { SourcePickerModal } from "./SourcePickerModal";
 import { useConfirm } from "./ConfirmHost";
@@ -39,14 +41,7 @@ interface CenterPaneProps {
   editorRef?: React.Ref<MarkdownEditorHandle>;
 }
 
-const STATUS_OPTIONS: { value: PostStatus; label: string }[] = [
-  { value: "draft", label: "Draft" },
-  { value: "ready", label: "Ready" },
-  { value: "published", label: "Published" },
-  { value: "expired", label: "Expired" },
-];
-
-const STATUS_VALUES: PostStatus[] = STATUS_OPTIONS.map((o) => o.value);
+const STATUS_VALUES: PostStatus[] = [...POST_STATUSES];
 
 // Published and expired posts are read-only; the editor locks until the post is
 // moved back to Draft or Ready.
@@ -67,13 +62,14 @@ export function CenterPane({
   contentFont,
   editorRef,
 }: CenterPaneProps) {
+  const { t, text, rich } = useI18n();
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<Message | null>(null);
   // True while a delete confirmation is open or resolving. See openDeleteConfirm.
   const deletingRef = useRef(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<Message | null>(null);
+  const [loadError, setLoadError] = useState<Message | null>(null);
   const {
     copiedKey,
     copy: copyContent,
@@ -105,7 +101,7 @@ export function CenterPane({
       .catch((err) => {
         if (cancelled) return;
         setLoadError(presentFailure(
-          "This post could not be loaded. Select it again to retry.",
+          message("center.loadFailed"),
           "renderer: post load failed",
           err,
           { postId },
@@ -135,8 +131,8 @@ export function CenterPane({
       if (event.postId !== postId) return;
       setSaveError(
         event.kind === "unsaveable"
-          ? "BigMouth cannot save your changes. Your text is still here; copy it somewhere safe and check the log."
-          : "Autosave failed and will retry. Your text is held in memory until it saves."
+          ? message("center.unsaveable")
+          : message("center.autosaveRetrying")
       );
     });
     return () => {
@@ -163,7 +159,7 @@ export function CenterPane({
       // Metadata tab only reports a value the store refused.
       const flushedMetadata = (await onBeforeStatusChange?.()) ?? true;
       if (!flushedMetadata) {
-        setStatusError("Metadata changes could not be saved. Resolve them before changing status.");
+        setStatusError(message("center.metadataUnsaved"));
         return;
       }
 
@@ -172,7 +168,7 @@ export function CenterPane({
       onPostUpdated(updated);
     } catch (err) {
       setStatusError(presentFailure(
-        "The post status could not be changed. The previous status is still in effect; try again.",
+        message("center.statusFailed"),
         "renderer: post status change failed",
         err,
         { postId, newStatus },
@@ -190,10 +186,9 @@ export function CenterPane({
     if (newStatus === "draft" && (post.frontMatter.publishedAtUtc || post.frontMatter.expiredAtUtc)) {
       void (async () => {
         const ok = await confirm({
-          title: "Revert to draft?",
-          message:
-            "This clears the ready, publication, and expiry times. The post will be treated as never published until you advance it again. Use this for a real rewrite and repost; to fix a small typo, switch to Ready instead.",
-          confirmLabel: "Revert to Draft",
+          title: t("center.revertTitle"),
+          message: t("center.revertMessage"),
+          confirmLabel: t("center.revertConfirm"),
           danger: true,
         });
         if (ok) void applyStatusChange("draft");
@@ -243,9 +238,9 @@ export function CenterPane({
     const ok = await confirm({
       message:
         referrerCount > 0
-          ? `Delete this post? This cannot be undone. ${referrerCount} other post${referrerCount === 1 ? "" : "s"} link${referrerCount === 1 ? "s" : ""} to it as their source and will be unlinked.`
-          : "Delete this post? This cannot be undone.",
-      confirmLabel: "Delete",
+          ? t("center.deleteWithReferrers", { count: referrerCount })
+          : t("center.deleteMessage"),
+      confirmLabel: t("common.delete"),
       danger: true,
     });
     if (!ok) return;
@@ -255,7 +250,7 @@ export function CenterPane({
       onPostDeleted();
     } catch (err) {
       setStatusError(presentFailure(
-        "The post could not be deleted. It remains in the workspace; try again.",
+        message("center.deleteFailed"),
         "renderer: post deletion failed",
         err,
         { postId },
@@ -292,7 +287,7 @@ export function CenterPane({
       setStatusError(null);
     } catch (err) {
       setStatusError(presentFailure(
-        "The source post could not be linked. The current source is unchanged; try again.",
+        message("center.linkFailed"),
         "renderer: source post link failed",
         err,
         { postId, sourceId },
@@ -308,7 +303,7 @@ export function CenterPane({
       setStatusError(null);
     } catch (err) {
       setStatusError(presentFailure(
-        "The source post could not be unlinked. The current source is unchanged; try again.",
+        message("center.unlinkFailed"),
         "renderer: source post unlink failed",
         err,
         { postId },
@@ -320,9 +315,9 @@ export function CenterPane({
     return (
       <div className="pane-center">
         <div className="center-toolbar">
-          <span className="toolbar-label">{loadError ? "Load failed" : "Loading…"}</span>
+          <span className="toolbar-label">{loadError ? t("center.loadFailedLabel") : t("common.loading")}</span>
         </div>
-        <div className="center-loading">{loadError ?? "Loading post…"}</div>
+        <div className="center-loading">{loadError ? text(loadError) : t("center.loadingPost")}</div>
       </div>
     );
   }
@@ -336,22 +331,22 @@ export function CenterPane({
       <div className="center-toolbar">
         {onGoBack && (
           <button className="btn-toolbar" onClick={() => void onGoBack()}>
-            <ChevronLeftIcon /> Back
+            <ChevronLeftIcon /> {t("center.back")}
           </button>
         )}
         <span className="toolbar-label">{fm.target}</span>
         <span className="toolbar-sep" aria-hidden="true" />
         <span className="toolbar-label">{fm.language}</span>
         <span className="toolbar-sep" aria-hidden="true" />
-        <div className="status-radios" aria-label="Post status" {...radioGroupProps}>
-          {STATUS_OPTIONS.map(({ value, label }) => (
+        <div className="status-radios" aria-label={t("center.postStatus")} {...radioGroupProps}>
+          {STATUS_VALUES.map((value) => (
             <button
               key={value}
               type="button"
               className={`status-radio${fm.status === value ? " active" : ""}`}
               {...getRadioProps(value)}
             >
-              {label}
+              {t(POST_STATUS_LABELS[value])}
             </button>
           ))}
         </div>
@@ -364,37 +359,37 @@ export function CenterPane({
               type="button"
               className="toolbar-source"
               onClick={() => void onSelectPost(fm.sourceId!)}
-              title={`Source: ${fm.sourceId}`}
+              title={t("center.sourceTitle", { id: fm.sourceId })}
             >
-              Source
+              {t("center.source")}
             </button>
             <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
-              Change
+              {t("center.change")}
             </button>
             <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked}>
-              Unlink
+              {t("newPost.unlink")}
             </button>
           </>
         ) : (
           <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
-            Link Source
+            {t("center.linkSource")}
           </button>
         )}
         <span style={{ flex: 1 }} />
         <button className="btn-toolbar" onClick={handleCopyContent}>
           {copiedKey === "content" ? (
             <>
-              <CheckIcon /> Copied
+              <CheckIcon /> {t("common.copied")}
             </>
           ) : (
-            "Copy"
+            t("common.copy")
           )}
         </button>
         <button className="btn-toolbar" onClick={onExport}>
-          Export
+          {t("export.title")}
         </button>
         <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()}>
-          Delete
+          {t("common.delete")}
         </button>
       </div>
       {copyErrors.content && (
@@ -404,7 +399,7 @@ export function CenterPane({
           dismissClassName="toolbar-error-dismiss"
           onDismiss={() => dismissCopyError("content")}
         >
-          {copyErrors.content}
+          {text(copyErrors.content)}
         </OperationalResult>
       )}
       {toolbarError && (
@@ -417,22 +412,15 @@ export function CenterPane({
               setSaveError(null);
           }}
         >
-          {toolbarError}
+          {text(toolbarError)}
         </OperationalResult>
       )}
       {locked && (
         <div className="toolbar-notice">
-          {fm.status === "published" ? (
-            <>
-              Published posts are locked. Switch to <strong>Ready</strong> to edit; switching to{" "}
-              <strong>Draft</strong> also clears the ready and publication times.
-            </>
-          ) : (
-            <>
-              Expired posts are locked. Switch to <strong>Ready</strong> to edit, or{" "}
-              <strong>Draft</strong> to clear the lifecycle times and start over.
-            </>
-          )}
+          {rich(fm.status === "published" ? "center.publishedLocked" : "center.expiredLocked", {
+            ready: <strong>{t("status.ready")}</strong>,
+            draft: <strong>{t("status.draft")}</strong>,
+          })}
         </div>
       )}
       <div className="center-editor">
@@ -446,11 +434,11 @@ export function CenterPane({
         />
       </div>
       <div className="center-counts">
-        <span>{counts.graphemes} graphemes</span>
-        <span>{counts.xWeighted} X chars</span>
-        <span>{counts.paragraphs} paragraphs</span>
-        <span>avg {counts.avgParagraphLength}</span>
-        <span>longest {counts.longestParagraphLength}</span>
+        <span>{t("center.graphemes", { count: counts.graphemes })}</span>
+        <span>{t("center.xChars", { count: counts.xWeighted })}</span>
+        <span>{t("center.paragraphs", { count: counts.paragraphs })}</span>
+        <span>{t("center.average", { value: counts.avgParagraphLength })}</span>
+        <span>{t("center.longest", { value: counts.longestParagraphLength })}</span>
       </div>
 
       {sourcePickerOpen && (

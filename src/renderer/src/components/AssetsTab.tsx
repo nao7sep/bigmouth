@@ -13,6 +13,8 @@ import { useConfirm } from "./ConfirmHost";
 import { OperationalResult } from "./OperationalResult";
 import { inspectAssetDragOffer } from "../util/assetDrop";
 import { AssetUploadAdmissionError } from "../util/assetUpload";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 
 interface AssetsTabProps extends Pick<
   HTMLAttributes<HTMLDivElement>,
@@ -26,11 +28,20 @@ interface AssetsTabProps extends Pick<
 }
 
 type DragState = "idle" | "delivery" | "accepting" | "rejecting";
+// One line of a notice, with the files it is about listed under it.
+type NoticeLine = { message: Message; items?: Array<{ name: string; reason: Message }> };
 type AssetNotice = {
   severity: "warning" | "error";
-  message: string;
+  lines: NoticeLine[];
   issueKeys: string[];
 };
+
+function notAdded(items: Array<{ file: File; reason: Message }>, count = items.length): NoticeLine {
+  return {
+    message: message("assets.notAdded", { count }),
+    items: items.map(({ file, reason }) => ({ name: file.name, reason })),
+  };
+}
 
 function assetIssueKey(file: Pick<File, "name">): string {
   // Keep the offered spelling, not the stored/sanitized name: two distinct
@@ -53,10 +64,16 @@ function isImage(filename: string): boolean {
   return isImageAssetFilename(filename);
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+function formatBytes(n: number, locale: string): string {
+  const [value, unit] =
+    n < 1024 ? [n, "byte"] : n < 1024 * 1024 ? [n / 1024, "kilobyte"] : [n / (1024 * 1024), "megabyte"];
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit,
+    unitDisplay: "short",
+    minimumFractionDigits: unit === "byte" ? 0 : 1,
+    maximumFractionDigits: unit === "byte" ? 0 : 1,
+  }).format(value);
 }
 
 function markdownLabel(filename: string): string {
@@ -77,6 +94,7 @@ export function AssetsTab({
   readOnly = false,
   ...containerProps
 }: AssetsTabProps) {
+  const { t, text, list } = useI18n();
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
@@ -91,7 +109,7 @@ export function AssetsTab({
     setDragState("idle");
   }, []);
 
-  const load = useCallback(async (): Promise<string | null> => {
+  const load = useCallback(async (): Promise<Message | null> => {
     try {
       const list = await listAssets(postId, workspaceId);
       assetsRef.current = list;
@@ -99,7 +117,7 @@ export function AssetsTab({
       return null;
     } catch (err) {
       return presentFailure(
-        "Assets could not be loaded. Reopen this post to try again.",
+        message("assets.loadFailed"),
         "renderer: asset list failed",
         err,
         { postId },
@@ -111,10 +129,10 @@ export function AssetsTab({
     setAssets([]);
     assetsRef.current = [];
     setUploadNotice(null);
-    void load().then((message) => {
-      if (message) setUploadNotice({
+    void load().then((failure) => {
+      if (failure) setUploadNotice({
         severity: "error",
-        message,
+        lines: [{ message: failure }],
         issueKeys: [`refresh:${postId}`],
       });
     });
@@ -122,23 +140,20 @@ export function AssetsTab({
 
   const uploadFiles = async (
     files: File[],
-    rejected: Array<{ file: File; message: string }>,
+    rejected: Array<{ file: File; reason: Message }>,
     operationKeys: string[],
   ) => {
     if (readOnly) return;
-    const admissionFailures: Array<{ file: File; message: string }> = [];
-    const operationalFailures: Array<{ file: File; message: string }> = [];
+    const admissionFailures: Array<{ file: File; reason: Message }> = [];
+    const operationalFailures: Array<{ file: File; reason: Message }> = [];
     for (const file of files) {
       try {
         await uploadAsset(postId, file, workspaceId);
       } catch (err) {
         if (err instanceof AssetUploadAdmissionError) {
-          admissionFailures.push({ file, message: err.message });
+          admissionFailures.push({ file, reason: err.reason });
         } else {
-          operationalFailures.push({
-            file,
-            message: "The file could not be added. Check that it is still available and try again.",
-          });
+          operationalFailures.push({ file, reason: message("assets.fileNotAdded") });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });
         }
       }
@@ -147,26 +162,14 @@ export function AssetsTab({
     const invalid = [...rejected, ...admissionFailures];
     if (invalid.length > 0 || operationalFailures.length > 0 || refreshFailure) {
       const addedCount = files.length - admissionFailures.length - operationalFailures.length;
-      const parts: string[] = [];
-      if (addedCount > 0) {
-        parts.push(`Added ${addedCount} asset${addedCount === 1 ? "" : "s"}`);
-      }
-      if (invalid.length > 0) {
-        parts.push(
-          `${invalid.length} item${invalid.length === 1 ? "" : "s"} could not be added: ` +
-          invalid.map(({ file, message }) => `${file.name}: ${message}`).join("; "),
-        );
-      }
-      if (operationalFailures.length > 0) {
-        parts.push(
-          `${operationalFailures.length} item${operationalFailures.length === 1 ? "" : "s"} could not be added: ` +
-          operationalFailures.map(({ file, message }) => `${file.name}: ${message}`).join("; "),
-        );
-      }
-      if (refreshFailure) parts.push(`Asset list could not be refreshed: ${refreshFailure}`);
+      const lines: NoticeLine[] = [];
+      if (addedCount > 0) lines.push({ message: message("assets.added", { count: addedCount }) });
+      if (invalid.length > 0) lines.push(notAdded(invalid));
+      if (operationalFailures.length > 0) lines.push(notAdded(operationalFailures));
+      if (refreshFailure) lines.push({ message: refreshFailure });
       setUploadNotice({
         severity: operationalFailures.length > 0 || refreshFailure ? "error" : "warning",
-        message: `${parts.join("; ")}.`,
+        lines,
         issueKeys: [
           ...invalid.map(({ file }) => assetIssueKey(file)),
           ...operationalFailures.map(({ file }) => assetIssueKey(file)),
@@ -196,11 +199,8 @@ export function AssetsTab({
       file.size <= limitBytes && !isReservedAssetName(sanitizeAssetFilename(file.name))
     );
     const rejected = [
-      ...tooLarge.map((file) => ({ file, message: `is larger than ${maxUploadMb} MB` })),
-      ...reserved.map((file) => ({
-        file,
-        message: "uses a name BigMouth keeps for its own bookkeeping; rename it and try again",
-      })),
+      ...tooLarge.map((file) => ({ file, reason: message("assets.admissionTooLarge", { max: maxUploadMb }) })),
+      ...reserved.map((file) => ({ file, reason: message("assets.reservedName") })),
     ];
     const operationKeys = fileArray.map(assetIssueKey);
 
@@ -208,8 +208,7 @@ export function AssetsTab({
       if (rejected.length > 0) {
         setUploadNotice({
           severity: "warning",
-          message: `${rejected.length} item${rejected.length === 1 ? "" : "s"} could not be added: ` +
-            `${rejected.map(({ file, message }) => `${file.name}: ${message}`).join("; ")}.`,
+          lines: [notAdded(rejected)],
           issueKeys: rejected.map(({ file }) => assetIssueKey(file)),
         });
       }
@@ -218,14 +217,12 @@ export function AssetsTab({
 
     const batchCollisions = collidingAssetFilenames(uploadable.map((file) => file.name));
     if (batchCollisions.length > 0) {
-      const details = [
-        `some selected files resolve to the same asset name (${batchCollisions.join(", ")}). ` +
-          "Rename them before adding so none are overwritten",
-        ...rejected.map(({ file, message }) => `${file.name}: ${message}`),
-      ];
       setUploadNotice({
         severity: "warning",
-        message: `${fileArray.length} items could not be added: ${details.join("; ")}.`,
+        lines: [
+          notAdded(rejected, fileArray.length),
+          { message: message("assets.collision", { names: list(batchCollisions) }) },
+        ],
         issueKeys: operationKeys,
       });
       return;
@@ -238,9 +235,9 @@ export function AssetsTab({
 
     if (dupes.length > 0) {
       const ok = await confirm({
-        title: "Replace existing file?",
-        message: `${dupes.join(", ")} already exist${dupes.length === 1 ? "s" : ""}. Replace?`,
-        confirmLabel: "Replace",
+        title: t("assets.replaceTitle"),
+        message: t("assets.replaceMessage", { count: dupes.length, names: list(dupes) }),
+        confirmLabel: t("assets.replace"),
       });
       if (!ok) return;
     }
@@ -260,7 +257,7 @@ export function AssetsTab({
       reportProblem("Asset upload transaction failed.", err, { postId });
       setUploadNotice({
         severity: "error",
-        message: "Assets could not be added. The current asset list is unchanged; try again.",
+        lines: [{ message: message("assets.addFailed") }],
         issueKeys: captured.map(assetIssueKey),
       });
     } finally {
@@ -279,7 +276,7 @@ export function AssetsTab({
     if (readOnly) {
       setUploadNotice({
         severity: "warning",
-        message: "Assets are read-only.",
+        lines: [{ message: message("assets.readOnly") }],
         issueKeys: ["receiver:read-only"],
       });
       return;
@@ -287,7 +284,7 @@ export function AssetsTab({
     if (e.dataTransfer.files.length === 0) {
       setUploadNotice({
         severity: "warning",
-        message: "The Assets collection accepts files from Finder or Add.",
+        lines: [{ message: message("assets.filesOnly") }],
         issueKeys: ["offer:non-file"],
       });
       return;
@@ -306,8 +303,8 @@ export function AssetsTab({
   const handleDelete = async (filename: string) => {
     if (readOnly) return;
     const ok = await confirm({
-      message: `Delete "${filename}"?`,
-      confirmLabel: "Delete",
+      message: t("assets.deleteMessage", { name: filename }),
+      confirmLabel: t("common.delete"),
       danger: true,
     });
     if (!ok) return;
@@ -322,7 +319,7 @@ export function AssetsTab({
       reportProblem("Asset deletion failed.", err, { postId, filename });
       setUploadNotice({
         severity: "error",
-        message: `${filename} could not be deleted. It remains attached to this post; try again.`,
+        lines: [{ message: message("assets.deleteFailed", { name: filename }) }],
         issueKeys: [`delete:${filename}`],
       });
     }
@@ -371,7 +368,7 @@ export function AssetsTab({
     >
       <div className="assets-toolbar">
         <div className="assets-note">
-          {readOnly ? "Read-only while the post is locked." : "Drop files here or use Add."}
+          {readOnly ? t("assets.lockedNote") : t("assets.dropNote")}
         </div>
         <input
           ref={fileInputRef}
@@ -386,7 +383,7 @@ export function AssetsTab({
           disabled={readOnly || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? "Adding…" : "Add"}
+          {uploading ? t("assets.adding") : t("assets.add")}
         </button>
       </div>
 
@@ -397,15 +394,26 @@ export function AssetsTab({
           dismissClassName="assets-result-dismiss"
           onDismiss={() => setUploadNotice(null)}
         >
-          {uploadNotice.message}
+          {uploadNotice.lines.map((line, index) => (
+            <div key={index}>
+              {text(line.message)}
+              {line.items && (
+                <ul className="modal-result-list">
+                  {line.items.map((item, itemIndex) => (
+                    <li key={`${itemIndex}:${item.name}`}>
+                      {t("assets.itemReason", { name: item.name, reason: item.reason })}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
         </OperationalResult>
       )}
 
       {/* Asset grid */}
       {assets.length === 0 ? (
-        <div className="assets-empty">
-          No assets yet.
-        </div>
+        <div className="assets-empty">{t("assets.empty")}</div>
       ) : (
           <div className="assets-grid">
             {assets.map((asset) => (
@@ -442,6 +450,7 @@ function AssetCard({
   onDelete: () => void;
   readOnly: boolean;
 }) {
+  const { t, locale } = useI18n();
   const src = assetUrl(postId, asset.filename, workspaceId);
   const img = isImage(asset.filename);
 
@@ -459,21 +468,21 @@ function AssetCard({
           {asset.filename}
         </div>
         <div className="asset-meta">
-          {formatBytes(asset.size)}
+          {formatBytes(asset.size, locale)}
           {asset.width && asset.height && (
             <> &middot; {asset.width}&times;{asset.height}</>
           )}
         </div>
         {asset.hasMetadata && (
-          <div className="asset-meta-note">Has metadata</div>
+          <div className="asset-meta-note">{t("assets.hasMetadata")}</div>
         )}
       </div>
       <div className="asset-actions">
-        <button className="asset-btn" onClick={onInsert} title="Insert at cursor" disabled={readOnly}>
-          Insert
+        <button className="asset-btn" onClick={onInsert} title={t("assets.insertTitle")} disabled={readOnly}>
+          {t("assets.insert")}
         </button>
-        <button className="asset-btn asset-btn-delete" onClick={onDelete} title="Delete" disabled={readOnly}>
-          Delete
+        <button className="asset-btn asset-btn-delete" onClick={onDelete} title={t("common.delete")} disabled={readOnly}>
+          {t("common.delete")}
         </button>
       </div>
     </div>

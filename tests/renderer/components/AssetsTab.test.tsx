@@ -111,13 +111,13 @@ describe("AssetsTab loading", () => {
     const card = container.querySelector(".asset-card") as HTMLElement;
     expect(card.querySelector("img")).toBeNull();
     expect(getByText("PDF")).toBeTruthy(); // file-icon shows uppercase ext
-    expect(getByText("500 B")).toBeTruthy(); // formatBytes bytes branch
+    expect(getByText("500 byte")).toBeTruthy(); // formatBytes bytes branch, in the locale's unit
   });
 
   it("formats sizes in KB for mid-range files", async () => {
     mockListAssets.mockResolvedValue([asset({ filename: "a.png", size: 4096 })]);
     const { getByText } = await renderTab();
-    expect(getByText("4.0 KB")).toBeTruthy();
+    expect(getByText("4.0 kB")).toBeTruthy();
   });
 });
 
@@ -148,7 +148,8 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [big] } });
     });
 
-    expect(getByText(/big\.png: is larger than 1 MB/)).toBeTruthy();
+    expect(getByText("1 item could not be added:")).toBeTruthy();
+    expect(getByText("big.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
@@ -163,7 +164,8 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("bad.png")] } });
     });
 
-    expect(getByText(/1 item could not be added: bad\.png: The file could not be added/)).toBeTruthy();
+    expect(getByText("1 item could not be added:")).toBeTruthy();
+    expect(getByText(/^bad\.png: The file could not be added/)).toBeTruthy();
     expect(container.querySelector(".assets-result--error")).toBeTruthy();
     expect(mockReportProblem).toHaveBeenCalledWith(
       "Asset upload failed.",
@@ -174,7 +176,7 @@ describe("AssetsTab upload via file input", () => {
 
   it("presents predictable upload admission rejection as a warning without error logging", async () => {
     mockListAssets.mockResolvedValue([]);
-    mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError("Post is locked."));
+    mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError({ key: "assets.admissionPublishedLocked" }));
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -182,7 +184,7 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("draft.png")] } });
     });
 
-    expect(getByText(/draft\.png: Post is locked/)).toBeTruthy();
+    expect(getByText(/^draft\.png: Published posts are locked/)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockReportProblem).not.toHaveBeenCalled();
   });
@@ -217,7 +219,7 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("meta.json")] } });
     });
 
-    expect(getByText(/meta\.json: uses a name BigMouth keeps/)).toBeTruthy();
+    expect(getByText(/^meta\.json: It uses a name BigMouth keeps/)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
@@ -233,12 +235,13 @@ describe("AssetsTab upload via file input", () => {
         target: { files: [makeFile("ready.png"), makeFile("large.png", 2 * 1024 * 1024)] },
       });
     });
-    expect(getByText(/Added 1 asset; 1 item could not be added: large\.png: is larger than 1 MB/)).toBeTruthy();
+    expect(getByText("Added 1 asset.")).toBeTruthy();
+    expect(getByText("large.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
 
     await act(async () => {
       fireEvent.change(input, { target: { files: [makeFile("another.png")] } });
     });
-    expect(getByText(/large\.png: is larger than 1 MB/)).toBeTruthy();
+    expect(getByText("large.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
   });
 
   it("asks to replace a duplicate filename and uploads when confirmed", async () => {

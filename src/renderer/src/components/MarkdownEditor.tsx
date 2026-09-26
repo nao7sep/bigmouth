@@ -32,6 +32,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import type { ContentFont } from "@shared/types";
 import { editorHighlighting } from "./editorHighlight";
+import { useI18n, type Translator } from "../i18n/I18nContext";
 
 // CodeMirror's basicSetup without folding: a post is short enough that
 // collapsing a section under its heading rarely helps, and the fold gutter put
@@ -62,6 +63,35 @@ const editorSetup = [
     ...lintKeymap,
   ]),
 ];
+
+// CodeMirror's own words (the search and go-to-line panels, screen-reader
+// announcements), in the interface language. CodeMirror fills "$" itself.
+export function editorPhrases({ t }: Translator): Record<string, string> {
+  return {
+    Find: t("editor.find"),
+    Replace: t("editor.replace"),
+    next: t("editor.next"),
+    previous: t("editor.previous"),
+    all: t("editor.all"),
+    "match case": t("editor.matchCase"),
+    "by word": t("editor.byWord"),
+    regexp: t("editor.regexp"),
+    replace: t("editor.replaceOne"),
+    "replace all": t("editor.replaceAll"),
+    close: t("common.close"),
+    "current match": t("editor.currentMatch"),
+    "on line": t("editor.onLine"),
+    "replaced $ matches": t("editor.replacedMatches", { count: "$" }),
+    "replaced match on line $": t("editor.replacedMatchOnLine", { line: "$" }),
+    "Go to line": t("editor.goToLine"),
+    go: t("editor.go"),
+    "Selection deleted": t("editor.selectionDeleted"),
+    "Control character": t("editor.controlCharacter"),
+    Completions: t("editor.completions"),
+    Diagnostics: t("editor.diagnostics"),
+    "No diagnostics": t("editor.noDiagnostics"),
+  };
+}
 
 export interface MarkdownEditorHandle {
   insertAtCursor: (text: string) => void;
@@ -112,6 +142,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const readOnlyCompartmentRef = useRef(new Compartment());
   const editableCompartmentRef = useRef(new Compartment());
   const themeCompartmentRef = useRef(new Compartment());
+  const phrasesCompartmentRef = useRef(new Compartment());
+  const translator = useI18n();
+  const translatorRef = useRef(translator);
+  translatorRef.current = translator;
+  const appliedTranslatorRef = useRef(translator);
   const appliedReadOnlyRef = useRef(readOnly);
   const appliedContentFontRef = useRef(contentFont);
   // Read the latest content font without retriggering the create-once effect.
@@ -159,6 +194,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         themeCompartmentRef.current.of(buildEditorTheme(contentFontRef.current)),
+        phrasesCompartmentRef.current.of(EditorState.phrases.of(editorPhrases(translatorRef.current))),
       ],
     });
 
@@ -191,6 +227,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       ],
     });
   }, [readOnly]);
+
+  // Follow a language change without rebuilding the editor.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || appliedTranslatorRef.current === translator) return;
+    appliedTranslatorRef.current = translator;
+    view.dispatch({
+      effects: phrasesCompartmentRef.current.reconfigure(EditorState.phrases.of(editorPhrases(translator))),
+    });
+  }, [translator]);
 
   // Re-theme live when the content font changes, so a Settings save takes effect
   // without rebuilding the editor.

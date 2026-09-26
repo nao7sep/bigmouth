@@ -4,6 +4,8 @@ import { presentFailure } from "../util/presentFailure";
 import type { AnalysisPrompt } from "@shared/types";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 
 interface AnalysisTabProps {
   postId: string;
@@ -18,6 +20,7 @@ export function AnalysisTab({
   analysisTrigger,
   promptsVersion,
 }: AnalysisTabProps) {
+  const { t, text, rich } = useI18n();
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
@@ -25,8 +28,8 @@ export function AnalysisTab({
   // before any answer text, so it is also what fills the wait.
   const [thinking, setThinking] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [promptsError, setPromptsError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
+  const [promptsError, setPromptsError] = useState<Message | null>(null);
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -43,7 +46,7 @@ export function AnalysisTab({
       })
       .catch((err) => {
         setPromptsError(presentFailure(
-          "Analysis prompts could not be loaded. Reopen this post to try again.",
+          message("analysis.promptsFailed"),
           "renderer: analysis prompts load failed",
           err,
         ));
@@ -98,7 +101,7 @@ export function AnalysisTab({
       if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
       setError(presentFailure(
-        "The analysis could not be completed. No result was saved; try again.",
+        message("analysis.runFailed"),
         "renderer: analysis run failed",
         err,
         { postId, prompt: selectedPrompt },
@@ -124,14 +127,15 @@ export function AnalysisTab({
     if (promptsError) {
       return (
         <OperationalResult severity="error" className="panel-error">
-          Couldn't load analysis prompts: {promptsError}
+          {text(promptsError)}
         </OperationalResult>
       );
     }
     return (
       <div className="panel-empty">
-        No prompts configured. Add prompts in{" "}
-        <strong>Settings → Analysis</strong>.
+        {rich("analysis.noPrompts", {
+          location: <strong>{t("analysis.promptsLocation")}</strong>,
+        })}
       </div>
     );
   }
@@ -159,13 +163,13 @@ export function AnalysisTab({
           onClick={loading ? stop : run}
           disabled={!loading && (!selectedPrompt || !content.trim())}
         >
-          {loading ? "Stop" : "Analyze"}
+          {loading ? t("common.stop") : t("analysis.analyze")}
         </button>
       </div>
 
       {error && (
         <OperationalResult severity="error" className="panel-error">
-          {error}
+          {text(error)}
         </OperationalResult>
       )}
 
@@ -173,7 +177,7 @@ export function AnalysisTab({
           arrives — the reasoning is what fills the wait, not the deliverable. */}
       {thinking && (
         <details className="analysis-thinking" open={!result}>
-          <summary>Reasoning</summary>
+          <summary>{t("analysis.reasoning")}</summary>
           <div className="analysis-thinking-body">{thinking}</div>
         </details>
       )}
@@ -182,7 +186,7 @@ export function AnalysisTab({
         <div
           className="analysis-result preview-content"
           role="region"
-          aria-label="Analysis result"
+          aria-label={t("analysis.result")}
           tabIndex={0}
           dangerouslySetInnerHTML={{ __html: html }}
         />

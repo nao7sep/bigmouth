@@ -494,9 +494,9 @@ describe("api wrappers — call-through and argument shape", () => {
         arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(1)),
       } as unknown as File;
 
-      await expect(uploadAsset("p1", file)).rejects.toEqual(
-        new AssetUploadAdmissionError("Published posts are locked. Move the post back to Ready or Draft to change its assets."),
-      );
+      const refusal = await uploadAsset("p1", file).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(AssetUploadAdmissionError);
+      expect((refusal as AssetUploadAdmissionError).reason).toEqual({ key: "assets.admissionPublishedLocked" });
     });
 
     it("does not project an arbitrary Electron rejection into admission copy", async () => {

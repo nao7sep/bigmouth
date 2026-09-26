@@ -38,6 +38,7 @@ import type {
   Workspace,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
+import type { Message } from "@shared/i18n/translate";
 
 // Per-window counter for AI request ids. Generated renderer-side so the renderer
 // can subscribe to a stream's channel, or send an abort, before the request
@@ -141,7 +142,7 @@ const api = {
     ipcRenderer.send(CHANNELS.queuePostContent, wsId, id, content);
   },
   queuePostMetadata: (wsId: string, id: string, edits: EditablePostMetadata) =>
-    ipcRenderer.invoke(CHANNELS.queuePostMetadata, wsId, id, edits) as Promise<string | null>,
+    ipcRenderer.invoke(CHANNELS.queuePostMetadata, wsId, id, edits) as Promise<Message | null>,
   reportMetadataRefusal: (id: string, refused: boolean) =>
     ipcRenderer.send(CHANNELS.reportMetadataRefusal, id, refused),
   onPostContentSaved: (listener: (event: PostContentSavedEvent) => void) => {

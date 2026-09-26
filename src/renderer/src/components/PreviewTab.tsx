@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { ContentFont } from "@shared/types";
 import { assetUrl } from "../api";
 import { renderSafeMarkdown } from "../util/safeMarkdown";
+import { useI18n } from "../i18n/I18nContext";
 
 interface PreviewTabProps {
   workspaceId: string;
@@ -31,6 +32,7 @@ function resolveAssetImage(href: string, postId: string, workspaceId: string): s
 }
 
 export function PreviewTab({ workspaceId, content, postId, contentFont }: PreviewTabProps) {
+  const { t } = useI18n();
   const html = useMemo(() => {
     if (!content.trim()) return null;
     return renderSafeMarkdown(content, {
@@ -39,7 +41,7 @@ export function PreviewTab({ workspaceId, content, postId, contentFont }: Previe
   }, [content, postId, workspaceId]);
 
   if (!html) {
-    return <div className="preview-empty">No content yet</div>;
+    return <div className="preview-empty">{t("export.empty")}</div>;
   }
 
   // The preview renders the user's own document, so it is content, not chrome:

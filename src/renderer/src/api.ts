@@ -36,6 +36,7 @@ import {
   type TargetRenameResult,
 } from "@shared/ipc";
 import { AssetUploadAdmissionError } from "./util/assetUpload";
+import { message, type Message } from "@shared/i18n/translate";
 import { isImageAssetFilename } from "@shared/assetNames";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
@@ -134,7 +135,7 @@ export function queuePostMetadata(
   id: string,
   edits: EditablePostMetadata,
   workspaceId?: string,
-): Promise<string | null> {
+): Promise<Message | null> {
   return bridge().queuePostMetadata(requireWs(workspaceId), id, edits);
 }
 
@@ -337,16 +338,14 @@ export async function uploadAsset(postId: string, file: File, workspaceId?: stri
   throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));
 }
 
-function assetUploadAdmissionMessage(admission: AssetUploadAdmission): string {
+function assetUploadAdmissionMessage(admission: AssetUploadAdmission): Message {
   switch (admission.code) {
     case "file-too-large":
-      return `File is larger than the ${admission.limitMb} MB asset size limit.`;
+      return message("assets.admissionTooLarge", { max: admission.limitMb });
     case "reserved-name":
-      return `"${admission.filename}" is a name BigMouth keeps for its own bookkeeping. Rename the file and try again.`;
-    case "post-locked": {
-      const label = admission.status === "published" ? "Published" : "Expired";
-      return `${label} posts are locked. Move the post back to Ready or Draft to change its assets.`;
-    }
+      return message("assets.admissionReserved", { name: admission.filename });
+    case "post-locked":
+      return message(admission.status === "published" ? "assets.admissionPublishedLocked" : "assets.admissionExpiredLocked");
   }
 }
 

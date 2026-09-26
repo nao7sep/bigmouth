@@ -12,36 +12,39 @@ import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 const COUNT_OPTIONS = [3, 5, 10] as const;
-const RELATION_OPTIONS: Array<{ value: ImagingRelation; label: string }> = [
-  { value: "direct", label: "Direct" },
-  { value: "domain", label: "Domain" },
-  { value: "abstract", label: "Abstract" },
+const RELATION_OPTIONS: Array<{ value: ImagingRelation; label: MessageKey }> = [
+  { value: "direct", label: "imaging.relation.direct" },
+  { value: "domain", label: "imaging.relation.domain" },
+  { value: "abstract", label: "imaging.relation.abstract" },
 ];
-const MOOD_OPTIONS: Array<{ value: ImagingMood; label: string }> = [
-  { value: "bright", label: "Bright" },
-  { value: "calm", label: "Calm" },
-  { value: "neutral", label: "Neutral" },
-  { value: "intense", label: "Intense" },
-  { value: "hopeful", label: "Hopeful" },
+const MOOD_OPTIONS: Array<{ value: ImagingMood; label: MessageKey }> = [
+  { value: "bright", label: "imaging.mood.bright" },
+  { value: "calm", label: "imaging.mood.calm" },
+  { value: "neutral", label: "imaging.mood.neutral" },
+  { value: "intense", label: "imaging.mood.intense" },
+  { value: "hopeful", label: "imaging.mood.hopeful" },
 ];
-const LITERALNESS_OPTIONS: Array<{ value: ImagingLiteralness; label: string }> = [
-  { value: "literal", label: "Literal" },
-  { value: "stylized", label: "Stylized" },
-  { value: "symbolic", label: "Symbolic" },
+const LITERALNESS_OPTIONS: Array<{ value: ImagingLiteralness; label: MessageKey }> = [
+  { value: "literal", label: "imaging.literalness.literal" },
+  { value: "stylized", label: "imaging.literalness.stylized" },
+  { value: "symbolic", label: "imaging.literalness.symbolic" },
 ];
-const PEOPLE_OPTIONS: Array<{ value: ImagingPeople; label: string }> = [
-  { value: "people", label: "People" },
-  { value: "mixed", label: "Mixed" },
-  { value: "no-people", label: "No people" },
+const PEOPLE_OPTIONS: Array<{ value: ImagingPeople; label: MessageKey }> = [
+  { value: "people", label: "imaging.people.people" },
+  { value: "mixed", label: "imaging.people.mixed" },
+  { value: "no-people", label: "imaging.people.noPeople" },
 ];
-const STYLE_OPTIONS: Array<{ value: ImagingStyle; label: string }> = [
-  { value: "photo", label: "Photo" },
-  { value: "illustration", label: "Illustration" },
-  { value: "anime", label: "Anime" },
-  { value: "cinematic", label: "Cinematic" },
-  { value: "minimal", label: "Minimal" },
+const STYLE_OPTIONS: Array<{ value: ImagingStyle; label: MessageKey }> = [
+  { value: "photo", label: "imaging.style.photo" },
+  { value: "illustration", label: "imaging.style.illustration" },
+  { value: "anime", label: "imaging.style.anime" },
+  { value: "cinematic", label: "imaging.style.cinematic" },
+  { value: "minimal", label: "imaging.style.minimal" },
 ];
 
 const DEFAULT_OPTIONS: ImagingOptions = {
@@ -59,10 +62,11 @@ interface ImagingTabProps {
 }
 
 export function ImagingTab({ postId, content }: ImagingTabProps) {
+  const { t, text, number } = useI18n();
   const [options, setOptions] = useState<ImagingOptions>(DEFAULT_OPTIONS);
   const [items, setItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const {
@@ -120,7 +124,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
       if (controller.signal.aborted) return;
       if (runIdRef.current !== myId) return;
       setError(presentFailure(
-        "Image prompts could not be generated. Existing prompts are unchanged; try again.",
+        message("imaging.failed"),
         "renderer: imaging generation failed",
         err,
         { postId },
@@ -139,7 +143,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     <div className="imaging-tab">
       <div className="imaging-toolbar">
         <div className="imaging-note">
-          English only. Not saved.
+          {t("imaging.note")}
         </div>
         {/* While it runs, Generate becomes Stop, which cancels the paid call. */}
         <button
@@ -147,13 +151,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           onClick={loading ? stop : run}
           disabled={!loading && !content.trim()}
         >
-          {loading ? "Stop" : "Generate"}
+          {loading ? t("common.stop") : t("imaging.generate")}
         </button>
       </div>
 
       <div className="imaging-controls">
         <div className="imaging-field">
-          <label>Count</label>
+          <label>{t("imaging.count")}</label>
           <select
             className="prompt-select"
             value={options.count}
@@ -162,13 +166,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {COUNT_OPTIONS.map((value) => (
               <option key={value} value={value}>
-                {value}
+                {number(value)}
               </option>
             ))}
           </select>
         </div>
         <div className="imaging-field">
-          <label>Relation</label>
+          <label>{t("imaging.relation")}</label>
           <select
             className="prompt-select"
             value={options.relation}
@@ -177,13 +181,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {RELATION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </option>
             ))}
           </select>
         </div>
         <div className="imaging-field">
-          <label>Mood</label>
+          <label>{t("imaging.mood")}</label>
           <select
             className="prompt-select"
             value={options.emotionalLens}
@@ -192,13 +196,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {MOOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </option>
             ))}
           </select>
         </div>
         <div className="imaging-field">
-          <label>Literalness</label>
+          <label>{t("imaging.literalness")}</label>
           <select
             className="prompt-select"
             value={options.literalness}
@@ -207,13 +211,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {LITERALNESS_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </option>
             ))}
           </select>
         </div>
         <div className="imaging-field">
-          <label>People</label>
+          <label>{t("imaging.people")}</label>
           <select
             className="prompt-select"
             value={options.people}
@@ -222,13 +226,13 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {PEOPLE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </option>
             ))}
           </select>
         </div>
         <div className="imaging-field">
-          <label>Style</label>
+          <label>{t("imaging.style")}</label>
           <select
             className="prompt-select"
             value={options.style}
@@ -237,7 +241,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           >
             {STYLE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </option>
             ))}
           </select>
@@ -246,29 +250,29 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
 
       {error && (
         <OperationalResult severity="error" className="panel-error">
-          {error}
+          {text(error)}
         </OperationalResult>
       )}
 
       {!content.trim() && (
-        <div className="panel-empty">Write some post content first.</div>
+        <div className="panel-empty">{t("imaging.noContent")}</div>
       )}
 
       {items.length > 0 && (
-        <div className="imaging-results" role="region" aria-label="Image prompts" tabIndex={0}>
+        <div className="imaging-results" role="region" aria-label={t("imaging.results")} tabIndex={0}>
           <div className="imaging-results-header">
-            <div className="imaging-note">{items.length} prompts</div>
+            <div className="imaging-note">{t("imaging.promptCount", { count: items.length })}</div>
             <button
               className="meta-field-copy"
               onClick={() => copy(items.join("\n\n"), "all")}
-              title="Copy all prompts"
+              title={t("imaging.copyAllTitle")}
             >
               {copiedKey === "all" ? (
                 <>
-                  <CheckIcon /> Copied
+                  <CheckIcon /> {t("common.copied")}
                 </>
               ) : (
-                "Copy All"
+                t("imaging.copyAll")
               )}
             </button>
           </div>
@@ -279,24 +283,24 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
               dismissClassName="metadata-error-dismiss"
               onDismiss={() => dismissCopyError("all")}
             >
-              {copyErrors.all}
+              {text(copyErrors.all)}
             </OperationalResult>
           )}
           {items.map((item, index) => (
             <div key={`${index}-${item.slice(0, 24)}`} className="image-prompt-card">
               <div className="image-prompt-header">
-                <div className="meta-field-label">Prompt {index + 1}</div>
+                <div className="meta-field-label">{t("imaging.promptNumber", { number: index + 1 })}</div>
                 <button
                   className="meta-field-copy"
                   onClick={() => copy(item, `prompt-${index}`)}
-                  title="Copy prompt"
+                  title={t("imaging.copyPromptTitle")}
                 >
                   {copiedKey === `prompt-${index}` ? (
                     <>
-                      <CheckIcon /> Copied
+                      <CheckIcon /> {t("common.copied")}
                     </>
                   ) : (
-                    "Copy"
+                    t("common.copy")
                   )}
                 </button>
               </div>
@@ -307,7 +311,7 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
                   dismissClassName="metadata-error-dismiss"
                   onDismiss={() => dismissCopyError(`prompt-${index}`)}
                 >
-                  {copyErrors[`prompt-${index}`]}
+                  {text(copyErrors[`prompt-${index}`]!)}
                 </OperationalResult>
               )}
               <div className="image-prompt-text">{item}</div>

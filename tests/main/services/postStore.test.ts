@@ -505,8 +505,13 @@ describe("pending content (write-behind buffer)", () => {
     updatePost(dataDir, first.frontMatter.id, { frontMatter: { slug: "on-disk" } });
     queueMetadata(dataDir, second.frontMatter.id, { slug: "Buffered" });
 
-    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "ON-DISK" })).toMatch(/already uses the slug/);
-    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "buffered" })).toMatch(/already uses the slug/);
+    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "ON-DISK" })).toEqual({
+      key: "metadata.refusedSlugTaken",
+      values: { slug: "ON-DISK" },
+    });
+    expect(queueMetadata(dataDir, third.frontMatter.id, { slug: "buffered" })).toMatchObject({
+      key: "metadata.refusedSlugTaken",
+    });
     // A refused edit is not buffered.
     expect(getPost(dataDir, third.frontMatter.id)?.frontMatter.slug).toBeUndefined();
     // A post may keep its own slug.

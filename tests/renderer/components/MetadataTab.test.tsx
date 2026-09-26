@@ -150,7 +150,7 @@ describe("MetadataTab edits stream to the store", () => {
 
   it("reports a refused slug on blur, and will not let the post be left while it stands", async () => {
     mockQueue.mockImplementation(async (_id, edits) =>
-      (edits as { slug?: string }).slug === "taken" ? 'Another post already uses the slug "taken"' : null
+      (edits as { slug?: string }).slug === "taken" ? { key: "metadata.refusedSlugTaken", values: { slug: "taken" } } : null
     );
     const { container, ref } = renderTab();
     const slug = slugInput(container);
@@ -186,7 +186,7 @@ describe("MetadataTab edits stream to the store", () => {
   // ask before it goes. Main can only ask if the tab says so, without a blur.
   it("tells main while a field shows a refused value, and when it no longer does", async () => {
     mockQueue.mockImplementation(async (_id, edits) =>
-      (edits as { slug?: string }).slug === "my-post.v2" ? "Slug must be lowercase letters, digits and hyphens" : null
+      (edits as { slug?: string }).slug === "my-post.v2" ? { key: "metadata.refusedInvalidSlug", values: { max: 200 } } : null
     );
     const { container, unmount } = renderTabWithUnmount();
     const slug = slugInput(container);
@@ -356,8 +356,9 @@ describe("MetadataTab Generate All", () => {
     // The successful fields were sent to the store...
     expect(queuedEdits()).toEqual([{ title: "T" }, { slug: "S" }]);
     // ...and the failures are surfaced.
+    // Named as the tab names them, in the language's own list form.
     expect(container.querySelector(".metadata-error")?.textContent).toContain(
-      "Failed to generate: tags, metaDescription"
+      "These fields could not be generated: Tags, Description."
     );
   });
 
@@ -369,7 +370,7 @@ describe("MetadataTab Generate All", () => {
       metaDescription: { value: "D" },
     });
     mockQueue.mockImplementation(async (_id, edits) =>
-      (edits as { slug?: string }).slug === "taken" ? 'Another post already uses the slug "taken"' : null
+      (edits as { slug?: string }).slug === "taken" ? { key: "metadata.refusedSlugTaken", values: { slug: "taken" } } : null
     );
     const { container } = renderTab();
     await act(async () => {

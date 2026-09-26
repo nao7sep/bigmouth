@@ -34,6 +34,8 @@ import { isPostStatus } from "../core/shared/postLifecycle.js";
 import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
+import { message, type Message } from "@shared/i18n/translate";
+import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 
 
 
@@ -44,6 +46,24 @@ const POST_MISSING_DETAIL = "This post's file is missing.";
 const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
 const lockedDetail = (status: PostStatus): string =>
   `This post is ${status}, so it is locked against edits.`;
+
+/**
+ * What the Metadata tab says when it refuses an edit, in the reader's language.
+ * Only the lock and the slug format can come from what a person types; the
+ * other reasons are shapes the tab never sends, logged with their code.
+ */
+function metadataRefusal(reason: string): Message {
+  switch (reason) {
+    case "published-locked":
+      return message("metadata.refusedPublishedLocked");
+    case "expired-locked":
+      return message("metadata.refusedExpiredLocked");
+    case "invalid-slug":
+      return message("metadata.refusedInvalidSlug", { max: ACCEPTED_SLUG_MAX_LENGTH });
+    default:
+      return message("metadata.refusedInvalid");
+  }
+}
 
 /** Sends a main -> renderer event to every live window. */
 function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent): void {
@@ -111,9 +131,12 @@ export function registerPostHandlers(): void {
   ipcMain.handle(CHANNELS.queuePostMetadata, (_event, wsId: string, id: string, edits: unknown) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const entry = getPostSummary(dir, id);
-    if (!entry) return "Post not found";
+    if (!entry) return message("metadata.refusedNotFound");
     const validation = validateMetadataEdit(entry, edits);
-    if (!validation.ok) return validation.message;
+    if (!validation.ok) {
+      logDebug("post metadata refused", { workspace: wsId, postId: id, reason: validation.reason });
+      return metadataRefusal(validation.reason);
+    }
     logDebug("post metadata queued", { workspace: wsId, postId: id, keys: Object.keys(validation.edits) });
     return queueMetadata(dir, id, validation.edits);
   });

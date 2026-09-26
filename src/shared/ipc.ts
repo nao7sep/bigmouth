@@ -30,6 +30,7 @@ import type {
   Workspace,
 } from "./types";
 import type { InterfaceLanguage } from "./i18n/languages";
+import type { Message } from "./i18n/translate";
 
 /**
  * What a target rename did. `postsSkipped` names the post files it could not
@@ -326,7 +327,7 @@ export interface BigMouthApi {
    *  nanoids, so saved/failed events are matched by post id alone. */
   queuePostContent(wsId: string, id: string, content: string): void;
   /** Resolves null when the edit was buffered, else the reason it was refused. */
-  queuePostMetadata(wsId: string, id: string, edits: EditablePostMetadata): Promise<string | null>;
+  queuePostMetadata(wsId: string, id: string, edits: EditablePostMetadata): Promise<Message | null>;
   /** Fire-and-forget: whether this post's Metadata tab shows a refused value. */
   reportMetadataRefusal(id: string, refused: boolean): void;
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;

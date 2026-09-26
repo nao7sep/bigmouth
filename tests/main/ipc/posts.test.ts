@@ -440,9 +440,9 @@ describe("queuePostMetadata (the metadata stream)", () => {
     const second = createDraft();
     expect(invoke(CHANNELS.queuePostMetadata, wsId, first, { slug: "shared" })).toBeNull();
 
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "has space" })).toMatch(/Invalid slug/);
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "Shared" })).toMatch(/already uses the slug/);
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { target: "other" })).toMatch(/Not metadata fields: target/);
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "has space" })).toEqual({ key: "metadata.refusedInvalidSlug", values: { max: 200 } });
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "Shared" })).toEqual({ key: "metadata.refusedSlugTaken", values: { slug: "Shared" } });
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, second, { target: "other" })).toEqual({ key: "metadata.refusedInvalid" });
   });
 
   it("refuses edits to a locked post and to one that is not there", () => {
@@ -450,8 +450,8 @@ describe("queuePostMetadata (the metadata stream)", () => {
     invoke(CHANNELS.changePostStatus, wsId, id, "ready");
     invoke(CHANNELS.changePostStatus, wsId, id, "published");
 
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Late" })).toMatch(/locked/);
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, "missing", { title: "X" })).toBe("Post not found");
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Late" })).toMatchObject({ key: expect.stringMatching(/Locked$/) });
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, "missing", { title: "X" })).toEqual({ key: "metadata.refusedNotFound" });
   });
 });
 

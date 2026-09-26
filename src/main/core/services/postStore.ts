@@ -43,6 +43,7 @@ import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js"
 import * as index from "./postIndex.js";
 import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
+import { message, type Message } from "@shared/i18n/translate";
 
 export function clearCache(dataDir: string): void {
   index.clearCache(dataDir);
@@ -227,8 +228,8 @@ export function queueContent(dataDir: string, id: string, content: string): void
  * refused edit is not buffered, so the buffer never holds a value that could
  * not be written.
  */
-export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata): string | null {
-  if (!index.getEntry(dataDir, id)) return "Post not found";
+export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata): Message | null {
+  if (!index.getEntry(dataDir, id)) return message("metadata.refusedNotFound");
   const slug = edits.slug;
   if (typeof slug === "string" && slug.length > 0) {
     const conflict = slugConflictMessage(dataDir, id, slug);
@@ -456,7 +457,7 @@ export function updatePost(
     const requestedSlug = updates.frontMatter.slug;
     if (typeof requestedSlug === "string" && requestedSlug.length > 0) {
       const conflict = slugConflictMessage(dataDir, id, requestedSlug);
-      if (conflict) throw new Error(conflict);
+      if (conflict) throw new Error(`Another post already uses the slug ${JSON.stringify(requestedSlug)}`);
     }
     applyMetadata(fm, updates.frontMatter);
   }
@@ -481,7 +482,7 @@ export function updatePost(
  * so an out-of-band edit is seen without reading every post body — a slug
  * edit runs this on the main process.
  */
-function slugConflictMessage(dataDir: string, id: string, slug: string): string | null {
+function slugConflictMessage(dataDir: string, id: string, slug: string): Message | null {
   index.refresh(dataDir);
   const normalized = slug.toLowerCase();
   const pending = pendingEdits.get(dataDir);
@@ -490,7 +491,7 @@ function slugConflictMessage(dataDir: string, id: string, slug: string): string 
     const buffered = pending?.get(entry.id)?.frontMatter;
     const current = buffered && "slug" in buffered ? buffered.slug : entry.slug;
     if (typeof current === "string" && current.toLowerCase() === normalized) {
-      return `Another post already uses the slug "${slug}"`;
+      return message("metadata.refusedSlugTaken", { slug });
     }
   }
   return null;

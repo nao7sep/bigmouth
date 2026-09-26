@@ -1028,7 +1028,9 @@ button:disabled,
   font-size: 11px;
   color: var(--bm-text-muted);
   display: flex;
-  gap: 16px;
+  /* Wraps rather than clips: the counts read longer in some languages. */
+  flex-wrap: wrap;
+  gap: 2px 16px;
 }
 
 /* Right pane tabs */
