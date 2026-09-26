@@ -33,6 +33,7 @@ import {
   type AiRequestHandle,
   type MetadataGenerationResults,
   type PostUpdate,
+  type TargetRenameResult,
 } from "@shared/ipc";
 import { AssetUploadAdmissionError } from "./util/assetUpload";
 import { isImageAssetFilename } from "@shared/assetNames";
@@ -201,7 +202,7 @@ export function saveTargets(targets: Target[]): Promise<Target[]> {
 export function renameTarget(
   oldName: string,
   newName: string,
-): Promise<{ targets: Target[]; postsUpdated: number }> {
+): Promise<TargetRenameResult> {
   return bridge().renameTarget(requireWs(), oldName, newName);
 }
 

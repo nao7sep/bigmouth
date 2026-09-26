@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
 
-import { CHANNELS } from "@shared/ipc";
+import { CHANNELS, type TargetRenameResult } from "@shared/ipc";
 import type { Target } from "@shared/types";
 import { getTargets, saveTargets } from "../core/services/configStore.js";
 import { renameTarget } from "../core/services/postStore.js";
@@ -77,6 +77,11 @@ export function registerTargetHandlers(): void {
       postsUpdated: renamed.updated,
       postsSkipped: renamed.skipped.length,
     });
-    return { targets: savedTargets, postsUpdated: renamed.updated };
+    const result: TargetRenameResult = {
+      targets: savedTargets,
+      postsUpdated: renamed.updated,
+      postsSkipped: renamed.skipped,
+    };
+    return result;
   });
 }

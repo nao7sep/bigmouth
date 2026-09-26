@@ -17,6 +17,7 @@ import {
   type MetadataGenerationResults,
   type PostUpdate,
   type RendererLogEntry,
+  type TargetRenameResult,
 } from "@shared/ipc";
 import type {
   AiConfigsData,
@@ -150,10 +151,7 @@ const api = {
   saveTargets: (wsId: string, targets: Target[]) =>
     ipcRenderer.invoke(CHANNELS.saveTargets, wsId, targets) as Promise<Target[]>,
   renameTarget: (wsId: string, oldName: string, newName: string) =>
-    ipcRenderer.invoke(CHANNELS.renameTarget, wsId, oldName, newName) as Promise<{
-      targets: Target[];
-      postsUpdated: number;
-    }>,
+    ipcRenderer.invoke(CHANNELS.renameTarget, wsId, oldName, newName) as Promise<TargetRenameResult>,
 
   // --- Settings ---
   getSettings: (wsId: string) => ipcRenderer.invoke(CHANNELS.getSettings, wsId) as Promise<Settings>,

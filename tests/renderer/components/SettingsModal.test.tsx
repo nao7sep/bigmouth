@@ -754,7 +754,7 @@ describe("SettingsModal — Targets tab", () => {
     mock.saveSettings.mockResolvedValue(settings());
     mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
     mock.saveAnalysisPrompts.mockResolvedValue(prompts());
-    mock.renameTarget.mockResolvedValue({ targets: targets(), postsUpdated: 2 });
+    mock.renameTarget.mockResolvedValue({ targets: targets(), postsUpdated: 2, postsSkipped: [] });
     mock.saveTargets.mockResolvedValue([
       { name: "blog-renamed", defaultLanguage: "en", requiresMetadata: false },
     ]);
@@ -774,6 +774,35 @@ describe("SettingsModal — Targets tab", () => {
     expect(mock.renameTarget).toHaveBeenCalledWith("blog", "blog-renamed");
     expect(mock.saveTargets).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open after a rename and names the post files it could not read", async () => {
+    const { getByRole, getByText, onClose } = await renderModal();
+    mock.saveSettings.mockResolvedValue(settings());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
+    mock.renameTarget.mockResolvedValue({
+      targets: targets(),
+      postsUpdated: 1,
+      postsSkipped: [{ fileName: "20260101-000000-utc-abc.md", reason: "bad YAML" }],
+    });
+    mock.saveTargets.mockResolvedValue([
+      { name: "blog-renamed", defaultLanguage: "en", requiresMetadata: false },
+    ]);
+
+    const panel = openTab(getByRole, "Targets");
+    fireEvent.change(within(panel).getAllByRole("textbox")[0], { target: { value: "blog-renamed" } });
+
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(getByText("20260101-000000-utc-abc.md")).toBeTruthy();
+    expect(getByText(/still uses the old target name/)).toBeTruthy();
   });
 
   it("saves a brand-new target without a rename call", async () => {

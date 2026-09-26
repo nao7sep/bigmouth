@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CHANNELS } from "@shared/ipc";
+import { CHANNELS, type TargetRenameResult } from "@shared/ipc";
 import type { Target } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
@@ -138,6 +138,21 @@ describe("targets IPC handlers", () => {
     expect(retried.targets.map((t) => t.name)).toEqual(["Journal"]);
     expect(getPost(dir, first.frontMatter.id)!.frontMatter.target).toBe("Journal");
     expect(getPost(dir, second.frontMatter.id)!.frontMatter.target).toBe("Journal");
+  });
+
+  it("names the post files it could not read, and still retires the old target", () => {
+    invoke<Target[]>(CHANNELS.saveTargets, wsId, [target("Blog")]);
+    const dir = getWorkspace(wsId)!.dataDirectory;
+    const broken = createPost(dir, "Blog", "en");
+    const fine = createPost(dir, "Blog", "en");
+    fs.writeFileSync(broken.filePath, "---\ntitle: [unclosed\n---\nbody\n");
+
+    const result = invoke<TargetRenameResult>(CHANNELS.renameTarget, wsId, "Blog", "Journal");
+
+    expect(result.postsUpdated).toBe(1);
+    expect(result.postsSkipped).toEqual([{ fileName: path.basename(broken.filePath), reason: expect.any(String) }]);
+    expect(result.targets.map((t) => t.name)).toEqual(["Journal"]);
+    expect(getPost(dir, fine.frontMatter.id)!.frontMatter.target).toBe("Journal");
   });
 
   it("trims the rename arguments before matching", () => {

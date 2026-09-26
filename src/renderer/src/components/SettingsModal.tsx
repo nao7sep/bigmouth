@@ -55,6 +55,15 @@ interface SettingsModalProps {
   onSettingsChanged: () => void;
 }
 
+/** A post file a target rename could not read, with the target it still names. */
+type RenameSkip = { fileName: string; reason: string; oldName: string };
+
+function renameTargetSkipMessage(count: number): string {
+  return count === 1
+    ? "Settings were saved, but this post file could not be read and still uses the old target name. Repair it outside the app, then choose its target again."
+    : "Settings were saved, but these post files could not be read and still use the old target name. Repair them outside the app, then choose their target again.";
+}
+
 type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
 
 type EditableTarget = Target & {
@@ -105,6 +114,9 @@ export function SettingsModal({
   const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Post files a target rename could not read. Settings saved, but those posts
+  // still name the retired target, so Settings stays open to say which.
+  const [renameSkips, setRenameSkips] = useState<RenameSkip[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -303,6 +315,7 @@ export function SettingsModal({
     if (!appSettings || !settings || !aiConfigs || !generationPrompts) return;
     setSaving(true);
     setSaveError(null);
+    setRenameSkips([]);
     try {
       const renames = targets
         .map((target) => ({
@@ -319,8 +332,10 @@ export function SettingsModal({
         saveAnalysisPrompts(prompts),
       ]);
 
+      const skips: RenameSkip[] = [];
       for (const { oldName, newName } of renames) {
-        await renameTarget(oldName, newName);
+        const { postsSkipped } = await renameTarget(oldName, newName);
+        for (const file of postsSkipped) skips.push({ ...file, oldName });
       }
       const savedTargets = await saveTargets(targetPayload(targets));
 
@@ -336,7 +351,8 @@ export function SettingsModal({
       initialTargets.current = editableSavedTargets;
       setPrompts(savedPrompts);
       onSettingsChanged();
-      onClose();
+      if (skips.length > 0) setRenameSkips(skips);
+      else onClose();
     } catch (err) {
       setSaveError(presentFailure(
         "Settings could not be saved. Your changes are still shown; try again.",
@@ -426,6 +442,18 @@ export function SettingsModal({
           {saveError && (
             <OperationalResult severity="error" className="modal-result modal-footer-result">
               {saveError}
+            </OperationalResult>
+          )}
+          {renameSkips.length > 0 && (
+            <OperationalResult severity="warning" className="modal-result modal-footer-result">
+              {renameTargetSkipMessage(renameSkips.length)}
+              <ul className="modal-result-list">
+                {renameSkips.map((skip) => (
+                  <li key={`${skip.oldName}/${skip.fileName}`}>
+                    <code>{skip.fileName}</code> ({skip.oldName}): {skip.reason}
+                  </li>
+                ))}
+              </ul>
             </OperationalResult>
           )}
           <div className="modal-footer">

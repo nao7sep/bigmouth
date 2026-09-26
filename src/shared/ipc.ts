@@ -31,6 +31,16 @@ import type {
 } from "./types";
 
 /**
+ * What a target rename did. `postsSkipped` names the post files it could not
+ * read: they still carry the old target name, which the rename just retired.
+ */
+export interface TargetRenameResult {
+  targets: Target[];
+  postsUpdated: number;
+  postsSkipped: { fileName: string; reason: string }[];
+}
+
+/**
  * One renderer-side event for the session log. `detail` carries whatever the
  * call site knows — a serialized error, an id, a count; main redacts it like any
  * other log field before writing.
@@ -323,7 +333,7 @@ export interface BigMouthApi {
   // Targets
   listTargets(wsId: string): Promise<Target[]>;
   saveTargets(wsId: string, targets: Target[]): Promise<Target[]>;
-  renameTarget(wsId: string, oldName: string, newName: string): Promise<{ targets: Target[]; postsUpdated: number }>;
+  renameTarget(wsId: string, oldName: string, newName: string): Promise<TargetRenameResult>;
 
   // Settings
   getSettings(wsId: string): Promise<Settings>;
