@@ -21,12 +21,15 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 
 // Keys whose text is the same word in that language as in English.
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["common.ok", "settings.languageSystem", "settings.themeSystem"],
-  es: ["nativeMenu.zoom"],
-  fr: ["common.ok", "nativeMenu.services"],
-  it: ["common.ok"],
-  ja: ["common.ok"],
-  "pt-BR": ["common.ok", "nativeMenu.zoom"],
+  de: ["common.ok", "settings.languageSystem", "settings.themeSystem", "common.optional", "workspaces.name", "about.version", "shortcuts.groupApp", "shortcuts.groupTabs", "tabs.assets", "export.html", "imaging.mood.neutral", "imaging.style.illustration", "imaging.style.anime", "imaging.promptNumber", "metadata.slug", "metadata.tags", "settings.timezoneSystem", "settings.apiKeyOptional"],
+  es: ["nativeMenu.zoom", "export.html", "imaging.literalness.literal", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "common.no", "settings.tabGeneral"],
+  fr: ["common.ok", "nativeMenu.services", "left.menu", "about.version", "shortcuts.groupApp", "export.html", "center.source", "editor.diagnostics", "imaging.mood.intense", "imaging.style.photo", "imaging.style.illustration", "imaging.style.anime", "imaging.style", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.description", "settings.maintenance"],
+  it: ["common.ok", "left.menu", "shortcuts.groupApp", "shortcuts.groupPost", "export.html", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tagsPlaceholder", "common.no"],
+  "pt-BR": ["common.ok", "nativeMenu.zoom", "left.menu", "shortcuts.groupApp", "export.html", "imaging.literalness.literal", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tags", "metadata.tagsPlaceholder"],
+  ru: ["export.html"],
+  ja: ["common.ok", "export.html"],
+  ko: ["export.html"],
+  "zh-Hans": ["export.html"],
 };
 
 // The hidden-character-conventions set, plus the no-break spaces, figure space,

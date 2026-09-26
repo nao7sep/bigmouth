@@ -12,6 +12,7 @@ BigMouth is a local-first **desktop app** for writers who want a deliberate, sta
 - **Multi-language** — write in any language; generate English supplement fields for non-English posts.
 - **Diff-friendly storage** — one Markdown file per post with a fixed name, so edits and status changes read as clean in-place git diffs.
 - **Light and dark themes** — follows the system by default; pick Light or Dark in Settings for every workspace at once.
+- **Ten interface languages** — English, Deutsch, Español, Français, Italiano, Português, Русский, 日本語, 한국어 and 中文; follows the computer's language by default, or pick one in Settings. Dates follow the language, in each workspace's time zone: the computer's by default, or one chosen from the list.
 
 ## Requirements
 
@@ -41,7 +42,7 @@ The Electron window opens; create a workspace to begin. `scripts/rebuild.command
 
 `npm test` runs the same fixed set every time: the typecheck over all three environments, then the whole ordinary suite. `npm run test:full` is the gate at a batch's end and before a release: it runs that, and then the live lane, which sends a draft through the metadata, image-prompt, and analysis handlers to the real Anthropic API. Export `ANTHROPIC_API_KEY` first; the lane makes a few paid calls, and the full run fails without the key. The three `tsconfig.*.json` files split the environments — `node` (main + preload + shared), `web` (renderer + shared), and `test` (both).
 
-Tests live under `tests/`, mirroring `src/` so each test's path names the file it covers. `tests/main/` mirrors `src/main/` with `core/` elided: `tests/main/services/…` covers `src/main/core/services/…` (likewise `ai/` and `shared/`), while `tests/main/ipc/…` and top-level files such as `tests/main/window.test.ts` map directly to `src/main/`. `tests/renderer/…` covers `src/renderer/src/…`, `tests/shared/` covers `src/shared/`, and a cross-cutting check such as `tests/focus-rings.test.ts` sits at the top. `tests/live/` holds the paid live lane, which only `npm run test:full` runs. They run under Vitest in two projects — `main` on Node (which also runs `tests/shared`, since those modules must hold there) and `renderer` on jsdom. `npm run test:coverage` writes a report to the gitignored `coverage/`; it is not a gate and has no threshold.
+Tests live under `tests/`, mirroring `src/` so each test's path names the file it covers. `tests/main/` mirrors `src/main/` with `core/` elided: `tests/main/services/…` covers `src/main/core/services/…` (likewise `ai/` and `shared/`), while `tests/main/ipc/…` and top-level files such as `tests/main/window.test.ts` map directly to `src/main/`. `tests/renderer/…` covers `src/renderer/src/…`, `tests/shared/` covers `src/shared/`, and cross-cutting checks such as `tests/focus-rings.test.ts` and the localization gates in `tests/i18n/` sit at the top. `tests/live/` holds the paid live lane, which only `npm run test:full` runs. They run under Vitest in two projects — `main` on Node (which also runs `tests/shared`, since those modules must hold there) and `renderer` on jsdom. `npm run test:coverage` writes a report to the gitignored `coverage/`; it is not a gate and has no threshold.
 
 ## License
 
