@@ -298,6 +298,20 @@ describe("deletePost", () => {
     expect(reread).not.toBeNull();
     expect(reread?.frontMatter.sourceId).toBeUndefined();
   });
+
+  it("deletes the source even when a referrer's file cannot be read, and unlinks the rest", () => {
+    const source = createPost(dataDir, "blogger", "en");
+    const broken = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    const fine = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    // The index row is stale: it still says the broken file links the source.
+    fs.writeFileSync(broken.filePath, "---\ntitle: [unclosed\n---\nbody\n");
+
+    expect(deletePost(dataDir, source.frontMatter.id)).toBe(true);
+
+    expect(fs.existsSync(source.filePath)).toBe(false);
+    expect(getPost(dataDir, fine.frontMatter.id)?.frontMatter.sourceId).toBeUndefined();
+    expect(fs.readFileSync(broken.filePath, "utf-8")).toContain("[unclosed");
+  });
 });
 
 describe("listPublished", () => {

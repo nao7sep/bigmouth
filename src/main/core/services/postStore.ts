@@ -567,48 +567,53 @@ export function deletePost(dataDir: string, id: string): boolean {
 }
 
 function clearSourceReferences(dataDir: string, sourceId: string): void {
-  const updated: PostIndexEntry[] = [];
-  try {
-    for (const entry of index.allEntries(dataDir)) {
-      if (entry.sourceId !== sourceId) continue;
-      const filePath = filePathFor(dataDir, entry);
-      if (!fs.existsSync(filePath)) continue;
-      const post = readPost(filePath);
-      delete post.frontMatter.sourceId;
-      writePost(filePath, post.frontMatter, post.content);
-      updated.push(projectIndexEntry(post.frontMatter, entry.fileName, post.content));
-    }
-  } finally {
-    // One index write for the whole pass, including a pass cut short.
-    index.upsertEntries(dataDir, updated);
-  }
+  // A referrer that cannot be read is skipped (and logged) and keeps its link;
+  // once repaired it shows a source that no longer exists, which the editor
+  // lets the user unlink. It does not block the delete: it is not a post the
+  // app can show anyway.
+  rewriteMatchingPosts(
+    dataDir,
+    (entry) => entry.sourceId === sourceId,
+    (fm) => {
+      delete fm.sourceId;
+    },
+  );
 }
 
-// --- Target rename ---
+// --- Bulk rewrite ---
 
-/** What a target rename did: posts rewritten, and files it could not read. */
-export interface TargetRenameResult {
+/** A post file a bulk pass could not read, and why. */
+export interface SkippedPostFile {
+  fileName: string;
+  reason: string;
+}
+
+/** What a bulk rewrite did: posts rewritten, and files it could not read. */
+export interface BulkRewriteResult {
   updated: number;
-  skipped: { fileName: string; reason: string }[];
+  skipped: SkippedPostFile[];
 }
 
 /**
- * Rewrites every post on `oldName` to `newName`. The caller saves the target
- * list only after this returns, so a rename that fails partway leaves the old
- * target valid and can simply be run again: posts already on the new name no
- * longer match and are passed over.
+ * Rewrites the front matter of every indexed post that `matches`, as a system
+ * operation: exempt from the published lock, and updatedAtUtc is left alone.
  *
  * A post file that cannot be read (hand-edited into invalid YAML) is skipped
  * and reported, not thrown, as the index skips such a file; it is not a post
- * the app can show anyway. A failed write does throw, which stops the rename
- * before the target list changes.
+ * the app can show anyway. A failed write does throw, which stops the pass.
+ * The index is written once, including for a pass cut short, so it matches
+ * every file already rewritten.
  */
-export function renameTarget(dataDir: string, oldName: string, newName: string): TargetRenameResult {
-  const renamed: PostIndexEntry[] = [];
-  const skipped: { fileName: string; reason: string }[] = [];
+function rewriteMatchingPosts(
+  dataDir: string,
+  matches: (entry: PostIndexEntry) => boolean,
+  rewrite: (fm: PostFrontMatter) => void,
+): BulkRewriteResult {
+  const rewritten: PostIndexEntry[] = [];
+  const skipped: SkippedPostFile[] = [];
   try {
     for (const entry of index.allEntries(dataDir)) {
-      if (entry.target !== oldName) continue;
+      if (!matches(entry)) continue;
       const filePath = filePathFor(dataDir, entry);
       // An index entry whose file vanished out of band is skipped; the next
       // load reconciles it away.
@@ -617,21 +622,38 @@ export function renameTarget(dataDir: string, oldName: string, newName: string):
       let projected: PostIndexEntry;
       try {
         post = readPost(filePath);
-        post.frontMatter.target = newName;
+        rewrite(post.frontMatter);
         projected = projectIndexEntry(post.frontMatter, entry.fileName, post.content);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        logWarn("post file skipped by target rename", { fileName: entry.fileName, reason, error: serializeError(err) });
+        logWarn("post file skipped by a bulk rewrite", { fileName: entry.fileName, reason, error: serializeError(err) });
         skipped.push({ fileName: entry.fileName, reason });
         continue;
       }
       writePost(filePath, post.frontMatter, post.content);
-      renamed.push(projected);
+      rewritten.push(projected);
     }
   } finally {
-    // One index write for the whole rename, including one cut short, so the
-    // index matches every file already rewritten.
-    index.upsertEntries(dataDir, renamed);
+    index.upsertEntries(dataDir, rewritten);
   }
-  return { updated: renamed.length, skipped };
+  return { updated: rewritten.length, skipped };
+}
+
+// --- Target rename ---
+
+/**
+ * Rewrites every post on `oldName` to `newName`. The caller saves the target
+ * list only after this returns, so a rename that fails partway leaves the old
+ * target valid and can simply be run again: posts already on the new name no
+ * longer match and are passed over. Files it could not read are returned, so
+ * the user hears which posts still name the old target.
+ */
+export function renameTarget(dataDir: string, oldName: string, newName: string): BulkRewriteResult {
+  return rewriteMatchingPosts(
+    dataDir,
+    (entry) => entry.target === oldName,
+    (fm) => {
+      fm.target = newName;
+    },
+  );
 }
