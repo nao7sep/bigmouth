@@ -3,6 +3,9 @@ import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
+import { CATALOGUES } from "@shared/i18n/catalogues";
+import { LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
+import { useI18n } from "../i18n/I18nContext";
 import {
   AI_PROVIDERS,
   PROVIDER_LABELS,
@@ -534,6 +537,7 @@ function GeneralTab({
   appSettings: AppSettings;
   onAppSettingsChange: (s: AppSettings) => void;
 }) {
+  const { t } = useI18n();
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
@@ -644,6 +648,28 @@ function GeneralTab({
       </div>
 
       <div className="settings-subheading">Appearance</div>
+      {/* Each language is listed by its own name, in its own script, so a
+          reader of any of them can find it whatever language is showing.
+          App-wide, applied on Save. */}
+      <div className="form-field">
+        <label className="form-label" htmlFor="settings-language">{t("settings.language")}</label>
+        <select
+          id="settings-language"
+          className="form-select"
+          value={appSettings.language}
+          onChange={(e) =>
+            onAppSettingsChange({ ...appSettings, language: normalizeLanguagePreference(e.target.value) })
+          }
+        >
+          <option value="system">{t("settings.languageSystem")}</option>
+          {LANGUAGES.map((language) => (
+            <option key={language} value={language} lang={language}>
+              {CATALOGUES[language]["language.name"] as string}
+            </option>
+          ))}
+        </select>
+        <p className="settings-hint">{t("settings.languageHint")}</p>
+      </div>
       {/* A native radio group: one tab stop, arrow keys move and select
           (composite-control conventions). App-wide, applied on Save. */}
       <fieldset className="form-field settings-radio-group">
@@ -658,7 +684,7 @@ function GeneralTab({
                 checked={appSettings.theme === value}
                 onChange={() => onAppSettingsChange({ ...appSettings, theme: value })}
               />
-              {label}
+              {t(label)}
             </label>
           ))}
         </div>

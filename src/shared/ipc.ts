@@ -29,6 +29,7 @@ import type {
   UiState,
   Workspace,
 } from "./types";
+import type { InterfaceLanguage } from "./i18n/languages";
 
 /**
  * What a target rename did. `postsSkipped` names the post files it could not
@@ -76,6 +77,11 @@ export const CHANNELS = {
   // App-wide settings (the storage root's config.json)
   getAppSettings: "appSettings:get",
   saveAppSettings: "appSettings:save",
+
+  // The interface language the main process settled on, and its changes when
+  // a new choice is saved.
+  getInterfaceLanguage: "i18n:get",
+  interfaceLanguageChanged: "i18n:changed",
 
   // Posts
   listPosts: "post:list",
@@ -304,6 +310,11 @@ export interface BigMouthApi {
   // applies in every workspace. Saving applies it to the whole app.
   getAppSettings(): Promise<AppSettingsLoad>;
   saveAppSettings(settings: AppSettings): Promise<AppSettings>;
+
+  // The interface language: what the window speaks and formats in, as the main
+  // process resolved it, so the window and the native menus always agree.
+  getInterfaceLanguage(): Promise<InterfaceLanguage>;
+  onInterfaceLanguageChanged(listener: (language: InterfaceLanguage) => void): () => void;
 
   // Posts
   listPosts(wsId: string, publishedOffset: number, limit: number, expiredOffset: number): Promise<PostListResponse>;

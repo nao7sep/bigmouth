@@ -124,7 +124,7 @@ beforeEach(() => {
   // Default: no remembered workspace. Each test overrides as needed. updateUiState
   // resolves with the merged state so the awaited persist paths settle.
   mockGetUiState.mockResolvedValue(uiState(""));
-  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system" }, quarantinedTo: null });
+  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
 });
@@ -187,7 +187,7 @@ describe("App bootstrap — no stored workspace", () => {
 describe("App bootstrap — app settings recovery", () => {
   it("names where an unreadable app settings file was moved and what the app started with", async () => {
     mockGetAppSettings.mockResolvedValue({
-      settings: { theme: "system" },
+      settings: { theme: "system", language: "system" },
       quarantinedTo: "/home/me/.bigmouth/config-20260918-020000-000-utc.invalid",
     });
     const { findByText } = await renderApp();

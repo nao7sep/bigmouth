@@ -36,6 +36,13 @@ mac:
   icon: build/icon.icns
   extendInfo:
     CFBundleIconName: loudmouth-bird-tada
+    # The interface languages (localization-conventions), so macOS draws the
+    # menu items it adds itself (Emoji & Symbols, Start Dictation, Services) in
+    # one of them, and in English for a computer whose language is not among them.
+    CFBundleLocalizations: [en, de, es, fr, it, pt-BR, ru, ja, ko, zh-Hans]
+  # Electron's own .lproj folders, kept only for the same languages: AppKit
+  # picks its language from the folders a bundle has.
+  electronLanguages: [en, de, es, fr, it, pt_BR, ru, ja, ko, zh_CN]
   # Ad-hoc sign the whole bundle (identity "-") so its seal is valid and the app
   # launches cleanly. No Apple Developer cert; CSC_IDENTITY_AUTO_DISCOVERY=false in
   # CI only blocks real-cert discovery — the "-" identity is what produces the seal.
@@ -60,6 +67,8 @@ dmg:
 
 win:
   icon: build/icon.ico
+  # Chromium's locale packs, kept only for the interface languages.
+  electronLanguages: [en-US, de, es, fr, it, pt-BR, ru, ja, ko, zh-CN]
   target:
     - nsis
     - zip
@@ -76,3 +85,7 @@ nsis:
   createStartMenuShortcut: true
   runAfterFinish: true
   artifactName: ${productName}-${version}-setup.${ext}
+  # The installer speaks the interface languages, choosing the computer's and
+  # falling back to English, which comes first. electron-builder carries the
+  # wizard's text for each; BigMouth adds no installer strings of its own.
+  installerLanguages: [en_US, de_DE, es_ES, fr_FR, it_IT, pt_BR, ru_RU, ja_JP, ko_KR, zh_CN]

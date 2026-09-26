@@ -1,16 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { LANGUAGES } from "@shared/i18n/languages";
 
 const config = parse(
   readFileSync(new URL("../../electron-builder.yml", import.meta.url), "utf8"),
 ) as {
   extraResources?: Array<{ from: string; to: string }>;
   files?: string[];
-  nsis?: Record<string, unknown>;
-  mac?: { artifactName?: string };
+  nsis?: Record<string, unknown> & { installerLanguages?: string[] };
+  mac?: { artifactName?: string; electronLanguages?: string[]; extendInfo?: Record<string, unknown> };
   dmg?: { artifactName?: string };
-  win?: { artifactName?: string };
+  win?: { artifactName?: string; electronLanguages?: string[] };
 };
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -72,5 +73,26 @@ describe("release artifact names", () => {
     expect(config.mac?.artifactName).toBe("${productName}-${version}-mac.${ext}");
     expect(config.nsis?.artifactName).toBe("${productName}-${version}-setup.${ext}");
     expect(config.win?.artifactName).toBe("${productName}-${version}-win.${ext}");
+  });
+});
+
+// localization-conventions: the bundle declares exactly the interface
+// languages, and every platform surface outside the window follows them.
+describe("interface languages outside the window", () => {
+  it("declares exactly the set in the macOS bundle", () => {
+    expect(config.mac?.extendInfo?.CFBundleLocalizations).toEqual([...LANGUAGES]);
+  });
+
+  it("keeps Electron's locale resources for the set only, named as each platform names them", () => {
+    const macNames = LANGUAGES.map((tag) => ({ "pt-BR": "pt_BR", "zh-Hans": "zh_CN" })[tag as string] ?? tag);
+    const winNames = LANGUAGES.map((tag) => ({ en: "en-US", "zh-Hans": "zh-CN" })[tag as string] ?? tag);
+    expect(config.mac?.electronLanguages).toEqual(macNames);
+    expect(config.win?.electronLanguages).toEqual(winNames);
+  });
+
+  it("builds the Windows installer in the set, with English first as the fallback", () => {
+    expect(config.nsis?.installerLanguages).toEqual([
+      "en_US", "de_DE", "es_ES", "fr_FR", "it_IT", "pt_BR", "ru_RU", "ja_JP", "ko_KR", "zh_CN",
+    ]);
   });
 });

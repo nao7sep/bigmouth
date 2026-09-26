@@ -56,6 +56,8 @@ export function defaultUiState(): UiState {
 
 // --- App settings (the storage root's config.json) ---
 
+import type { LanguagePreference } from "./i18n/languages.js";
+
 /** The saved appearance choice. System follows the OS appearance. */
 export type ThemePreference = "system" | "light" | "dark";
 
@@ -67,6 +69,9 @@ export type ThemePreference = "system" | "light" | "dark";
  */
 export interface AppSettings {
   theme: ThemePreference;
+  // The interface language: "system", which follows the computer's language on
+  // every launch, or a tag from @shared/i18n/languages.
+  language: LanguagePreference;
 }
 
 /** App settings as the renderer reads them, plus where an unreadable file was

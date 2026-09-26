@@ -37,6 +37,8 @@ vi.mock("electron", () => ({
     setName: () => {},
     requestSingleInstanceLock: () => shell.ownsInstance,
     getVersion: () => "0.0.0-test",
+    getPreferredSystemLanguages: () => ["en-US"],
+    getSystemLocale: () => "en-US",
     whenReady: () => Promise.resolve(),
     on: (event: string, cb: (...args: unknown[]) => unknown) => appHandlers.set(event, cb),
     quit: () => { shell.quitRequests++; },
@@ -71,7 +73,7 @@ vi.mock("@main/assetProtocol.js", () => ({
 vi.mock("@main/menu.js", () => ({ installApplicationMenu: () => {} }));
 vi.mock("@main/core/services/stateStore.js", () => ({ initStateStore: () => {} }));
 vi.mock("@main/core/services/appSettingsStore.js", () => ({
-  initAppSettingsStore: () => ({ theme: "system" }),
+  initAppSettingsStore: () => ({ theme: "system", language: "system" }),
 }));
 vi.mock("@main/theme.js", () => ({
   applyThemePreference: () => {},

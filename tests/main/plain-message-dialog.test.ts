@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ BrowserWindow: {}, nativeTheme: { shouldUseDarkColors: false } }));
 
 import { renderPlainMessageDialogHtml } from "@main/plain-message-dialog";
+import { createTranslator } from "@shared/i18n/translate";
 
 describe("plain message dialog", () => {
   it("keeps header and footer fixed while only the body scrolls", () => {
@@ -29,5 +30,11 @@ describe("plain message dialog", () => {
     expect(html).toContain(".primary:hover,.primary:focus{background:#1d4ed8}");
     expect(html).toContain(".destructive:hover,.destructive:focus{background:#991b1b}");
     expect(html).not.toMatch(/\.button:hover,\.button:focus\{background:/);
+  });
+
+  it("declares the interface language and names its body region in it", () => {
+    const html = renderPlainMessageDialogHtml({ title: "T", message: "M" }, ["OK"], createTranslator("ja"));
+    expect(html).toContain('<html lang="ja">');
+    expect(html).toContain('aria-label="メッセージの詳細"');
   });
 });

@@ -9,7 +9,7 @@ import {
 
 describe("app settings rules", () => {
   it("defaults the theme to System and offers System, Light, and Dark in order", () => {
-    expect(defaultAppSettings()).toEqual({ theme: "system" });
+    expect(defaultAppSettings()).toEqual({ theme: "system", language: "system" });
     expect(THEME_PREFERENCES.map(({ value }) => value)).toEqual(["system", "light", "dark"]);
   });
 
@@ -22,8 +22,15 @@ describe("app settings rules", () => {
   });
 
   it("builds settings from known keys only", () => {
-    expect(normalizeAppSettings({ theme: "dark", retired: true })).toEqual({ theme: "dark" });
-    expect(normalizeAppSettings({})).toEqual({ theme: "system" });
+    expect(normalizeAppSettings({ theme: "dark", language: "ja", retired: true })).toEqual({ theme: "dark", language: "ja" });
+    expect(normalizeAppSettings({})).toEqual({ theme: "system", language: "system" });
+  });
+
+  it("follows the computer for a missing or unrecognized language", () => {
+    expect(normalizeAppSettings({ language: "zh-Hans" }).language).toBe("zh-Hans");
+    for (const value of [undefined, "", "zh-hans", "pt", "system"]) {
+      expect(normalizeAppSettings({ language: value }).language).toBe("system");
+    }
   });
 
   it("treats a non-object or a wrong-typed theme as corruption, never as a value to coerce", () => {
@@ -33,5 +40,6 @@ describe("app settings rules", () => {
     expect(appSettingsShapeIssue([])).not.toBeNull();
     expect(appSettingsShapeIssue(null)).not.toBeNull();
     expect(appSettingsShapeIssue({ theme: true })).not.toBeNull();
+    expect(appSettingsShapeIssue({ language: 3 })).not.toBeNull();
   });
 });

@@ -98,7 +98,7 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AiConfigsData = aiConfigs()) {
-  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system" }, quarantinedTo: null });
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve(next));
   mock.getSettings.mockResolvedValue(settings());
   mock.listAiConfigs.mockResolvedValue(ai);
@@ -439,6 +439,36 @@ function openTab(
   return getByRole("tabpanel");
 }
 
+describe("SettingsModal — interface language", () => {
+  it("lists System first, then each language by its own name in its own script", async () => {
+    const { getByLabelText } = await renderModal();
+    const picker = getByLabelText("Interface language") as HTMLSelectElement;
+    expect(picker.value).toBe("system");
+    const options = [...picker.options];
+    expect(options.map((option) => option.value)).toEqual([
+      "system", "en", "de", "es", "fr", "it", "pt-BR", "ru", "ja", "ko", "zh-Hans",
+    ]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      "System", "English", "Deutsch", "Español", "Français", "Italiano", "Português", "Русский", "日本語", "한국어", "中文",
+    ]);
+    expect(options[8]!.lang).toBe("ja");
+  });
+
+  it("stages the language until Save, then saves it app-wide", async () => {
+    const { getByRole, getByLabelText } = await renderModal();
+    fireEvent.change(getByLabelText("Interface language"), { target: { value: "ja" } });
+    expect(mock.saveAppSettings).not.toHaveBeenCalled();
+    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveTargets.mockResolvedValue(targets());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "system", language: "ja" });
+  });
+});
+
 describe("SettingsModal — theme", () => {
   it("offers System, Light, and Dark as one radio group under Appearance", async () => {
     const { getByRole } = await renderModal();
@@ -463,7 +493,7 @@ describe("SettingsModal — theme", () => {
       fireEvent.click(save);
     });
 
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark", language: "system" });
     expect(onClose).toHaveBeenCalled();
   });
 

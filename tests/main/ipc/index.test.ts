@@ -15,6 +15,7 @@ vi.mock("electron", () => ({
   // Stubs for the electron surfaces some handlers import (used only inside their
   // callbacks, never at registration) — present so module load never fails.
   app: {},
+  Menu: {},
   shell: {},
   dialog: {},
   BrowserWindow: {},
@@ -30,6 +31,7 @@ describe("registerIpcHandlers", () => {
       CHANNELS.postContentSaved,
       CHANNELS.postContentSaveFailed,
       CHANNELS.windowActivityChanged,
+      CHANNELS.interfaceLanguageChanged,
     ]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {

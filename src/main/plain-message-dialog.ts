@@ -1,5 +1,8 @@
 import { BrowserWindow, nativeTheme } from "electron";
 
+import type { Translator } from "@shared/i18n/translate";
+import { mainTranslator } from "./i18n.js";
+
 export interface PlainMessageDialogOptions {
   title: string;
   message: string;
@@ -14,7 +17,8 @@ const CHOICE_ORIGIN = "https://bigmouth-dialog.invalid/choice/";
 
 /** App-authored message shell: no framework severity/application icon. */
 export async function showPlainMessageDialog(options: PlainMessageDialogOptions): Promise<number> {
-  const buttons = options.buttons?.length ? options.buttons : ["OK"];
+  const translator = mainTranslator();
+  const buttons = options.buttons?.length ? options.buttons : [translator.t("common.ok")];
   const defaultId = options.defaultId ?? 0;
   const cancelId = options.cancelId ?? defaultId;
   const parent = BrowserWindow.getFocusedWindow() ?? undefined;
@@ -78,17 +82,23 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
         .catch((error: unknown) => settleLoadFailure("measurement", error));
     });
     void win
-      .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options, buttons))}`)
+      .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options, buttons, translator))}`)
       .catch((error: unknown) => settleLoadFailure("load", error));
   });
 }
 
-export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions, buttons: string[]): string {
+// The page declares the interface language, which picks the right Chinese,
+// Japanese or Korean glyphs for the text.
+export function renderPlainMessageDialogHtml(
+  options: PlainMessageDialogOptions,
+  buttons: string[],
+  translator: Translator = mainTranslator(),
+): string {
   const actions = buttons.map((label, index) => {
     const kind = index === options.destructiveId ? " destructive" : index === (options.defaultId ?? 0) ? " primary" : "";
     return `<button id="choice-${index}" class="button${kind}" type="button" onclick="location.href='${CHOICE_ORIGIN}${index}'">${escapeHtml(label)}</button>`;
   }).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  return `<!doctype html><html lang="${escapeHtml(translator.language)}"><head><meta charset="utf-8"><style>
     :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#f7f4ef;color:#292524}
     *{box-sizing:border-box;scrollbar-width:auto;scrollbar-color:#78716c transparent}*::-webkit-scrollbar{width:16px;height:16px}*::-webkit-scrollbar-thumb{background:#78716c;background-clip:padding-box;border:3px solid transparent;border-radius:999px}
     body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
@@ -99,7 +109,7 @@ export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions,
     .button:hover,.button:focus{outline:2px solid #78716c;outline-offset:2px}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#e7e5e4}
     .primary{color:white;background:#2563eb;border-color:#1d4ed8}.primary:hover,.primary:focus{background:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}.destructive:hover,.destructive:focus{background:#991b1b}
     @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:#1c1917;color:#e7e5e4}*{scrollbar-color:#a8a29e transparent}*::-webkit-scrollbar-thumb{background:#a8a29e;background-clip:padding-box}.detail{color:#a8a29e}.button{color:#e7e5e4;border-color:#78716c;background:#292524}.button:hover,.button:focus{outline-color:#a8a29e}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#44403c}}
-  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body" role="region" aria-label="Message details" tabindex="0"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
+  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body" role="region" aria-label="${escapeHtml(translator.t("dialog.messageDetails"))}" tabindex="0"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
 }
 
 function escapeHtml(value: string): string {

@@ -37,6 +37,7 @@ import type {
   UiState,
   Workspace,
 } from "@shared/types";
+import type { InterfaceLanguage } from "@shared/i18n/languages";
 
 // Per-window counter for AI request ids. Generated renderer-side so the renderer
 // can subscribe to a stream's channel, or send an abort, before the request
@@ -107,6 +108,12 @@ const api = {
   getAppSettings: () => ipcRenderer.invoke(CHANNELS.getAppSettings) as Promise<AppSettingsLoad>,
   saveAppSettings: (settings: AppSettings) =>
     ipcRenderer.invoke(CHANNELS.saveAppSettings, settings) as Promise<AppSettings>,
+  getInterfaceLanguage: () => ipcRenderer.invoke(CHANNELS.getInterfaceLanguage) as Promise<InterfaceLanguage>,
+  onInterfaceLanguageChanged: (listener: (language: InterfaceLanguage) => void) => {
+    const wrapped = (_event: unknown, language: InterfaceLanguage): void => listener(language);
+    ipcRenderer.on(CHANNELS.interfaceLanguageChanged, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.interfaceLanguageChanged, wrapped);
+  },
 
   // --- Posts ---
   listPosts: (wsId: string, publishedOffset: number, limit: number, expiredOffset: number) =>

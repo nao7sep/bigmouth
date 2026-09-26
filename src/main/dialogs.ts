@@ -9,6 +9,8 @@
  * handlers, where a grep for "Modal" or "Dialog" found neither.
  */
 
+import { message } from "@shared/i18n/translate";
+import { mainTranslator } from "./i18n.js";
 import { showPlainMessageDialog } from "./plain-message-dialog.js";
 
 /** What the user chose when told their unsaved edits could not be written. */
@@ -22,10 +24,6 @@ export interface UnsavedAtQuit {
   refusedMetadata: boolean;
 }
 
-const REFUSED_METADATA_DETAIL =
-  "A metadata field shows a value BigMouth refused, such as a slug another post uses, " +
-  "so the post keeps its last accepted value. The field says why.";
-
 /**
  * Asks whether to quit with edits that could not be saved.
  *
@@ -33,26 +31,26 @@ const REFUSED_METADATA_DETAIL =
  * loses nothing.
  */
 export async function confirmQuitWithUnsavedChanges(unsaved: UnsavedAtQuit): Promise<UnsavedChangesChoice> {
+  const { t } = mainTranslator();
+  const refused = message("dialog.refusedMetadata.explanation");
   const choice = await showPlainMessageDialog(
     unsaved.writeFailures
       ? {
-          title: "Unsaved changes",
-          message: "Some edits could not be saved.",
-          detail:
-            "BigMouth could not write your latest changes to disk. " +
-            (unsaved.refusedMetadata ? `${REFUSED_METADATA_DETAIL} ` : "") +
-            "Quit anyway and lose them, or cancel and copy your text somewhere safe? " +
-            "The editor shows why each post could not be saved.",
-          buttons: ["Cancel", "Quit Anyway"],
+          title: t("dialog.unsavedChanges.title"),
+          message: t("dialog.unsavedChanges.message"),
+          detail: unsaved.refusedMetadata
+            ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
+            : t("dialog.unsavedChanges.detail"),
+          buttons: [t("common.cancel"), t("dialog.quitAnyway")],
           defaultId: 0,
           cancelId: 0,
           destructiveId: 1,
         }
       : {
-          title: "Unsaved metadata",
-          message: "A metadata value was not saved.",
-          detail: `${REFUSED_METADATA_DETAIL} Quit anyway and lose it, or cancel and fix the field?`,
-          buttons: ["Cancel", "Quit Anyway"],
+          title: t("dialog.unsavedMetadata.title"),
+          message: t("dialog.unsavedMetadata.message"),
+          detail: t("dialog.unsavedMetadata.quitDetail", { refused }),
+          buttons: [t("common.cancel"), t("dialog.quitAnyway")],
           defaultId: 0,
           cancelId: 0,
           destructiveId: 1,
@@ -66,11 +64,12 @@ export type RefusedMetadataCloseChoice = "cancel" | "close-anyway";
 
 /** Asks whether to close a window whose Metadata tab shows a refused value. */
 export async function confirmCloseWithRefusedMetadata(): Promise<RefusedMetadataCloseChoice> {
+  const { t } = mainTranslator();
   const choice = await showPlainMessageDialog({
-    title: "Unsaved metadata",
-    message: "A metadata value was not saved.",
-    detail: `${REFUSED_METADATA_DETAIL} Close anyway and lose it, or cancel and fix the field?`,
-    buttons: ["Cancel", "Close Anyway"],
+    title: t("dialog.unsavedMetadata.title"),
+    message: t("dialog.unsavedMetadata.message"),
+    detail: t("dialog.unsavedMetadata.closeDetail", { refused: message("dialog.refusedMetadata.explanation") }),
+    buttons: [t("common.cancel"), t("dialog.closeAnyway")],
     defaultId: 0,
     cancelId: 0,
     destructiveId: 1,
@@ -84,9 +83,10 @@ export async function confirmCloseWithRefusedMetadata(): Promise<RefusedMetadata
  * halt is only actionable if the user knows where they stand.
  */
 export async function showStartupFailure(): Promise<void> {
+  const { t } = mainTranslator();
   await showPlainMessageDialog({
-    title: "BigMouth could not start",
-    message: "BigMouth could not finish opening its settings and workspace.",
-    detail: "No posts or workspace documents were changed. Check the session log, then start BigMouth again.",
+    title: t("dialog.startupFailure.title"),
+    message: t("dialog.startupFailure.message"),
+    detail: t("dialog.startupFailure.detail"),
   });
 }

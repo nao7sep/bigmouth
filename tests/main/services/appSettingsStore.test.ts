@@ -46,20 +46,20 @@ afterEach(() => {
 
 describe("appSettingsStore", () => {
   it("materializes the defaults on first launch", () => {
-    expect(initAppSettingsStore()).toEqual({ theme: "system" });
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system" });
-    expect(getAppSettingsLoad()).toEqual({ settings: { theme: "system" }, quarantinedTo: null });
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
+    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system", language: "system" });
+    expect(getAppSettingsLoad()).toEqual({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
   });
 
   it("reads a saved theme back without rewriting the file", () => {
     fs.writeFileSync(configPath(), '{ "theme": "dark" }');
-    expect(initAppSettingsStore()).toEqual({ theme: "dark" });
+    expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "system" });
     expect(fs.readFileSync(configPath(), "utf-8")).toBe('{ "theme": "dark" }');
   });
 
   it("follows the OS for an unrecognized theme name without treating it as corruption", () => {
     fs.writeFileSync(configPath(), '{ "theme": "sepia" }');
-    expect(initAppSettingsStore()).toEqual({ theme: "system" });
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
     expect(quarantined()).toEqual([]);
   });
 
@@ -69,18 +69,26 @@ describe("appSettingsStore", () => {
     ["a wrong-typed theme", '{ "theme": true }'],
   ])("moves %s aside, resets, and reports where it went", (_label, body) => {
     fs.writeFileSync(configPath(), body);
-    expect(initAppSettingsStore()).toEqual({ theme: "system" });
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
 
     const moved = quarantined();
     expect(moved).toHaveLength(1);
     expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system" });
+    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system", language: "system" });
     expect(getAppSettingsLoad().quarantinedTo).toBe(path.join(getAppRoot(), moved[0]!));
+  });
+
+  it("reads a saved language back, and follows the computer for an unknown one", () => {
+    fs.writeFileSync(configPath(), '{ "theme": "dark", "language": "ko" }');
+    expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "ko" });
+    fs.writeFileSync(configPath(), '{ "language": "tlh" }');
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
+    expect(quarantined()).toEqual([]);
   });
 
   it("saves only known keys", () => {
     initAppSettingsStore();
-    expect(saveAppSettings({ theme: "light", extra: 1 } as never)).toEqual({ theme: "light" });
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "light" });
+    expect(saveAppSettings({ theme: "light", extra: 1 } as never)).toEqual({ theme: "light", language: "system" });
+    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "light", language: "system" });
   });
 });

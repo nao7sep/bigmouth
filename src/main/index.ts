@@ -26,6 +26,7 @@ import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata, forgetRefusedMetadata, holdsRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { installApplicationMenu } from "./menu.js";
+import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
 
 app.setName("BigMouth");
 
@@ -47,6 +48,8 @@ let systemShutdown = false;
 // menu, and open the window. The main process owns the single storage resolver and
 // the filesystem (storage-path-conventions).
 async function bootstrap(): Promise<void> {
+  // First, so that even a failure below is reported in the computer's language.
+  detectComputerLanguage();
   const appConfig = initAppDir();
   initLogger(getLogsDir());
   // State store (view state: pane widths + last workspace) resolves state.json under
@@ -57,6 +60,8 @@ async function bootstrap(): Promise<void> {
   // first frame, title bar, and background already match the saved choice.
   const appSettings = initAppSettingsStore();
   applyThemePreference(appSettings.theme);
+  // The menu, dialogs and the window's first text all speak the saved language.
+  applyLanguagePreference(appSettings.language);
   followOsThemeChanges();
   info("app started", {
     version: __APP_VERSION__,

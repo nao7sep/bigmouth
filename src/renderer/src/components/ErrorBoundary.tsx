@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportProblem } from "../api";
+import { documentTranslator } from "../i18n/I18nContext";
 
 interface Props {
   children: ReactNode;
@@ -28,13 +29,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
+    // Outside the language provider, so it speaks what the document last declared.
+    const { t } = documentTranslator();
     return (
       <div className="fatal-error" role="alert">
-        <h1>BigMouth hit an error it could not recover from</h1>
-        <p>
-          Your posts are on disk and unaffected. Restart the app; the session log has the
-          details.
-        </p>
+        <h1>{t("fatal.title")}</h1>
+        <p>{t("fatal.detail")}</p>
       </div>
     );
   }

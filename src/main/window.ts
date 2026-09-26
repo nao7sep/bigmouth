@@ -9,6 +9,7 @@ import { error as logError, serializeError, warn } from "./core/services/logger.
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
 import { windowBackground } from "./theme.js";
+import { mainTranslator } from "./i18n.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
@@ -193,6 +194,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   window.webContents.on("context-menu", (_event, params) => {
     if (!params.isEditable && !params.selectionText) return;
 
+    const { t } = mainTranslator();
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (params.misspelledWord) {
@@ -201,27 +203,27 @@ export async function createMainWindow(): Promise<BrowserWindow> {
           template.push({ label: word, click: () => window.webContents.replaceMisspelling(word) });
         }
       } else {
-        template.push({ label: "No suggestions", enabled: false });
+        template.push({ label: t("contextMenu.noSuggestions"), enabled: false });
       }
       template.push({ type: "separator" });
     }
 
     if (params.isEditable) {
       template.push(
-        { role: "undo", enabled: params.editFlags.canUndo },
-        { role: "redo", enabled: params.editFlags.canRedo },
+        { role: "undo", label: t("nativeMenu.undo"), enabled: params.editFlags.canUndo },
+        { role: "redo", label: t("nativeMenu.redo"), enabled: params.editFlags.canRedo },
         { type: "separator" },
-        { role: "cut", enabled: params.editFlags.canCut },
+        { role: "cut", label: t("nativeMenu.cut"), enabled: params.editFlags.canCut },
       );
     }
 
-    template.push({ role: "copy", enabled: params.editFlags.canCopy });
+    template.push({ role: "copy", label: t("nativeMenu.copy"), enabled: params.editFlags.canCopy });
 
     if (params.isEditable) {
       template.push(
-        { role: "paste", enabled: params.editFlags.canPaste },
+        { role: "paste", label: t("nativeMenu.paste"), enabled: params.editFlags.canPaste },
         { type: "separator" },
-        { role: "selectAll", enabled: params.editFlags.canSelectAll },
+        { role: "selectAll", label: t("nativeMenu.selectAll"), enabled: params.editFlags.canSelectAll },
       );
     }
 

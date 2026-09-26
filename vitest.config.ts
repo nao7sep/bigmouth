@@ -15,6 +15,7 @@ const { version } = JSON.parse(readFileSync(new URL("./package.json", import.met
 // Vitest reruns everything when a root setup file changes, but not a project's
 // own, so the main project's setup is named once and added to the triggers.
 const mainSetup = "tests/main/setup.ts";
+const rendererSetup = "tests/renderer/setup/rendered-keys.ts";
 
 const alias = {
   "@shared": resolve("src/shared"),
@@ -29,7 +30,7 @@ export default defineConfig({
     // test file's temp-directory cleanup. Run hooks in registration order so
     // Windows releases SQLite before removing the directory it holds.
     sequence: { hooks: "list" },
-    forceRerunTriggers: [...configDefaults.forceRerunTriggers, `**/${mainSetup}`],
+    forceRerunTriggers: [...configDefaults.forceRerunTriggers, `**/${mainSetup}`, `**/${rendererSetup}`],
     coverage: {
       // One V8 coverage report across both projects (main + renderer). `include`
       // spans all source so the report flags logic no test reaches, not just a
@@ -77,6 +78,9 @@ export default defineConfig({
           name: "renderer",
           environment: "jsdom",
           include: ["tests/renderer/**/*.test.{ts,tsx}"],
+          // Every spec that renders the interface also fails if a catalogue key
+          // reaches the screen untranslated.
+          setupFiles: [rendererSetup],
           // Pin a fixed, DST-free zone so local-time formatting is deterministic.
           env: { TZ: "Asia/Tokyo" },
         },
