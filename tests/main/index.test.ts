@@ -44,6 +44,7 @@ vi.mock("electron", () => ({
     quit: () => { shell.quitRequests++; },
     exit: (code: number) => shell.exits.push(code),
   },
+  systemPreferences: { setUserDefault: () => {}, removeUserDefault: () => {} },
   BrowserWindow: { getAllWindows: () => shell.windows },
   powerMonitor: {
     on: (event: string, cb: (...args: unknown[]) => unknown) => powerHandlers.set(event, cb),
