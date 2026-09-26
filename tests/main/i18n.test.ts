@@ -9,6 +9,7 @@ const electron = vi.hoisted(() => ({
   defaults: [] as unknown[][],
   failWrite: false,
   warnings: [] as unknown[][],
+  isPackaged: true,
 }));
 
 vi.mock("@main/core/services/logger.js", () => ({
@@ -23,6 +24,9 @@ vi.mock("electron", () => ({
       return electron.preferred;
     },
     getSystemLocale: () => electron.systemLocale,
+    get isPackaged() {
+      return electron.isPackaged;
+    },
   },
   systemPreferences: {
     setUserDefault: (...args: unknown[]) => {
@@ -53,6 +57,7 @@ beforeEach(() => {
   electron.defaults.length = 0;
   electron.failWrite = false;
   electron.warnings.length = 0;
+  electron.isPackaged = true;
 });
 
 function onPlatform(platform: NodeJS.Platform, body: () => Promise<void>) {
@@ -121,6 +126,15 @@ describe("AppKit's language entry", () => {
   }));
 
   it("touches no defaults outside macOS", onPlatform("win32", async () => {
+    const i18n = await freshI18n();
+    i18n.detectComputerLanguage();
+    i18n.applyLanguagePreference("fr");
+    i18n.changeLanguagePreference("system", () => {});
+    expect(electron.defaults).toEqual([["read"]]);
+  }));
+
+  it("touches no defaults on an unpackaged macOS run", onPlatform("darwin", async () => {
+    electron.isPackaged = false;
     const i18n = await freshI18n();
     i18n.detectComputerLanguage();
     i18n.applyLanguagePreference("fr");

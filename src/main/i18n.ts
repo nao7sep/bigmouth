@@ -30,8 +30,14 @@ import { serializeError, warn } from "./core/services/logger.js";
 // argument domain, so the interface language is kept as AppleLanguages in the
 // app's own defaults domain (never the global one), as macOS's per-app language
 // setting does: AppKit and Chromium's own strings pick it up at the next launch.
-// System removes the entry, so the computer's own list applies again.
+// System removes the entry, so the computer's own list applies again. Only
+// the packaged app does this: an unpackaged run shares the Electron
+// runtime's own domain with every other app in development.
 const APPLE_LANGUAGES = "AppleLanguages";
+
+function ownsAppKitLanguages(): boolean {
+  return process.platform === "darwin" && app.isPackaged;
+}
 
 /**
  * What the app's own AppleLanguages entry should hold for a preference: the
@@ -42,7 +48,7 @@ export function appKitLanguages(preference: LanguagePreference): string[] | null
 }
 
 function alignAppKit(preference: LanguagePreference): void {
-  if (process.platform !== "darwin") return;
+  if (!ownsAppKitLanguages()) return;
   const languages = appKitLanguages(preference);
   try {
     if (languages === null) systemPreferences.removeUserDefault(APPLE_LANGUAGES);
@@ -58,7 +64,7 @@ function alignAppKit(preference: LanguagePreference): void {
 /** The computer's preferred languages, not the app's own entry, which would
  *  shadow them; the entry is written back when the saved choice is applied. */
 function computerLanguages(): string[] {
-  if (process.platform === "darwin") systemPreferences.removeUserDefault(APPLE_LANGUAGES);
+  if (ownsAppKitLanguages()) systemPreferences.removeUserDefault(APPLE_LANGUAGES);
   return app.getPreferredSystemLanguages();
 }
 
