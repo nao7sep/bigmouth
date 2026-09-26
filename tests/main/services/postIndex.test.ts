@@ -12,6 +12,7 @@ import {
   changeStatus,
   clearCache,
   rebuildIndex,
+  deletePost,
 } from "@main/core/services/postStore.js";
 import { canonicalIndexJson } from "@main/core/services/postIndex.js";
 import type { PostIndexEntry } from "@main/core/shared/types.js";
@@ -200,6 +201,51 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
     const afterRebuild = listDrafts(dataDir).filter((p) => p.frontMatter.id === original.frontMatter.id);
     expect(afterRebuild).toHaveLength(1);
     expect(getPost(dataDir, original.frontMatter.id)).not.toBeNull();
+  });
+});
+
+// A post file may be hand-edited, and its id names the post's asset folder. An
+// id of `..` once reached a recursive delete of `assets/..`: the whole
+// workspace folder, posts and uploads alike.
+describe("a hand-edited post id outside the nanoid grammar", () => {
+  function setFileId(filePath: string, id: string): void {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    fs.writeFileSync(filePath, raw.replace(/^id: .*$/m, `id: ${JSON.stringify(id)}`));
+  }
+
+  it.each(["..", ".", "../x"])("never becomes a row, so deleting %s cannot reach outside assets/", (bad) => {
+    const keeper = createPost(dataDir, "blogger", "en");
+    const edited = createPost(dataDir, "blogger", "en");
+    fs.mkdirSync(path.join(dataDir, "assets", keeper.frontMatter.id), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "assets", keeper.frontMatter.id, "a.png"), "x");
+    setFileId(edited.filePath, bad);
+    clearCache(dataDir);
+
+    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toEqual([keeper.frontMatter.id]);
+    expect(deletePost(dataDir, bad)).toBe(false);
+    expect(fs.existsSync(keeper.filePath)).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, "assets", keeper.frontMatter.id, "a.png"))).toBe(true);
+
+    const result = rebuildIndex(dataDir);
+    expect(result.skipped).toEqual([
+      { fileName: path.basename(edited.filePath), reason: `invalid post id ${JSON.stringify(bad)}` },
+    ]);
+  });
+
+  it("is dropped from a hand-edited index.json too", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const indexFile = path.join(dataDir, "posts", "index.json");
+    const rows = JSON.parse(fs.readFileSync(indexFile, "utf-8")) as PostIndexEntry[];
+    rows.push({ ...rows[0], id: ".." });
+    fs.writeFileSync(indexFile, JSON.stringify(rows));
+    // The index must look newer than the post, so reconcile trusts its rows.
+    const later = new Date(Date.now() + 60_000);
+    fs.utimesSync(indexFile, later, later);
+    clearCache(dataDir);
+
+    expect(deletePost(dataDir, "..")).toBe(false);
+    expect(fs.existsSync(post.filePath)).toBe(true);
+    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
   });
 });
 

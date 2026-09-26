@@ -25,14 +25,12 @@ import {
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
+import { isPostId } from "../core/shared/filenames.js";
 
 // Identifier validation (defense against path traversal). postId is a nanoid;
 // filename is a single path component with no separators or `..`.
-const POST_ID_RE = /^[A-Za-z0-9_-]+$/;
-
 function readPostId(raw: unknown): string | null {
-  const id = String(raw);
-  return POST_ID_RE.test(id) ? id : null;
+  return isPostId(raw) ? raw : null;
 }
 
 function readFilename(raw: unknown): string | null {

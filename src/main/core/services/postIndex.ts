@@ -24,6 +24,7 @@ import { writeManagedText } from "../shared/atomicWrite.js";
 import { compareInstants } from "@shared/postOrder";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
+import { isPostId } from "../shared/filenames.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
@@ -186,7 +187,10 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
     if (!Array.isArray(parsed)) return null;
     const map = new Map<string, PostIndexEntry>();
     for (const item of parsed as PostIndexEntry[]) {
-      if (item && typeof item.id === "string") map.set(item.id, item);
+      // index.json sits in the workspace folder and can be hand-edited too; a
+      // row with an id outside the grammar is dropped, and reconcile re-reads
+      // its file through the same gate as a rebuild.
+      if (item && isPostId(item.id)) map.set(item.id, item);
     }
     return map;
   } catch (err) {
@@ -298,6 +302,13 @@ function tryEntryFromFile(
     const post = readPost(path.join(postsDir(dataDir), fileName));
     if (!post.frontMatter.id) {
       const reason = "no id in its front matter";
+      logWarn("post file skipped", { fileName, reason });
+      return { reason };
+    }
+    // The id names the post's asset folder, so one outside the grammar (`..`,
+    // `.`, a path) never becomes a row the app could delete or upload through.
+    if (!isPostId(post.frontMatter.id)) {
+      const reason = `invalid post id ${JSON.stringify(post.frontMatter.id)}`;
       logWarn("post file skipped", { fileName, reason });
       return { reason };
     }

@@ -43,6 +43,18 @@ describe("safeResolveUnder", () => {
   });
 });
 
+describe("assetDir", () => {
+  it("refuses a post id that would place the folder outside assets/", () => {
+    for (const bad of ["..", ".", "../x", "a/b", "", "a\\b"]) {
+      expect(() => assetDir(dataDir, bad)).toThrow(/invalid post id/i);
+    }
+  });
+
+  it("puts a nanoid's folder directly under assets/", () => {
+    expect(assetDir(dataDir, "V1StGXR8_Z5jD")).toBe(path.resolve(dataDir, "assets", "V1StGXR8_Z5jD"));
+  });
+});
+
 describe("sanitizeFilename", () => {
   it("strips path components and disallowed characters", () => {
     expect(sanitizeFilename("../../etc/passwd")).toBe("passwd");

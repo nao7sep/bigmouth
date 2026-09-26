@@ -41,6 +41,7 @@ import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry } from "./postFile.js";
 import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
+import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 export function clearCache(dataDir: string): void {
@@ -557,9 +558,9 @@ export function deletePost(dataDir: string, id: string): boolean {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   index.removeEntry(dataDir, id);
 
-  const assetDir = path.join(dataDir, "assets", id);
-  if (fs.existsSync(assetDir)) {
-    fs.rmSync(assetDir, { recursive: true });
+  const assets = assetDir(dataDir, id);
+  if (fs.existsSync(assets)) {
+    fs.rmSync(assets, { recursive: true });
   }
 
   return true;

@@ -28,6 +28,7 @@ import {
   sanitizeAssetFilename,
 } from "@shared/assetNames";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { isPostId } from "../shared/filenames.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 export { isReservedAssetName } from "@shared/assetNames";
@@ -44,8 +45,14 @@ export interface AssetMeta {
 
 const META_FILENAME = "meta.json";
 
+/**
+ * A post's asset folder. Every asset path, and the delete of a whole post's
+ * assets, goes through here, so an id outside the post-id grammar is refused
+ * here rather than trusted to have been checked by each caller.
+ */
 export function assetDir(dataDir: string, postId: string): string {
-  return path.join(dataDir, "assets", postId);
+  if (!isPostId(postId)) throw new Error(`Invalid post id ${JSON.stringify(postId)}`);
+  return safeResolveUnder(path.join(dataDir, "assets"), postId);
 }
 
 function ensureAssetDir(dataDir: string, postId: string): string {

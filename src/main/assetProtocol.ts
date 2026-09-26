@@ -8,12 +8,12 @@ import { ASSET_SCHEME } from "@shared/ipc";
 import { getWorkspace } from "./core/services/workspaceStore.js";
 import { assetDir, safeResolveUnder } from "./core/services/assetStore.js";
 import { error as logError, serializeError } from "./core/services/logger.js";
+import { isPostId } from "./core/shared/filenames.js";
 
 // Streams a raw asset file from its own opaque origin (the custom scheme) with
 // `nosniff` + `sandbox` hardening, so an uploaded HTML/SVG can never execute in
 // the app's origin.
 
-const POST_ID_RE = /^[A-Za-z0-9_-]+$/;
 const MIME_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -67,7 +67,7 @@ export function handleAssetProtocol(): void {
       return notFound;
     }
 
-    if (!POST_ID_RE.test(postId)) return notFound;
+    if (!isPostId(postId)) return notFound;
     const fn = readFilename(filename);
     if (!fn) return notFound;
     const ws = getWorkspace(wsId);
