@@ -19,6 +19,7 @@
 
 import type { Settings } from "./types.js";
 import { SYSTEM_TIME_ZONE, isValidTimeZone } from "./timeZone.js";
+import { message, type Message } from "./i18n/translate.js";
 import {
   CONTENT_FONT_SIZE_MAX,
   CONTENT_FONT_SIZE_MIN,
@@ -42,8 +43,11 @@ export type SettingsField =
   | "contentFont.lineHeight"
   | "contentFont.padding";
 
-/** A message per field that is wrong; a field that is fine is simply absent. */
-export type SettingsFieldErrors = Partial<Record<SettingsField, string>>;
+/**
+ * A message per field that is wrong; a field that is fine is simply absent.
+ * The modal shows it in the interface language; the boundary names its key.
+ */
+export type SettingsFieldErrors = Partial<Record<SettingsField, Message>>;
 
 function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value >= 1;
@@ -55,8 +59,8 @@ function withinBounds(value: number, min: number, max: number): boolean {
 
 // The list offers only System and zones the runtime resolves, so this guards
 // the IPC boundary against anything else.
-function timezoneError(timezone: string): string | null {
-  return timezone === SYSTEM_TIME_ZONE || isValidTimeZone(timezone) ? null : "Choose a time zone from the list.";
+function timezoneError(timezone: string): Message | null {
+  return timezone === SYSTEM_TIME_ZONE || isValidTimeZone(timezone) ? null : message("settings.timezoneInvalid");
 }
 
 /**
@@ -66,55 +70,55 @@ function timezoneError(timezone: string): string | null {
  * boundary accepted them and the store quietly fixed them — one of the three
  * disagreements this module exists to end.
  */
-function languagesError(languages: readonly string[]): string | null {
-  if (languages.length === 0) return "At least one language is required.";
-  if (languages.some((l) => !/^[a-z]{2}$/.test(l))) {
-    return "Each language must be a 2-letter lowercase code (e.g. en, ja).";
-  }
+function languagesError(languages: readonly string[]): Message | null {
+  if (languages.length === 0) return message("settings.languagesRequired");
+  if (languages.some((l) => !/^[a-z]{2}$/.test(l))) return message("settings.languagesFormat");
   return null;
 }
 
 export function settingsFieldErrors(settings: Settings): SettingsFieldErrors {
   const errors: SettingsFieldErrors = {};
-  const set = (field: SettingsField, message: string | null): void => {
-    if (message !== null) errors[field] = message;
+  const set = (field: SettingsField, error: Message | null): void => {
+    if (error !== null) errors[field] = error;
   };
+  const positiveInteger = message("settings.positiveInteger");
+  const between = (min: number, max: number) => message("settings.between", { min, max });
 
   const font = settings.contentFont;
   set("timezone", timezoneError(settings.timezone));
   set("supportedLanguages", languagesError(settings.supportedLanguages));
   set(
     "publishedPostsPerLoad",
-    isPositiveInteger(settings.publishedPostsPerLoad) ? null : "Must be a positive integer.",
+    isPositiveInteger(settings.publishedPostsPerLoad) ? null : positiveInteger,
   );
-  set("maxUploadMb", isPositiveInteger(settings.maxUploadMb) ? null : "Must be a positive integer.");
+  set("maxUploadMb", isPositiveInteger(settings.maxUploadMb) ? null : positiveInteger);
   set(
     "contentFont.size",
     withinBounds(font.size, CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX)
       ? null
-      : `Must be between ${CONTENT_FONT_SIZE_MIN} and ${CONTENT_FONT_SIZE_MAX}.`,
+      : between(CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX),
   );
   set(
     "contentFont.lineHeight",
     withinBounds(font.lineHeight, CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX)
       ? null
-      : `Must be between ${CONTENT_LINE_HEIGHT_MIN} and ${CONTENT_LINE_HEIGHT_MAX}.`,
+      : between(CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX),
   );
   set(
     "contentFont.padding",
     withinBounds(font.padding, CONTENT_PADDING_MIN, CONTENT_PADDING_MAX)
       ? null
-      : `Must be between ${CONTENT_PADDING_MIN} and ${CONTENT_PADDING_MAX}.`,
+      : between(CONTENT_PADDING_MIN, CONTENT_PADDING_MAX),
   );
 
   return errors;
 }
 
 /** The first offending field and its message, or null when every field is valid. */
-export function firstSettingsError(settings: Settings): { field: SettingsField; message: string } | null {
+export function firstSettingsError(settings: Settings): { field: SettingsField; message: Message } | null {
   const errors = settingsFieldErrors(settings);
-  for (const [field, message] of Object.entries(errors)) {
-    return { field: field as SettingsField, message };
+  for (const [field, error] of Object.entries(errors)) {
+    return { field: field as SettingsField, message: error };
   }
   return null;
 }

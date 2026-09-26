@@ -6,6 +6,8 @@ import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZ
 import { CATALOGUES } from "@shared/i18n/catalogues";
 import { LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
 import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
+import type { MessageKey } from "@shared/i18n/catalogues";
 import {
   AI_PROVIDERS,
   PROVIDER_LABELS,
@@ -62,12 +64,6 @@ interface SettingsModalProps {
 /** A post file a target rename could not read, with the target it still names. */
 type RenameSkip = { fileName: string; reason: string; oldName: string };
 
-function renameTargetSkipMessage(count: number): string {
-  return count === 1
-    ? "Settings were saved, but this post file could not be read and still uses the old target name. Repair it outside the app, then choose its target again."
-    : "Settings were saved, but these post files could not be read and still use the old target name. Repair them outside the app, then choose their target again.";
-}
-
 type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
 
 type EditableTarget = Target & {
@@ -77,12 +73,12 @@ type EditableTarget = Target & {
 
 const TABS: Tab[] = ["general", "targets", "providers", "analysis", "generation"];
 
-const TAB_LABELS: Record<Tab, string> = {
-  general: "General",
-  targets: "Targets",
-  providers: "AI Configs",
-  analysis: "Analysis",
-  generation: "Generation",
+const TAB_LABELS: Record<Tab, MessageKey> = {
+  general: "settings.tabGeneral",
+  targets: "settings.tabTargets",
+  providers: "settings.tabAiConfigs",
+  analysis: "tabs.analysis",
+  generation: "settings.tabGeneration",
 };
 
 function editableTargets(targets: Target[]): EditableTarget[] {
@@ -105,6 +101,7 @@ export function SettingsModal({
   onClose,
   onSettingsChanged,
 }: SettingsModalProps) {
+  const { t, text, rich } = useI18n();
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   // App-wide (the storage root's config.json), edited and saved with the
@@ -117,12 +114,12 @@ export function SettingsModal({
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<Message | null>(null);
   // Post files a target rename could not read. Settings saved, but those posts
   // still name the retired target, so Settings stays open to say which.
   const [renameSkips, setRenameSkips] = useState<RenameSkip[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<Message | null>(null);
   const confirm = useConfirm();
 
   // Snapshot of the loaded values, used for dirty detection.
@@ -171,7 +168,7 @@ export function SettingsModal({
       .catch((err) => {
         if (cancelled) return;
         setLoadError(presentFailure(
-          "Settings could not be loaded. Close and reopen Settings to try again.",
+          message("settings.loadFailed"),
           "renderer: settings load failed",
           err,
         ));
@@ -195,10 +192,10 @@ export function SettingsModal({
     if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
     if (!isDirty) { onClose(); return; }
     const ok = await confirm({
-      title: "Discard Changes",
-      message: "You have unsaved changes. Discard them and close?",
-      confirmLabel: "Discard",
-      cancelLabel: "Keep Editing",
+      title: t("settings.discardTitle"),
+      message: t("settings.discardMessage"),
+      confirmLabel: t("common.discard"),
+      cancelLabel: t("common.keepEditing"),
       danger: true,
     });
     if (ok) onClose();
@@ -359,7 +356,7 @@ export function SettingsModal({
       else onClose();
     } catch (err) {
       setSaveError(presentFailure(
-        "Settings could not be saved. Your changes are still shown; try again.",
+        message("settings.saveFailed"),
         "renderer: settings save failed",
         err,
       ));
@@ -370,7 +367,7 @@ export function SettingsModal({
 
   return (
     <ModalShell
-      title="Settings"
+      title={t("settings.title")}
       onClose={() => void handleRequestClose()}
       width={560}
       maxHeight="85vh"
@@ -379,28 +376,27 @@ export function SettingsModal({
       {loadError ? (
         <div className="modal-body">
           <OperationalResult severity="error" className="modal-result">
-            {loadError}
+            {text(loadError)}
           </OperationalResult>
-          <p>Close and reopen Settings to try again.</p>
         </div>
       ) : !loaded ? (
         <div className="modal-body">
-          <p>Loading…</p>
+          <p>{t("common.loading")}</p>
         </div>
       ) : (
         <>
-          <div className="settings-tabs" aria-label="Settings sections" {...tablistProps}>
-            {TABS.map((t) => {
-              const { onClick, ...tabProps } = getTabProps(t);
+          <div className="settings-tabs" aria-label={t("settings.sections")} {...tablistProps}>
+            {TABS.map((tabId) => {
+              const { onClick, ...tabProps } = getTabProps(tabId);
               return (
                 <button
-                  key={t}
-                  className={`settings-tab${tab === t ? " active" : ""}`}
+                  key={tabId}
+                  className={`settings-tab${tab === tabId ? " active" : ""}`}
                   onClick={onClick}
                   {...tabProps}
-                  autoFocus={t === tab}
+                  autoFocus={tabId === tab}
                 >
-                  {TAB_LABELS[t]}
+                  {t(TAB_LABELS[tabId])}
                 </button>
               );
             })}
@@ -445,16 +441,20 @@ export function SettingsModal({
           </div>
           {saveError && (
             <OperationalResult severity="error" className="modal-result modal-footer-result">
-              {saveError}
+              {text(saveError)}
             </OperationalResult>
           )}
           {renameSkips.length > 0 && (
             <OperationalResult severity="warning" className="modal-result modal-footer-result">
-              {renameTargetSkipMessage(renameSkips.length)}
+              {t("settings.renameSkipped", { count: renameSkips.length })}
               <ul className="modal-result-list">
                 {renameSkips.map((skip) => (
                   <li key={`${skip.oldName}/${skip.fileName}`}>
-                    <code>{skip.fileName}</code> ({skip.oldName}): {skip.reason}
+                    {rich("settings.renameSkippedFile", {
+                      file: <code>{skip.fileName}</code>,
+                      target: skip.oldName,
+                      reason: skip.reason,
+                    })}
                   </li>
                 ))}
               </ul>
@@ -466,14 +466,14 @@ export function SettingsModal({
               onClick={() => void handleRequestClose()}
               disabled={saving}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               className="btn-primary"
               onClick={handleSaveAll}
               disabled={!canSave}
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? t("common.saving") : t("common.save")}
             </button>
           </div>
         </>
@@ -484,8 +484,9 @@ export function SettingsModal({
 
 // --- Shared ---
 
-function FieldError({ msg }: { msg: string }) {
-  return <p className="settings-field-error">{msg}</p>;
+function FieldError({ msg }: { msg: Message }) {
+  const { text } = useI18n();
+  return <p className="settings-field-error">{text(msg)}</p>;
 }
 
 // --- General ---
@@ -568,14 +569,14 @@ function GeneralTab({
       {/* Chosen from the list, never typed. System follows the computer's zone
           on every launch. */}
       <div className="form-field">
-        <label className="form-label" htmlFor="settings-timezone">Time zone</label>
+        <label className="form-label" htmlFor="settings-timezone">{t("settings.timezone")}</label>
         <select
           id="settings-timezone"
           className="form-select"
           value={settings.timezone}
           onChange={(e) => update({ timezone: e.target.value })}
         >
-          <option value={SYSTEM_TIME_ZONE}>System ({systemZone})</option>
+          <option value={SYSTEM_TIME_ZONE}>{t("settings.timezoneSystem", { zone: systemZone })}</option>
           {zones.map((zone) => (
             <option key={zone} value={zone}>
               {zone}
@@ -584,7 +585,7 @@ function GeneralTab({
         </select>
       </div>
       <div className="form-field">
-        <label className="form-label">Supported languages</label>
+        <label className="form-label">{t("settings.supportedLanguages")}</label>
         <input
           className="form-input"
           value={languagesText}
@@ -597,7 +598,7 @@ function GeneralTab({
         {errors.supportedLanguages && <FieldError msg={errors.supportedLanguages} />}
       </div>
       <div className="form-field">
-        <label className="form-label">Published posts per load</label>
+        <label className="form-label">{t("settings.postsPerLoad")}</label>
         <input
           className="form-input"
           type="number"
@@ -614,7 +615,7 @@ function GeneralTab({
         {errors.publishedPostsPerLoad && <FieldError msg={errors.publishedPostsPerLoad} />}
       </div>
       <div className="form-field">
-        <label className="form-label">Maximum asset size (MB)</label>
+        <label className="form-label">{t("settings.maxAssetSize")}</label>
         <input
           className="form-input"
           type="number"
@@ -627,7 +628,7 @@ function GeneralTab({
         {errors.maxUploadMb && <FieldError msg={errors.maxUploadMb} />}
       </div>
       <div className="form-field">
-        <label className="form-label">Editor watermark</label>
+        <label className="form-label">{t("settings.editorWatermark")}</label>
         <textarea
           className="form-input"
           rows={5}
@@ -637,7 +638,7 @@ function GeneralTab({
         />
       </div>
       <div className="form-field">
-        <label className="form-label">Extra field watermark</label>
+        <label className="form-label">{t("settings.extraFieldWatermark")}</label>
         <textarea
           className="form-input"
           rows={3}
@@ -647,7 +648,7 @@ function GeneralTab({
         />
       </div>
 
-      <div className="settings-subheading">Appearance</div>
+      <div className="settings-subheading">{t("settings.appearance")}</div>
       {/* Each language is listed by its own name, in its own script, so a
           reader of any of them can find it whatever language is showing.
           App-wide, applied on Save. */}
@@ -673,7 +674,7 @@ function GeneralTab({
       {/* A native radio group: one tab stop, arrow keys move and select
           (composite-control conventions). App-wide, applied on Save. */}
       <fieldset className="form-field settings-radio-group">
-        <legend className="form-label">Theme</legend>
+        <legend className="form-label">{t("settings.theme")}</legend>
         <div className="settings-radio-options">
           {THEME_PREFERENCES.map(({ value, label }) => (
             <label key={value} className="settings-radio">
@@ -688,13 +689,11 @@ function GeneralTab({
             </label>
           ))}
         </div>
-        <p className="settings-hint">
-          System follows the OS appearance. Applies to every workspace.
-        </p>
+        <p className="settings-hint">{t("settings.themeHint")}</p>
       </fieldset>
       <FontsSection settings={settings} update={update} />
 
-      <div className="settings-subheading">Maintenance</div>
+      <div className="settings-subheading">{t("settings.maintenance")}</div>
       <RebuildIndexSection />
     </div>
   );
@@ -709,6 +708,7 @@ function FontsSection({
   settings: Settings;
   update: (patch: Partial<Settings>) => void;
 }) {
+  const { t } = useI18n();
   const cf = settings.contentFont;
   const updateContentFont = (patch: Partial<Settings["contentFont"]>) =>
     update({ contentFont: { ...cf, ...patch } });
@@ -721,29 +721,27 @@ function FontsSection({
   return (
     <>
       <div className="form-field">
-        <label className="form-label">UI font</label>
+        <label className="form-label">{t("settings.uiFont")}</label>
         <input
           className="form-input"
           value={settings.uiFontFamily}
           onChange={(e) => update({ uiFontFamily: e.target.value })}
-          placeholder="Blank = default system font"
+          placeholder={t("settings.uiFontPlaceholder")}
         />
-        <p className="settings-hint">
-          Comma-separated families for the app interface; the first one your system has is used.
-        </p>
+        <p className="settings-hint">{t("settings.uiFontHint")}</p>
       </div>
       <div className="form-field">
-        <label className="form-label">Editor font</label>
+        <label className="form-label">{t("settings.editorFont")}</label>
         <input
           className="form-input"
           value={cf.family}
           onChange={(e) => updateContentFont({ family: e.target.value })}
-          placeholder="Blank = same as UI font"
+          placeholder={t("settings.editorFontPlaceholder")}
         />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">Editor font size (px)</label>
+          <label className="form-label">{t("settings.editorFontSize")}</label>
           <input
             className="form-input"
             type="number"
@@ -755,7 +753,7 @@ function FontsSection({
           {errors["contentFont.size"] && <FieldError msg={errors["contentFont.size"]} />}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">Line height</label>
+          <label className="form-label">{t("settings.lineHeight")}</label>
           <input
             className="form-input"
             type="number"
@@ -770,7 +768,7 @@ function FontsSection({
           )}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">Editor padding (px)</label>
+          <label className="form-label">{t("settings.editorPadding")}</label>
           <input
             className="form-input"
             type="number"
@@ -786,15 +784,15 @@ function FontsSection({
         </div>
       </div>
       <div className="form-field">
-        <label className="form-label">Editor text style</label>
+        <label className="form-label">{t("settings.editorTextStyle")}</label>
         <div style={{ display: "flex", gap: 16 }}>
           <label style={checkboxStyle}>
             <input type="checkbox" checked={cf.bold} onChange={(e) => updateContentFont({ bold: e.target.checked })} />
-            Bold
+            {t("settings.bold")}
           </label>
           <label style={checkboxStyle}>
             <input type="checkbox" checked={cf.italic} onChange={(e) => updateContentFont({ italic: e.target.checked })} />
-            Italic
+            {t("settings.italic")}
           </label>
           <label style={checkboxStyle}>
             <input
@@ -802,7 +800,7 @@ function FontsSection({
               checked={cf.underline}
               onChange={(e) => updateContentFont({ underline: e.target.checked })}
             />
-            Underline
+            {t("settings.underline")}
           </label>
         </div>
       </div>
@@ -812,42 +810,25 @@ function FontsSection({
 
 // --- Maintenance ---
 
+// What a rebuild found: the counts, rendered as sentences when shown.
+type RebuildSummary = { count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number };
+
 function RebuildIndexSection() {
+  const { t, text, rich } = useI18n();
   const [running, setRunning] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<RebuildSummary | null>(null);
+  const [error, setError] = useState<Message | null>(null);
 
   const rebuild = async () => {
     setRunning(true);
-    setMessage(null);
+    setSummary(null);
     setError(null);
     try {
       const { count, skipped, duplicateSlugs, orphanedAssets } = await rebuildPostIndex();
-      const parts = [`Rebuilt the index from ${count} post${count === 1 ? "" : "s"}.`];
-      // A skipped file is a post the app can no longer show. Saying only what
-      // was indexed let one vanish under a success message.
-      if (skipped > 0) {
-        parts.push(
-          `${skipped} file${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out — see the log.`,
-        );
-      }
-      if (duplicateSlugs > 0) {
-        parts.push(
-          `${duplicateSlugs} duplicate slug group${duplicateSlugs === 1 ? "" : "s"} remain${duplicateSlugs === 1 ? "s" : ""} — see the log.`,
-        );
-      }
-      // Asset folders whose post is gone: nothing here deletes them (they are
-      // the user's uploads, and a .md can be restored from git), but nothing in
-      // the UI could reach them either, so the count is the path to them.
-      if (orphanedAssets > 0) {
-        parts.push(
-          `${orphanedAssets} asset folder${orphanedAssets === 1 ? "" : "s"} belong${orphanedAssets === 1 ? "s" : ""} to a post that no longer exists.`,
-        );
-      }
-      setMessage(parts.join(" "));
+      setSummary({ count, skipped, duplicateSlugs, orphanedAssets });
     } catch (err) {
       setError(presentFailure(
-        "The post index could not be rebuilt. Existing posts were not changed; try again or check the log.",
+        message("settings.rebuildFailed"),
         "renderer: post index rebuild failed",
         err,
       ));
@@ -859,16 +840,28 @@ function RebuildIndexSection() {
   return (
     <div className="form-field">
       <p className="settings-hint">
-        The post index (<code>posts/index.json</code>) is rebuilt automatically from the Markdown
-        files. Rebuild it by hand after editing or merging post files outside the app.
+        {rich("settings.rebuildHint", { file: <code>posts/index.json</code> })}
       </p>
       <button className="btn-action" onClick={() => void rebuild()} disabled={running}>
-        {running ? "Rebuilding…" : "Rebuild index"}
+        {running ? t("settings.rebuilding") : t("settings.rebuild")}
       </button>
-      {message && <p className="settings-hint">{message}</p>}
+      {summary && (
+        <p className="settings-hint">
+          {t("settings.rebuilt", { count: summary.count })}
+          {/* A skipped file is a post the app can no longer show. Saying only
+              what was indexed let one vanish under a success message. */}
+          {summary.skipped > 0 && <> {t("settings.rebuildSkipped", { count: summary.skipped })}</>}
+          {summary.duplicateSlugs > 0 && <> {t("settings.rebuildDuplicates", { count: summary.duplicateSlugs })}</>}
+          {/* Asset folders whose post is gone: nothing here deletes them (they
+              are the user's uploads, and a .md can be restored from git), but
+              nothing in the UI could reach them either, so the count is the
+              path to them. */}
+          {summary.orphanedAssets > 0 && <> {t("settings.rebuildOrphans", { count: summary.orphanedAssets })}</>}
+        </p>
+      )}
       {error && (
         <OperationalResult severity="error" className="modal-result">
-          {error}
+          {text(error)}
         </OperationalResult>
       )}
     </div>
@@ -884,6 +877,7 @@ function AiTab({
   aiConfigs: AiConfigsData;
   onChange: (d: AiConfigsData) => void;
 }) {
+  const { t } = useI18n();
   const updateConfig = (id: string, patch: Partial<AiConfig>) =>
     onChange({
       ...aiConfigs,
@@ -940,7 +934,7 @@ function AiTab({
   return (
     <div className="settings-section">
       <div className="form-field">
-        <label className="form-label">Active AI config</label>
+        <label className="form-label">{t("settings.activeAiConfig")}</label>
         <select
           className="form-select"
           value={aiConfigs.activeId}
@@ -950,28 +944,28 @@ function AiTab({
         >
           {aiConfigs.configs.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name || "(unnamed)"}
+              {c.name || t("settings.unnamed")}
             </option>
           ))}
         </select>
       </div>
 
-      <div className="settings-subheading">AI Configs</div>
+      <div className="settings-subheading">{t("settings.tabAiConfigs")}</div>
 
       {aiConfigs.configs.map((c) => (
         <div key={c.id} className="settings-list-item">
           <div className="form-field">
-            <label className="form-label">Name</label>
+            <label className="form-label">{t("workspaces.name")}</label>
             <input
               className="form-input"
               value={c.name}
               onChange={(e) => updateConfig(c.id, { name: e.target.value })}
             />
-            {!c.name.trim() && <FieldError msg="Name is required." />}
+            {!c.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">Provider</label>
+              <label className="form-label">{t("settings.provider")}</label>
               <select
                 className="form-select"
                 value={c.provider}
@@ -989,7 +983,7 @@ function AiTab({
               </select>
             </div>
             <div className="form-field" style={{ flex: 2 }}>
-              <label className="form-label">Model</label>
+              <label className="form-label">{t("settings.model")}</label>
               <select
                 className="form-select"
                 value={c.model}
@@ -1003,17 +997,17 @@ function AiTab({
                 {/* A model from an older version is shown rather than silently
                     swapped, so the config still reads as what it is. */}
                 {!findModelDef(c.model) && (
-                  <option value={c.model}>{c.model} (not available)</option>
+                  <option value={c.model}>{t("settings.modelUnavailable", { model: c.model })}</option>
                 )}
               </select>
               {!findModelDef(c.model) && (
-                <FieldError msg="This model is no longer offered. Pick another." />
+                <FieldError msg={message("settings.modelRetired")} />
               )}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">Max tokens</label>
+              <label className="form-label">{t("settings.maxTokens")}</label>
               <input
                 className="form-input"
                 type="number"
@@ -1024,12 +1018,12 @@ function AiTab({
                   updateConfig(c.id, { maxTokens: Number.parseInt(e.target.value, 10) })
                 }
               />
-              {validateMaxTokens(c.maxTokens) && (
-                <FieldError msg={validateMaxTokens(c.maxTokens) as string} />
+              {validateMaxTokens(c.maxTokens) !== null && (
+                <FieldError msg={message("settings.maxTokensInvalid")} />
               )}
             </div>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">Thinking</label>
+              <label className="form-label">{t("settings.thinking")}</label>
               <label className="settings-checkbox">
                 <input
                   type="checkbox"
@@ -1037,26 +1031,26 @@ function AiTab({
                   disabled={!findModelDef(c.model)?.supportsAdaptiveThinking}
                   onChange={(e) => updateConfig(c.id, { thinking: e.target.checked })}
                 />
-                Adaptive thinking
+                {t("settings.adaptiveThinking")}
               </label>
               {findModelDef(c.model) && !findModelDef(c.model)!.supportsAdaptiveThinking && (
                 <p className="settings-hint">
-                  {findModelDef(c.model)!.label} does not support thinking.
+                  {t("settings.noThinking", { model: findModelDef(c.model)!.label })}
                 </p>
               )}
             </div>
           </div>
           <div className="form-field">
-            <label className="form-label">API Key</label>
+            <label className="form-label">{t("settings.apiKey")}</label>
             <input
               className="form-input"
               type="password"
               value={c.apiKey}
               onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
-              placeholder={c.hasApiKey ? "Leave blank to keep current key" : "Optional"}
+              placeholder={c.hasApiKey ? t("settings.apiKeyKeep") : t("settings.apiKeyOptional")}
             />
             {c.usingEnvKey && (
-              <p className="settings-hint">Using ANTHROPIC_API_KEY; it overrides any stored key.</p>
+              <p className="settings-hint">{t("settings.envKey", { variable: "ANTHROPIC_API_KEY" })}</p>
             )}
           </div>
           <button
@@ -1064,13 +1058,13 @@ function AiTab({
             onClick={() => deleteConfig(c.id)}
             disabled={aiConfigs.configs.length === 1}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       ))}
 
       <button className="btn-action" onClick={addConfig}>
-        + Add AI Config
+        {t("settings.addAiConfig")}
       </button>
     </div>
   );
@@ -1087,6 +1081,7 @@ function TargetsTab({
   supportedLanguages: string[];
   onChange: (t: EditableTarget[]) => void;
 }) {
+  const { t } = useI18n();
   const canAddTarget = supportedLanguages.length > 0;
 
   const addTarget = () => {
@@ -1118,26 +1113,26 @@ function TargetsTab({
   return (
     <div className="settings-section">
       {!canAddTarget && (
-        <FieldError msg="Add at least one supported language in General before creating targets." />
+        <FieldError msg={message("settings.targetsNeedLanguage")} />
       )}
-      {targets.map((t, i) => (
-        <div key={t.rowId} className="settings-list-item">
+      {targets.map((target, i) => (
+        <div key={target.rowId} className="settings-list-item">
           <div className="form-field">
-            <label className="form-label">Name</label>
+            <label className="form-label">{t("workspaces.name")}</label>
               <input
                 className="form-input"
-                value={t.name}
+                value={target.name}
                 onChange={(e) => updateTarget(i, { name: e.target.value })}
               />
-            {!t.name.trim() && <FieldError msg="Name is required." />}
-            {t.name.trim() && duplicateNames.has(t.name.trim()) && <FieldError msg="This name is already used by another target." />}
+            {!target.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
+            {target.name.trim() && duplicateNames.has(target.name.trim()) && <FieldError msg={message("settings.targetNameTaken")} />}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">Language</label>
+              <label className="form-label">{t("newPost.language")}</label>
               <select
                 className="form-select"
-                value={t.defaultLanguage}
+                value={target.defaultLanguage}
                 onChange={(e) =>
                   updateTarget(i, { defaultLanguage: e.target.value })
                 }
@@ -1145,24 +1140,24 @@ function TargetsTab({
                 {supportedLanguages.map((lang) => (
                   <option key={lang} value={lang}>{lang}</option>
                 ))}
-                {!supportedLanguages.includes(t.defaultLanguage) && (
-                  <option value={t.defaultLanguage}>{t.defaultLanguage}</option>
+                {!supportedLanguages.includes(target.defaultLanguage) && (
+                  <option value={target.defaultLanguage}>{target.defaultLanguage}</option>
                 )}
               </select>
             </div>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">Requires metadata</label>
+              <label className="form-label">{t("settings.requiresMetadata")}</label>
               <select
                 className="form-select"
-                value={t.requiresMetadata ? "yes" : "no"}
+                value={target.requiresMetadata ? "yes" : "no"}
                 onChange={(e) =>
                   updateTarget(i, {
                     requiresMetadata: e.target.value === "yes",
                   })
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{t("common.yes")}</option>
+                <option value="no">{t("common.no")}</option>
               </select>
             </div>
           </div>
@@ -1170,13 +1165,13 @@ function TargetsTab({
             className="btn-toolbar btn-delete"
             onClick={() => deleteTarget(i)}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       ))}
 
       <button className="btn-action" onClick={addTarget} disabled={!canAddTarget}>
-        + Add Target
+        {t("settings.addTarget")}
       </button>
     </div>
   );
@@ -1193,6 +1188,7 @@ function GenerationTab({
   defaults: GenerationPromptsData;
   onChange: (d: GenerationPromptsData) => void;
 }) {
+  const { t } = useI18n();
   const updatePrompt = (key: string, value: string) => {
     onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
@@ -1205,13 +1201,11 @@ function GenerationTab({
 
   return (
     <div className="generation-tab">
-      <p className="settings-hint">
-        Your field guidance is added to a structured request; the schema, content, and field list are filled in automatically.
-      </p>
+      <p className="settings-hint">{t("settings.generationHint")}</p>
 
       <div className="metadata-generate-all-row">
         <button className="btn-action" onClick={resetGenerationPromptsToDefaults}>
-          Reset generation prompts
+          {t("settings.resetGeneration")}
         </button>
       </div>
 
@@ -1219,7 +1213,7 @@ function GenerationTab({
         const current = data.prompts?.[key] ?? "";
         return (
           <div key={key} className="form-field">
-            <label className="form-label">{GENERATION_PROMPT_LABELS[key]}</label>
+            <label className="form-label">{t(GENERATION_PROMPT_LABELS[key]!)}</label>
             <textarea
               className="form-input"
               rows={6}
@@ -1245,6 +1239,7 @@ function AnalysisPromptsTab({
   defaults: AnalysisPrompt[];
   onChange: (p: AnalysisPrompt[]) => void;
 }) {
+  const { t, rich } = useI18n();
   const addPrompt = () => {
     onChange([...prompts, { name: "", text: "" }]);
   };
@@ -1266,29 +1261,25 @@ function AnalysisPromptsTab({
 
   return (
     <div className="settings-section">
-      <p className="settings-hint">
-        Use {"{content}"} where the draft should be inserted.
-      </p>
+      <p className="settings-hint">{rich("settings.analysisHint", { placeholder: "{content}" })}</p>
       <div className="metadata-generate-all-row">
         <button className="btn-action" onClick={resetAnalysisPromptsToDefaults}>
-          Reset analysis prompts
+          {t("settings.resetAnalysis")}
         </button>
       </div>
       {prompts.map((p, i) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
-            <label className="form-label">Name</label>
+            <label className="form-label">{t("workspaces.name")}</label>
               <input
                 className="form-input"
                 value={p.name}
                 onChange={(e) => updatePrompt(i, { name: e.target.value })}
               />
-            {!p.name.trim() && <FieldError msg="Name is required." />}
+            {!p.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
           </div>
           <div className="form-field">
-            <label className="form-label">
-              Prompt text ({"{content}"} = post content)
-            </label>
+            <label className="form-label">{rich("settings.promptText", { placeholder: "{content}" })}</label>
             <textarea
               className="form-input"
               rows={6}
@@ -1296,19 +1287,19 @@ function AnalysisPromptsTab({
               onChange={(e) => updatePrompt(i, { text: e.target.value })}
               style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}
             />
-            {!p.text.trim() && <FieldError msg="Prompt text is required." />}
+            {!p.text.trim() && <FieldError msg={message("settings.promptTextRequired")} />}
           </div>
           <button
             className="btn-toolbar btn-delete"
             onClick={() => deletePrompt(i)}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       ))}
 
       <button className="btn-action" onClick={addPrompt}>
-        + Add Prompt
+        {t("settings.addPrompt")}
       </button>
     </div>
   );

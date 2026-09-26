@@ -6,14 +6,17 @@
  * byte-identical copy of the keys, which is the half that could actually drift.
  */
 
+import type { MessageKey } from "@shared/i18n/catalogues";
+
 export { GENERATION_PROMPT_KEYS } from "@shared/metadataFields";
 
-export const GENERATION_PROMPT_LABELS: Record<string, string> = {
-  title: "Title",
-  titleEn: "Title (English)",
-  slug: "Slug",
-  tags: "Tags",
-  tagsEn: "Tags (English)",
-  metaDescription: "Description",
-  metaDescriptionEn: "Description (English)",
+// Each field's name on screen, the same names the Metadata tab shows.
+export const GENERATION_PROMPT_LABELS: Record<string, MessageKey> = {
+  title: "metadata.title",
+  titleEn: "metadata.titleEn",
+  slug: "metadata.slug",
+  tags: "metadata.tags",
+  tagsEn: "metadata.tagsEn",
+  metaDescription: "metadata.description",
+  metaDescriptionEn: "metadata.descriptionEn",
 };

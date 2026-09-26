@@ -72,7 +72,7 @@ export function registerSettingsHandlers(): void {
     validateSettings(body);
     // The value rules, from the same module the modal renders its messages from.
     const invalid = firstSettingsError(body);
-    if (invalid) throw new Error(`${invalid.field}: ${invalid.message}`);
+    if (invalid) throw new Error(`${invalid.field}: ${invalid.message.key}`);
 
     const settings = saveSettings(ws.dataDirectory, body);
     info("settings saved", {
