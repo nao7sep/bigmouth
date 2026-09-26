@@ -18,6 +18,7 @@ import path from "node:path";
 const appHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const windowHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const powerHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+const MAIN_WINDOW_ID = vi.hoisted(() => 7);
 const shell = vi.hoisted(() => ({
   exits: [] as number[],
   quitRequests: 0,
@@ -27,6 +28,7 @@ const shell = vi.hoisted(() => ({
   // What the user clicks in the unsaved-changes dialog: 0 = Cancel (the default).
   dialogChoice: 0,
   windowLoadFailure: null as Error | null,
+  windowCloses: 0,
   loggedErrors: [] as unknown[][],
 }));
 
@@ -56,6 +58,9 @@ vi.mock("@main/plain-message-dialog.js", () => ({
 vi.mock("@main/window.js", () => ({
   createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : Promise.resolve({
     on: (event: string, cb: (...args: unknown[]) => unknown) => windowHandlers.set(event, cb),
+    webContents: { id: MAIN_WINDOW_ID },
+    isDestroyed: () => false,
+    close: () => { shell.windowCloses++; },
   }),
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
@@ -107,6 +112,7 @@ async function bootApp(): Promise<PostStore> {
   shell.dialogs.length = 0;
   shell.dialogChoice = 0;
   shell.windowLoadFailure = null;
+  shell.windowCloses = 0;
   shell.loggedErrors.length = 0;
 
   const store = (await import("@main/core/services/postStore.js")) as PostStore;
@@ -203,6 +209,64 @@ describe("quit flushes the write-behind buffer", () => {
 
     expect(shell.dialogs).toEqual([]);
     expect(shell.exits).toEqual([0]);
+  });
+});
+
+// A metadata value the store refused (an invalid or taken slug) was never
+// buffered, so it lives only on screen. The screen showed it; quitting or
+// closing must not silently keep the last accepted value instead.
+describe("a refused metadata value on screen", () => {
+  async function refuseInMainWindow(): Promise<void> {
+    const { setMetadataRefusal } = await import("@main/ipc/refusedMetadata.js");
+    setMetadataRefusal({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "p1", true);
+  }
+
+  it("asks before quitting, and Cancel keeps the app open", async () => {
+    await bootApp();
+    await refuseInMainWindow();
+
+    await quit();
+
+    expect(shell.dialogs).toHaveLength(1);
+    expect(shell.dialogs[0].detail).toContain("refused");
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("quits when the user chooses Quit Anyway", async () => {
+    await bootApp();
+    await refuseInMainWindow();
+    shell.dialogChoice = 1;
+
+    await quit();
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+  });
+
+  it("holds the window close until the user chooses, then closes on Close Anyway", async () => {
+    await bootApp();
+    await refuseInMainWindow();
+    const preventDefault = vi.fn();
+
+    windowHandlers.get("close")!({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shell.windowCloses).toBe(0);
+
+    shell.dialogChoice = 1;
+    windowHandlers.get("close")!({ preventDefault });
+    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
+    // The refusal is forgotten, so the close that follows goes through.
+    const again = vi.fn();
+    windowHandlers.get("close")!({ preventDefault: again });
+    expect(again).not.toHaveBeenCalled();
+  });
+
+  it("closes without asking when nothing on screen was refused", async () => {
+    await bootApp();
+    const preventDefault = vi.fn();
+    windowHandlers.get("close")!({ preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(shell.dialogs).toEqual([]);
   });
 });
 

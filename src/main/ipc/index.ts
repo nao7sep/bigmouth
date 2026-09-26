@@ -13,6 +13,7 @@ import { registerImagingHandlers } from "./imaging.js";
 import { registerAssetHandlers } from "./assets.js";
 import { registerAnalysisHandlers } from "./analysis.js";
 import { registerAiRequestHandlers } from "./aiRequests.js";
+import { registerRefusedMetadataHandlers } from "./refusedMetadata.js";
 import { registerDialogHandlers } from "./dialog.js";
 import { registerExternalHandlers } from "./external.js";
 
@@ -36,6 +37,7 @@ export function registerIpcHandlers(): void {
   registerAssetHandlers();
   registerAnalysisHandlers();
   registerAiRequestHandlers();
+  registerRefusedMetadataHandlers();
   registerDialogHandlers();
   registerExternalHandlers();
 }

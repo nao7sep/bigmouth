@@ -92,6 +92,9 @@ export const CHANNELS = {
   // Metadata field edits stream the same way; the reply says whether the edit
   // was buffered or refused (a slug that is invalid or taken).
   queuePostMetadata: "post:queueMetadata",
+  // Whether a post's Metadata tab shows a value the store refused. Main asks
+  // before quitting or closing the window while one does. One-way.
+  reportMetadataRefusal: "post:metadataRefusal",
   postContentSaved: "post:contentSaved",
   postContentSaveFailed: "post:contentSaveFailed",
 
@@ -313,6 +316,8 @@ export interface BigMouthApi {
   queuePostContent(wsId: string, id: string, content: string): void;
   /** Resolves null when the edit was buffered, else the reason it was refused. */
   queuePostMetadata(wsId: string, id: string, edits: EditablePostMetadata): Promise<string | null>;
+  /** Fire-and-forget: whether this post's Metadata tab shows a refused value. */
+  reportMetadataRefusal(id: string, refused: boolean): void;
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
   onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;

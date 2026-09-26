@@ -14,26 +14,68 @@ import { showPlainMessageDialog } from "./plain-message-dialog.js";
 /** What the user chose when told their unsaved edits could not be written. */
 export type UnsavedChangesChoice = "cancel" | "quit-anyway";
 
+/** What quitting now would lose. */
+export interface UnsavedAtQuit {
+  /** Buffered edits the store could not write. */
+  writeFailures: boolean;
+  /** A metadata field shows a value the store refused, so it was never buffered. */
+  refusedMetadata: boolean;
+}
+
+const REFUSED_METADATA_DETAIL =
+  "A metadata field shows a value BigMouth refused, such as a slug another post uses, " +
+  "so the post keeps its last accepted value. The field says why.";
+
 /**
  * Asks whether to quit with edits that could not be saved.
  *
  * Cancel is both the default and the Escape path, because it is the choice that
  * loses nothing.
  */
-export async function confirmQuitWithUnsavedChanges(): Promise<UnsavedChangesChoice> {
+export async function confirmQuitWithUnsavedChanges(unsaved: UnsavedAtQuit): Promise<UnsavedChangesChoice> {
+  const choice = await showPlainMessageDialog(
+    unsaved.writeFailures
+      ? {
+          title: "Unsaved changes",
+          message: "Some edits could not be saved.",
+          detail:
+            "BigMouth could not write your latest changes to disk. " +
+            (unsaved.refusedMetadata ? `${REFUSED_METADATA_DETAIL} ` : "") +
+            "Quit anyway and lose them, or cancel and copy your text somewhere safe? " +
+            "The editor shows why each post could not be saved.",
+          buttons: ["Cancel", "Quit Anyway"],
+          defaultId: 0,
+          cancelId: 0,
+          destructiveId: 1,
+        }
+      : {
+          title: "Unsaved metadata",
+          message: "A metadata value was not saved.",
+          detail: `${REFUSED_METADATA_DETAIL} Quit anyway and lose it, or cancel and fix the field?`,
+          buttons: ["Cancel", "Quit Anyway"],
+          defaultId: 0,
+          cancelId: 0,
+          destructiveId: 1,
+        },
+  );
+  return choice === 0 ? "cancel" : "quit-anyway";
+}
+
+/** What the user chose when closing a window that shows a refused metadata value. */
+export type RefusedMetadataCloseChoice = "cancel" | "close-anyway";
+
+/** Asks whether to close a window whose Metadata tab shows a refused value. */
+export async function confirmCloseWithRefusedMetadata(): Promise<RefusedMetadataCloseChoice> {
   const choice = await showPlainMessageDialog({
-    title: "Unsaved changes",
-    message: "Some edits could not be saved.",
-    detail:
-      "BigMouth could not write your latest changes to disk. " +
-      "Quit anyway and lose them, or cancel and copy your text somewhere safe? " +
-      "The editor shows why each post could not be saved.",
-    buttons: ["Cancel", "Quit Anyway"],
+    title: "Unsaved metadata",
+    message: "A metadata value was not saved.",
+    detail: `${REFUSED_METADATA_DETAIL} Close anyway and lose it, or cancel and fix the field?`,
+    buttons: ["Cancel", "Close Anyway"],
     defaultId: 0,
     cancelId: 0,
     destructiveId: 1,
   });
-  return choice === 0 ? "cancel" : "quit-anyway";
+  return choice === 0 ? "cancel" : "close-anyway";
 }
 
 /**

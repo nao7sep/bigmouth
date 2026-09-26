@@ -138,6 +138,11 @@ export function queuePostMetadata(
   return bridge().queuePostMetadata(requireWs(workspaceId), id, edits);
 }
 
+/** Tells main whether this post's Metadata tab shows a value the store refused. */
+export function reportMetadataRefusal(id: string, refused: boolean): void {
+  bridge().reportMetadataRefusal(id, refused);
+}
+
 export function onPostContentSaved(
   listener: (event: PostContentSavedEvent) => void,
 ): () => void {

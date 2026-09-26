@@ -6,15 +6,22 @@ import { createRef } from "react";
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   queuePostMetadata: vi.fn(),
+  reportMetadataRefusal: vi.fn(),
   generateMetadataField: vi.fn(),
   generateMetadataFields: vi.fn(),
 }));
 
 import { MetadataTab, type MetadataTabHandle } from "@renderer/components/MetadataTab";
-import { queuePostMetadata, generateMetadataField, generateMetadataFields } from "@renderer/api";
+import {
+  queuePostMetadata,
+  reportMetadataRefusal,
+  generateMetadataField,
+  generateMetadataFields,
+} from "@renderer/api";
 import type { PostFrontMatter } from "@shared/types";
 
 const mockQueue = vi.mocked(queuePostMetadata);
+const mockReportRefusal = vi.mocked(reportMetadataRefusal);
 const mockGenerateMetadataField = vi.mocked(generateMetadataField);
 const mockGenerateMetadataFields = vi.mocked(generateMetadataFields);
 
@@ -61,6 +68,20 @@ function renderTab(
   return { ref, container, titleInput, onMetadataEdited };
 }
 
+function renderTabWithUnmount() {
+  const utils = render(
+    <MetadataTab
+      workspaceId="w1"
+      postId="p1"
+      frontMatter={frontMatter()}
+      content="some body text"
+      extraFieldWatermark=""
+      onMetadataEdited={vi.fn()}
+    />
+  );
+  return { container: utils.container, unmount: utils.unmount };
+}
+
 // Field order (en): Title, Slug, Tags, Description, Extra.
 function slugInput(container: HTMLElement): HTMLTextAreaElement {
   return container.querySelectorAll("textarea")[1] as HTMLTextAreaElement;
@@ -73,6 +94,7 @@ let originalClipboard: PropertyDescriptor | undefined;
 beforeEach(() => {
   mockQueue.mockReset();
   mockQueue.mockResolvedValue(null);
+  mockReportRefusal.mockReset();
   mockGenerateMetadataField.mockReset();
   mockGenerateMetadataFields.mockReset();
   clipboardWrite = vi.fn().mockResolvedValue(undefined);
@@ -158,6 +180,37 @@ describe("MetadataTab edits stream to the store", () => {
       flushed = await ref.current!.flushPendingChanges();
     });
     expect(flushed).toBe(true);
+  });
+
+  // A refused value was never buffered, so quitting or closing the window must
+  // ask before it goes. Main can only ask if the tab says so, without a blur.
+  it("tells main while a field shows a refused value, and when it no longer does", async () => {
+    mockQueue.mockImplementation(async (_id, edits) =>
+      (edits as { slug?: string }).slug === "my-post.v2" ? "Slug must be lowercase letters, digits and hyphens" : null
+    );
+    const { container, unmount } = renderTabWithUnmount();
+    const slug = slugInput(container);
+
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "my-post" } });
+    });
+    expect(mockReportRefusal).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "my-post.v2" } });
+    });
+    expect(mockReportRefusal.mock.calls).toEqual([["p1", true]]);
+
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "my-post-v2" } });
+    });
+    expect(mockReportRefusal.mock.calls).toEqual([["p1", true], ["p1", false]]);
+
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "my-post.v2" } });
+    });
+    unmount();
+    expect(mockReportRefusal.mock.calls.at(-1)).toEqual(["p1", false]);
   });
 
   it("reports an edit that could not reach the store", async () => {

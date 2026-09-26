@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 import type { EditablePostMetadata, PostFrontMatter } from "@shared/types";
-import { queuePostMetadata, generateMetadataField, generateMetadataFields } from "../api";
+import {
+  queuePostMetadata,
+  reportMetadataRefusal,
+  generateMetadataField,
+  generateMetadataFields,
+} from "../api";
 import { presentFailure } from "../util/presentFailure";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { extractFields, parseFieldValue, untouchedGeneratedFields } from "../util/metadataFields";
@@ -79,6 +84,16 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // so the last reply for a field is about its newest value.
     const queuedRef = useRef<Record<string, Promise<void>>>({});
     const refusedRef = useRef<Record<string, { raw: string; message: string }>>({});
+    // Whether main was last told this tab shows a refused value. A refused value
+    // was never buffered, so it exists only on screen: main asks before quitting
+    // or closing the window while any tab reports one.
+    const reportedRefusalRef = useRef(false);
+    const syncRefusalReport = useCallback(() => {
+      const refused = Object.keys(refusedRef.current).length > 0;
+      if (refused === reportedRefusalRef.current) return;
+      reportedRefusalRef.current = refused;
+      reportMetadataRefusal(postId, refused);
+    }, [postId]);
     const {
       copiedKey,
       copy: copyToClipboard,
@@ -119,6 +134,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             } else {
               refusedRef.current[key] = { raw, message: refusal };
             }
+            syncRefusalReport();
           },
           (err: unknown) => {
             refusedRef.current[key] = {
@@ -130,12 +146,23 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
                 { postId, field: key },
               ),
             };
+            syncRefusalReport();
           },
         );
         queuedRef.current[key] = round;
         return round;
       },
-      [postId, workspaceId]
+      [postId, workspaceId, syncRefusalReport]
+    );
+
+    // Leaving the tab takes its fields with it; the value is no longer on screen.
+    useEffect(
+      () => () => {
+        if (!reportedRefusalRef.current) return;
+        reportedRefusalRef.current = false;
+        reportMetadataRefusal(postId, false);
+      },
+      [postId],
     );
 
     // The refusal for a field, when the value it refused is still the field's.

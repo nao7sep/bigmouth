@@ -1,6 +1,10 @@
 import { app, BrowserWindow, powerMonitor } from "electron";
 
-import { confirmQuitWithUnsavedChanges, showStartupFailure } from "./dialogs.js";
+import {
+  confirmCloseWithRefusedMetadata,
+  confirmQuitWithUnsavedChanges,
+  showStartupFailure,
+} from "./dialogs.js";
 
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir } from "./core/services/storagePaths.js";
@@ -19,6 +23,7 @@ import {
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
+import { anyRefusedMetadata, forgetRefusedMetadata, holdsRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { installApplicationMenu } from "./menu.js";
 
@@ -76,10 +81,31 @@ async function bootstrap(): Promise<void> {
 // raises "session-end" on the window (Electron has no app-level equivalent);
 // macOS and Linux raise powerMonitor "shutdown" below. Both set the same flag,
 // so a logoff on any platform takes the never-block path at quit.
+//
+// Closing the window drops what its fields show, so a metadata value the store
+// refused (and so never buffered) asks first. The app stays alive on macOS
+// after the window closes; quit has its own check in before-quit.
 async function openMainWindow(): Promise<void> {
   const window = await createMainWindow();
   window.on("session-end", () => {
     systemShutdown = true;
+  });
+  const ownerId = window.webContents.id;
+  let askingToClose = false;
+  window.on("close", (event) => {
+    if (systemShutdown || !holdsRefusedMetadata(ownerId)) return;
+    event.preventDefault();
+    if (askingToClose) return;
+    askingToClose = true;
+    void (async () => {
+      try {
+        if (await confirmCloseWithRefusedMetadata() === "cancel") return;
+        forgetRefusedMetadata(ownerId);
+        if (!window.isDestroyed()) window.close();
+      } finally {
+        askingToClose = false;
+      }
+    })();
   });
 }
 
@@ -131,10 +157,12 @@ if (!ownsInstance) {
     event.preventDefault();
 
     const failures = flushAllPendingEdits();
+    const refusedMetadata = anyRefusedMetadata();
     void (async () => {
-      if (failures.length > 0 && !systemShutdown) {
-        logError("pending edits flush failed at quit", { failures });
-        if (await confirmQuitWithUnsavedChanges() === "cancel") {
+      if (failures.length > 0) logError("pending edits flush failed at quit", { failures });
+      if ((failures.length > 0 || refusedMetadata) && !systemShutdown) {
+        const unsaved = { writeFailures: failures.length > 0, refusedMetadata };
+        if (await confirmQuitWithUnsavedChanges(unsaved) === "cancel") {
           shuttingDown = false;
           return;
         }

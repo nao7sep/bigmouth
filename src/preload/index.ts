@@ -135,6 +135,8 @@ const api = {
   },
   queuePostMetadata: (wsId: string, id: string, edits: EditablePostMetadata) =>
     ipcRenderer.invoke(CHANNELS.queuePostMetadata, wsId, id, edits) as Promise<string | null>,
+  reportMetadataRefusal: (id: string, refused: boolean) =>
+    ipcRenderer.send(CHANNELS.reportMetadataRefusal, id, refused),
   onPostContentSaved: (listener: (event: PostContentSavedEvent) => void) => {
     const wrapped = (_event: unknown, payload: PostContentSavedEvent): void => listener(payload);
     ipcRenderer.on(CHANNELS.postContentSaved, wrapped);
