@@ -188,6 +188,21 @@ describe("ImagingTab run", () => {
     expect(getByText("Image prompts could not be generated. Existing prompts are unchanged; try again.")).toBeTruthy();
   });
 
+  it("keeps the earlier prompts when a new run fails", async () => {
+    mockGenerate.mockResolvedValueOnce(["first prompt"]);
+    mockGenerate.mockRejectedValueOnce(new Error("imaging boom"));
+    const { container, getByText } = renderTab();
+    const button = container.querySelector(".action-button") as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(container.querySelector(".panel-error")).toBeTruthy();
+    expect(getByText("first prompt")).toBeTruthy();
+  });
+
   it("ignores a stale run's result after the post switches", async () => {
     // The first run's promise rejects via abort once the post changes; because
     // controller.signal.aborted is true, the component swallows it.

@@ -106,9 +106,10 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     abortRef.current = controller;
     const myId = ++runIdRef.current;
 
+    // The earlier prompts stay until a new set arrives: a failed or stopped run
+    // leaves them as they were.
     setLoading(true);
     setError(null);
-    setItems([]);
     clearCopyErrors();
 
     try {
