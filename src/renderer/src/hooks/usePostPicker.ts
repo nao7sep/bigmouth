@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listPosts } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import type { PostSummary } from "@shared/types";
+import { message, type Message } from "@shared/i18n/translate";
 
 export interface PostPickerState {
   posts: PostSummary[];
@@ -10,7 +11,7 @@ export interface PostPickerState {
   loadMore: () => void;
   query: string;
   setQuery: (q: string) => void;
-  error: string | null;
+  error: Message | null;
 }
 
 export function usePostPicker(
@@ -24,7 +25,7 @@ export function usePostPicker(
   const [expTotal, setExpTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const loadingMoreRef = useRef(false);
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function usePostPicker(
         setExpTotal(data.expiredTotal);
       })
       .catch((err) => setError(presentFailure(
-        "Posts could not be loaded. Close and reopen this picker to try again.",
+        message("picker.loadFailed"),
         "renderer: post picker load failed",
         err,
       )));
@@ -74,7 +75,7 @@ export function usePostPicker(
         setExpOffset((o) => Math.max(o, requestExpOffset + data.expired.length));
       })
       .catch((err) => setError(presentFailure(
-        "More posts could not be loaded. The posts already shown are unchanged; try again.",
+        message("picker.moreFailed"),
         "renderer: post picker pagination failed",
         err,
       )))

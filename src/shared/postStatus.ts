@@ -11,9 +11,18 @@
  */
 
 import type { PostStatus } from "./types.js";
+import type { MessageKey } from "./i18n/catalogues.js";
 
 /** The four states, in the order the UI presents them. The one enumeration. */
 export const POST_STATUSES: readonly PostStatus[] = ["draft", "ready", "published", "expired"];
+
+/** Each state's name on screen; the stored value stays the English word. */
+export const POST_STATUS_LABELS: Readonly<Record<PostStatus, MessageKey>> = {
+  draft: "status.draft",
+  ready: "status.ready",
+  published: "status.published",
+  expired: "status.expired",
+};
 
 /** Whether an arbitrary value — a hand-edited front-matter field, an IPC argument — is a status. */
 export function isPostStatus(value: unknown): value is PostStatus {

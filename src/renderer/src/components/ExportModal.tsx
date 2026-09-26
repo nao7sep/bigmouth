@@ -5,6 +5,8 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { ModalShell } from "./ModalShell";
 import { CheckIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -16,12 +18,13 @@ interface ExportModalProps {
 
 type ExportFormat = "html" | "text";
 
-const EXPORT_FORMATS: { value: ExportFormat; label: string }[] = [
-  { value: "html", label: "HTML" },
-  { value: "text", label: "Plain Text" },
+const EXPORT_FORMATS: { value: ExportFormat; label: MessageKey }[] = [
+  { value: "html", label: "export.html" },
+  { value: "text", label: "export.plainText" },
 ];
 
 export function ExportModal({ content, slug, onClose }: ExportModalProps) {
+  const { t, text } = useI18n();
   const [format, setFormat] = useState<ExportFormat>("html");
   const { copiedKey, copy, copyErrors, dismissCopyError } = useCopyFeedback();
 
@@ -47,12 +50,12 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
   };
 
   return (
-    <ModalShell title="Export" onClose={onClose}>
+    <ModalShell title={t("export.title")} onClose={onClose}>
       {/* Native radio group: one composite control, one tab stop, arrow
           navigation and accessibility for free; activation follows focus
           (native). Mirrors the CenterPane status radios. */}
       <div className="modal-strip">
-      <div className="export-format-radios" role="radiogroup" aria-label="Export format">
+      <div className="export-format-radios" role="radiogroup" aria-label={t("export.format")}>
         {EXPORT_FORMATS.map(({ value, label }) => (
           <label
             key={value}
@@ -65,7 +68,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
               checked={format === value}
               onChange={() => setFormat(value)}
             />
-            {label}
+            {t(label)}
           </label>
         ))}
       </div>
@@ -75,12 +78,12 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
       <pre
         className="export-preview"
         role="region"
-        aria-label="Export preview"
+        aria-label={t("export.preview")}
         tabIndex={0}
       >
         {output || (
           <span style={{ color: "var(--bm-text-faint)", fontStyle: "italic" }}>
-            No content yet
+            {t("export.empty")}
           </span>
         )}
       </pre>
@@ -92,7 +95,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
           onDismiss={() => dismissCopyError("copy")}
           dismissClassName="modal-result-dismiss"
         >
-          {copyErrors.copy}
+          {text(copyErrors.copy)}
         </OperationalResult>
       )}
 
@@ -100,15 +103,15 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
 
       <div className="modal-footer">
         <button className="btn-action" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
         <button className="btn-action" onClick={handleCopy}>
           {copiedKey === "copy" ? (
             <>
-              <CheckIcon /> Copied
+              <CheckIcon /> {t("common.copied")}
             </>
           ) : (
-            "Copy"
+            t("common.copy")
           )}
         </button>
         <button
@@ -116,7 +119,7 @@ export function ExportModal({ content, slug, onClose }: ExportModalProps) {
           onClick={handleDownload}
           autoFocus
         >
-          Download .{format === "html" ? "html" : "txt"}
+          {t("export.download", { extension: format === "html" ? ".html" : ".txt" })}
         </button>
       </div>
     </ModalShell>

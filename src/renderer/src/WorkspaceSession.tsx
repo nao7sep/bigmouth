@@ -45,6 +45,8 @@ import { hasMod, isEditableTarget, shadowsMacTextBinding } from "./util/shortcut
 import { pickAdjacentPostId } from "./util/selection";
 import { applyPostMutationToBuckets } from "./util/postBuckets";
 import { effectiveTimeZone, systemTimeZone } from "@shared/timeZone";
+import { useI18n } from "./i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -108,7 +110,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [rightTab, setRightTab] = useState<RightTab>("Analysis");
     const [analysisTrigger, setAnalysisTrigger] = useState(0);
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
-    const [loadError, setLoadError] = useState<string | null>(null);
+    const { t, text } = useI18n();
+    const [loadError, setLoadError] = useState<Message | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
     /**
@@ -261,7 +264,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       Promise.all([loadPosts(), loadConfig()]).catch((err) => {
         if (cancelled) return;
         setLoadError(presentFailure(
-          "This workspace could not be loaded. Reopen it to try again.",
+          message("session.loadFailed"),
           "renderer: workspace load failed",
           err,
         ));
@@ -290,7 +293,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           // a refused value in it must be reported while it is still on screen.
           const flushed = await flushRightPaneChanges();
           if (!flushed) {
-            setLoadError("Metadata changes could not be saved. Resolve them before reloading settings.");
+            setLoadError(message("session.metadataUnsaved"));
             return;
           }
           await Promise.all([loadConfig(), loadPosts()]);
@@ -303,7 +306,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           }
         } catch (err) {
           setLoadError(presentFailure(
-            "Settings changed, but this workspace could not be refreshed. Reopen the workspace to use the saved settings.",
+            message("session.refreshFailed"),
             "renderer: workspace settings refresh failed",
             err,
           ));
@@ -464,7 +467,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       void selectPost(null, { skipFlush: true });
       loadPosts().catch((err) => {
         setLoadError(presentFailure(
-          "The post list could not be refreshed. Reopen the workspace to try again.",
+          message("session.postListFailed"),
           "renderer: post list refresh failed",
           err,
         ));
@@ -586,7 +589,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setLoadError(null);
       loadPosts({ publishedOffset, append: "published" }).catch((err) => {
         setLoadError(presentFailure(
-          "More published posts could not be loaded. The posts already shown are unchanged; try again.",
+          message("session.morePublishedFailed"),
           "renderer: published post pagination failed",
           err,
         ));
@@ -597,7 +600,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       setLoadError(null);
       loadPosts({ expiredOffset, append: "expired" }).catch((err) => {
         setLoadError(presentFailure(
-          "More expired posts could not be loaded. The posts already shown are unchanged; try again.",
+          message("session.moreExpiredFailed"),
           "renderer: expired post pagination failed",
           err,
         ));
@@ -610,7 +613,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         await revealCurrentLogFile();
       } catch (err) {
         setLoadError(presentFailure(
-          "The current log could not be revealed. Open the logs folder from About and try again.",
+          message("session.revealLogFailed"),
           "renderer: reveal current log failed",
           err,
         ));
@@ -638,7 +641,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             dismissClassName="toolbar-error-dismiss"
             onDismiss={() => setLoadError(null)}
           >
-            {loadError}
+            {text(loadError)}
           </OperationalResult>
         )}
         <div
@@ -714,7 +717,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
               />
             </>
           ) : (
-            <div className="pane-empty">Select a post or create a new one</div>
+            <div className="pane-empty">{t("session.empty")}</div>
           )}
           {settingsOpen && (
             <SettingsModal onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />

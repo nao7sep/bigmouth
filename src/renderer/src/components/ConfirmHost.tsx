@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { presentFailure } from "../util/presentFailure";
+import { message, type Message } from "@shared/i18n/translate";
 
 export interface ConfirmOptions {
   title?: string;
@@ -36,7 +37,7 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   // Guards against a double-click on Confirm firing onConfirm twice while the
   // first run is still in flight (React state updates are async).
   const runningRef = useRef(false);
@@ -94,7 +95,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         // The action failed: keep the dialog open, surface the reason, and clear
         // busy so the user can retry or cancel. The promise stays unsettled.
         setError(presentFailure(
-          "The action could not be completed. Nothing was changed; try again.",
+          message("confirm.failed"),
           "renderer: confirmed action failed",
           err,
         ));

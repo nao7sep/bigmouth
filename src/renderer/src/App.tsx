@@ -20,6 +20,8 @@ import {
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import { presentFailure } from "./util/presentFailure";
 import { OperationalResult } from "./components/OperationalResult";
+import { useI18n } from "./i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 import "./App.css";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
@@ -46,12 +48,13 @@ export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
-  const [workspaceRegistryError, setWorkspaceRegistryError] = useState<string | null>(null);
-  const [shellResults, setShellResults] = useState<Array<{ key: string; message: string }>>([]);
-  const reportShellResult = useCallback((key: string, message: string) => {
+  const { text } = useI18n();
+  const [workspaceRegistryError, setWorkspaceRegistryError] = useState<Message | null>(null);
+  const [shellResults, setShellResults] = useState<Array<{ key: string; message: Message }>>([]);
+  const reportShellResult = useCallback((key: string, text: Message) => {
     setShellResults((current) => [
       ...current.filter((result) => result.key !== key),
-      { key, message },
+      { key, message: text },
     ]);
   }, []);
   const resolveShellResult = useCallback((key: string) => {
@@ -133,7 +136,7 @@ export function App() {
         if (cancelled || quarantinedTo === null) return;
         reportShellResult(
           "app-settings-recovered",
-          `The app settings file could not be read, so it was moved to ${quarantinedTo}. The theme is back to System.`,
+          message("app.settingsRecovered", { path: quarantinedTo }),
         );
       })
       .catch((err: unknown) => reportProblem("renderer: app settings load failed", err));
@@ -157,7 +160,7 @@ export function App() {
         if (!cancelled) {
           reportShellResult(
             "ui-state-load",
-            "The saved interface preferences and last workspace could not be loaded. Defaults are in use for this launch.",
+            message("app.uiStateLoadFailed"),
           );
           setWorkspaceModalOpen(true);
           setWsChecked(true);
@@ -189,14 +192,14 @@ export function App() {
           setWorkspaceModalOpen(true);
         }
       } catch (err) {
-        const message = presentFailure(
-          "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
+        const failure = presentFailure(
+          message("app.workspacesLoadFailed"),
           "renderer: workspace registry startup load failed",
           err,
           { storedId },
         );
         if (cancelled) return;
-        setWorkspaceRegistryError(message);
+        setWorkspaceRegistryError(failure);
         setWorkspaceModalOpen(true);
       } finally {
         if (!cancelled) setWsChecked(true);
@@ -219,7 +222,7 @@ export function App() {
       resolveShellResult("active-workspace");
     } catch (err) {
       reportShellResult("active-workspace", presentFailure(
-        "This workspace is open, but it could not be remembered for the next launch.",
+        message("app.activeWorkspaceSaveFailed"),
         "renderer: active workspace preference save failed",
         err,
         { workspaceId: ws.id },
@@ -241,7 +244,7 @@ export function App() {
         resolveShellResult("active-workspace");
       } catch (err) {
         reportShellResult("active-workspace", presentFailure(
-          "The workspace was removed, but the launch preference could not be updated. The picker will recover it next time.",
+          message("app.activeWorkspaceClearFailed"),
           "renderer: cleared active workspace preference save failed",
           err,
           { workspaceId },
@@ -295,7 +298,7 @@ export function App() {
           .then(() => resolveShellResult(stateKey))
           .catch((err: unknown) => {
             reportShellResult(stateKey, presentFailure(
-              "The pane width could not be saved. Its current width is still in use for this launch.",
+              message("app.paneWidthSaveFailed"),
               "renderer: pane width save failed",
               err,
               { stateKey },
@@ -346,7 +349,7 @@ export function App() {
           className="app-operational-result"
           onDismiss={() => resolveShellResult(result.key)}
         >
-          {result.message}
+          {text(result.message)}
         </OperationalResult>
       ))}
     </div>

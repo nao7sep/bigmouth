@@ -28,6 +28,8 @@ import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 
 const WORKSPACE_PAGE_SIZE = 10;
 
@@ -38,7 +40,7 @@ interface WorkspaceModalProps {
   activeWorkspaceId: string | null;
   onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
-  initialLoadError?: string | null;
+  initialLoadError?: Message | null;
   onLoadRecovered?: () => void;
 }
 
@@ -52,16 +54,17 @@ export function WorkspaceModal({
   initialLoadError = null,
   onLoadRecovered,
 }: WorkspaceModalProps) {
+  const { t, text } = useI18n();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Message | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [listError, setListError] = useState<string | null>(initialLoadError);
-  const [renameError, setRenameError] = useState<{ id: string; message: string } | null>(null);
+  const [listError, setListError] = useState<Message | null>(initialLoadError);
+  const [renameError, setRenameError] = useState<{ id: string; message: Message } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const confirm = useConfirm();
 
@@ -86,7 +89,7 @@ export function WorkspaceModal({
       }
     } catch (err) {
       setError(presentFailure(
-        "The folder picker could not be opened. Your location is unchanged; try again.",
+        message("workspaces.pickerFailed"),
         "renderer: workspace folder picker failed",
         err,
       ));
@@ -110,10 +113,10 @@ export function WorkspaceModal({
     }
     void (async () => {
       const ok = await confirm({
-        title: "Discard changes?",
-        message: "You have unsaved workspace edits. Discard them and close?",
-        confirmLabel: "Discard",
-        cancelLabel: "Keep Editing",
+        title: t("workspaces.discardTitle"),
+        message: t("workspaces.discardMessage"),
+        confirmLabel: t("common.discard"),
+        cancelLabel: t("common.keepEditing"),
         danger: true,
       });
       if (ok) {
@@ -134,7 +137,7 @@ export function WorkspaceModal({
       })
       .catch((err: unknown) => {
         setListError(presentFailure(
-          "Workspaces could not be loaded. The saved registry is unchanged; try again.",
+          message("workspaces.loadFailed"),
           "renderer: workspace registry load failed",
           err,
         ));
@@ -156,7 +159,7 @@ export function WorkspaceModal({
       await onSelect(workspace);
     } catch (err) {
       setError(presentFailure(
-        "The workspace could not be opened or created. Check the selected folder and try again.",
+        message("workspaces.openFailed"),
         "renderer: workspace open or creation failed",
         err,
       ));
@@ -178,7 +181,7 @@ export function WorkspaceModal({
       setRenameError({
         id,
         message: presentFailure(
-          "The workspace name could not be saved. The current name is unchanged; try again.",
+          message("workspaces.renameFailed"),
           "renderer: workspace rename failed",
           err,
           { workspaceId: id },
@@ -191,9 +194,9 @@ export function WorkspaceModal({
 
   const handleDelete = (ws: Workspace) => {
     void confirm({
-      title: "Delete workspace",
-      message: `Remove "${ws.name}" from the workspace list? The data files on disk will not be deleted.`,
-      confirmLabel: "Delete",
+      title: t("workspaces.deleteTitle"),
+      message: t("workspaces.deleteMessage", { name: ws.name }),
+      confirmLabel: t("common.delete"),
       danger: true,
       // The whole deletion runs inside onConfirm so the host keeps the dialog
       // busy while it runs and, on failure, holds it open with the reason shown.
@@ -273,7 +276,7 @@ export function WorkspaceModal({
 
   return (
     <ModalShell
-      title="Workspaces"
+      title={t("workspaces.title")}
       onClose={handleRequestClose}
       width={520}
       maxHeight="85vh"
@@ -282,20 +285,18 @@ export function WorkspaceModal({
     >
       <div className="modal-body">
         {loading ? (
-          <p className="modal-empty-message">Loading…</p>
+          <p className="modal-empty-message">{t("common.loading")}</p>
         ) : listError ? (
           <div className="workspace-load-recovery">
-            <OperationalResult severity="error" className="modal-result">{listError}</OperationalResult>
+            <OperationalResult severity="error" className="modal-result">{text(listError)}</OperationalResult>
             <div className="dialog-actions">
-              <button className="btn-action" type="button" onClick={load}>Retry</button>
+              <button className="btn-action" type="button" onClick={load}>{t("common.retry")}</button>
             </div>
           </div>
         ) : sorted.length === 0 ? (
-          <p className="modal-empty-message">
-            No workspaces yet. Open or create one to get started.
-          </p>
+          <p className="modal-empty-message">{t("workspaces.empty")}</p>
         ) : (
-          <div className="workspace-list" aria-label="Workspaces" {...listboxProps}>
+          <div className="workspace-list" aria-label={t("workspaces.title")} {...listboxProps}>
             {sorted.map((ws) => {
               const editing = editingId === ws.id;
               const rowProps = getRowProps(ws.id);
@@ -332,18 +333,18 @@ export function WorkspaceModal({
                         disabled={renamingId === ws.id}
                       />
                       <button className="btn-action" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
-                        Cancel
+                        {t("common.cancel")}
                       </button>
                       <button
                         className="btn-primary"
                         onClick={() => handleRename(ws.id)}
                         disabled={!editName.trim() || renamingId === ws.id}
                       >
-                        {renamingId === ws.id ? "Saving…" : "Save"}
+                        {renamingId === ws.id ? t("common.saving") : t("common.save")}
                       </button>
                       </div>
                       {renameError?.id === ws.id && (
-                        <OperationalResult severity="error" className="modal-result workspace-rename-result">{renameError.message}</OperationalResult>
+                        <OperationalResult severity="error" className="modal-result workspace-rename-result">{text(renameError.message)}</OperationalResult>
                       )}
                     </div>
                   ) : (
@@ -363,7 +364,7 @@ export function WorkspaceModal({
                             setRenameError(null);
                           }}
                         >
-                          Rename
+                          {t("common.rename")}
                         </button>
                         <button
                           className="btn-toolbar btn-delete"
@@ -373,7 +374,7 @@ export function WorkspaceModal({
                             handleDelete(ws);
                           }}
                         >
-                          Delete
+                          {t("common.delete")}
                         </button>
                       </div>
                     </>
@@ -386,10 +387,10 @@ export function WorkspaceModal({
       </div>
 
       <div className="workspace-create">
-        <div className="workspace-create-heading">Open or Create Workspace</div>
+        <div className="workspace-create-heading">{t("workspaces.createHeading")}</div>
         <div className="form-field">
           <label className="form-label">
-            Name <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>(optional)</span>
+            {t("workspaces.name")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
           </label>
           <input
             className="form-input"
@@ -398,7 +399,7 @@ export function WorkspaceModal({
               setError(null);
               setName(e.target.value);
             }}
-            placeholder="Uses the folder name if available"
+            placeholder={t("workspaces.namePlaceholder")}
             onCompositionStart={nameComposing.handlers.onCompositionStart}
             onCompositionEnd={nameComposing.handlers.onCompositionEnd}
             onKeyDown={(e) => {
@@ -410,7 +411,7 @@ export function WorkspaceModal({
         </div>
         <div className="form-field">
           <label className="form-label">
-            Location <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>(optional)</span>
+            {t("workspaces.location")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -421,7 +422,7 @@ export function WorkspaceModal({
                 setError(null);
                 setLocation(e.target.value);
               }}
-              placeholder="Default location if blank"
+              placeholder={t("workspaces.locationPlaceholder")}
               onCompositionStart={locationComposing.handlers.onCompositionStart}
               onCompositionEnd={locationComposing.handlers.onCompositionEnd}
               onKeyDown={(e) => {
@@ -430,17 +431,14 @@ export function WorkspaceModal({
               }}
             />
             <button className="btn-action" type="button" onClick={() => void handleBrowse()}>
-              Browse
+              {t("common.browse")}
             </button>
           </div>
-          <p className="settings-hint">
-            An existing folder must be a BigMouth workspace, or have no posts,
-            assets or config.json of its own.
-          </p>
+          <p className="settings-hint">{t("workspaces.locationHint")}</p>
         </div>
         {error && (
           <OperationalResult severity="error" className="modal-result">
-            {error}
+            {text(error)}
           </OperationalResult>
         )}
         <div className="dialog-actions">
@@ -450,7 +448,7 @@ export function WorkspaceModal({
               onClick={handleRequestClose}
               disabled={submitting}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           )}
           <button
@@ -458,7 +456,7 @@ export function WorkspaceModal({
             onClick={() => void handleSubmit()}
             disabled={submitting}
           >
-            {submitting ? "Opening…" : "Open or Create"}
+            {submitting ? t("workspaces.opening") : t("workspaces.openOrCreate")}
           </button>
         </div>
       </div>

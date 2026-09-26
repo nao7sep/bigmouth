@@ -6,6 +6,7 @@ import { ChevronDownIcon, ChevronRightIcon, MenuIcon, PlusIcon } from "./Icon";
 import { useComposing } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { Menu, MenuItem } from "./Menu";
+import { useI18n } from "../i18n/I18nContext";
 
 // One viewport's worth of rows for PageUp/PageDown. The list scrolls but rows
 // are a fixed-ish height; a constant step is the conventional approximation.
@@ -70,6 +71,7 @@ export function LeftPane({
   workspaceName,
   timezone,
 }: LeftPaneProps) {
+  const { t } = useI18n();
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [readyOpen, setReadyOpen] = useState(true);
   const [publishedOpen, setPublishedOpen] = useState(false);
@@ -79,29 +81,29 @@ export function LeftPane({
   const sections: SectionDef[] = [
     {
       key: "drafts",
-      label: "Drafts",
+      label: t("left.drafts"),
       posts: drafts,
       open: draftsOpen,
       toggle: () => setDraftsOpen((v) => !v),
-      emptyText: "No drafts",
+      emptyText: t("left.noDrafts"),
       timestampField: "createdAtUtc",
     },
     {
       key: "ready",
-      label: "Ready",
+      label: t("left.ready"),
       posts: ready,
       open: readyOpen,
       toggle: () => setReadyOpen((v) => !v),
-      emptyText: "No ready posts",
+      emptyText: t("left.noReady"),
       timestampField: "createdAtUtc",
     },
     {
       key: "published",
-      label: "Published",
+      label: t("left.published"),
       posts: published,
       open: publishedOpen,
       toggle: () => setPublishedOpen((v) => !v),
-      emptyText: "No published posts",
+      emptyText: t("left.noPublished"),
       timestampField: "publishedAtUtc",
       totalCount: publishedTotal,
       onLoadMore:
@@ -109,11 +111,11 @@ export function LeftPane({
     },
     {
       key: "expired",
-      label: "Expired",
+      label: t("left.expired"),
       posts: expired,
       open: expiredOpen,
       toggle: () => setExpiredOpen((v) => !v),
-      emptyText: "No expired posts",
+      emptyText: t("left.noExpired"),
       timestampField: "expiredAtUtc",
       totalCount: expiredTotal,
       onLoadMore: expired.length < expiredTotal ? onLoadMoreExpired : undefined,
@@ -137,7 +139,7 @@ export function LeftPane({
           : []),
       ]),
     // sections is rebuilt each render from these inputs; depend on the inputs.
-    [drafts, ready, published, expired, draftsOpen, readyOpen, publishedOpen, expiredOpen],
+    [drafts, ready, published, expired, draftsOpen, readyOpen, publishedOpen, expiredOpen, t],
   );
 
   const toggleByRowId = useMemo(
@@ -186,23 +188,23 @@ export function LeftPane({
         <h1>
           BigMouth
           <div className="left-header-actions">
-            <button className="btn-new-post-icon" title="New Post" onClick={onNewPost}>
+            <button className="btn-new-post-icon" title={t("left.newPost")} onClick={onNewPost}>
               <PlusIcon />
             </button>
             <Menu
-              label="Menu"
+              label={t("left.menu")}
               trigger={(props) => (
-                <button className="btn-hamburger" title="Menu" {...props}>
+                <button className="btn-hamburger" title={t("left.menu")} {...props}>
                   <MenuIcon />
                 </button>
               )}
             >
               <div className="menu-label">{workspaceName}</div>
-              <MenuItem onSelect={() => void onRevealCurrentLogFile()}>Reveal Log</MenuItem>
-              <MenuItem onSelect={onSwitchWorkspace}>Workspaces</MenuItem>
-              <MenuItem onSelect={onOpenSettings}>Settings</MenuItem>
-              <MenuItem onSelect={onOpenShortcuts}>Keyboard Shortcuts</MenuItem>
-              <MenuItem onSelect={onOpenAbout}>About</MenuItem>
+              <MenuItem onSelect={() => void onRevealCurrentLogFile()}>{t("left.revealLog")}</MenuItem>
+              <MenuItem onSelect={onSwitchWorkspace}>{t("workspaces.title")}</MenuItem>
+              <MenuItem onSelect={onOpenSettings}>{t("settings.title")}</MenuItem>
+              <MenuItem onSelect={onOpenShortcuts}>{t("shortcuts.title")}</MenuItem>
+              <MenuItem onSelect={onOpenAbout}>{t("left.about")}</MenuItem>
             </Menu>
           </div>
         </h1>
@@ -210,7 +212,7 @@ export function LeftPane({
 
       <div
         className="left-sections"
-        aria-label="Posts"
+        aria-label={t("left.posts")}
         {...listboxProps}
       >
         {sections.map((section) => (
@@ -246,10 +248,13 @@ function Section({
   composing: ReturnType<typeof useComposing>["handlers"];
   timezone: string;
 }) {
+  const { t, number } = useI18n();
   const { key: sectionKey, label, posts, open, emptyText, timestampField, totalCount, onLoadMore } =
     section;
   const displayCount =
-    totalCount !== undefined ? `${posts.length}/${totalCount}` : String(posts.length);
+    totalCount !== undefined
+      ? t("left.shownOfTotal", { shown: posts.length, total: totalCount })
+      : number(posts.length);
 
   return (
     <>
@@ -293,7 +298,7 @@ function Section({
               className="section-load-more"
               onClick={onLoadMore}
             >
-              Load more…
+              {t("left.loadMore")}
             </button>
           )}
         </div>
@@ -321,6 +326,7 @@ function PostItem({
   timestampField: string;
   timezone: string;
 }) {
+  const { dateTime } = useI18n();
   const fm = post.frontMatter;
   const displayName = getPostTitle(fm);
   const ts = (fm as Record<string, unknown>)[timestampField] as string | undefined;
@@ -335,7 +341,7 @@ function PostItem({
       <div className="post-item-title">{displayName}</div>
       <div className="post-item-meta">
         {fm.target}
-        {ts && <> &middot; {formatLocalDateTime(ts, timezone)}</>}
+        {ts && <> &middot; {formatLocalDateTime(ts, timezone, dateTime)}</>}
       </div>
     </div>
   );

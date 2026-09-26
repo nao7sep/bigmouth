@@ -1,4 +1,6 @@
 import { ModalShell } from "./ModalShell";
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 interface ShortcutsModalProps {
   onClose: () => void;
@@ -13,34 +15,40 @@ interface ShortcutsModalProps {
  * some context, because advertising an unreachable chord is the same defect as
  * listing one that does not exist.
  */
-function buildGroups(mod: string) {
+// Key tokens stay English on every platform (keyboard-shortcut-conventions);
+// only the descriptions and headings are translated.
+function buildGroups(mod: string): Array<{
+  title: MessageKey;
+  note: MessageKey | null;
+  shortcuts: Array<{ key: string; description: MessageKey }>;
+}> {
   return [
     {
-      title: "App",
+      title: "shortcuts.groupApp",
       note: null,
       shortcuts: [
-        { key: `${mod}+N`, description: "New post" },
-        { key: `${mod}+Comma`, description: "Settings" },
-        { key: `${mod}+Slash`, description: "Keyboard shortcuts" },
+        { key: `${mod}+N`, description: "shortcuts.newPost" },
+        { key: `${mod}+Comma`, description: "settings.title" },
+        { key: `${mod}+Slash`, description: "shortcuts.title" },
       ],
     },
     {
-      title: "Post",
-      note: "With a post open.",
+      title: "shortcuts.groupPost",
+      note: "shortcuts.notePost",
       shortcuts: [
-        { key: `${mod}+Enter`, description: "Run analysis" },
-        { key: `${mod}+E`, description: "Export" },
+        { key: `${mod}+Enter`, description: "shortcuts.runAnalysis" },
+        { key: `${mod}+E`, description: "shortcuts.export" },
       ],
     },
     {
-      title: "Tabs",
-      note: "With a post open. Metadata appears only for targets that require it.",
+      title: "shortcuts.groupTabs",
+      note: "shortcuts.noteTabs",
       shortcuts: [
-        { key: `${mod}+1`, description: "Analysis" },
-        { key: `${mod}+2`, description: "Imaging" },
-        { key: `${mod}+3`, description: "Assets" },
-        { key: `${mod}+4`, description: "Preview" },
-        { key: `${mod}+5`, description: "Metadata" },
+        { key: `${mod}+1`, description: "tabs.analysis" },
+        { key: `${mod}+2`, description: "tabs.imaging" },
+        { key: `${mod}+3`, description: "tabs.assets" },
+        { key: `${mod}+4`, description: "tabs.preview" },
+        { key: `${mod}+5`, description: "tabs.metadata" },
       ],
     },
   ];
@@ -53,19 +61,20 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   const platform = window.bigmouth?.platform;
   const mod = platform && platform !== "darwin" ? "Ctrl" : "Cmd";
   const groups = buildGroups(mod);
+  const { t } = useI18n();
 
   return (
-    <ModalShell title="Keyboard Shortcuts" onClose={onClose} width={420} autoFocusClose>
+    <ModalShell title={t("shortcuts.title")} onClose={onClose} width={420} autoFocusClose>
       <div className="modal-body">
         {groups.map((group) => (
           <section key={group.title} className="shortcuts-group">
-            <h3 className="shortcuts-group-title">{group.title}</h3>
-            {group.note && <p className="shortcuts-group-note">{group.note}</p>}
+            <h3 className="shortcuts-group-title">{t(group.title)}</h3>
+            {group.note && <p className="shortcuts-group-note">{t(group.note)}</p>}
             <table className="shortcuts-table">
               <tbody>
                 {group.shortcuts.map(({ key, description }) => (
                   <tr key={key}>
-                    <td className="shortcut-desc">{description}</td>
+                    <td className="shortcut-desc">{t(description)}</td>
                     <td className="shortcut-key">
                       <kbd>{key}</kbd>
                     </td>
@@ -78,7 +87,7 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
       </div>
       <div className="modal-footer">
         <button className="btn-action" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
       </div>
     </ModalShell>

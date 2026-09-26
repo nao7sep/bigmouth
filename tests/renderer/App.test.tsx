@@ -56,9 +56,9 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     activeWorkspaceId: string | null;
     onWorkspaceDeleted: (id: string) => boolean | Promise<boolean>;
     onWorkspaceUpdated: (ws: Workspace) => void;
-    initialLoadError?: string | null;
+    initialLoadError?: { key: string } | null;
   }) => (
-    <div data-testid="ws-modal" data-dismissable={String(props.dismissable)} data-load-error={props.initialLoadError ?? ""}>
+    <div data-testid="ws-modal" data-dismissable={String(props.dismissable)} data-load-error={props.initialLoadError?.key ?? ""}>
       <span data-testid="ws-modal-active">{props.activeWorkspaceId ?? "none"}</span>
       <button
         data-testid="ws-modal-select"
@@ -233,9 +233,7 @@ describe("App bootstrap — stored workspace", () => {
 
     expect(mockUpdateUiState).not.toHaveBeenCalledWith({ activeWorkspaceId: "" });
     const modal = getByTestId("ws-modal");
-    expect(modal.getAttribute("data-load-error")).toBe(
-      "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
-    );
+    expect(modal.getAttribute("data-load-error")).toBe("app.workspacesLoadFailed");
     expect(modal.textContent).not.toContain("BIGMOUTH_SENTINEL");
   });
 });

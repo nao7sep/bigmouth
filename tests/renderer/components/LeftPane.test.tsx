@@ -140,10 +140,11 @@ describe("LeftPane post rows", () => {
     const titles = Array.from(container.querySelectorAll(".post-item-title")).map((t) => t.textContent);
     expect(titles).toContain("my-slug");
     expect(titles).toContain("Has Title");
-    // Drafts use createdAtUtc; formatted in Asia/Tokyo (UTC+9): 2024-01-01 09:00.
+    // Drafts use createdAtUtc, formatted in Asia/Tokyo (UTC+9) with the
+    // interface language's format (English outside a provider).
     const meta = container.querySelector(".post-item-meta")?.textContent ?? "";
     expect(meta).toContain("blog");
-    expect(meta).toContain("2024-01-01 09:00");
+    expect(meta).toContain("Jan 1, 2024, 9:00 AM");
   });
 
   it("marks the selected row with the selected class", () => {

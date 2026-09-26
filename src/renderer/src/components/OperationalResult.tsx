@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { XIcon } from "./Icon";
+import { useI18n } from "../i18n/I18nContext";
 
 interface OperationalResultProps {
   severity: "warning" | "error";
@@ -21,6 +22,7 @@ export function OperationalResult({
   onDismiss,
   dismissClassName,
 }: OperationalResultProps) {
+  const { t } = useI18n();
   return (
     <div
       className={`${className} operational-result operational-result--${severity}`}
@@ -33,7 +35,7 @@ export function OperationalResult({
           type="button"
           className={`operational-result-dismiss${dismissClassName ? ` ${dismissClassName}` : ""}`}
           onClick={onDismiss}
-          aria-label="Close result"
+          aria-label={t("result.close")}
         >
           <XIcon />
         </button>

@@ -3,6 +3,8 @@ import { openExternal, reportProblem } from "../api";
 import { ModalShell } from "./ModalShell";
 import { ExternalLinkIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 interface AboutModalProps {
   onClose: () => void;
@@ -11,7 +13,8 @@ interface AboutModalProps {
 const GITHUB_URL = "https://github.com/nao7sep/bigmouth";
 
 export function AboutModal({ onClose }: AboutModalProps) {
-  const [linkFailures, setLinkFailures] = useState<Record<"repo" | "issues", string | undefined>>({
+  const { t } = useI18n();
+  const [linkFailures, setLinkFailures] = useState<Record<"repo" | "issues", MessageKey | undefined>>({
     repo: undefined,
     issues: undefined,
   });
@@ -28,9 +31,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
       if (linkAttempts.current[owner] !== attempt) return;
       setLinkFailures((current) => ({
         ...current,
-        [owner]: owner === "repo"
-          ? "GitHub could not be opened. Try again."
-          : "Report Issue could not be opened. Try again.",
+        [owner]: owner === "repo" ? "about.repoFailed" : "about.issuesFailed",
       }));
     }
   }
@@ -40,15 +41,14 @@ export function AboutModal({ onClose }: AboutModalProps) {
   };
 
   return (
-    <ModalShell title="About BigMouth" titleHidden onClose={onClose} width={380} autoFocusClose>
+    <ModalShell title={t("about.title")} titleHidden onClose={onClose} width={380} autoFocusClose>
       <div className="modal-body">
         <div className="about-identity">
           <p className="about-name">BigMouth</p>
-          <p className="about-version">Version {__APP_VERSION__}</p>
+          <p className="about-version">{t("about.version", { version: __APP_VERSION__ })}</p>
         </div>
         <p style={{ marginTop: 8, fontSize: 13, color: "var(--bm-text-soft)", lineHeight: 1.6 }}>
-          A local-first writing preflight tool for composing blog and social media posts.
-          Your data stays on your machine.
+          {t("about.description")}
         </p>
         <div style={{ marginTop: 16, display: "flex", gap: 16 }}>
           <a
@@ -67,26 +67,26 @@ export function AboutModal({ onClose }: AboutModalProps) {
             onClick={(event) => { event.preventDefault(); void openLink("issues", `${GITHUB_URL}/issues`); }}
             style={{ fontSize: 13, color: "var(--bm-link)", textDecoration: "none", whiteSpace: "nowrap" }}
           >
-            Report Issue <ExternalLinkIcon />
+            {t("about.reportIssue")} <ExternalLinkIcon />
           </a>
         </div>
         {linkFailures.repo ? (
           <OperationalResult severity="error" className="modal-result" onDismiss={() => dismissFailure("repo")}>
-            {linkFailures.repo}
+            {t(linkFailures.repo)}
           </OperationalResult>
         ) : null}
         {linkFailures.issues ? (
           <OperationalResult severity="error" className="modal-result" onDismiss={() => dismissFailure("issues")}>
-            {linkFailures.issues}
+            {t(linkFailures.issues)}
           </OperationalResult>
         ) : null}
         <p style={{ marginTop: 16, fontSize: 12, color: "var(--bm-text-faint)" }}>
-          &copy; 2026 Yoshinao Inoguchi &mdash; GNU GPL v3 or later
+          {t("about.copyright")}
         </p>
       </div>
       <div className="modal-footer">
         <button className="btn-action" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
       </div>
     </ModalShell>

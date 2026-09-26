@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { reportProblem } from "../api";
+import { message, type Message } from "@shared/i18n/translate";
 
 export function useCopyFeedback(duration = 1500) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [copyErrors, setCopyErrors] = useState<Record<string, string>>({});
+  const [copyErrors, setCopyErrors] = useState<Record<string, Message>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(
@@ -30,7 +31,7 @@ export function useCopyFeedback(duration = 1500) {
         setCopiedKey((current) => (current === key ? null : current));
         setCopyErrors((current) => ({
           ...current,
-          [key]: "Could not copy to the clipboard. Try again.",
+          [key]: message("copy.failed"),
         }));
       }
     },

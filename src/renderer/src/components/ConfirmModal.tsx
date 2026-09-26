@@ -1,6 +1,8 @@
 import { useId } from "react";
 import { ModalShell } from "./ModalShell";
 import { OperationalResult } from "./OperationalResult";
+import { useI18n } from "../i18n/I18nContext";
+import type { Message } from "@shared/i18n/translate";
 
 interface ConfirmModalProps {
   title?: string;
@@ -11,7 +13,7 @@ interface ConfirmModalProps {
   /** Disables both buttons while the confirm action is in flight. */
   busy?: boolean;
   /** A failure from the confirm action, shown in the dialog the user acted in. */
-  error?: string | null;
+  error?: Message | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,14 +21,17 @@ interface ConfirmModalProps {
 export function ConfirmModal({
   title,
   message,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   danger = false,
   busy = false,
   error = null,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t, text } = useI18n();
+  confirmLabel ??= t("common.confirm");
+  cancelLabel ??= t("common.cancel");
   const heading = title ?? confirmLabel;
   const messageId = useId();
 
@@ -40,7 +45,7 @@ export function ConfirmModal({
         </p>
         {error && (
           <OperationalResult severity="error" className="modal-result">
-            {error}
+            {text(error)}
           </OperationalResult>
         )}
       </div>

@@ -1,19 +1,13 @@
 import { useCallback, useMemo } from "react";
-import type { PostStatus } from "@shared/types";
 import type { PostPickerState } from "../hooks/usePostPicker";
 import { getPostTitle } from "../util/postTitle";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { OperationalResult } from "./OperationalResult";
+import { POST_STATUS_LABELS } from "@shared/postStatus";
+import { useI18n } from "../i18n/I18nContext";
 
 const PAGE_SIZE = 10;
-
-const STATUS_LABELS: Record<PostStatus, string> = {
-  draft: "Draft",
-  ready: "Ready",
-  published: "Published",
-  expired: "Expired",
-};
 
 interface PostPickerListProps extends PostPickerState {
   onSelect: (id: string, title: string) => void;
@@ -37,6 +31,7 @@ export function PostPickerList({
   autoFocus,
   error,
 }: PostPickerListProps) {
+  const { t, text } = useI18n();
   const { composingRef, handlers } = useComposing();
 
   const rows: PostListRow[] = useMemo(
@@ -66,7 +61,7 @@ export function PostPickerList({
       <input
         className="form-input"
         style={{ marginBottom: 4 }}
-        placeholder="Filter posts…"
+        placeholder={t("picker.filter")}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         autoFocus={autoFocus}
@@ -83,14 +78,18 @@ export function PostPickerList({
           }
         }}
       />
-      <div className="post-picker-list" aria-label="Posts" {...listboxProps}>
+      <div className="post-picker-list" aria-label={t("left.posts")} {...listboxProps}>
         {posts.length === 0 && !error ? (
-          <p className="post-picker-empty">No posts found</p>
+          <p className="post-picker-empty">{t("picker.empty")}</p>
         ) : (
           posts.map((p) => {
             const fm = p.frontMatter;
             const title = getPostTitle(fm);
-            const sub = `${fm.target} · ${fm.language} · ${STATUS_LABELS[fm.status]}`;
+            const sub = t("picker.postSub", {
+              target: fm.target,
+              language: fm.language,
+              status: t(POST_STATUS_LABELS[fm.status]),
+            });
             return (
               <div
                 key={fm.id}
@@ -107,7 +106,7 @@ export function PostPickerList({
         )}
         {error && (
           <OperationalResult severity="error" className="modal-result">
-            {error}
+            {text(error)}
           </OperationalResult>
         )}
         {hasMore && (
@@ -120,7 +119,7 @@ export function PostPickerList({
             onClick={loadMore}
             disabled={loadingMore}
           >
-            {loadingMore ? "Loading…" : "Load More"}
+            {loadingMore ? t("common.loading") : t("picker.loadMore")}
           </button>
         )}
       </div>

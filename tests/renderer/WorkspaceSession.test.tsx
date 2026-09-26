@@ -795,7 +795,7 @@ describe("WorkspaceSession load more / log", () => {
       fireEvent.click(getByTestId("left-log"));
       await Promise.resolve();
     });
-    expect(getByText("The current log could not be revealed. Open the logs folder from About and try again.")).toBeTruthy();
+    expect(getByText("The current log could not be revealed. Try again.")).toBeTruthy();
   });
 });
 

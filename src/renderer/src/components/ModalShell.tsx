@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useModalLayer } from "../hooks/useModalStack";
 import { XIcon } from "./Icon";
+import { useI18n } from "../i18n/I18nContext";
 
 interface ModalShellProps {
   title: string;
@@ -52,6 +53,7 @@ export function ModalShell({
   useModalLayer(onClose);
   const modalRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { t } = useI18n();
 
   // Move focus into the dialog on open (unless a child already claimed it via
   // `autoFocus`), and restore it to the trigger on close.
@@ -119,7 +121,7 @@ export function ModalShell({
               onClick={onClose}
               disabled={closeDisabled}
               autoFocus={autoFocusClose}
-              aria-label="Close"
+              aria-label={t("common.close")}
             >
               <XIcon />
             </button>

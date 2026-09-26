@@ -1,10 +1,13 @@
-/** Log the complete diagnostic while returning stable, authored display copy. */
-export function presentFailure(
-  userMessage: string,
+/**
+ * Log the complete diagnostic while returning stable, authored display copy —
+ * a catalogue message, rendered in whatever language is current when shown.
+ */
+export function presentFailure<T>(
+  userMessage: T,
   logMessage: string,
   err: unknown,
   detail?: Record<string, unknown>,
-): string {
+): T {
   const diagnostic = { ...(detail ?? {}), ...describeError(err) };
   try {
     const writeRendererLog = window.bigmouth?.writeRendererLog;

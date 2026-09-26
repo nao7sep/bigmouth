@@ -1,6 +1,7 @@
 import { usePostPicker } from "../hooks/usePostPicker";
 import { PostPickerList } from "./PostPickerList";
 import { ModalShell } from "./ModalShell";
+import { useI18n } from "../i18n/I18nContext";
 
 interface SourcePickerModalProps {
   currentPostId: string;
@@ -16,10 +17,11 @@ export function SourcePickerModal({
   onClose,
 }: SourcePickerModalProps) {
   const picker = usePostPicker(pubBatchSize, currentPostId);
+  const { t } = useI18n();
 
   return (
     <ModalShell
-      title="Link Source Post"
+      title={t("sourcePicker.title")}
       onClose={onClose}
       width={520}
       maxHeight="75vh"
@@ -34,7 +36,7 @@ export function SourcePickerModal({
       </div>
       <div className="modal-footer">
         <button className="btn-action" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </ModalShell>

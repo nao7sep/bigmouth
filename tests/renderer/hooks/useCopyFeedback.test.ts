@@ -118,9 +118,7 @@ describe("useCopyFeedback", () => {
     await act(async () => result.current.copy("x"));
 
     expect(result.current.copiedKey).toBeNull();
-    expect(result.current.copyErrors.default).toBe(
-      "Could not copy to the clipboard. Try again.",
-    );
+    expect(result.current.copyErrors.default).toEqual({ key: "copy.failed" });
     expect(reportProblem).toHaveBeenCalledWith(
       "clipboard write failed",
       expect.any(Error),

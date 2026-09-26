@@ -6,6 +6,8 @@ import { ModalShell } from "./ModalShell";
 import type { Target } from "@shared/types";
 import { OperationalResult } from "./OperationalResult";
 import { presentFailure } from "../util/presentFailure";
+import { useI18n } from "../i18n/I18nContext";
+import { message, type Message } from "@shared/i18n/translate";
 
 interface NewPostModalProps {
   targets: Target[];
@@ -31,13 +33,14 @@ export function NewPostModal({
   onClose,
   onCreate,
 }: NewPostModalProps) {
+  const { t, text } = useI18n();
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     resolveLanguage(undefined, supportedLanguages)
   );
   const [sourceId, setSourceId] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<Message | null>(null);
   const [creating, setCreating] = useState(false);
   const confirm = useConfirm();
 
@@ -53,10 +56,10 @@ export function NewPostModal({
       return;
     }
     const ok = await confirm({
-      title: "Discard new post?",
-      message: "You have unsaved selections. Discard them and close?",
-      confirmLabel: "Discard",
-      cancelLabel: "Keep Editing",
+      title: t("newPost.discardTitle"),
+      message: t("newPost.discardMessage"),
+      confirmLabel: t("common.discard"),
+      cancelLabel: t("common.keepEditing"),
       danger: true,
     });
     if (ok) onClose();
@@ -69,25 +72,25 @@ export function NewPostModal({
   const handleTargetChange = (name: string) => {
     setCreateError(null);
     setSelectedTarget(name);
-    const t = targets.find((t) => t.name === name);
-    setSelectedLanguage(resolveLanguage(t?.defaultLanguage, supportedLanguages));
+    const target = targets.find((candidate) => candidate.name === name);
+    setSelectedLanguage(resolveLanguage(target?.defaultLanguage, supportedLanguages));
   };
 
   const handleCreate = async () => {
     if (!hasTargets) {
-      setCreateError("No targets configured. Add one in Settings before creating a post.");
+      setCreateError(message("newPost.noTargets"));
       return;
     }
     if (!hasLanguages) {
-      setCreateError("No supported languages configured. Add one in Settings before creating a post.");
+      setCreateError(message("newPost.noLanguages"));
       return;
     }
     if (!selectedTarget) {
-      setCreateError("Select a target before creating a post.");
+      setCreateError(message("newPost.selectTarget"));
       return;
     }
     if (!selectedLanguage || !supportedLanguages.includes(selectedLanguage)) {
-      setCreateError("Select a supported language before creating a post.");
+      setCreateError(message("newPost.selectLanguage"));
       return;
     }
 
@@ -97,7 +100,7 @@ export function NewPostModal({
       await onCreate(selectedTarget, selectedLanguage, sourceId || undefined);
     } catch (err) {
       setCreateError(presentFailure(
-        "The post could not be created. Your selections are still shown; try again.",
+        message("newPost.createFailed"),
         "renderer: post creation failed",
         err,
       ));
@@ -107,10 +110,10 @@ export function NewPostModal({
   };
 
   return (
-    <ModalShell title="New Post" onClose={() => void handleRequestClose()} width={440}>
+    <ModalShell title={t("left.newPost")} onClose={() => void handleRequestClose()} width={440}>
       <div className="modal-body">
         <div className="form-field">
-          <label className="form-label">Target</label>
+          <label className="form-label">{t("newPost.target")}</label>
           {hasTargets ? (
             <select
               className="form-select"
@@ -118,22 +121,22 @@ export function NewPostModal({
               onChange={(e) => handleTargetChange(e.target.value)}
               autoFocus
             >
-              <option value="" disabled>Please select…</option>
-              {targets.map((t) => (
-                <option key={t.name} value={t.name}>
-                  {t.name} ({t.defaultLanguage})
+              <option value="" disabled>{t("newPost.selectPlaceholder")}</option>
+              {targets.map((target) => (
+                <option key={target.name} value={target.name}>
+                  {t("newPost.targetOption", { name: target.name, language: target.defaultLanguage })}
                 </option>
               ))}
             </select>
           ) : (
             <OperationalResult severity="warning" className="modal-result">
-              No targets configured. Add one in Settings before creating a post.
+              {t("newPost.noTargets")}
             </OperationalResult>
           )}
         </div>
 
         <div className="form-field">
-          <label className="form-label">Language</label>
+          <label className="form-label">{t("newPost.language")}</label>
           {hasLanguages ? (
             <select
               className="form-select"
@@ -151,13 +154,13 @@ export function NewPostModal({
             </select>
           ) : (
             <OperationalResult severity="warning" className="modal-result">
-              No supported languages configured. Add one in Settings → General before creating a post.
+              {t("newPost.noLanguagesGeneral")}
             </OperationalResult>
           )}
         </div>
 
         <div className="form-field">
-          <label className="form-label">Source post (optional)</label>
+          <label className="form-label">{t("newPost.source")}</label>
           {sourceId ? (
             <div className="source-selected">
               <span className="source-selected-title">{sourceTitle}</span>
@@ -165,7 +168,7 @@ export function NewPostModal({
                 className="btn-toolbar"
                 onClick={() => { setSourceId(""); setSourceTitle(""); }}
               >
-                Unlink
+                {t("newPost.unlink")}
               </button>
             </div>
           ) : (
@@ -182,20 +185,20 @@ export function NewPostModal({
         </div>
         {createError && (
           <OperationalResult severity="error" className="modal-result">
-            {createError}
+            {text(createError)}
           </OperationalResult>
         )}
       </div>
       <div className="modal-footer">
         <button className="btn-action" onClick={() => void handleRequestClose()}>
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           className="btn-primary"
           onClick={handleCreate}
           disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
         >
-          {creating ? "Creating…" : "Create"}
+          {creating ? t("newPost.creating") : t("newPost.create")}
         </button>
       </div>
     </ModalShell>

@@ -85,9 +85,9 @@ describe("PostPickerList — render", () => {
 
   it("shows the error instead of the empty message when loading failed", () => {
     const { getByText, queryByText } = render(
-      <PostPickerList {...state({ error: "boom" })} onSelect={vi.fn()} />,
+      <PostPickerList {...state({ error: { key: "picker.loadFailed" } })} onSelect={vi.fn()} />,
     );
-    expect(getByText("boom")).toBeTruthy();
+    expect(getByText("Posts could not be loaded. Close and reopen this picker to try again.")).toBeTruthy();
     expect(queryByText("No posts found")).toBeNull();
   });
 });
