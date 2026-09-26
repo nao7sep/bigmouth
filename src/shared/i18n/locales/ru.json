@@ -452,7 +452,7 @@
   "settings.apiKey": "Ключ API",
   "settings.apiKeyKeep": "Оставьте пустым, чтобы сохранить текущий ключ",
   "settings.apiKeyOptional": "Необязательно",
-  "settings.envKey": "Используется {variable}; она важнее любого сохранённого ключа.",
+  "settings.envKey": "Используется переменная {variable}; она имеет приоритет над сохранённым ключом.",
   "settings.addAiConfig": "+ Добавить конфигурацию ИИ",
   "settings.targetsNeedLanguage": "Добавьте хотя бы один поддерживаемый язык в разделе «Общие», прежде чем создавать площадки.",
   "settings.targetNameTaken": "Это название уже используется другой площадкой.",
