@@ -176,16 +176,38 @@ export function initStorageRoot(): void {
   defaultWorkspacesDir = path.join(appDir, "workspaces");
 
   try {
-    fs.mkdirSync(appDir, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true, mode: 0o700 });
     fs.mkdirSync(logsDir, { recursive: true });
     if (!fs.statSync(appDir).isDirectory()) {
       throw new Error("not a directory");
     }
+    tightenRootPermissions(appDir);
   } catch (cause) {
     throw new Error(
       `Cannot use the ${APP_NAME} storage root "${appDir}". Set ${HOME_ENV_VAR} to a writable directory.`,
       { cause }
     );
+  }
+}
+
+/**
+ * Tightens the storage root to owner-only (0700) when an existing root is
+ * broader — `mkdirSync`'s `mode` only applies to a freshly created directory
+ * and is masked by umask, so a pre-existing 0755 root (or one created before
+ * this check existed) would otherwise stay group/other-readable, letting
+ * accounts that cannot read the app's own data read its derived logs and
+ * caches. POSIX only; Windows uses its own permission model. A failure to
+ * tighten is logged and never stops the app.
+ */
+function tightenRootPermissions(root: string): void {
+  if (process.platform === "win32") return;
+  try {
+    const mode = fs.statSync(root).mode;
+    if ((mode & 0o077) !== 0) {
+      fs.chmodSync(root, 0o700);
+    }
+  } catch (error) {
+    console.error(`Failed to tighten permissions on the ${APP_NAME} storage root "${root}":`, error);
   }
 }
 

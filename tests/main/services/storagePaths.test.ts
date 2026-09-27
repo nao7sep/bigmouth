@@ -268,6 +268,36 @@ describe("standard subpaths", () => {
     removeTestTree(home);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "creates a fresh root as owner-only (0700)",
+    () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-perm-fresh-"));
+      const root = path.join(home, ".bigmouth");
+      process.env.BIGMOUTH_HOME = root;
+
+      initStorageRoot();
+
+      expect(fs.statSync(root).mode & 0o777).toBe(0o700);
+      removeTestTree(home);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "tightens an existing broader root (0755) to 0700 at launch",
+    () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-perm-existing-"));
+      const root = path.join(home, ".bigmouth");
+      fs.mkdirSync(root, { mode: 0o755 });
+      expect(fs.statSync(root).mode & 0o777).toBe(0o755);
+      process.env.BIGMOUTH_HOME = root;
+
+      initStorageRoot();
+
+      expect(fs.statSync(root).mode & 0o777).toBe(0o700);
+      removeTestTree(home);
+    },
+  );
+
   it("resolves without the workspace registry, which is what broke the import cycle", () => {
     // core/shared/atomicWrite reaches into backupStore, which used to reach into
     // the REGISTRY for the root, which reached back into atomicWrite. The cycle
