@@ -1609,6 +1609,20 @@ button:disabled,
   font-weight: 600;
   color: var(--bm-text-soft);
   margin-bottom: 6px;
+  /* A field's label is always one line; it sizes to its content instead of
+     wrapping, so a row of side-by-side fields (.form-row) can grow a column
+     or wrap the whole field to a new line rather than break a label mid-word. */
+  white-space: nowrap;
+}
+
+/* A row of side-by-side fields (e.g. font size / line height / padding).
+   Columns grow with their flex-basis; when a translated label needs more
+   room than the row has, the whole field wraps to its own line instead of
+   the label breaking mid-word. */
+.form-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ── Fields ────────────────────────────────────────────────

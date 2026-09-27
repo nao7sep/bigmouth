@@ -739,7 +739,7 @@ function FontsSection({
           placeholder={t("settings.editorFontPlaceholder")}
         />
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="form-row">
         <div className="form-field" style={{ flex: 1 }}>
           <label className="form-label">{t("settings.editorFontSize")}</label>
           <input
@@ -963,7 +963,7 @@ function AiTab({
             />
             {!c.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="form-row">
             <div className="form-field" style={{ flex: 1 }}>
               <label className="form-label">{t("settings.provider")}</label>
               <select
@@ -1005,7 +1005,7 @@ function AiTab({
               )}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="form-row">
             <div className="form-field" style={{ flex: 1 }}>
               <label className="form-label">{t("settings.maxTokens")}</label>
               <input
@@ -1127,7 +1127,7 @@ function TargetsTab({
             {!target.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
             {target.name.trim() && duplicateNames.has(target.name.trim()) && <FieldError msg={message("settings.targetNameTaken")} />}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="form-row">
             <div className="form-field" style={{ flex: 1 }}>
               <label className="form-label">{t("newPost.language")}</label>
               <select
