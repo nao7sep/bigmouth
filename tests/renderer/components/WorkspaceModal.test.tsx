@@ -607,4 +607,60 @@ describe("WorkspaceModal — row actions from the keyboard", () => {
 
     expect(await findByText(/Remove "Alpha" from the workspace list\?/)).toBeTruthy();
   });
+
+  // Enter already opens the active row (manual activation), so it cannot also
+  // start a rename here — Cmd+R is the fallback the keyboard-shortcut
+  // conventions call for when the natural (Finder-style) key is taken.
+  it("Cmd+R on the active row starts a rename", async () => {
+    const { getByRole, getByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "r", metaKey: true });
+
+    expect(getByDisplayValue("Alpha")).toBeTruthy();
+  });
+
+  // Both halves of the command modifier are bound (keyboard-shortcut-conventions).
+  it("Ctrl+R on the active row also starts a rename", async () => {
+    const { getByRole, getByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "r", ctrlKey: true });
+
+    expect(getByDisplayValue("Alpha")).toBeTruthy();
+  });
+
+  it("a bare 'r' does not start a rename (it is type-ahead, not a command)", async () => {
+    const { getByRole, queryByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "r" });
+
+    expect(queryByDisplayValue("Alpha")).toBeNull();
+  });
+
+  it("Cmd+Shift+R does not start a rename (only the plain chord is bound)", async () => {
+    const { getByRole, queryByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "R", metaKey: true, shiftKey: true });
+
+    expect(queryByDisplayValue("Alpha")).toBeNull();
+  });
+
+  // Alt is excluded from command-modifier matching everywhere in the app
+  // (Chromium delivers Windows AltGr as Ctrl+Alt), so Cmd+Alt+R must not fire it.
+  it("Cmd+Alt+R does not start a rename", async () => {
+    const { getByRole, queryByDisplayValue } = await openList();
+    const listbox = getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "r", metaKey: true, altKey: true });
+
+    expect(queryByDisplayValue("Alpha")).toBeNull();
+  });
 });

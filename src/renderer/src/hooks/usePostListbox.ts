@@ -19,6 +19,7 @@ import {
   type NavDirection,
 } from "../util/compositeNav";
 import { isComposingKeyboardEvent } from "./useComposing";
+import { hasMod } from "../util/shortcuts";
 
 // The app's listbox layer: one shared hook behind the post list. It realizes
 // the composite-control contract for a grouped, single-select listbox:
@@ -259,6 +260,19 @@ export function usePostListbox({
           else onActivate(resolvedActiveId);
           return;
         case "F2":
+          if (resolvedActiveId == null || !onRowAction) return;
+          e.preventDefault();
+          onRowAction(resolvedActiveId, "rename");
+          return;
+        case "r":
+        case "R":
+          // Cmd+R alias for rename (keyboard-shortcut-conventions: the command
+          // modifier, Alt excluded, Shift not part of the decision). Finder's own
+          // rename key is Enter, but this listbox already binds Enter to manual
+          // activation (opening the row), so Enter cannot double as rename here —
+          // Cmd+R is the fallback the conventions call for when the natural key is
+          // taken. A bare "r" (no modifier) falls through to type-ahead below.
+          if (!hasMod(e) || e.shiftKey) break;
           if (resolvedActiveId == null || !onRowAction) return;
           e.preventDefault();
           onRowAction(resolvedActiveId, "rename");

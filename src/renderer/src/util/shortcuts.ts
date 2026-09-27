@@ -3,8 +3,13 @@ const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 
-/** Alt is excluded because Chromium delivers Windows AltGr as Ctrl+Alt. */
-export function hasMod(e: KeyboardEvent): boolean {
+/**
+ * Alt is excluded because Chromium delivers Windows AltGr as Ctrl+Alt. Typed
+ * structurally (not `KeyboardEvent`) so it takes either a native event, from a
+ * window-level listener, or a React `KeyboardEvent`, from a component handler —
+ * one predicate for the command modifier at every dispatch site.
+ */
+export function hasMod(e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean }): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey;
 }
 

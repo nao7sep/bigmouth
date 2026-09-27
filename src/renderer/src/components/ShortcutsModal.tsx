@@ -51,6 +51,17 @@ function buildGroups(mod: string): Array<{
         { key: `${mod}+5`, description: "tabs.metadata" },
       ],
     },
+    {
+      title: "shortcuts.groupWorkspaces",
+      note: "shortcuts.noteWorkspaces",
+      shortcuts: [
+        // Independent chords (empty modifier vs. the command modifier), so the
+        // alternatives are spaced rather than sharing one written modifier
+        // (keyboard-shortcut-conventions). Enter is already bound to opening the
+        // active row, so it cannot double as rename here — Cmd+R is the fallback.
+        { key: `F2 / ${mod}+R`, description: "shortcuts.renameWorkspace" },
+      ],
+    },
   ];
 }
 
