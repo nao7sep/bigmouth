@@ -1160,6 +1160,7 @@ button:disabled,
   border-radius: var(--bm-radius-lg);
   box-shadow: var(--bm-shadow-popover);
   min-width: 200px;
+  max-width: calc(100vw - 16px);
   z-index: 50;
   overflow: hidden;
   padding: 4px;
@@ -1179,6 +1180,9 @@ button:disabled,
   font-size: 13px;
   color: var(--bm-text);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The arrow-focused item is the menu's cursor. A flat menu item takes a
