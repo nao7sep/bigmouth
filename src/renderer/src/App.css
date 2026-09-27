@@ -324,7 +324,7 @@ body {
 
 .app-operational-result {
   position: relative;
-  padding: 10px 36px 10px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--bm-danger-border);
   border-radius: var(--bm-radius-lg);
   background: var(--bm-danger-soft);
@@ -881,29 +881,43 @@ button:disabled,
 
 .operational-result-message {
   min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
 }
 
+/* The dismiss X sits beside the message as a normal flex item, top-aligned with
+   the row and nudged down by margin-block so it centres on the message's first
+   line (--bm-result-first-line, in `1lh` units of the message's own font) rather
+   than on the whole (possibly wrapped) block. This is the one shared mechanism
+   for every dismissible operational result; per-site overrides only used to nudge
+   a fixed top/right offset per font-size, which this replaces. */
 .operational-result:has(.operational-result-dismiss) {
-  position: relative;
-  padding-right: 34px;
+  --bm-result-first-line: 1lh;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .operational-result-dismiss {
-  position: absolute;
-  top: 6px;
-  right: 8px;
+  flex: none;
   display: inline-grid;
   place-items: center;
   width: 22px;
   height: 22px;
+  margin-block: calc((var(--bm-result-first-line) - 22px) / 2);
   padding: 0;
   border: 0;
   border-radius: var(--bm-radius-sm);
   background: transparent;
   color: currentColor;
-  font-size: 12px;
-  line-height: 1;
+  /* `font: inherit` (not a fixed font-size + line-height) makes the icon's `1em`
+     size track the message text and, just as importantly, makes the `1lh` in
+     --bm-result-first-line resolve to the SAME line height here as on the
+     message: a custom property holding an `lh` value is re-resolved against
+     whatever font the element using it has, so this button must share the
+     message's font, not carry its own, or the centering math silently uses the
+     wrong line height. */
+  font: inherit;
   cursor: pointer;
 }
 
@@ -949,15 +963,6 @@ button:disabled,
   margin-left: 24px;
 }
 
-.modal-result-dismiss {
-  top: 5px;
-  right: 7px;
-}
-
-.toolbar-error-dismiss {
-  top: 3px;
-  right: 10px;
-}
 
 .toolbar-notice {
   padding: 6px 16px;
@@ -1357,11 +1362,6 @@ button:disabled,
   border-radius: var(--bm-radius-md);
   color: var(--bm-danger);
   font-size: 12px;
-}
-
-.metadata-error-dismiss {
-  top: 5px;
-  right: 7px;
 }
 
 .metadata-copy-error,
@@ -1888,11 +1888,6 @@ select:is(.form-select, .prompt-select) {
   background: var(--bm-danger-soft);
   border: 1px solid var(--bm-danger-border);
   color: var(--bm-danger);
-}
-
-.assets-result-dismiss {
-  top: 5px;
-  right: 7px;
 }
 
 .assets-grid {
