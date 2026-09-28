@@ -28,11 +28,10 @@ import { trackAiRequest } from "./aiRequests.js";
 // producing output is never cut off after its tokens are billed, and the user
 // can stop it at any time.
 const IMAGING_GENERATION_MAX_MS = 10 * 60_000;
-// This app's retry policy for the call (the client itself never retries): one
-// retry, which the SDK makes only when no response arrived or the API answered
-// with a retryable status such as overloaded — never after an abort, so neither
-// the user's Stop nor the inactivity watchdog can resend a billed request.
-const IMAGING_GENERATION_MAX_RETRIES = 1;
+// The user waits on this call and its outcome can be unknown after a timeout or
+// a dropped connection, so it is never resent behind them: no SDK retry, and
+// only the user's own resend runs it again (ai-model-routing-conventions).
+const IMAGING_GENERATION_MAX_RETRIES = 0;
 
 export function registerImagingHandlers(): void {
   ipcMain.handle(

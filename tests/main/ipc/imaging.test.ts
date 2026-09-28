@@ -138,6 +138,19 @@ describe("imaging generation IPC handler", () => {
     await expect(pending).rejects.toThrow(/cancelled/);
   });
 
+  // A call the user waits on is resent only by the user, never by the SDK.
+  it("asks the provider not to retry the paid call", async () => {
+    let received: { maxRetries?: number } | undefined;
+    ai.generateJsonImpl = (_s, _u, _schema, opts) => {
+      received = opts as { maxRetries?: number };
+      return { items: ["a", "b", "c"] };
+    };
+
+    await invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions());
+
+    expect(received?.maxRetries).toBe(0);
+  });
+
   it("returns the normalized prompt list on success", async () => {
     ai.generateJsonImpl = () => ({
       items: ["A quiet sunrise over still water", "An empty cup on a wooden table", "Soft light through a curtain"],
