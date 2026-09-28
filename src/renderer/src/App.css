@@ -1445,7 +1445,9 @@ button:disabled,
   align-items: center;
   justify-content: space-between;
   padding: 16px 16px 16px 24px;
-  border-bottom: 1px solid var(--bm-border-subtle);
+  /* No fainter than the app's own control borders, so the band stays visible
+     without a tint. */
+  border-bottom: 1px solid var(--bm-input-border);
   flex-shrink: 0;
 }
 
@@ -1501,7 +1503,9 @@ button:disabled,
 
 .modal-footer {
   padding: 14px 24px;
-  border-top: 1px solid var(--bm-border-subtle);
+  /* Matches the header's line so the two bands read as a pair, and stays no
+     fainter than the app's own control borders. */
+  border-top: 1px solid var(--bm-input-border);
   display: flex;
   justify-content: flex-end;
   gap: var(--bm-control-gap);
