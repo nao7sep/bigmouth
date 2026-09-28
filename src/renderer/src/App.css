@@ -35,6 +35,11 @@
   --bm-panel-hover: #e7dacb;
   --bm-border: #d5c8bb;
   --bm-border-subtle: #e5d9ce;
+  /* The quiet line re-scoped onto raised surfaces (modals, popovers, cards
+     drawn raised), which are the lightest step in dark, so the line keeps a
+     visible step there too. The raised containers below set --bm-border-subtle
+     to it. */
+  --bm-border-subtle-on-raised: #e5d9ce;
   --bm-border-strong: #bdab99;
   /* A form field's outline is its only boundary on a surface, so it holds 3:1;
      the other borders are decorative dividers. */
@@ -89,7 +94,7 @@
   --bm-control-bg: #fffdf9;
   --bm-control-hover: #f6eee5;
   --bm-control-pressed: #ebdfd1;
-  --bm-control-border: #d3c4b4;
+  --bm-control-border: #afa091;
   --bm-control-shadow: 0 1px 2px rgba(70, 48, 30, 0.08);
   --bm-accent-pressed: #6c361f;
   /* The recessed track a segmented control's segments sit in. */
@@ -130,7 +135,8 @@
     --bm-panel: #181512;
     --bm-panel-hover: #221d18;
     --bm-border: #3e352d;
-    --bm-border-subtle: #332c25;
+    --bm-border-subtle: #383129;
+    --bm-border-subtle-on-raised: #3b342c;
     --bm-border-strong: #56493d;
     --bm-input-border: #827467;
     --bm-text: #efe6dc;
@@ -164,7 +170,7 @@
     --bm-control-bg: #342d27;
     --bm-control-hover: #3d352e;
     --bm-control-pressed: #473d35;
-    --bm-control-border: #564a3f;
+    --bm-control-border: #776b5f;
     --bm-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     --bm-accent-pressed: #7a3b1e;
     --bm-track: #1a1613;
@@ -1157,6 +1163,7 @@ button:disabled,
 }
 
 .menu-popup {
+  --bm-border-subtle: var(--bm-border-subtle-on-raised);
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -1429,6 +1436,7 @@ button:disabled,
 }
 
 .modal {
+  --bm-border-subtle: var(--bm-border-subtle-on-raised);
   background: var(--bm-surface-raised);
   border: 1px solid var(--bm-border-subtle);
   border-radius: var(--bm-radius-xl);
@@ -2084,6 +2092,7 @@ select:is(.form-select, .prompt-select) {
 }
 
 .image-prompt-card {
+  --bm-border-subtle: var(--bm-border-subtle-on-raised);
   display: flex;
   flex-direction: column;
   gap: 8px;
