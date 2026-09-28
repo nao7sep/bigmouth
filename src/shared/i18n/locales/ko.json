@@ -122,7 +122,7 @@
   "confirm.failed": "작업을 완료할 수 없습니다. 아무것도 바뀌지 않았습니다. 다시 시도하십시오.",
   "about.title": "BigMouth 정보",
   "about.version": "버전 {version}",
-  "about.description": "블로그와 소셜 미디어 게시물을 쓰기 위한, 게시 전 점검용 로컬 도구입니다. 데이터는 사용자의 컴퓨터에 그대로 남습니다.",
+  "about.description": "블로그와 소셜 미디어 게시물을 쓰고, 게시하기 전에 AI로 각 초안을 점검하고, 제목·슬러그·태그를 준비하세요.",
   "about.reportIssue": "문제 신고",
   "about.repoFailed": "GitHub를 열 수 없습니다. 다시 시도하십시오.",
   "about.issuesFailed": "‘문제 신고’를 열 수 없습니다. 다시 시도하십시오.",

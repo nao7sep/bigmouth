@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@12.0.2",
-  "description": "Local-first writing preflight tool",
+  "description": "Write blog and social media posts, check each draft with AI before it goes out, and prepare its title, slug and tags.",
   "author": {
     "name": "Yoshinao Inoguchi",
     "email": "yoshinao@inoguchi.com",

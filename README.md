@@ -1,6 +1,6 @@
 # BigMouth
 
-BigMouth is a local-first **desktop app** for writers who want a deliberate, staged review before anything goes out. You draft blog posts and social-media content in Markdown, run Claude-backed quality and safety checks, generate metadata, and export when ready — all on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to the platform of your choice). Data lives in plain per-post Markdown files you can point at any folder and version with git. Single-user; the AI features are Claude (Anthropic) only, and the macOS build is Apple Silicon only.
+Write blog and social media posts, check each draft with AI before it goes out, and prepare its title, slug and tags. BigMouth is a local-first **desktop app**: everything runs on your own machine, with no sync, no cloud storage, and no direct publishing (you copy-paste to the platform of your choice). Data lives in plain per-post Markdown files you can point at any folder and version with git. Single-user; the AI features are Claude (Anthropic) only, and the macOS build is Apple Silicon only.
 
 ## Features
 

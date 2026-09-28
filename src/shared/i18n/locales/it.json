@@ -122,7 +122,7 @@
   "confirm.failed": "Non è stato possibile completare l’azione. Non è cambiato nulla; riprova.",
   "about.title": "Informazioni su BigMouth",
   "about.version": "Versione {version}",
-  "about.description": "Uno strumento locale per rivedere i testi prima di pubblicarli, pensato per scrivere post per blog e social media. I tuoi dati restano sul tuo computer.",
+  "about.description": "Scrivi post per blog e social media, controlla ogni bozza con l’IA prima della pubblicazione e prepara titolo, slug e tag.",
   "about.reportIssue": "Segnala un problema",
   "about.repoFailed": "Non è stato possibile aprire GitHub. Riprova.",
   "about.issuesFailed": "Non è stato possibile aprire «Segnala un problema». Riprova.",

@@ -122,7 +122,7 @@
   "confirm.failed": "无法完成此操作。没有做任何更改；请重试。",
   "about.title": "关于 BigMouth",
   "about.version": "版本 {version}",
-  "about.description": "一款本地运行的发布前检查工具，用于撰写博客和社交媒体文章。你的数据始终保留在你的电脑上。",
+  "about.description": "撰写博客和社交媒体文章，在发布前用 AI 检查每篇草稿，并准备好标题、别名和标签。",
   "about.reportIssue": "报告问题",
   "about.repoFailed": "无法打开 GitHub。请重试。",
   "about.issuesFailed": "无法打开“报告问题”。请重试。",

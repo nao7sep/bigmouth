@@ -122,7 +122,7 @@
   "confirm.failed": "L’action n’a pas pu aboutir. Rien n’a été modifié\u00a0; réessayez.",
   "about.title": "À propos de BigMouth",
   "about.version": "Version {version}",
-  "about.description": "Un outil local de relecture avant publication, pour rédiger des articles de blog et des publications pour les réseaux sociaux. Vos données restent sur votre ordinateur.",
+  "about.description": "Rédigez des articles de blog et des publications pour les réseaux sociaux, vérifiez chaque brouillon avec l’IA avant sa publication, et préparez son titre, son slug et ses étiquettes.",
   "about.reportIssue": "Signaler un problème",
   "about.repoFailed": "GitHub n’a pas pu s’ouvrir. Réessayez.",
   "about.issuesFailed": "«\u00a0Signaler un problème\u00a0» n’a pas pu s’ouvrir. Réessayez.",

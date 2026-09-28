@@ -122,7 +122,7 @@
   "confirm.failed": "操作を完了できませんでした。何も変更されていません。もう一度お試しください。",
   "about.title": "BigMouth について",
   "about.version": "バージョン {version}",
-  "about.description": "ブログや SNS の投稿を書くための、公開前チェック用のローカルツールです。データはお使いのコンピュータから出ません。",
+  "about.description": "ブログや SNS の投稿を書き、公開前に AI で下書きをチェックし、タイトル・スラッグ・タグを用意しましょう。",
   "about.reportIssue": "問題を報告",
   "about.repoFailed": "GitHub を開けませんでした。もう一度お試しください。",
   "about.issuesFailed": "「問題を報告」を開けませんでした。もう一度お試しください。",

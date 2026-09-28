@@ -122,7 +122,7 @@
   "confirm.failed": "Die Aktion konnte nicht abgeschlossen werden. Es wurde nichts geändert; versuchen Sie es erneut.",
   "about.title": "Über BigMouth",
   "about.version": "Version {version}",
-  "about.description": "Ein lokales Werkzeug zur Prüfung von Texten vor der Veröffentlichung, zum Verfassen von Blog- und Social-Media-Beiträgen. Ihre Daten bleiben auf Ihrem Computer.",
+  "about.description": "Schreiben Sie Blog- und Social-Media-Beiträge, prüfen Sie jeden Entwurf mit KI, bevor er veröffentlicht wird, und bereiten Sie Titel, Slug und Tags vor.",
   "about.reportIssue": "Problem melden",
   "about.repoFailed": "GitHub konnte nicht geöffnet werden. Versuchen Sie es erneut.",
   "about.issuesFailed": "„Problem melden“ konnte nicht geöffnet werden. Versuchen Sie es erneut.",
