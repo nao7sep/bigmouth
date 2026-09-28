@@ -41,7 +41,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
   };
 
   return (
-    <ModalShell title={t("about.title")} titleHidden onClose={onClose} width={380} autoFocusClose>
+    <ModalShell title={t("about.title")} titleHidden onClose={onClose} width={370} autoFocusClose>
       <div className="modal-body">
         <div className="about-identity">
           <p className="about-name">BigMouth</p>
