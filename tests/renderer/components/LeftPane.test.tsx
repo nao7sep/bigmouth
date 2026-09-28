@@ -223,7 +223,7 @@ describe("LeftPane header actions", () => {
     expect(handlers.onOpenShortcuts).toHaveBeenCalledTimes(1);
 
     fireEvent.click(container.querySelector(".btn-hamburger")!);
-    fireEvent.click(screen.getByRole("menuitem", { name: "About" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "About BigMouth" }));
     expect(handlers.onOpenAbout).toHaveBeenCalledTimes(1);
   });
 });
