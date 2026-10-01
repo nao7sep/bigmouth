@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 
 const APP_NAME = "bigmouth";
-const HOME_ENV_VAR = "BIGMOUTH_DATA_DIR";
+const DATA_DIR_ENV_VAR = "BIGMOUTH_DATA_DIR";
 
 // Resolved once, lazily, in initStorageRoot() rather than frozen at import time
 // — so a BIGMOUTH_DATA_DIR set just before startup (e.g. by a test) is honored, and
@@ -156,11 +156,11 @@ export function containsDirectory(parent: string, child: string): boolean {
  */
 function resolveAppDir(): string {
   const home = os.homedir();
-  const override = process.env[HOME_ENV_VAR];
+  const override = process.env[DATA_DIR_ENV_VAR];
   if (override === undefined || override.trim() === "") {
     return path.join(home, `.${APP_NAME}`);
   }
-  return expandAndResolve(override, home, HOME_ENV_VAR);
+  return expandAndResolve(override, home, DATA_DIR_ENV_VAR);
 }
 
 /**
@@ -184,7 +184,7 @@ export function initStorageRoot(): void {
     tightenRootPermissions(appDir);
   } catch (cause) {
     throw new Error(
-      `Cannot use the ${APP_NAME} storage root "${appDir}". Set ${HOME_ENV_VAR} to a writable directory.`,
+      `Cannot use the ${APP_NAME} storage root "${appDir}". Set ${DATA_DIR_ENV_VAR} to a writable directory.`,
       { cause }
     );
   }
