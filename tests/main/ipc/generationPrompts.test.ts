@@ -66,7 +66,9 @@ describe("generation-prompt IPC handlers", () => {
   });
 
   it("saves prompts through the store and round-trips them", () => {
-    const next: GenerationPromptsData = { prompts: { title: "Custom title prompt", slug: "Custom slug prompt" } };
+    const next: GenerationPromptsData = { prompts: {
+      ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom title prompt", slug: "Custom slug prompt",
+    } };
     const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, next);
     expect(saved.prompts.title).toBe("Custom title prompt");
     expect(saved.prompts.slug).toBe("Custom slug prompt");
@@ -74,11 +76,11 @@ describe("generation-prompt IPC handlers", () => {
   });
 
   it("preserves the user's complete prompt map on save", () => {
-    const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, {
-      prompts: { title: "kept", bogus: "kept too" },
-    } as unknown as GenerationPromptsData);
+    const prompts = { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "kept", bogus: "kept too" };
+    const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, { prompts });
     expect(saved.prompts.title).toBe("kept");
-    expect(saved.prompts).toEqual({ title: "kept", bogus: "kept too" });
+    expect(saved.prompts).toEqual(prompts);
+    expect(invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId)).toEqual(saved);
   });
 
   it("validates the save payload before reaching the store", () => {

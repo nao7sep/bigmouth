@@ -1,5 +1,6 @@
 import type { Settings } from "./types.js";
 import { AI_PROVIDERS, isAiConfigId } from "./types.js";
+import { GENERATION_PROMPT_KEYS } from "./metadataFields.js";
 
 export const SETTINGS_SET_KEYS = [
   "timezone", "supportedLanguages", "publishedPostsPerLoad", "maxUploadMb",
@@ -32,6 +33,7 @@ export function workspaceSetHasShape(key: (typeof WORKSPACE_SET_KEYS)[number], v
     case "analysisPrompts": return Array.isArray(value) && value.every((v) => object(v) &&
       typeof v.name === "string" && typeof v.text === "string");
     case "generationPrompts": return object(value) && object(value.prompts) &&
+      GENERATION_PROMPT_KEYS.every((key) => Object.hasOwn(value.prompts as object, key)) &&
       Object.values(value.prompts).every((v) => typeof v === "string");
     case "aiConfigs": return Array.isArray(value) && value.every((v) => object(v) &&
       isAiConfigId(v.id) && typeof v.name === "string" &&

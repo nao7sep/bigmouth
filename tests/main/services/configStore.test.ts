@@ -416,9 +416,23 @@ describe("settings stored by set", () => {
 
   it("preserves other known copies and removes unknown keys on write", () => {
     fs.writeFileSync(file(), JSON.stringify({ version: 7, timezone: "UTC", targets: [] }));
-    saveGenerationPrompts(dataDir, { prompts: { title: "Custom" } });
-    expect(saved()).toEqual({ timezone: "UTC", targets: [], generationPrompts: { prompts: { title: "Custom" } } });
-    expect(getGenerationPrompts(dataDir)).toEqual({ prompts: { title: "Custom" } });
+    const generationPrompts = { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } };
+    saveGenerationPrompts(dataDir, generationPrompts);
+    expect(saved()).toEqual({ timezone: "UTC", targets: [], generationPrompts });
+    expect(getGenerationPrompts(dataDir)).toEqual(generationPrompts);
+  });
+
+  it("reads a partial generation prompt map as absent and warns once without changing the file", () => {
+    const partial = { generationPrompts: { prompts: { title: "Custom" } } };
+    fs.writeFileSync(file(), JSON.stringify(partial));
+    const warning = vi.spyOn(logger, "warn");
+    try {
+      expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
+      expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
+      expect(warning).toHaveBeenCalledOnce();
+      expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "generationPrompts" }));
+      expect(saved()).toEqual(partial);
+    } finally { warning.mockRestore(); }
   });
 
   it("reads a partial contentFont as absent rather than merging its members", () => {
