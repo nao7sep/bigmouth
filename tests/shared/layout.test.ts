@@ -1,6 +1,3 @@
-// The derived window minimums (app-chrome-conventions: the window minimum is the
-// pane row plus chrome, never hand-typed).
-
 import { describe, it, expect } from "vitest";
 import {
   LEFT_MIN,

@@ -43,9 +43,8 @@ export function configureWindowActivity(window: BrowserWindow): void {
 
 // The BrowserWindow construction options. Exported as a pure helper so the
 // hardening flags and the derived minimums are verified without driving a real
-// window — see tests/main/window.test.ts. The minimum size is the pane-row plus chrome,
-// sourced from @shared/layout (app-chrome-conventions) — never hand-typed, so it
-// can never disagree with the renderer's pane minimums.
+// window — see tests/main/window.test.ts. Window geometry comes from
+// @shared/layout; window-conventions own its sizing policy.
 export function zoomFactorForLevel(zoomLevel: number): number {
   return 1.2 ** zoomLevel;
 }

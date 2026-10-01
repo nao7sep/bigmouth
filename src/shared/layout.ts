@@ -1,7 +1,5 @@
-// Pane-sizing constants shared by the renderer's splitter logic (paneConstants)
-// and the main process's window-minimum derivation (window.ts), so the two can
-// never disagree. Per the app-chrome-conventions the window minimum is the sum of
-// the pane minimums plus the fixed chrome — derived here, never hand-typed.
+// Geometry shared by renderer splitters and the main-process window.
+// Pane-sizing policy: window-conventions.
 
 export const LEFT_MIN = 240;
 export const RIGHT_MIN = 320;

@@ -1,11 +1,5 @@
-// The pane-sizing constants are the single source of truth in @shared/layout
-// (also consumed by the main process's window minimum, so the window can never be
-// dragged narrow enough to truncate a pane). They are re-exported here for the
-// renderer's existing call sites; this module adds the renderer-only splitter
-// clamp helpers. Per the app-chrome-conventions: each pane declares a real
-// minimum, the center (primary) pane never collapses, and a splitter drag can
-// never consume a sibling's minimum. The constants also mirror the `min-width`
-// rules in App.css; if one changes, change both.
+// Pane sizes come from @shared/layout (window-conventions); this module adds
+// renderer-only splitter clamps. App.css mirrors these constants.
 export { LEFT_MIN, RIGHT_MIN, CENTER_MIN, DIVIDER, ROW_MIN } from "@shared/layout";
 
 export function clamp(v: number, min: number, max: number) {
