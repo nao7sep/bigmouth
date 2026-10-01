@@ -42,6 +42,9 @@ export interface UiState {
   // menu's zoom roles mutate webContents in memory only, so without persisting it
   // a user who zoomed for readability was back at 100% every launch, silently.
   zoomLevel: number;
+  // workspace id -> the AI config id last selected in that workspace. An id that no
+  // longer names a config is ignored on read (the first config is active, as before).
+  activeAiConfigIds: Record<string, string>;
 }
 
 /** A fresh UI state: default pane widths and no remembered workspace. */
@@ -51,6 +54,7 @@ export function defaultUiState(): UiState {
     paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
     activeWorkspaceId: "",
     zoomLevel: 0,
+    activeAiConfigIds: {},
   };
 }
 

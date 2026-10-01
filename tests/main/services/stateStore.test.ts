@@ -10,6 +10,8 @@ import path from "node:path";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { initStateStore, getUiState, updateUiState } from "@main/core/services/stateStore.js";
+import { resolveActiveConfigId, setActiveConfigId } from "@main/core/services/activeConfig.js";
+import type { StoredAiConfig } from "@main/core/shared/types.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
@@ -113,5 +115,38 @@ describe("stateStore — self-healing", () => {
     );
     initStateStore();
     expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
+  });
+});
+
+describe("stateStore — selected AI config", () => {
+  const configs = [{ id: "c1" }, { id: "c2" }] as StoredAiConfig[];
+
+  it("restores the selected AI config per workspace after a relaunch", () => {
+    initStateStore();
+    setActiveConfigId("ws-a", "c2");
+    setActiveConfigId("ws-b", "c1");
+    expect(JSON.parse(fs.readFileSync(statePath(), "utf-8")).activeAiConfigIds).toEqual({ "ws-a": "c2", "ws-b": "c1" });
+
+    // A fresh store reads the persisted selection.
+    initStateStore();
+    expect(getUiState().activeAiConfigIds).toEqual({ "ws-a": "c2", "ws-b": "c1" });
+  });
+
+  it("resolves the active config from state.json when this session selected nothing", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ activeAiConfigIds: { "ws-file": "c2" } }));
+    initStateStore();
+    expect(resolveActiveConfigId("ws-file", configs)).toBe("c2");
+  });
+
+  it("ignores a stored id that no longer exists, falling back to the first config", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ activeAiConfigIds: { "ws-gone": "ghost" } }));
+    initStateStore();
+    expect(resolveActiveConfigId("ws-gone", configs)).toBe("c1");
+  });
+
+  it("drops malformed entries on load", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ activeAiConfigIds: { ok: "c1", bad: 7, empty: "" } }));
+    initStateStore();
+    expect(getUiState().activeAiConfigIds).toEqual({ ok: "c1" });
   });
 });

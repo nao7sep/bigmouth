@@ -305,25 +305,17 @@ describe("backup store — the choke point is wired to the real record sites", (
   });
 });
 
-// Which stores record is the convention's own list, and each exclusion in the
-// codebase states its reason inline. state.json used to claim one that is not on
-// that list — "disposable view state" — on a churn argument the conventions
-// answer directly, and the per-path hash dedup below is what makes that answer
-// hold in practice.
-describe("state.json is recorded like every other managed text store", () => {
-  it("records a view-state save, and skips one that changed nothing", () => {
+// state.json is volatile state and nothing else (pane widths, zoom, last selections), so the
+// data-backup conventions keep it out of the history. It is still written atomically.
+describe("state.json is not recorded", () => {
+  it("writes a view-state save to disk without recording it", () => {
     const statePath = getStateJsonPath();
     initStateStore();
 
     updateUiState({ paneLeftWidth: 401 });
-    expect(rows(statePath)).toHaveLength(1);
-
     updateUiState({ paneLeftWidth: 402 });
-    expect(rows(statePath)).toHaveLength(2);
 
-    // A splitter drag that lands back where it started writes the same bytes,
-    // which the dedup collapses — the churn the old exclusion worried about.
-    updateUiState({ paneLeftWidth: 402 });
-    expect(rows(statePath)).toHaveLength(2);
+    expect(JSON.parse(fs.readFileSync(statePath, "utf-8")).paneLeftWidth).toBe(402);
+    expect(rows(statePath)).toHaveLength(0);
   });
 });

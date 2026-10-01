@@ -7,8 +7,8 @@
  * generation prompts. This module is the sole reader/writer of that file; each
  * section accessor reads a normalized config and replaces one section.
  *
- * The active AI config is NOT in the file — it is volatile session state
- * (services/activeConfig), defaulting to the first config on each launch.
+ * The active AI config is NOT in the file — it is view state remembered in
+ * state.json (services/activeConfig), defaulting to the first config.
  *
  * The AI config functions take a Workspace (they need its id for the secrets
  * file); the section accessors take the workspace data directory.
@@ -420,7 +420,7 @@ export function deleteAiConfig(workspace: Workspace, id: string): AiConfigsData 
 }
 
 /**
- * Selects the active AI config for this session (not persisted). Accepts an empty
+ * Selects the active AI config (remembered per workspace in state.json). Accepts an empty
  * string to clear the selection (the active config falls back to the first).
  * Throws if a non-empty id does not refer to an existing config.
  */

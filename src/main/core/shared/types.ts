@@ -136,8 +136,8 @@ export const RETIRED_DEFAULT_TIME_ZONE = "Asia/Tokyo";
  * durable settings, flat (no nested "settings" wrapper), with top-level keys
  * ordered to mirror the Settings modal — general fields, then targets, AI
  * configs, analysis prompts, generation prompts. The active AI config is NOT
- * here; it is volatile session state (services/activeConfig), defaulting to the
- * first config each launch.
+ * here; it is view state remembered in state.json (services/activeConfig),
+ * defaulting to the first config.
  */
 export interface WorkspaceConfig extends Settings {
   schemaVersion: number;

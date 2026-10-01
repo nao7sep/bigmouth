@@ -2,29 +2,29 @@
  * UI-state I/O.
  *
  * Manages ~/.bigmouth/state.json — the app's ephemeral view state (side-pane
- * intent widths, zoom level, and last active workspace id). It is a distinct persisted KIND
+ * intent widths, zoom level, last active workspace id, and the selected AI config id per
+ * workspace). It is a distinct persisted KIND
  * from the workspace registry (workspaces.json) and every per-workspace
  * config.json, so it gets its own store and type (persisted-store-separation
  * conventions): a settings reset must not touch it, and its splitter-drag churn
  * must never rewrite a config file.
  *
  * Unlike the registry, losing this file costs almost nothing — default pane
- * widths and a reopened workspace picker — which shapes two of its three rules
- * but not the third:
+ * widths, a reopened workspace picker and the first AI config active — which
+ * shapes all of its rules:
  *   - Materialized lazily: a missing file returns defaults WITHOUT writing (the
  *     convention's "state is written only once there is something to record").
  *   - Self-healing: an invalid file falls back to defaults because nothing here
  *     has recovery value.
- *   - Recorded, like every other managed text store. It used to be excluded on a
- *     churn argument, which the data-backup conventions answer directly: a text
- *     row is tiny, and the store's per-path hash dedup means a save that changes
- *     nothing writes nothing.
+ *   - Not recorded to the data-backup history: it is volatile state and nothing
+ *     else (window placement, zoom, last selection), which the data-backup
+ *     conventions exclude. It is still written atomically.
  */
 
 import fs from "node:fs";
 import type { UiState } from "../shared/types.js";
 import { defaultUiState } from "@shared/types";
-import { writeManagedText } from "../shared/atomicWrite.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
@@ -56,7 +56,18 @@ function normalizeUiState(raw: unknown): UiState {
       typeof source.zoomLevel === "number" && Number.isFinite(source.zoomLevel)
         ? source.zoomLevel
         : base.zoomLevel,
+    activeAiConfigIds: normalizeIdMap(source.activeAiConfigIds),
   };
+}
+
+/** Keeps only the non-empty string -> non-empty string entries of an arbitrary value. */
+function normalizeIdMap(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key && typeof value === "string" && value) out[key] = value;
+  }
+  return out;
 }
 
 /**
@@ -108,6 +119,11 @@ export function getUiState(): UiState {
   return ensureLoaded();
 }
 
+/** True once initStateStore() has run — for callers that must also work without it. */
+export function isStateStoreReady(): boolean {
+  return uiState !== null && stateJsonPath !== null;
+}
+
 /**
  * Merges a partial patch into the UI state, normalizes, persists, and returns the
  * new state. This is where state.json first materializes — a fresh install writes
@@ -117,12 +133,9 @@ export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
   const next = normalizeUiState({ ...ensureLoaded(), ...patch });
   uiState = next;
-  // recorded: state.json is a durable JSON store under the storage root, and the
-  // data-backup conventions record everything that is not binary, colocated with
-  // binaries, or append-mode. It used to be excluded as "disposable view state",
-  // which is not one of those three, on a churn argument the conventions answer
-  // directly — and the store's own per-path hash dedup collapses a no-op save
-  // anyway, so a splitter drag that changes nothing writes no row.
-  writeManagedText(stateJsonPath, JSON.stringify(next, null, 2) + "\n");
+  // not recorded: state.json is volatile state and nothing else (pane widths, zoom,
+  // last selections), so the data-backup conventions keep it out of backups.sqlite3.
+  // It is still written atomically (temp file, then rename).
+  writeFileAtomic(stateJsonPath, JSON.stringify(next, null, 2) + "\n");
   return next;
 }
