@@ -1,5 +1,5 @@
 // Integration test for the metadata-generation IPC handler. Real services run
-// against a throwaway BIGMOUTH_HOME + a registered workspace + a real post; only
+// against a throwaway BIGMOUTH_DATA_DIR + a registered workspace + a real post; only
 // `electron` (ipcMain), the logger, and the AI factory are mocked. The fake
 // provider lets each test drive `generateJson` to a controlled result or error,
 // so the handler's success / no-active-config / invalid-field / post-not-found
@@ -62,7 +62,7 @@ let dataDir: string;
 let wsId: string;
 let postId: string;
 
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 function invoke(channel: string, ...args: unknown[]): Promise<MetadataGenerationResults> {
@@ -79,7 +79,7 @@ function sendAbort(): void {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-meta-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   handlers.clear();
@@ -101,8 +101,8 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   fs.rmSync(home, { recursive: true, force: true });

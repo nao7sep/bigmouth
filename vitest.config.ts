@@ -63,7 +63,7 @@ export default defineConfig({
           // modules both processes import: they must hold under Node and nothing in them is DOM.
           include: ["tests/**/*.test.{ts,tsx}"],
           exclude: [...configDefaults.exclude, "tests/renderer/**", "tests/live/**"],
-          // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_HOME root
+          // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_DATA_DIR root
           // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
           setupFiles: [mainSetup],
         },

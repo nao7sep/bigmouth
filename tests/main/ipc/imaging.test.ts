@@ -1,5 +1,5 @@
 // Integration test for the imaging-generation IPC handler. Same harness as the
-// metadata test: real services on a throwaway BIGMOUTH_HOME + a registered
+// metadata test: real services on a throwaway BIGMOUTH_DATA_DIR + a registered
 // workspace + a real post, with only `electron`, the logger, and the AI factory
 // mocked. The fake provider drives `generateJson` so the handler's success,
 // invalid-option, no-active-config, post-not-found, and failure branches are all
@@ -61,7 +61,7 @@ let dataDir: string;
 let wsId: string;
 let postId: string;
 
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 // A valid baseline set of options; tests clone and tweak it.
@@ -90,7 +90,7 @@ function sendAbort(): void {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-imaging-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   handlers.clear();
@@ -112,8 +112,8 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   fs.rmSync(home, { recursive: true, force: true });

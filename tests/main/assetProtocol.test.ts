@@ -39,7 +39,7 @@ import { assetDir } from "@main/core/services/assetStore.js";
 let home: string;
 let wsId: string;
 const POST_ID = "post1";
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 function serve(url: string): Promise<Response> {
   return captured.handler!({ url });
@@ -47,7 +47,7 @@ function serve(url: string): Promise<Response> {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-assetproto-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   const ws = createWorkspace("WS");
   wsId = ws.id;
@@ -60,8 +60,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
 });
 

@@ -1,5 +1,5 @@
 // Shared teardown for every main-process test. The data-backup store is a module-level singleton keyed
-// to the storage root resolved at first open (getAppRoot() → BIGMOUTH_HOME/~/.bigmouth). Many tests
+// to the storage root resolved at first open (getAppRoot() → BIGMOUTH_DATA_DIR/~/.bigmouth). Many tests
 // relocate that root to a fresh throwaway directory per test; without resetting the singleton, one test's
 // open would leak its DB handle (pointing at an already-deleted root) into the next. Closing it after
 // every test forces the next record() to re-open against the current throwaway root, so the store follows

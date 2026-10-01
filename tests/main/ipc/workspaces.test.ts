@@ -1,5 +1,5 @@
 // Integration test for the workspace IPC handlers: the real workspaceStore runs
-// against a throwaway BIGMOUTH_HOME; only `electron` (ipcMain) and the logger are
+// against a throwaway BIGMOUTH_DATA_DIR; only `electron` (ipcMain) and the logger are
 // mocked. Exercises list/openOrCreate/update/delete, name cleanup, literal paths, the
 // not-found -> thrown-Error mapping, and the rule that deleting a workspace also
 // drops its stored API keys (asserted through the apiKeys service, mirroring
@@ -36,7 +36,7 @@ import { registerWorkspaceHandlers } from "@main/ipc/workspaces.js";
 
 let home: string;
 const tempDirs: string[] = [];
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `bigmouth-ipc-ws-${prefix}-`));
@@ -50,15 +50,15 @@ function invoke<T>(channel: string, ...args: unknown[]): T {
 
 beforeEach(() => {
   home = tempDir("home");
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   handlers.clear();
   registerWorkspaceHandlers();
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }

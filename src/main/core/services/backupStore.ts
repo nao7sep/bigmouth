@@ -1,6 +1,6 @@
 /**
  * The write-through data-backup store (data-backup conventions). It owns one add-only SQLite file,
- * `backups.sqlite3`, directly under bigmouth's storage root (`BIGMOUTH_HOME` or `~/.bigmouth`, resolved
+ * `backups.sqlite3`, directly under bigmouth's storage root (`BIGMOUTH_DATA_DIR` or `~/.bigmouth`, resolved
  * in one place by {@link getAppRoot} — never a hardcoded path). Every managed *text* save records the
  * exact bytes it just wrote here, strictly AFTER its atomic rename lands, so the history is always as
  * current as the last save. There is no startup scan, no periodic pass, no restore path.
@@ -29,7 +29,7 @@ import { getBackupsDbPath } from "./storagePaths.js";
 import { warn as logWarn, serializeError } from "./logger.js";
 
 /** The store file under the resolved storage root. Computed lazily (not frozen into a module constant
- *  at import time) so `BIGMOUTH_HOME` is read after initAppDir() has resolved the root, per the
+ *  at import time) so `BIGMOUTH_DATA_DIR` is read after initAppDir() has resolved the root, per the
  *  storage-path convention's caution against import-time resolution. */
 function storeFile(): string {
   return getBackupsDbPath();
@@ -169,7 +169,7 @@ export function record(absolutePath: string, bytes: Buffer): void {
 
 /** Close the store (best-effort). For tests that need to release the file handle between throwaway
  *  roots; the app itself lets the process exit close it. Resets the singleton so the next
- *  {@link record} re-opens against the current `BIGMOUTH_HOME`. */
+ *  {@link record} re-opens against the current `BIGMOUTH_DATA_DIR`. */
 export function closeBackupStore(): void {
   try {
     db?.close();

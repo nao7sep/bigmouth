@@ -1,6 +1,6 @@
 // Pins the write-through data-backup store (data-backup conventions), exercised through the real
 // managed-text choke point writeManagedText — the one path that records. The store is a module-level
-// singleton keyed to the storage root (getAppRoot() → BIGMOUTH_HOME), so each test relocates BIGMOUTH_HOME
+// singleton keyed to the storage root (getAppRoot() → BIGMOUTH_DATA_DIR), so each test relocates BIGMOUTH_DATA_DIR
 // to a throwaway root, calls initAppDir() to resolve it, and the shared teardown (tests/main/setup.ts)
 // closes the singleton so the next test re-opens against its own root.
 //
@@ -27,7 +27,7 @@ import * as logger from "@main/core/services/logger.js";
 import { getStateJsonPath } from "@main/core/services/storagePaths.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 let root: string;
 
 interface Row {
@@ -54,14 +54,14 @@ function rows(forPath: string): Row[] {
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-backupstore-"));
-  process.env.BIGMOUTH_HOME = root;
+  process.env.BIGMOUTH_DATA_DIR = root;
   initAppDir();
 });
 
 afterEach(() => {
   // closeBackupStore() runs in the shared teardown (tests/main/setup.ts); here just restore env + clean up.
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(root, { recursive: true, force: true });
 });
 

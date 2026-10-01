@@ -1,5 +1,5 @@
 // Integration test for the generation-prompt IPC handlers: the real configStore
-// runs against a throwaway BIGMOUTH_HOME + a real registered workspace; only
+// runs against a throwaway BIGMOUTH_DATA_DIR + a real registered workspace; only
 // `electron` (ipcMain) and the logger are mocked. Exercises the registrar,
 // argument validation, the defaults channel, and the key-filtering round-trip.
 
@@ -34,7 +34,7 @@ import { registerGenerationPromptHandlers } from "@main/ipc/generationPrompts.js
 
 let home: string;
 let wsId: string;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T>(channel: string, ...args: unknown[]): T {
   return handlers.get(channel)!({}, ...args) as T;
@@ -42,7 +42,7 @@ function invoke<T>(channel: string, ...args: unknown[]): T {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-generation-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   handlers.clear();
   registerGenerationPromptHandlers();
@@ -50,8 +50,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
 });
 

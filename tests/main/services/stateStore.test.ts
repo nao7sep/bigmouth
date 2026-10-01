@@ -11,7 +11,7 @@ import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { initStateStore, getUiState, updateUiState } from "@main/core/services/stateStore.js";
 
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
 
 function tempDir(prefix: string): string {
@@ -25,13 +25,13 @@ function statePath(): string {
 }
 
 beforeEach(() => {
-  process.env.BIGMOUTH_HOME = tempDir("stateroot");
+  process.env.BIGMOUTH_DATA_DIR = tempDir("stateroot");
   initAppDir();
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }

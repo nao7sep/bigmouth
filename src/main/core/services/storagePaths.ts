@@ -17,7 +17,7 @@
  * module imports nothing but node built-ins.
  *
  * The convention this serves: ONE resolver owns the home-directory call, the
- * `BIGMOUTH_HOME` check, and the names of all standard subpaths — so two
+ * `BIGMOUTH_DATA_DIR` check, and the names of all standard subpaths — so two
  * derivations of the same file can never drift.
  */
 
@@ -26,10 +26,10 @@ import path from "node:path";
 import os from "node:os";
 
 const APP_NAME = "bigmouth";
-const HOME_ENV_VAR = "BIGMOUTH_HOME";
+const HOME_ENV_VAR = "BIGMOUTH_DATA_DIR";
 
 // Resolved once, lazily, in initStorageRoot() rather than frozen at import time
-// — so a BIGMOUTH_HOME set just before startup (e.g. by a test) is honored, and
+// — so a BIGMOUTH_DATA_DIR set just before startup (e.g. by a test) is honored, and
 // the resolver never captures a half-set environment.
 let appDir: string | null = null;
 let workspacesJsonPath: string | null = null;
@@ -59,9 +59,9 @@ function expandEnvReferences(value: string): string {
  * An input whose env references leave it expanding to nothing (an unset or
  * empty-string $VAR/%VAR%) is a hard error, never a silent fallback: without
  * this guard, path.resolve(base, "") collapses onto the bare `base` directory,
- * which for BIGMOUTH_HOME would materialize workspaces.json, logs/, and the
+ * which for BIGMOUTH_DATA_DIR would materialize workspaces.json, logs/, and the
  * backups.sqlite3 store directly in $HOME. `label` names the setting that
- * was being expanded (e.g. "BIGMOUTH_HOME") in the thrown message.
+ * was being expanded (e.g. "BIGMOUTH_DATA_DIR") in the thrown message.
  */
 function expandAndResolve(input: string, base: string, label: string): string {
   let value = input.trim();
@@ -147,7 +147,7 @@ export function containsDirectory(parent: string, child: string): boolean {
 }
 
 /**
- * Resolves the single storage root: BIGMOUTH_HOME when set and non-empty,
+ * Resolves the single storage root: BIGMOUTH_DATA_DIR when set and non-empty,
  * otherwise ~/.bigmouth. The root is derived from the home-directory API and
  * never from the working directory or the running code's location, so the same
  * root is used however the app is launched. The override is expanded and made
@@ -216,7 +216,7 @@ function required(value: string | null): string {
   return value;
 }
 
-/** The storage root (`~/.bigmouth/`, or `BIGMOUTH_HOME`). */
+/** The storage root (`~/.bigmouth/`, or `BIGMOUTH_DATA_DIR`). */
 export function getAppRoot(): string {
   return required(appDir);
 }

@@ -1,5 +1,5 @@
 // Integration test for the AI-config IPC handlers: the real services run against
-// a throwaway BIGMOUTH_HOME + a real registered workspace; only `electron`
+// a throwaway BIGMOUTH_DATA_DIR + a real registered workspace; only `electron`
 // (ipcMain) and the logger are mocked. Exercises the registrar, argument
 // validation, and the error mapping each handler wraps around the store.
 
@@ -33,7 +33,7 @@ import { registerAiConfigHandlers } from "@main/ipc/aiConfigs.js";
 
 let home: string;
 let wsId: string;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 function invoke<T = AiConfigsData>(channel: string, ...args: unknown[]): T {
@@ -42,7 +42,7 @@ function invoke<T = AiConfigsData>(channel: string, ...args: unknown[]): T {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-aicfg-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   handlers.clear();
@@ -51,8 +51,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   fs.rmSync(home, { recursive: true, force: true });

@@ -1,6 +1,6 @@
 // Integration test for the per-post asset IPC handlers (list / upload / delete):
 // the real assetStore + postStore + configStore run against a throwaway
-// BIGMOUTH_HOME + a real registered workspace; only `electron` (ipcMain) and the
+// BIGMOUTH_DATA_DIR + a real registered workspace; only `electron` (ipcMain) and the
 // logger are mocked. The upload handler receives raw bytes plus optional image
 // dimensions from the sandboxed renderer, then validates that IPC payload before
 // storing it (see src/renderer/src/api.ts `uploadAsset`).
@@ -42,7 +42,7 @@ import { registerPostHandlers } from "@main/ipc/posts.js";
 let home: string;
 let wsId: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 const TARGET: Target = { name: "blogger", defaultLanguage: "en", requiresMetadata: false };
 
@@ -87,7 +87,7 @@ function createDraft(): string {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   handlers.clear();
   registerAssetHandlers();
@@ -100,8 +100,8 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
 });
 

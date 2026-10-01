@@ -36,7 +36,7 @@ function defaultAppConfig(): AppConfig {
 
 /**
  * Every message here names the file's path and says it was left in place: a halt
- * is only reasonable when the user can act on it, and `BIGMOUTH_HOME` can put
+ * is only reasonable when the user can act on it, and `BIGMOUTH_DATA_DIR` can put
  * the registry anywhere.
  */
 function parseAppConfig(raw: unknown, filePath: string): AppConfig {
@@ -102,7 +102,7 @@ export function initAppDir(): AppConfig {
       // place, because halting only makes sense when there is a way back. A bare
       // JSON.parse threw a SyntaxError, which reached the user as a startup
       // dialog reading "Unexpected end of JSON input" — naming neither the file
-      // nor where it is, and BIGMOUTH_HOME can put it anywhere.
+      // nor where it is, and BIGMOUTH_DATA_DIR can put it anywhere.
       throw new Error(
         `Cannot read the workspace registry at ${registryPath}: the file is not valid JSON. It was left unchanged.`,
         { cause },

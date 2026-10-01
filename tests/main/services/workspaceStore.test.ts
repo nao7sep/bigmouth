@@ -12,7 +12,7 @@ import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js";
 
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
 const DIRECTORY_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
@@ -24,13 +24,13 @@ function tempDir(prefix: string): string {
 
 beforeEach(() => {
   // A fresh storage root per test gives a clean, empty registry.
-  process.env.BIGMOUTH_HOME = tempDir("wsroot");
+  process.env.BIGMOUTH_DATA_DIR = tempDir("wsroot");
   initAppDir();
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -39,14 +39,14 @@ afterEach(() => {
 // One folder must never register as two workspaces. Two registrations mean two
 // ids, two in-memory indexes keyed by different strings writing over a single
 // posts/index.json, and two separate API-key sets for one folder.
-// A halt only makes sense when the user can act on it, and BIGMOUTH_HOME can put
+// A halt only makes sense when the user can act on it, and BIGMOUTH_DATA_DIR can put
 // the registry anywhere — so every rejection names the file's full path and says
 // it was left in place. A bare JSON.parse used to throw a SyntaxError that
 // reached the user as "Unexpected end of JSON input".
 describe("an unreadable registry names itself", () => {
   function withRegistry(contents: string): () => void {
     const home = tempDir("halt");
-    process.env.BIGMOUTH_HOME = home;
+    process.env.BIGMOUTH_DATA_DIR = home;
     initAppDir();
     const registry = path.join(home, "workspaces.json");
     fs.writeFileSync(registry, contents, "utf-8");
@@ -77,7 +77,7 @@ describe("an unreadable registry names itself", () => {
     const reload = withRegistry(raw);
 
     expect(reload).toThrow(/workspace id.*appears more than once/);
-    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_HOME!, "workspaces.json"), "utf8")).toBe(raw);
+    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
   });
 
   it("rejects duplicate physical directories without rewriting the registry", () => {
@@ -94,7 +94,7 @@ describe("an unreadable registry names itself", () => {
     const reload = withRegistry(raw);
 
     expect(reload).toThrow(/name the same folder/);
-    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_HOME!, "workspaces.json"), "utf8")).toBe(raw);
+    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
   });
 });
 

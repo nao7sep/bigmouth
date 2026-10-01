@@ -22,7 +22,7 @@ import {
 let dataDir: string;
 let homeDir: string;
 let ws: Workspace;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 // A workspace for an already-initialized data directory under the current home.
@@ -36,7 +36,7 @@ beforeEach(() => {
   // isolated home; the AI-config tests rely on the stored key, so the env key is
   // cleared (it would otherwise win, env-first).
   homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-confighome-"));
-  process.env.BIGMOUTH_HOME = homeDir;
+  process.env.BIGMOUTH_DATA_DIR = homeDir;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore-"));
@@ -44,8 +44,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
   fs.rmSync(dataDir, { recursive: true, force: true });

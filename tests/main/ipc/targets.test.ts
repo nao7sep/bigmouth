@@ -1,5 +1,5 @@
 // Integration test for the targets IPC handlers: the real configStore and
-// postStore run against a throwaway BIGMOUTH_HOME + a real registered workspace;
+// postStore run against a throwaway BIGMOUTH_DATA_DIR + a real registered workspace;
 // only `electron` (ipcMain) and the logger are mocked. Exercises the registrar,
 // argument validation, the store error mapping, and the cross-store rename that
 // rewrites a post's target.
@@ -34,7 +34,7 @@ import { registerTargetHandlers } from "@main/ipc/targets.js";
 
 let home: string;
 let wsId: string;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T>(channel: string, ...args: unknown[]): T {
   return handlers.get(channel)!({}, ...args) as T;
@@ -46,7 +46,7 @@ function target(name: string, overrides: Partial<Target> = {}): Target {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-targets-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   handlers.clear();
   registerTargetHandlers();
@@ -54,8 +54,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
 });
 

@@ -105,7 +105,7 @@ beforeAll(() => {
     );
   }
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-live-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   registerMetadataHandlers();
   registerImagingHandlers();
@@ -122,7 +122,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  delete process.env.BIGMOUTH_HOME;
+  delete process.env.BIGMOUTH_DATA_DIR;
   if (home) fs.rmSync(home, { recursive: true, force: true });
 });
 

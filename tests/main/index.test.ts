@@ -97,7 +97,7 @@ type PostStore = typeof import("@main/core/services/postStore.js");
 
 let home: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_HOME;
+const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 /**
  * Boots a fresh copy of the app entry against a fresh workspace directory and
@@ -140,18 +140,18 @@ async function quit(): Promise<void> {
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
-  process.env.BIGMOUTH_HOME = home;
+  process.env.BIGMOUTH_DATA_DIR = home;
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-ws-"));
 });
 
 afterEach(async () => {
   // vi.resetModules() gives this file a fresh backup-store singleton, distinct
   // from the one closed by tests/main/setup.ts. Close the active instance before
-  // removing its throwaway BIGMOUTH_HOME (Windows keeps the SQLite file locked).
+  // removing its throwaway BIGMOUTH_DATA_DIR (Windows keeps the SQLite file locked).
   const { closeBackupStore } = await import("@main/core/services/backupStore.js");
   closeBackupStore();
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_HOME;
-  else process.env.BIGMOUTH_HOME = SAVED_HOME;
+  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
