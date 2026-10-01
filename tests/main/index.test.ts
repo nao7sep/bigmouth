@@ -10,7 +10,7 @@
 // shutdown flags start clean; the mocks' capture maps live in the test file and
 // survive the reset.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +18,7 @@ import path from "node:path";
 const appHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const windowHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const powerHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+const processHandlers = new Map<string, (error: unknown) => void>();
 const MAIN_WINDOW_ID = vi.hoisted(() => 7);
 const shell = vi.hoisted(() => ({
   exits: [] as number[],
@@ -98,6 +99,24 @@ type PostStore = typeof import("@main/core/services/postStore.js");
 let home: string;
 let dataDir: string;
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const processOn = process.on.bind(process);
+let processOnSpy: MockInstance<typeof process.on>;
+
+// Each boot owns fresh app hooks, just like the Electron doubles above. Keep
+// them off the real process so Vitest alone owns run-level failure reporting.
+beforeAll(() => {
+  processOnSpy = vi.spyOn(process, "on").mockImplementation((event, listener) => {
+    if (event === "uncaughtException" || event === "unhandledRejection") {
+      processHandlers.set(event, listener);
+      return process;
+    }
+    return processOn(event, listener);
+  });
+});
+
+afterAll(() => {
+  processOnSpy.mockRestore();
+});
 
 /**
  * Boots a fresh copy of the app entry against a fresh workspace directory and
@@ -139,6 +158,7 @@ async function quit(): Promise<void> {
 }
 
 beforeEach(() => {
+  processHandlers.clear();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
   process.env.BIGMOUTH_DATA_DIR = home;
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-ws-"));
@@ -274,6 +294,22 @@ describe("a refused metadata value on screen", () => {
 });
 
 describe("single app-process ownership", () => {
+  it("captures app failure hooks across repeated boots without adding process listeners", async () => {
+    const events = ["uncaughtException", "unhandledRejection"] as const;
+    const original = events.map((event) => process.listeners(event));
+    await bootApp();
+    await bootApp();
+
+    expect([...processHandlers.keys()]).toEqual(events);
+    expect(events.map((event) => process.listeners(event))).toEqual(original);
+    processHandlers.get("uncaughtException")!(new Error("exception probe"));
+    processHandlers.get("unhandledRejection")!(new Error("rejection probe"));
+    expect(shell.loggedErrors).toEqual([
+      ["uncaught exception", { error: { message: "exception probe" } }],
+      ["unhandled promise rejection", { error: { message: "rejection probe" } }],
+    ]);
+  });
+
   it("routes a renderer document-load rejection to the authored startup halt", async () => {
     vi.resetModules();
     appHandlers.clear();
