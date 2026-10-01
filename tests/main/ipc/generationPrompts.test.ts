@@ -1,7 +1,7 @@
 // Integration test for the generation-prompt IPC handlers: the real configStore
 // runs against a throwaway BIGMOUTH_DATA_DIR + a real registered workspace; only
 // `electron` (ipcMain) and the logger are mocked. Exercises the registrar,
-// argument validation, the defaults channel, and the key-filtering round-trip.
+// argument validation, the defaults channel, and whole-set round-trips.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -29,7 +29,6 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
-import { GENERATION_PROMPT_KEYS } from "@main/core/ai/generationPrompts.js";
 import { registerGenerationPromptHandlers } from "@main/ipc/generationPrompts.js";
 
 let home: string;
@@ -74,15 +73,12 @@ describe("generation-prompt IPC handlers", () => {
     expect(invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId)).toEqual(saved);
   });
 
-  it("drops unknown prompt keys on save (only known keys persist)", () => {
+  it("preserves the user's complete prompt map on save", () => {
     const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, {
-      prompts: { title: "kept", bogus: "dropped" },
+      prompts: { title: "kept", bogus: "kept too" },
     } as unknown as GenerationPromptsData);
     expect(saved.prompts.title).toBe("kept");
-    expect(saved.prompts).not.toHaveProperty("bogus");
-    for (const key of Object.keys(saved.prompts)) {
-      expect(GENERATION_PROMPT_KEYS as readonly string[]).toContain(key);
-    }
+    expect(saved.prompts).toEqual({ title: "kept", bogus: "kept too" });
   });
 
   it("validates the save payload before reaching the store", () => {

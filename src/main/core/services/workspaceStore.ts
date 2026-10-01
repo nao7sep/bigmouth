@@ -154,12 +154,9 @@ function isWorkspaceDirectory(dir: string): boolean {
   });
   if (!dirsPresent) return false;
 
-  // config.json must not merely exist but parse as a BigMouth config (its schema
-  // version + sections). A generic blog/static-site folder that happens to have a
-  // config.json alongside posts/ and assets/ is NOT a workspace — accepting it
-  // would let the first settings save normalize-and-overwrite its unrelated config.
+  // An untouched workspace has no config file; a present file must be a JSON object.
   const configPath = path.join(dir, "config.json");
-  if (!fs.existsSync(configPath)) return false;
+  if (!fs.existsSync(configPath)) return true;
   let parsed: unknown;
   try {
     parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
@@ -186,12 +183,6 @@ function isWorkspaceDirectory(dir: string): boolean {
  * fill a gap, never adopt or overwrite content the app did not write — and
  * everything else in the folder stays the user's business.
  *
- * It also unsticks a half-made workspace. `initializeWorkspaceData` creates
- * `posts/` and `assets/` before writing `config.json`, and the registry entry is
- * pushed only after both land, so a failed config write left a folder that was
- * neither a workspace to open nor an empty folder to create in — unrecoverable
- * from the UI, which offers no third thing to do. Under this rule the two empty
- * directories block nothing and the next attempt completes.
  */
 function blockingEntry(dir: string): string | null {
   if (!fs.existsSync(dir)) return null;

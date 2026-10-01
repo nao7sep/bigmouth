@@ -3,31 +3,25 @@
  */
 
 import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, WorkspaceConfig } from "./types.js";
-import { CONFIG_SCHEMA_VERSION } from "./types.js";
-import { nanoid } from "nanoid";
-import { DEFAULT_CONTENT_FONT, DEFAULT_MODEL_ID, defaultMaxTokens, findModelDef } from "@shared/types";
+import { DEFAULT_CONTENT_FONT, DEFAULT_MODEL_ID, findModelDef } from "@shared/types";
 import { SYSTEM_TIME_ZONE } from "@shared/timeZone";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
 /**
- * The default AI configs for a freshly initialized workspace. A FUNCTION (not a
- * module constant) so every workspace gets a fresh default config id rather than
- * one frozen at import and shared by all — ids are unique by nature.
- *
- * The model, its thinking mode, and its budget all derive from the one MODEL_DEFS
- * entry, so there is no literal here to drift from the table.
+ * The in-memory AI config for a workspace that has no saved aiConfigs set.
+ * Keys are scoped by workspace as well as config id.
  */
 export function makeDefaultAiConfigs(): StoredAiConfig[] {
   const model = findModelDef(DEFAULT_MODEL_ID);
   if (!model) throw new Error(`DEFAULT_MODEL_ID is not in MODEL_DEFS: ${DEFAULT_MODEL_ID}`);
   return [
     {
-      id: nanoid(),
+      id: "default",
       name: "Default",
       provider: "anthropic",
       model: model.id,
       thinking: model.supportsAdaptiveThinking,
-      maxTokens: defaultMaxTokens(model),
+      maxTokens: 16384,
     },
   ];
 }
@@ -35,11 +29,10 @@ export function makeDefaultAiConfigs(): StoredAiConfig[] {
 /**
  * The default `config.json` for a freshly initialized workspace: flat, in modal
  * order (general settings, then targets, AI configs, analysis prompts, generation
- * prompts). A function so each workspace gets fresh, distinct AI config ids.
+ * prompts). These values stay in memory until their set is edited.
  */
 export function makeDefaultConfig(): WorkspaceConfig {
   return {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
     ...DEFAULT_SETTINGS,
     targets: [],
     aiConfigs: makeDefaultAiConfigs(),

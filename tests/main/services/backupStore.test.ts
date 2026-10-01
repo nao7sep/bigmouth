@@ -274,10 +274,9 @@ describe("backup store — best-effort", () => {
 });
 
 describe("backup store — the choke point is wired to the real record sites", () => {
-  it("records the workspace registry (workspaces.json) and a workspace's first config.json on create", async () => {
+  it("records the workspace registry on create and config only on its first edit", async () => {
     const { createWorkspace } = await import("@main/core/services/workspaceStore.js");
-    // initAppDir (beforeEach) already wrote the empty registry once. Creating a workspace rewrites
-    // workspaces.json (registry now has one entry) AND writes the new workspace's first config.json.
+    // A workspace starts with no saved config sets.
     const ws = createWorkspace("Recorded WS");
 
     const registry = rows(path.join(root, "workspaces.json"));
@@ -285,8 +284,10 @@ describe("backup store — the choke point is wired to the real record sites", (
     expect(registry.length).toBeGreaterThanOrEqual(2);
     expect(Buffer.from(registry.at(-1)!.content).toString("utf8")).toContain("Recorded WS");
 
-    const config = rows(path.join(ws.dataDirectory, "config.json"));
-    expect(config).toHaveLength(1); // the workspace's first config.json version is captured
+    expect(rows(path.join(ws.dataDirectory, "config.json"))).toHaveLength(0);
+    const { saveSettings, getSettings } = await import("@main/core/services/configStore.js");
+    saveSettings(ws.dataDirectory, { ...getSettings(ws.dataDirectory), uiFontFamily: "Inter" });
+    expect(rows(path.join(ws.dataDirectory, "config.json"))).toHaveLength(1);
   });
 
   it("records a post .md through writePost's managed-text choke point", async () => {

@@ -209,21 +209,18 @@ describe("createWorkspace gating", () => {
     const ws = createWorkspace("WS", dir);
 
     expect(ws.dataDirectory).toBe(dir);
-    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(false);
     // The folder's own contents survive untouched.
     expect(fs.readFileSync(path.join(dir, "stray.txt"), "utf-8")).toBe("not a workspace");
   });
 
-  // initializeWorkspaceData makes posts/ and assets/ before writing config.json,
-  // and the registry entry lands only after both. A failed config write used to
-  // leave a folder that was neither a workspace to open nor empty to create in.
-  it("completes a half-made workspace whose config write did not land", () => {
+  it("opens an untouched workspace with no config file", () => {
     const dir = tempDir("halfmade");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
 
-    expect(createWorkspace("WS", dir).dataDirectory).toBe(dir);
-    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(true);
+    expect(openWorkspace(dir).dataDirectory).toBe(dir);
+    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(false);
   });
 
   it("rejects a folder holding a config.json the app did not write", () => {
@@ -265,21 +262,19 @@ describe("createWorkspace gating", () => {
 });
 
 describe("openWorkspace gating", () => {
-  it("rejects a directory missing a required workspace file", () => {
+  it("rejects a directory missing a required workspace directory", () => {
     const dir = tempDir("partial");
     initializeWorkspaceData(dir);
-    fs.unlinkSync(path.join(dir, "config.json")); // a partial workspace is broken, not openable
+    fs.rmdirSync(path.join(dir, "assets"));
     expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
   });
 
-  it("rejects a generic folder whose config.json is not a BigMouth config", () => {
-    // A blog or static-site folder can hold config.json + posts/ + assets/ without
-    // being a workspace; accepting it would overwrite its config on the first save.
+  it("accepts a sparse config object in a workspace directory", () => {
     const dir = tempDir("blog");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
-    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog", theme: "dark" }));
-    expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ timezone: "UTC" }));
+    expect(openWorkspace(dir).dataDirectory).toBe(dir);
   });
 
   it("rejects opening a workspace nested inside a registered workspace", () => {

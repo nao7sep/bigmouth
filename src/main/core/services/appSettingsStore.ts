@@ -1,22 +1,10 @@
-/**
- * App-settings I/O.
- *
- * Manages ~/.bigmouth/config.json — the user's app-wide choices (the theme),
- * which apply in every workspace. It is authored configuration, a separate
- * persisted kind from the workspace registry, each workspace's own config.json,
- * and the view state in state.json (persisted-store-separation conventions), so
- * it follows the storage-path rules for settings:
- *   - Materialized on first launch from the in-code defaults, through the same
- *     save path a Settings change uses, and only when the file is absent.
- *   - A file that cannot be read or does not fit its shape is moved aside to
- *     `config-<stamp>.invalid`, reset to the defaults, and reported to the user
- *     through AppSettingsLoad.quarantinedTo — never coerced and overwritten.
- *   - Recorded on every save, like every other managed text store.
- */
+/** App-wide choices stay in memory until the user edits their set. */
 
 import fs from "node:fs";
 import type { AppSettings, AppSettingsLoad } from "@shared/types";
 import {
+  APP_SETTINGS_SET_KEYS,
+  appSettingsSetHasShape,
   appSettingsShapeIssue,
   defaultAppSettings,
   normalizeAppSettings,
@@ -26,6 +14,7 @@ import { moveAsideInvalid } from "../shared/quarantine.js";
 import { getAppConfigPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
+const warnedSets = new Set<string>();
 let configPath: string | null = null;
 let current: AppSettings | null = null;
 let quarantinedTo: string | null = null;
@@ -54,8 +43,8 @@ export function initAppSettingsStore(): AppSettings {
   }
 
   if (text === null) {
-    // First launch (or the user removed it): materialize the defaults.
-    return saveAppSettings(defaultAppSettings());
+    current = defaultAppSettings();
+    return current;
   }
 
   let parsed: unknown;
@@ -67,13 +56,11 @@ export function initAppSettingsStore(): AppSettings {
   const issue = appSettingsShapeIssue(parsed);
   if (issue !== null) return recover(configPath, issue, null);
 
-  current = normalizeAppSettings(parsed);
+  current = effectiveSettings(parsed as Record<string, unknown>);
   return current;
 }
 
-// Quarantine-then-reset: the defaults are materialized in the same launch
-// through the ordinary save path. When the file cannot even be moved aside, the
-// defaults stay in memory and nothing is written over it.
+// Recovery keeps built-ins in memory without replacing the quarantined file.
 function recover(filePath: string, detail: string, err: unknown): AppSettings {
   const movedTo = moveAsideInvalid(filePath);
   warn("config.json unusable; app settings reset", {
@@ -87,7 +74,8 @@ function recover(filePath: string, detail: string, err: unknown): AppSettings {
     return current;
   }
   quarantinedTo = movedTo;
-  return saveAppSettings(defaultAppSettings());
+  current = defaultAppSettings();
+  return current;
 }
 
 export function getAppSettingsLoad(): AppSettingsLoad {
@@ -95,10 +83,45 @@ export function getAppSettingsLoad(): AppSettingsLoad {
   return { settings: current, quarantinedTo };
 }
 
-/** Normalizes, persists, and returns the saved settings. */
-export function saveAppSettings(next: AppSettings): AppSettings {
-  const normalized = normalizeAppSettings(next);
-  writeManagedText(requirePath(), JSON.stringify(normalized, null, 2) + "\n");
+function effectiveSettings(map: Record<string, unknown>): AppSettings {
+  const settings = defaultAppSettings();
+  for (const key of APP_SETTINGS_SET_KEYS) {
+    if (!Object.hasOwn(map, key)) continue;
+    if (appSettingsSetHasShape(key, map[key])) Object.assign(settings, { [key]: map[key] });
+    else {
+      const warningId = `${requirePath()}:${key}`;
+      if (!warnedSets.has(warningId)) {
+        warnedSets.add(warningId);
+        warn("app config set has invalid shape; using built-in", { path: requirePath(), key });
+      }
+    }
+  }
+  return settings;
+}
+
+/** Writes changed sets while preserving the file's other known copies. */
+export function saveAppSettings(next: Partial<AppSettings>): AppSettings {
+  let map: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(requirePath(), "utf-8"));
+    const issue = appSettingsShapeIssue(parsed);
+    if (issue) throw new Error(`App settings rejected: ${issue}`);
+    map = parsed as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const previous = effectiveSettings(map);
+  const normalized = normalizeAppSettings({ ...previous, ...next });
+  const saved: Record<string, unknown> = {};
+  let changed = false;
+  for (const key of APP_SETTINGS_SET_KEYS) {
+    if (Object.hasOwn(map, key)) saved[key] = map[key];
+    if (Object.hasOwn(next, key) && normalized[key] !== previous[key]) {
+      saved[key] = normalized[key];
+      changed = true;
+    }
+  }
+  if (changed) writeManagedText(requirePath(), JSON.stringify(saved, null, 2) + "\n");
   current = normalized;
   return normalized;
 }

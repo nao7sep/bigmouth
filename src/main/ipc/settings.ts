@@ -69,12 +69,14 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle(CHANNELS.saveSettings, (_event, wsId: string, body: unknown) => {
     const ws = resolveWorkspace(wsId);
-    validateSettings(body);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("settings must be an object");
+    const next = { ...getSettings(ws.dataDirectory), ...body };
+    validateSettings(next);
     // The value rules, from the same module the modal renders its messages from.
-    const invalid = firstSettingsError(body);
+    const invalid = firstSettingsError(next);
     if (invalid) throw new Error(`${invalid.field}: ${invalid.message.key}`);
 
-    const settings = saveSettings(ws.dataDirectory, body);
+    const settings = saveSettings(ws.dataDirectory, body as Partial<Settings>);
     info("settings saved", {
       workspace: ws.id,
       timezone: settings.timezone,

@@ -1,8 +1,8 @@
 // The storage root's config.json holds the app-wide settings (the theme). These
-// tests cover first-run materialization, reading back, and the
-// quarantine-then-reset recovery the storage-path conventions require.
+// tests cover sparse writes and recovery without seeding defaults.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as logger from "@main/core/services/logger.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,9 +45,9 @@ afterEach(() => {
 });
 
 describe("appSettingsStore", () => {
-  it("materializes the defaults on first launch", () => {
+  it("keeps defaults in memory on first launch", () => {
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system", language: "system" });
+    expect(fs.existsSync(configPath())).toBe(false);
     expect(getAppSettingsLoad()).toEqual({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
   });
 
@@ -66,7 +66,6 @@ describe("appSettingsStore", () => {
   it.each([
     ["invalid JSON", "{ theme"],
     ["a non-object", "[]"],
-    ["a wrong-typed theme", '{ "theme": true }'],
   ])("moves %s aside, resets, and reports where it went", (_label, body) => {
     fs.writeFileSync(configPath(), body);
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
@@ -74,7 +73,7 @@ describe("appSettingsStore", () => {
     const moved = quarantined();
     expect(moved).toHaveLength(1);
     expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "system", language: "system" });
+    expect(fs.existsSync(configPath())).toBe(false);
     expect(getAppSettingsLoad().quarantinedTo).toBe(path.join(getAppRoot(), moved[0]!));
   });
 
@@ -89,6 +88,38 @@ describe("appSettingsStore", () => {
   it("saves only known keys", () => {
     initAppSettingsStore();
     expect(saveAppSettings({ theme: "light", extra: 1 } as never)).toEqual({ theme: "light", language: "system" });
-    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "light", language: "system" });
+    expect(JSON.parse(fs.readFileSync(configPath(), "utf-8"))).toEqual({ theme: "light" });
   });
+});
+
+it("ignores invalid set shapes without quarantining valid neighbours", () => {
+  fs.writeFileSync(configPath(), JSON.stringify({ theme: true, language: "ja" }));
+  expect(initAppSettingsStore()).toEqual({ theme: "system", language: "ja" });
+  expect(quarantined()).toEqual([]);
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: true, language: "ja" });
+});
+
+it("changing one set preserves another known copy and drops version metadata", () => {
+  fs.writeFileSync(configPath(), JSON.stringify({ schemaVersion: 1, theme: "dark" }));
+  initAppSettingsStore();
+  saveAppSettings({ theme: "dark", language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: "dark", language: "ja" });
+});
+
+it("a partial dialog save preserves another set changed after loading", () => {
+  initAppSettingsStore();
+  fs.writeFileSync(configPath(), JSON.stringify({ theme: "dark" }));
+  expect(saveAppSettings({ language: "ja" })).toEqual({ theme: "dark", language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: "dark", language: "ja" });
+});
+
+it("warns once per invalid app set and names its key", () => {
+  const warning = vi.spyOn(logger, "warn");
+  try {
+    fs.writeFileSync(configPath(), JSON.stringify({ theme: "sepia" }));
+    initAppSettingsStore();
+    initAppSettingsStore();
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "theme" }));
+  } finally { warning.mockRestore(); }
 });

@@ -120,18 +120,6 @@ export interface StoredAiConfig {
 }
 
 /**
- * The config.json schema this build writes. Every earlier version is read and
- * migrated on load; the file is rewritten at this version by the next save.
- *   2 — `timezone` may be "system". A version-1 `timezone` of "Asia/Tokyo" was
- *       the seeded default, never a choice the list could record, so it reads
- *       as System.
- */
-export const CONFIG_SCHEMA_VERSION = 2;
-
-/** The zone every version-1 workspace was created with. */
-export const RETIRED_DEFAULT_TIME_ZONE = "Asia/Tokyo";
-
-/**
  * The single per-workspace config file (`config.json`): all of a workspace's
  * durable settings, flat (no nested "settings" wrapper), with top-level keys
  * ordered to mirror the Settings modal — general fields, then targets, AI
@@ -140,7 +128,6 @@ export const RETIRED_DEFAULT_TIME_ZONE = "Asia/Tokyo";
  * defaulting to the first config.
  */
 export interface WorkspaceConfig extends Settings {
-  schemaVersion: number;
   targets: Target[];
   aiConfigs: StoredAiConfig[];
   analysisPrompts: AnalysisPrompt[];

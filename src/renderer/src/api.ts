@@ -105,7 +105,7 @@ export function getAppSettings(): Promise<AppSettingsLoad> {
 }
 
 /** Saves the app-wide settings; the main process applies the theme to the app. */
-export function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+export function saveAppSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
   return bridge().saveAppSettings(settings);
 }
 
@@ -218,7 +218,7 @@ export function getSettings(): Promise<Settings> {
   return bridge().getSettings(requireWs());
 }
 
-export function saveSettings(settings: Settings): Promise<Settings> {
+export function saveSettings(settings: Partial<Settings>): Promise<Settings> {
   return bridge().saveSettings(requireWs(), settings);
 }
 
@@ -493,4 +493,12 @@ function describeError(err: unknown, seen = new WeakSet<object>()): Record<strin
     };
   }
   return { error: String(err) };
+}
+
+export function resetAnalysisPrompts(): Promise<AnalysisPrompt[]> {
+  return bridge().resetAnalysisPrompts(requireWs());
+}
+
+export function resetGenerationPrompts(): Promise<GenerationPromptsData> {
+  return bridge().resetGenerationPrompts(requireWs());
 }

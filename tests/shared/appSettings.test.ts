@@ -33,13 +33,13 @@ describe("app settings rules", () => {
     }
   });
 
-  it("treats a non-object or a wrong-typed theme as corruption, never as a value to coerce", () => {
+  it("treats only a non-object as file corruption", () => {
     expect(appSettingsShapeIssue({ theme: "dark" })).toBeNull();
     expect(appSettingsShapeIssue({})).toBeNull();
     expect(appSettingsShapeIssue({ theme: "sepia" })).toBeNull();
     expect(appSettingsShapeIssue([])).not.toBeNull();
     expect(appSettingsShapeIssue(null)).not.toBeNull();
-    expect(appSettingsShapeIssue({ theme: true })).not.toBeNull();
-    expect(appSettingsShapeIssue({ language: 3 })).not.toBeNull();
+    expect(appSettingsShapeIssue({ theme: true })).toBeNull();
+    expect(appSettingsShapeIssue({ language: 3 })).toBeNull();
   });
 });

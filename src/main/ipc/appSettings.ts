@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
-import { appSettingsShapeIssue } from "@shared/appSettings";
+import { APP_SETTINGS_SET_KEYS, appSettingsSetHasShape, appSettingsShapeIssue } from "@shared/appSettings";
 import type { AppSettings } from "@shared/types";
 import { getAppSettingsLoad, saveAppSettings } from "../core/services/appSettingsStore.js";
 import { info } from "../core/services/logger.js";
@@ -14,9 +14,12 @@ export function registerAppSettingsHandlers(): void {
 
   ipcMain.handle(CHANNELS.getInterfaceLanguage, () => interfaceLanguage());
 
-  ipcMain.handle(CHANNELS.saveAppSettings, (_event, settings: AppSettings) => {
+  ipcMain.handle(CHANNELS.saveAppSettings, (_event, settings: Partial<AppSettings>) => {
     const issue = appSettingsShapeIssue(settings);
     if (issue !== null) throw new Error(`App settings rejected: ${issue}`);
+    for (const key of APP_SETTINGS_SET_KEYS) {
+      if (Object.hasOwn(settings, key) && !appSettingsSetHasShape(key, settings[key])) throw new Error(`App settings rejected: invalid ${key}`);
+    }
     const saved = saveAppSettings(settings);
     applyThemePreference(saved.theme);
     // The window hears about a new language from the broadcast, and the menu

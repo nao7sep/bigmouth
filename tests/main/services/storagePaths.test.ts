@@ -239,7 +239,7 @@ describe("workspace paths are cwd-independent", () => {
       const workspace = createWorkspace("Literal spaces", literal);
 
       expect(workspace.dataDirectory).toBe(literal);
-      expect(fs.existsSync(path.join(literal, "config.json"))).toBe(true);
+      expect(fs.existsSync(path.join(literal, "config.json"))).toBe(false);
       expect(fs.existsSync(trimmedSibling)).toBe(false);
     } finally {
       removeTestTree(root);

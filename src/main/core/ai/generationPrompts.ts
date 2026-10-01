@@ -62,5 +62,5 @@ export function systemPromptForField(
   customPrompts: Record<string, string>
 ): string | null {
   if (!(field in DEFAULT_GENERATION_PROMPTS)) return null;
-  return customPrompts[field] ?? DEFAULT_GENERATION_PROMPTS[field];
+  return customPrompts[field] ?? null;
 }

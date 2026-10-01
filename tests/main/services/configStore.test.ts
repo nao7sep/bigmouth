@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as logger from "@main/core/services/logger.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,9 +8,17 @@ import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
-import { DEFAULT_SETTINGS } from "@main/core/shared/defaults.js";
+import { DEFAULT_SETTINGS, makeDefaultConfig, makeDefaultAiConfigs, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
 import {
   getSettings,
+  getTargets,
+  saveTargets,
+  getAnalysisPrompts,
+  saveAnalysisPrompts,
+  resetAnalysisPrompts,
+  getGenerationPrompts,
+  saveGenerationPrompts,
+  resetGenerationPrompts,
   saveSettings,
   createAiConfig,
   updateAiConfig,
@@ -55,7 +64,7 @@ afterEach(() => {
 describe("time zone", () => {
   function writeConfig(fields: Record<string, unknown>): void {
     const configPath = path.join(dataDir, "config.json");
-    const current = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const current = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : {};
     fs.writeFileSync(configPath, JSON.stringify({ ...current, ...fields }), "utf-8");
   }
 
@@ -63,13 +72,13 @@ describe("time zone", () => {
     expect(getSettings(dataDir).timezone).toBe("system");
   });
 
-  it("reads a version-1 Asia/Tokyo, the old seeded default, as System and saves it so", () => {
+  it("keeps a stored timezone unchanged regardless of the retired version key", () => {
     writeConfig({ schemaVersion: 1, timezone: "Asia/Tokyo" });
-    expect(getSettings(dataDir).timezone).toBe("system");
+    expect(getSettings(dataDir).timezone).toBe("Asia/Tokyo");
 
-    saveSettings(dataDir, getSettings(dataDir));
+    saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
     const saved = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
-    expect(saved).toMatchObject({ schemaVersion: 2, timezone: "system" });
+    expect(saved).toEqual({ timezone: "Asia/Tokyo", uiFontFamily: "Inter" });
   });
 
   it("keeps any other zone a version-1 file names, because the user typed it", () => {
@@ -94,14 +103,9 @@ describe("corrupt config files", () => {
     expect(() => getSettings(dataDir)).toThrow(/config\.json is not valid JSON/);
   });
 
-  // A file that parses but does not fit the shape is corrupt too, and it used to
-  // take a different, destructive branch: the section normalizers coerced the
-  // damaged sections to empty, and because every save reads-spreads-writes, the
-  // next Settings save persisted that emptiness over the user's authored targets,
-  // AI configs and prompts.
-  it("refuses a config whose shape is damaged, instead of coercing it to defaults", () => {
+  it("uses the built-in for an invalid set without quarantining other sets", () => {
     const configPath = path.join(dataDir, "config.json");
-    const healthy = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const healthy = makeDefaultConfig();
     const authoredTargets = [{ rowId: "r1", name: "blog", defaultLanguage: "en", requiresMetadata: false }];
     fs.writeFileSync(
       configPath,
@@ -109,54 +113,54 @@ describe("corrupt config files", () => {
       "utf-8",
     );
 
-    expect(() => getSettings(dataDir)).toThrow(/not a BigMouth workspace config/);
-    expect(() => saveSettings(dataDir, DEFAULT_SETTINGS)).toThrow(/not a BigMouth workspace config/);
+    expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
+    expect(getTargets(dataDir)).toEqual(authoredTargets);
+    saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
 
-    // Nothing was written: the authored targets are still on disk.
+    // The other stored sets survive the unrelated font edit.
     const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     expect(afterwards.targets).toEqual(authoredTargets);
     expect(afterwards.analysisPrompts).toBe("not an array");
   });
 
-  it("leaves a config written by a newer build exactly where it is", () => {
-    // Not corrupt — intact data this build cannot read. Reported by name, never
-    // written to, which the throw is what guarantees since every save reads first.
+  it("ignores a retired version key and drops it at the next write", () => {
     const configPath = path.join(dataDir, "config.json");
-    const healthy = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const healthy = makeDefaultConfig();
     fs.writeFileSync(configPath, JSON.stringify({ ...healthy, schemaVersion: 99 }), "utf-8");
 
-    expect(() => getSettings(dataDir)).toThrow(/written by a newer version of BigMouth/);
+    expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
+    saveTargets(dataDir, []);
 
     const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    expect(afterwards.schemaVersion).toBe(99);
+    expect(afterwards.schemaVersion).toBeUndefined();
   });
 
-  it("refuses duplicate AI config ids without rewriting the config", () => {
+  it("reads duplicate AI config ids as an invalid aiConfigs set without rewriting", () => {
     const configPath = path.join(dataDir, "config.json");
-    const healthy = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const healthy = makeDefaultConfig();
     const duplicate = JSON.stringify({
       ...healthy,
       aiConfigs: [healthy.aiConfigs[0], { ...healthy.aiConfigs[0], name: "Ambiguous copy" }],
     });
     fs.writeFileSync(configPath, duplicate, "utf8");
 
-    expect(() => getAiConfigsForClient(ws)).toThrow(/duplicate AI config id/);
+    expect(getAiConfigsForClient(ws).configs.map((c) => c.id)).toEqual(["default"]);
     expect(fs.readFileSync(configPath, "utf8")).toBe(duplicate);
   });
 
   it.each([
     ["empty", ""],
     ["outside the management grammar", "bad id!"],
-  ])("refuses an %s AI config id without rewriting the config", (_case, id) => {
+  ])("reads an %s AI config id as an invalid set without rewriting", (_case, id) => {
     const configPath = path.join(dataDir, "config.json");
-    const healthy = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const healthy = makeDefaultConfig();
     const malformed = JSON.stringify({
       ...healthy,
       aiConfigs: [{ ...healthy.aiConfigs[0], id }],
     });
     fs.writeFileSync(configPath, malformed, "utf8");
 
-    expect(() => getAiConfigsForClient(ws)).toThrow(/without a usable id/);
+    expect(getAiConfigsForClient(ws).configs.map((c) => c.id)).toEqual(["default"]);
     expect(fs.readFileSync(configPath, "utf8")).toBe(malformed);
   });
 });
@@ -174,11 +178,6 @@ describe("settings", () => {
   it("backfills fields absent from an older settings file with their defaults", () => {
     // A config.json written before uiFontFamily/contentFont existed: the read
     // must fill them from defaults rather than yield undefined (no migration code).
-    // The structural sections are present because every build that has ever
-    // shipped wrote them — isWorkspaceConfig has required all five since v0.1.0,
-    // and a folder whose config lacks them does not register as a workspace at
-    // all. What this test is actually about is the SETTINGS fields, which a file
-    // written before a setting existed genuinely will not carry.
     fs.writeFileSync(
       path.join(dataDir, "config.json"),
       JSON.stringify({
@@ -198,8 +197,7 @@ describe("settings", () => {
     );
     const loaded = getSettings(dataDir);
     expect(loaded.uiFontFamily).toBe("");
-    // The shared default, not a copy of its values: main materializes what
-    // @shared/types declares, so an edit there must not leave this test passing.
+    // The effective font uses the shared built-in.
     expect(loaded.contentFont).toEqual(DEFAULT_CONTENT_FONT);
   });
 
@@ -394,4 +392,84 @@ describe("AI config lifecycle guards", () => {
     expect(getAiConfigsForClient(ws).activeId).toBe(""); // no configs → none
     expect(getActiveAiConfig(ws)).toBeNull();
   });
+});
+
+describe("settings stored by set", () => {
+  const file = () => path.join(dataDir, "config.json");
+  const saved = () => JSON.parse(fs.readFileSync(file(), "utf8"));
+
+  it("reads all built-ins without seeding a file", () => {
+    expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
+    expect(getTargets(dataDir)).toEqual([]);
+    expect(getAiConfigsForClient(ws).configs[0]).toMatchObject({ id: "default", maxTokens: 16384 });
+    expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
+    expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
+    expect(fs.existsSync(file())).toBe(false);
+  });
+
+  it("changing one set writes exactly that key, with the other sets built-in", () => {
+    saveSettings(dataDir, { ...getSettings(dataDir), editorWatermark: "Write here" });
+    expect(saved()).toEqual({ editorWatermark: "Write here" });
+    expect(getSettings(dataDir)).toEqual({ ...DEFAULT_SETTINGS, editorWatermark: "Write here" });
+    expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
+  });
+
+  it("preserves other known copies and removes unknown keys on write", () => {
+    fs.writeFileSync(file(), JSON.stringify({ version: 7, timezone: "UTC", targets: [] }));
+    saveGenerationPrompts(dataDir, { prompts: { title: "Custom" } });
+    expect(saved()).toEqual({ timezone: "UTC", targets: [], generationPrompts: { prompts: { title: "Custom" } } });
+    expect(getGenerationPrompts(dataDir)).toEqual({ prompts: { title: "Custom" } });
+  });
+
+  it("reads a partial contentFont as absent rather than merging its members", () => {
+    fs.writeFileSync(file(), JSON.stringify({ contentFont: { family: "Custom" } }));
+    expect(getSettings(dataDir).contentFont).toEqual(DEFAULT_CONTENT_FONT);
+    expect(saved()).toEqual({ contentFont: { family: "Custom" } });
+  });
+
+  it("editing the built-in AI config writes only aiConfigs, including all its members", () => {
+    updateAiConfig(ws, "default", { name: "Mine" });
+    expect(saved()).toEqual({ aiConfigs: [{ ...makeDefaultAiConfigs()[0], name: "Mine" }] });
+  });
+
+  it("reset deletes only its prompt set and exposes the live built-in", () => {
+    saveTargets(dataDir, []);
+    saveGenerationPrompts(dataDir, { prompts: { title: "Custom" } });
+    saveAnalysisPrompts(dataDir, [{ name: "Mine", text: "Custom" }]);
+    expect(resetGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
+    expect(saved()).toEqual({ targets: [], analysisPrompts: [{ name: "Mine", text: "Custom" }] });
+    expect(resetAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
+    expect(saved()).toEqual({ targets: [] });
+  });
+
+  it("resetting untouched prompts creates no file", () => {
+    resetGenerationPrompts(dataDir);
+    resetAnalysisPrompts(dataDir);
+    expect(fs.existsSync(file())).toBe(false);
+  });
+});
+
+it("a partial dialog save preserves another set changed after the dialog opened", () => {
+  saveSettings(dataDir, { timezone: "UTC" });
+  saveSettings(dataDir, { uiFontFamily: "Iosevka" });
+  expect(getSettings(dataDir)).toEqual({ ...DEFAULT_SETTINGS, timezone: "UTC", uiFontFamily: "Iosevka" });
+  expect(JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"))).toEqual({ timezone: "UTC", uiFontFamily: "Iosevka" });
+});
+
+it("warns once per invalid workspace set and names its key", () => {
+  const warning = vi.spyOn(logger, "warn");
+  try {
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ contentFont: { family: "Partial" } }));
+    getSettings(dataDir);
+    getTargets(dataDir);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "contentFont" }));
+  } finally { warning.mockRestore(); }
+});
+
+it("an unrelated set save leaves the stored language list and its effective value unchanged", () => {
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ supportedLanguages: ["ja", "en", "ja"] }));
+  const saved = saveSettings(dataDir, { uiFontFamily: "Iosevka" });
+  expect(saved.supportedLanguages).toEqual(["ja", "en", "ja"]);
+  expect(getSettings(dataDir).supportedLanguages).toEqual(saved.supportedLanguages);
 });

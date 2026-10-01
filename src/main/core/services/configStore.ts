@@ -1,22 +1,7 @@
-/**
- * Workspace configuration I/O.
- *
- * A workspace's durable settings all live in ONE file, `config.json` — flat (no
- * nested "settings" wrapper), with its top-level keys ordered to mirror the
- * Settings modal: general fields, then targets, AI configs, analysis prompts,
- * generation prompts. This module is the sole reader/writer of that file; each
- * section accessor reads a normalized config and replaces one section.
- *
- * The active AI config is NOT in the file — it is view state remembered in
- * state.json (services/activeConfig), defaulting to the first config.
- *
- * The AI config functions take a Workspace (they need its id for the secrets
- * file); the section accessors take the workspace data directory.
- */
+/** Workspace settings are read and written by whole set. Secrets and selection have separate owners. */
 
 import fs from "node:fs";
 import path from "node:path";
-import { MODEL_DEFS, defaultMaxTokens, findModelDef, isAiConfigId } from "@shared/types";
 import type {
   Settings,
   Target,
@@ -24,208 +9,92 @@ import type {
   AiConfig,
   AiConfigsData,
   AiProvider,
-  StoredAiConfig,
   GenerationPromptsData,
   WorkspaceConfig,
   Workspace,
 } from "../shared/types.js";
-import { CONFIG_SCHEMA_VERSION, RETIRED_DEFAULT_TIME_ZONE } from "../shared/types.js";
-import { SYSTEM_TIME_ZONE, normalizeTimeZonePreference } from "@shared/timeZone";
+import { normalizeTimeZonePreference } from "@shared/timeZone";
+import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, workspaceSetHasShape } from "@shared/configSets";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
-import { DEFAULT_SETTINGS } from "../shared/defaults.js";
-import { GENERATION_PROMPT_KEYS } from "../ai/generationPrompts.js";
+import { makeDefaultConfig } from "../shared/defaults.js";
+import { warn } from "./logger.js";
 import * as apiKeys from "./apiKeys.js";
 import { getApiKeysPath } from "./storagePaths.js";
 import { resolveActiveConfigId, setActiveConfigId } from "./activeConfig.js";
 
 const CONFIG_FILE = "config.json";
 
-// --- section normalizers ------------------------------------------------------
-//
-// Each rebuilds its section field-by-field from defaults + the on-disk value, so
-// a hand-edited file's stray keys are never carried forward and absent fields
-// backfill cleanly (a defaults backfill, not migration scaffolding — the app is
-// pre-release). These are reused on read (normalizeConfig) and on section saves.
+const warnedSets = new Set<string>();
 
-function asObject(raw: unknown): Record<string, unknown> {
-  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-}
-
-function normalizeSettings(raw: unknown): Settings {
-  const s = { ...DEFAULT_SETTINGS, ...asObject(raw) } as Settings;
-  const cf = { ...DEFAULT_SETTINGS.contentFont, ...asObject((raw as { contentFont?: unknown }).contentFont) };
-  return {
-    timezone: normalizeTimeZonePreference(s.timezone),
-    supportedLanguages: [...new Set(s.supportedLanguages)].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    ),
-    publishedPostsPerLoad: s.publishedPostsPerLoad,
-    maxUploadMb: s.maxUploadMb,
-    editorWatermark: s.editorWatermark,
-    extraFieldWatermark: s.extraFieldWatermark,
-    uiFontFamily: s.uiFontFamily,
-    contentFont: {
-      family: cf.family,
-      size: cf.size,
-      lineHeight: cf.lineHeight,
-      padding: cf.padding,
-      bold: cf.bold,
-      italic: cf.italic,
-      underline: cf.underline,
-    },
-  };
-}
-
-function normalizeTargets(raw: unknown): Target[] {
-  return (Array.isArray(raw) ? (raw as Target[]) : []).map((t) => ({
-    name: t.name,
-    defaultLanguage: t.defaultLanguage,
-    requiresMetadata: t.requiresMetadata,
-  }));
-}
-
-// Persist only the non-secret config shape; an `apiKey` (or any stray field) from
-// a legacy file is never written back into the git-versionable workspace.
-//
-// `thinking` and `maxTokens` are absent from a file written before they existed, so
-// they resolve to the selected model's own built-in defaults on read (storage-path's
-// rule for a key the user never had a value for) — not a migration, just a default.
-// The model id itself is passed through untouched: whether it is still one we offer
-// is not the store's judgment, and a stale one surfaces at the provider.
-function normalizeAiConfigs(raw: unknown): StoredAiConfig[] {
-  const entries = Array.isArray(raw) ? (raw as Partial<StoredAiConfig>[]) : [];
-  return entries.map((c) => {
-    const model = findModelDef(String(c.model ?? ""));
-    return {
-      id: c.id as string,
-      name: c.name as string,
-      provider: c.provider as StoredAiConfig["provider"],
-      model: c.model as string,
-      thinking:
-        typeof c.thinking === "boolean" ? c.thinking : (model?.supportsAdaptiveThinking ?? false),
-      // With an unknown model there is nothing to scale to, but the value is also
-      // never reached: the provider rejects the model before reading the budget.
-      maxTokens: Number.isInteger(c.maxTokens)
-        ? (c.maxTokens as number)
-        : defaultMaxTokens(model ?? MODEL_DEFS[0]),
-    };
-  });
-}
-
-function normalizeAnalysisPrompts(raw: unknown): AnalysisPrompt[] {
-  return (Array.isArray(raw) ? (raw as AnalysisPrompt[]) : []).map((p) => ({ name: p.name, text: p.text }));
-}
-
-function normalizeGenerationPrompts(raw: unknown): GenerationPromptsData {
-  const src = asObject(asObject(raw).prompts);
-  const prompts: Record<string, string> = {};
-  for (const key of GENERATION_PROMPT_KEYS) {
-    if (typeof src[key] === "string") prompts[key] = src[key] as string;
-  }
-  return { prompts };
-}
-
-// Version 1 seeded every workspace with Asia/Tokyo and offered no System, so
-// that value is the old default rather than a choice, and follows the computer
-// now. Any other zone a version-1 file names was typed by the user and stays.
-function migrateSettings(settings: Settings, recordedVersion: number | null): Settings {
-  if ((recordedVersion ?? 1) < 2 && settings.timezone === RETIRED_DEFAULT_TIME_ZONE) {
-    return { ...settings, timezone: SYSTEM_TIME_ZONE };
-  }
-  return settings;
-}
-
-// Build the whole config in modal order: schemaVersion, general settings, then
-// targets, aiConfigs, analysisPrompts, generationPrompts.
-function normalizeConfig(raw: unknown): WorkspaceConfig {
-  const o = asObject(raw);
-  return {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
-    ...migrateSettings(normalizeSettings(o), recordedSchemaVersion(raw)),
-    targets: normalizeTargets(o.targets),
-    aiConfigs: normalizeAiConfigs(o.aiConfigs),
-    analysisPrompts: normalizeAnalysisPrompts(o.analysisPrompts),
-    generationPrompts: normalizeGenerationPrompts(o.generationPrompts),
-  };
-}
-
-// --- the single config file ---------------------------------------------------
-
-/**
- * Reads a workspace's config, refusing anything this build cannot faithfully
- * read back.
- *
- * The section normalizers below coerce silently — a `targets` that is not an
- * array becomes `[]`, and so on. That is right for a value inside a config this
- * build owns, and wrong for deciding whether the file is one at all: every
- * caller that saves goes `readConfig` → spread → `writeConfig`, so a file whose
- * shape was damaged read as empty sections and the next Settings save persisted
- * that emptiness over the user's authored targets, AI configs and prompts.
- *
- * So the shape is checked BEFORE normalizing, and a failure takes the same
- * branch as unparseable JSON: throw, touch nothing. The sibling state store
- * already does exactly this, and says why — "never coerced and then
- * overwritten". The difference here is that `config.json` is authored work
- * rather than view state, so there is not even a defaults path to fall back to.
- */
-function readConfig(dataDir: string): WorkspaceConfig {
+function readMap(dataDir: string): Record<string, unknown> {
   const filePath = path.join(dataDir, CONFIG_FILE);
-  const raw = fs.readFileSync(filePath, "utf-8");
-
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (cause) {
-    throw new Error(`${CONFIG_FILE} is not valid JSON. It was left unchanged at ${filePath}`, {
-      cause,
-    });
+    throw new Error(`${CONFIG_FILE} is not valid JSON. It was left unchanged at ${filePath}`, { cause });
   }
-
-  // A store written by a newer build is not corrupt: it is intact data this
-  // build cannot read. Named, left exactly in place, never written to — which
-  // is what the throw guarantees, since every save path reads first.
-  const recorded = recordedSchemaVersion(parsed);
-  if (recorded !== null && recorded > CONFIG_SCHEMA_VERSION) {
-    throw new Error(
-      `${CONFIG_FILE} was written by a newer version of BigMouth (schema ${recorded}, this build reads ${CONFIG_SCHEMA_VERSION}). It was left unchanged at ${filePath}`,
-    );
-  }
-
   if (!isWorkspaceConfig(parsed)) {
-    throw new Error(
-      `${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`,
-    );
+    throw new Error(`${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`);
   }
-
-  const aiConfigs = (parsed as { aiConfigs: { id?: unknown }[] }).aiConfigs;
-  const ids = new Set<string>();
-  for (const config of aiConfigs) {
-    if (!config || !isAiConfigId(config.id)) {
-      throw new Error(`${CONFIG_FILE} contains an AI config without a usable id. It was left unchanged at ${filePath}`);
-    }
-    if (ids.has(config.id)) {
-      throw new Error(`${CONFIG_FILE} contains duplicate AI config id ${JSON.stringify(config.id)}. It was left unchanged at ${filePath}`);
-    }
-    ids.add(config.id);
-  }
-
-  return normalizeConfig(parsed);
+  return parsed;
 }
 
-/** The schema version the file records, or null if it records none usable. */
-function recordedSchemaVersion(parsed: unknown): number | null {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const value = (parsed as { schemaVersion?: unknown }).schemaVersion;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function readConfig(dataDir: string): WorkspaceConfig {
+  const map = readMap(dataDir);
+  const config = structuredClone(makeDefaultConfig());
+  for (const key of WORKSPACE_SET_KEYS) {
+    if (!Object.hasOwn(map, key)) continue;
+    if (workspaceSetHasShape(key, map[key])) {
+      Object.assign(config, { [key]: map[key] });
+    } else {
+      const warningId = `${dataDir}:${key}`;
+      if (!warnedSets.has(warningId)) {
+        warnedSets.add(warningId);
+        warn("workspace config set has invalid shape; using built-in", { path: path.join(dataDir, CONFIG_FILE), key });
+      }
+    }
+  }
+  // Time-zone value validity remains with the existing owner.
+  config.timezone = normalizeTimeZonePreference(config.timezone);
+  return config;
 }
 
-function writeConfig(dataDir: string, config: WorkspaceConfig): void {
-  // recorded: a workspace's config.json is its durable, user-authored settings (targets, AI configs,
-  // analysis/generation prompts). It is managed text under a workspace's data directory — internal or
-  // at a user-chosen absolute path — and carries no secret (keys live in api-keys.json), so it is
-  // recorded on every save (data-backup conventions: config.json is recorded).
-  writeManagedText(path.join(dataDir, CONFIG_FILE), JSON.stringify(config, null, 2) + "\n");
+function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>, deleted: (keyof WorkspaceConfig)[] = []): void {
+  const map = readMap(dataDir);
+  if (!Object.keys(changes).length && !deleted.some((key) => Object.hasOwn(map, key))) return;
+  const saved: Record<string, unknown> = {};
+  for (const key of WORKSPACE_SET_KEYS) {
+    if (Object.hasOwn(map, key) && !deleted.includes(key)) saved[key] = map[key];
+    if (Object.hasOwn(changes, key)) saved[key] = changes[key];
+  }
+  writeManagedText(path.join(dataDir, CONFIG_FILE), JSON.stringify(saved, null, 2) + "\n");
+}
+
+function normalizeSettings(settings: Settings): Settings {
+  const known = Object.fromEntries(SETTINGS_SET_KEYS.map((key) => [key, settings[key]])) as unknown as Settings;
+  return {
+    ...known,
+    timezone: normalizeTimeZonePreference(settings.timezone),
+    supportedLanguages: [...new Set(settings.supportedLanguages)].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })),
+  };
+}
+
+function normalizeTargets(targets: Target[]): Target[] {
+  return targets.map(({ name, defaultLanguage, requiresMetadata }) => ({ name, defaultLanguage, requiresMetadata }));
+}
+
+function normalizeAnalysisPrompts(prompts: AnalysisPrompt[]): AnalysisPrompt[] {
+  return prompts.map(({ name, text }) => ({ name, text }));
 }
 
 // --- Settings -----------------------------------------------------------------
@@ -244,11 +113,17 @@ export function getSettings(dataDir: string): Settings {
   };
 }
 
-export function saveSettings(dataDir: string, settings: Settings): Settings {
+export function saveSettings(dataDir: string, settings: Partial<Settings>): Settings {
   const config = readConfig(dataDir);
-  const normalized = normalizeSettings(settings);
-  writeConfig(dataDir, { ...config, ...normalized });
-  return normalized;
+  const normalized = normalizeSettings({ ...config, ...settings });
+  const changes: Partial<Settings> = {};
+  for (const key of SETTINGS_SET_KEYS) {
+    if (Object.hasOwn(settings, key) && JSON.stringify(settings[key]) !== JSON.stringify(config[key])) {
+      Object.assign(changes, { [key]: normalized[key] });
+    }
+  }
+  if (Object.keys(changes).length) writeSets(dataDir, changes);
+  return getSettings(dataDir);
 }
 
 // --- AI Configs ---------------------------------------------------------------
@@ -339,7 +214,7 @@ export function createAiConfig(workspace: Workspace, input: CreateAiConfigInput)
   // a failed key write at worst leaves a keyless config the user can re-key. (The
   // workspace file and the secrets file are separate; they cannot be made atomic
   // without machinery, so ordering bounds the blast radius instead.)
-  writeConfig(workspace.dataDirectory, config);
+  writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
   if (input.apiKey !== undefined) {
     apiKeys.writeApiKey(getApiKeysPath(), workspace.id, input.id, input.provider, input.apiKey);
   }
@@ -397,7 +272,7 @@ export function updateAiConfig(
     apiKeys.writeApiKey(getApiKeysPath(), workspace.id, id, target.provider, patch.apiKey);
   }
   if (metadataChanged) {
-    writeConfig(workspace.dataDirectory, config);
+    writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
   }
   return getAiConfigsForClient(workspace);
 }
@@ -414,7 +289,7 @@ export function deleteAiConfig(workspace: Workspace, id: string): AiConfigsData 
     throw new Error(`AI config with id "${id}" not found`);
   }
   config.aiConfigs = config.aiConfigs.filter((c) => c.id !== id);
-  writeConfig(workspace.dataDirectory, config);
+  writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
   apiKeys.clearApiKey(getApiKeysPath(), workspace.id, id);
   return getAiConfigsForClient(workspace);
 }
@@ -440,9 +315,8 @@ export function getTargets(dataDir: string): Target[] {
 }
 
 export function saveTargets(dataDir: string, targets: Target[]): Target[] {
-  const config = readConfig(dataDir);
   const normalized = normalizeTargets(targets);
-  writeConfig(dataDir, { ...config, targets: normalized });
+  writeSets(dataDir, { targets: normalized });
   return normalized;
 }
 
@@ -453,9 +327,8 @@ export function getAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
 }
 
 export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): AnalysisPrompt[] {
-  const config = readConfig(dataDir);
   const normalized = normalizeAnalysisPrompts(prompts);
-  writeConfig(dataDir, { ...config, analysisPrompts: normalized });
+  writeSets(dataDir, { analysisPrompts: normalized });
   return normalized;
 }
 
@@ -469,8 +342,16 @@ export function saveGenerationPrompts(
   dataDir: string,
   data: GenerationPromptsData
 ): GenerationPromptsData {
-  const config = readConfig(dataDir);
-  const normalized = normalizeGenerationPrompts(data);
-  writeConfig(dataDir, { ...config, generationPrompts: normalized });
-  return normalized;
+  writeSets(dataDir, { generationPrompts: data });
+  return data;
+}
+
+export function resetAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
+  writeSets(dataDir, {}, ["analysisPrompts"]);
+  return getAnalysisPrompts(dataDir);
+}
+
+export function resetGenerationPrompts(dataDir: string): GenerationPromptsData {
+  writeSets(dataDir, {}, ["generationPrompts"]);
+  return getGenerationPrompts(dataDir);
 }

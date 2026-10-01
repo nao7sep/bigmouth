@@ -5,13 +5,13 @@ import {
 } from "@main/core/ai/generationPrompts.js";
 
 describe("systemPromptForField", () => {
-  it("returns the default prompt when no custom override exists", () => {
-    expect(systemPromptForField("title", {})).toBe(
+  it("uses the effective built-in map supplied by the store", () => {
+    expect(systemPromptForField("title", DEFAULT_GENERATION_PROMPTS)).toBe(
       DEFAULT_GENERATION_PROMPTS.title
     );
   });
 
-  it("prefers a custom prompt over the default", () => {
+  it("uses a saved prompt unchanged", () => {
     expect(systemPromptForField("title", { title: "Custom" })).toBe("Custom");
   });
 
@@ -19,4 +19,8 @@ describe("systemPromptForField", () => {
     expect(systemPromptForField("id", {})).toBeNull();
     expect(systemPromptForField("nonsense", { nonsense: "x" })).toBeNull();
   });
+});
+
+it("does not fill a missing member from the built-in", () => {
+  expect(systemPromptForField("slug", { title: "Custom" })).toBeNull();
 });

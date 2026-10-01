@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 import type { AnalysisPrompt } from "@shared/types";
-import { getAnalysisPrompts, saveAnalysisPrompts } from "../core/services/configStore.js";
+import { getAnalysisPrompts, saveAnalysisPrompts, resetAnalysisPrompts } from "../core/services/configStore.js";
 import { DEFAULT_ANALYSIS_PROMPTS } from "../core/shared/defaults.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -17,6 +17,12 @@ export function registerAnalysisPromptHandlers(): void {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const prompts = getAnalysisPrompts(dir);
     info("analysis prompts loaded", { workspace: wsId, count: prompts.length });
+    return prompts;
+  });
+
+  ipcMain.handle(CHANNELS.resetAnalysisPrompts, (_event, wsId: string) => {
+    const prompts = resetAnalysisPrompts(resolveWorkspace(wsId).dataDirectory);
+    info("analysis prompts reset", { workspace: wsId });
     return prompts;
   });
 

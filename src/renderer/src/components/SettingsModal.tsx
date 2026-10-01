@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
+import { changedSets } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
 import { CATALOGUES } from "@shared/i18n/catalogues";
@@ -35,6 +36,7 @@ import {
   listAnalysisPrompts,
   listAnalysisPromptDefaults,
   saveAnalysisPrompts,
+  resetAnalysisPrompts,
   listAiConfigs,
   createAiConfig,
   updateAiConfig,
@@ -43,6 +45,7 @@ import {
   getGenerationPrompts,
   getGenerationPromptDefaults,
   saveGenerationPrompts,
+  resetGenerationPrompts,
   rebuildPostIndex,
   reportProblem,
 } from "../api";
@@ -113,6 +116,8 @@ export function SettingsModal({
   const [targets, setTargets] = useState<EditableTarget[]>([]);
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [analysisPromptDefaults, setAnalysisPromptDefaults] = useState<AnalysisPrompt[]>([]);
+  const [analysisReset, setAnalysisReset] = useState(false);
+  const [generationReset, setGenerationReset] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<Message | null>(null);
   // Post files a target rename could not read. Settings saved, but those posts
@@ -180,13 +185,13 @@ export function SettingsModal({
 
   const appSettingsDirty =
     JSON.stringify(appSettings) !== JSON.stringify(initialAppSettings.current);
+  const settingsDirty = JSON.stringify(settings) !== JSON.stringify(initialSettings.current);
+  const generationDirty = generationReset || JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current);
+  const analysisDirty = analysisReset || JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
+  const targetsDirty = JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current));
   const isDirty =
-    appSettingsDirty ||
-    JSON.stringify(settings) !== JSON.stringify(initialSettings.current) ||
-    JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current) ||
-    JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current) ||
-    JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current)) ||
-    JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
+    appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty ||
+    JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current);
 
   const handleRequestClose = async () => {
     if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
@@ -325,12 +330,12 @@ export function SettingsModal({
         }))
         .filter(({ oldName, newName }) => oldName && newName && oldName !== newName);
 
-      const [savedAppSettings, , savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
-        appSettingsDirty ? saveAppSettings(appSettings) : Promise.resolve(appSettings),
-        saveSettings(settings),
+      const [savedAppSettings, savedSettings, savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
+        appSettingsDirty ? saveAppSettings(changedSets(appSettings, initialAppSettings.current!)) : Promise.resolve(appSettings),
+        settingsDirty ? saveSettings(changedSets(settings, initialSettings.current!)) : Promise.resolve(settings),
         commitAiConfigChanges(),
-        saveGenerationPrompts(generationPrompts),
-        saveAnalysisPrompts(prompts),
+        generationReset ? resetGenerationPrompts() : generationDirty ? saveGenerationPrompts(generationPrompts) : Promise.resolve(generationPrompts),
+        analysisReset ? resetAnalysisPrompts() : analysisDirty ? saveAnalysisPrompts(prompts) : Promise.resolve(prompts),
       ]);
 
       const skips: RenameSkip[] = [];
@@ -338,7 +343,7 @@ export function SettingsModal({
         const { postsSkipped } = await renameTarget(oldName, newName);
         for (const file of postsSkipped) skips.push({ ...file, oldName });
       }
-      const savedTargets = await saveTargets(targetPayload(targets));
+      const savedTargets = targetsDirty ? await saveTargets(targetPayload(targets)) : targetPayload(targets);
 
       setAppSettings(savedAppSettings);
       initialAppSettings.current = savedAppSettings;
@@ -346,11 +351,17 @@ export function SettingsModal({
         setAiConfigs(savedAiConfigs);
         initialAiConfigs.current = savedAiConfigs;
       }
+      setSettings(savedSettings);
+      initialSettings.current = savedSettings;
       setGenerationPrompts(savedGenPrompts);
+      initialGenerationPrompts.current = savedGenPrompts;
+      setGenerationReset(false);
+      setAnalysisReset(false);
       const editableSavedTargets = editableTargets(savedTargets);
       setTargets(editableSavedTargets);
       initialTargets.current = editableSavedTargets;
       setPrompts(savedPrompts);
+      initialPrompts.current = savedPrompts;
       onSettingsChanged();
       if (skips.length > 0) setRenameSkips(skips);
       else onClose();
@@ -427,15 +438,15 @@ export function SettingsModal({
             {tab === "analysis" && (
               <AnalysisPromptsTab
                 prompts={prompts}
-                defaults={analysisPromptDefaults}
-                onChange={setPrompts}
+                onReset={() => { setAnalysisReset(true); setPrompts(structuredClone(analysisPromptDefaults)); }}
+                onChange={(next) => { setAnalysisReset(false); setPrompts(next); }}
               />
             )}
             {tab === "generation" && generationPrompts && generationPromptDefaults && (
               <GenerationTab
                 data={generationPrompts}
-                defaults={generationPromptDefaults}
-                onChange={setGenerationPrompts}
+                onReset={() => { setGenerationReset(true); setGenerationPrompts(structuredClone(generationPromptDefaults)); }}
+                onChange={(next) => { setGenerationReset(false); setGenerationPrompts(next); }}
               />
             )}
           </div>
@@ -1181,11 +1192,11 @@ function TargetsTab({
 
 function GenerationTab({
   data,
-  defaults,
+  onReset,
   onChange,
 }: {
   data: GenerationPromptsData;
-  defaults: GenerationPromptsData;
+  onReset: () => void;
   onChange: (d: GenerationPromptsData) => void;
 }) {
   const { t } = useI18n();
@@ -1193,18 +1204,12 @@ function GenerationTab({
     onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
 
-  const resetGenerationPromptsToDefaults = () => {
-    onChange({
-      prompts: { ...defaults.prompts },
-    });
-  };
-
   return (
     <div className="generation-tab">
       <p className="settings-hint">{t("settings.generationHint")}</p>
 
       <div className="metadata-generate-all-row">
-        <button className="btn-action" onClick={resetGenerationPromptsToDefaults}>
+        <button className="btn-action" onClick={onReset}>
           {t("settings.resetGeneration")}
         </button>
       </div>
@@ -1232,11 +1237,11 @@ function GenerationTab({
 
 function AnalysisPromptsTab({
   prompts,
-  defaults,
+  onReset,
   onChange,
 }: {
   prompts: AnalysisPrompt[];
-  defaults: AnalysisPrompt[];
+  onReset: () => void;
   onChange: (p: AnalysisPrompt[]) => void;
 }) {
   const { t, rich } = useI18n();
@@ -1255,15 +1260,11 @@ function AnalysisPromptsTab({
     onChange(prompts.filter((_, i) => i !== index));
   };
 
-  const resetAnalysisPromptsToDefaults = () => {
-    onChange(defaults.map((prompt) => ({ ...prompt })));
-  };
-
   return (
     <div className="settings-section">
       <p className="settings-hint">{rich("settings.analysisHint", { placeholder: "{content}" })}</p>
       <div className="metadata-generate-all-row">
-        <button className="btn-action" onClick={resetAnalysisPromptsToDefaults}>
+        <button className="btn-action" onClick={onReset}>
           {t("settings.resetAnalysis")}
         </button>
       </div>

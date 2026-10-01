@@ -1,3 +1,4 @@
+import { DEFAULT_GENERATION_PROMPTS } from "@main/core/ai/generationPrompts.js";
 import { describe, it, expect } from "vitest";
 import {
   isMetadataField,
@@ -61,7 +62,7 @@ describe("buildMetadataGenerationRequest", () => {
       fields: ["title", "slug"],
       content: "The draft body.",
       frontMatter: frontMatter({ metaDescription: "既存の説明文", tags: ["a", "b"] }),
-      customPrompts: {},
+      customPrompts: DEFAULT_GENERATION_PROMPTS,
     });
 
     // System prompt carries per-field guidance headers.
@@ -90,7 +91,7 @@ describe("buildMetadataGenerationRequest", () => {
       fields: ["titleEn"],
       content: "body",
       frontMatter: frontMatter(),
-      customPrompts: { titleEn: "MY CUSTOM GUIDANCE WITH NO MENTION OF LANGUAGE" },
+      customPrompts: { ...DEFAULT_GENERATION_PROMPTS, titleEn: "MY CUSTOM GUIDANCE WITH NO MENTION OF LANGUAGE" },
     });
 
     expect(req.systemPrompt).toContain("titleEn, slug, tagsEn and metaDescriptionEn");
@@ -108,7 +109,7 @@ describe("buildMetadataGenerationRequest", () => {
       fields: ["titleEn"],
       content: "body",
       frontMatter: frontMatter(),
-      customPrompts: {},
+      customPrompts: DEFAULT_GENERATION_PROMPTS,
     });
 
     expect(req.userContent).toContain('"draftLanguage": "ja"');
@@ -123,7 +124,7 @@ describe("buildMetadataGenerationRequest", () => {
       fields: ["titleEn"],
       content: "The draft body.",
       frontMatter: frontMatter({ titleEn: "誤って日本語になった値", title: "既存タイトル" }),
-      customPrompts: {},
+      customPrompts: DEFAULT_GENERATION_PROMPTS,
     });
 
     const existing = JSON.parse(payloadOf(req.userContent)).existingMetadata;
@@ -137,7 +138,7 @@ describe("buildMetadataGenerationRequest", () => {
       fields: ["title"],
       content: "body",
       frontMatter: frontMatter(),
-      customPrompts: { title: "MY CUSTOM TITLE GUIDANCE" },
+      customPrompts: { ...DEFAULT_GENERATION_PROMPTS, title: "MY CUSTOM TITLE GUIDANCE" },
     });
     expect(req.systemPrompt).toContain("MY CUSTOM TITLE GUIDANCE");
   });
@@ -264,4 +265,10 @@ describe("metadataValueToClientString", () => {
     expect(metadataValueToClientString(["a", "b", "c"])).toBe("a, b, c");
     expect(metadataValueToClientString("plain")).toBe("plain");
   });
+});
+
+it("reports a missing member of a saved prompt map without filling it from built-ins", () => {
+  expect(() => buildMetadataGenerationRequest({
+    fields: ["title"], content: "Draft", frontMatter: frontMatter(), customPrompts: { slug: "Custom" },
+  })).toThrow(/No generation prompt is configured for title/);
 });

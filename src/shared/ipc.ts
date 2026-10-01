@@ -124,11 +124,13 @@ export const CHANNELS = {
   // Generation prompts
   getGenerationPrompts: "generationPrompts:get",
   getGenerationPromptDefaults: "generationPrompts:defaults",
+  resetGenerationPrompts: "generationPrompts:reset",
   saveGenerationPrompts: "generationPrompts:save",
 
   // Analysis prompts
   listAnalysisPrompts: "analysisPrompt:list",
   listAnalysisPromptDefaults: "analysisPrompt:defaults",
+  resetAnalysisPrompts: "analysisPrompts:reset",
   saveAnalysisPrompts: "analysisPrompt:save",
 
   // Assets
@@ -310,7 +312,7 @@ export interface BigMouthApi {
   // App-wide settings (the storage root's config.json) — the theme, which
   // applies in every workspace. Saving applies it to the whole app.
   getAppSettings(): Promise<AppSettingsLoad>;
-  saveAppSettings(settings: AppSettings): Promise<AppSettings>;
+  saveAppSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
 
   // The interface language: what the window speaks and formats in, as the main
   // process resolved it, so the window and the native menus always agree.
@@ -354,7 +356,7 @@ export interface BigMouthApi {
 
   // Settings
   getSettings(wsId: string): Promise<Settings>;
-  saveSettings(wsId: string, settings: Settings): Promise<Settings>;
+  saveSettings(wsId: string, settings: Partial<Settings>): Promise<Settings>;
 
   // AI configs
   listAiConfigs(wsId: string): Promise<AiConfigsData>;
@@ -366,11 +368,13 @@ export interface BigMouthApi {
   // Generation prompts
   getGenerationPrompts(wsId: string): Promise<GenerationPromptsData>;
   getGenerationPromptDefaults(wsId: string): Promise<GenerationPromptsData>;
+  resetGenerationPrompts(wsId: string): Promise<GenerationPromptsData>;
   saveGenerationPrompts(wsId: string, data: GenerationPromptsData): Promise<GenerationPromptsData>;
 
   // Analysis prompts
   listAnalysisPrompts(wsId: string): Promise<AnalysisPrompt[]>;
   listAnalysisPromptDefaults(wsId: string): Promise<AnalysisPrompt[]>;
+  resetAnalysisPrompts(wsId: string): Promise<AnalysisPrompt[]>;
   saveAnalysisPrompts(wsId: string, prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]>;
 
   // Assets

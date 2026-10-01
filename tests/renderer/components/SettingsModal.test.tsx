@@ -24,6 +24,7 @@ vi.mock("@renderer/api", () => ({
   listAnalysisPrompts: vi.fn(),
   listAnalysisPromptDefaults: vi.fn(),
   saveAnalysisPrompts: vi.fn(),
+  resetAnalysisPrompts: vi.fn(),
   listAiConfigs: vi.fn(),
   createAiConfig: vi.fn(),
   updateAiConfig: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@renderer/api", () => ({
   getGenerationPrompts: vi.fn(),
   getGenerationPromptDefaults: vi.fn(),
   saveGenerationPrompts: vi.fn(),
+  resetGenerationPrompts: vi.fn(),
   rebuildPostIndex: vi.fn(),
 }));
 
@@ -50,6 +52,7 @@ const mock = {
   listAnalysisPrompts: vi.mocked(api.listAnalysisPrompts),
   listAnalysisPromptDefaults: vi.mocked(api.listAnalysisPromptDefaults),
   saveAnalysisPrompts: vi.mocked(api.saveAnalysisPrompts),
+  resetAnalysisPrompts: vi.mocked(api.resetAnalysisPrompts),
   listAiConfigs: vi.mocked(api.listAiConfigs),
   createAiConfig: vi.mocked(api.createAiConfig),
   updateAiConfig: vi.mocked(api.updateAiConfig),
@@ -58,6 +61,7 @@ const mock = {
   getGenerationPrompts: vi.mocked(api.getGenerationPrompts),
   getGenerationPromptDefaults: vi.mocked(api.getGenerationPromptDefaults),
   saveGenerationPrompts: vi.mocked(api.saveGenerationPrompts),
+  resetGenerationPrompts: vi.mocked(api.resetGenerationPrompts),
 };
 
 function settings(): Settings {
@@ -99,7 +103,7 @@ function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AiConfigsData = aiConfigs()) {
   mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
-  mock.saveAppSettings.mockImplementation((next) => Promise.resolve(next));
+  mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
   mock.listAiConfigs.mockResolvedValue(ai);
   mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
@@ -362,8 +366,11 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     expect(mock.setActiveAiConfig).toHaveBeenCalledWith("c2");
     // c1 was deleted.
     expect(mock.deleteAiConfig).toHaveBeenCalledWith("c1");
-    // The umbrella save fired and the modal closed.
-    expect(mock.saveSettings).toHaveBeenCalled();
+    // Only the edited AI set is saved.
+    expect(mock.saveSettings).not.toHaveBeenCalled();
+    expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
+    expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+    expect(mock.saveTargets).not.toHaveBeenCalled();
     expect(onSettingsChanged).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -404,7 +411,7 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
 
   it("surfaces a save error and keeps the modal open", async () => {
     const { getByRole, onClose, getByText } = await renderModal();
-    mock.saveSettings.mockRejectedValue(new Error("write failed"));
+    mock.updateAiConfig.mockRejectedValue(new Error("write failed"));
     mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
     mock.saveAnalysisPrompts.mockResolvedValue(prompts());
     mock.saveTargets.mockResolvedValue(targets());
@@ -458,14 +465,14 @@ describe("SettingsModal — interface language", () => {
     const { getByRole, getByLabelText } = await renderModal();
     fireEvent.change(getByLabelText("Interface language"), { target: { value: "ja" } });
     expect(mock.saveAppSettings).not.toHaveBeenCalled();
-    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveSettings.mockImplementation((next) => Promise.resolve({ ...settings(), ...next }));
     mock.saveTargets.mockResolvedValue(targets());
     mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
     mock.saveAnalysisPrompts.mockResolvedValue(prompts());
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
     });
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "system", language: "ja" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ language: "ja" });
   });
 });
 
@@ -485,7 +492,7 @@ describe("SettingsModal — theme", () => {
 
     const save = getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(false);
-    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveSettings.mockImplementation((next) => Promise.resolve({ ...settings(), ...next }));
     mock.saveTargets.mockResolvedValue(targets());
     mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
     mock.saveAnalysisPrompts.mockResolvedValue(prompts());
@@ -493,7 +500,7 @@ describe("SettingsModal — theme", () => {
       fireEvent.click(save);
     });
 
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark", language: "system" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -501,7 +508,7 @@ describe("SettingsModal — theme", () => {
     const { getByRole } = await renderModal();
     const watermark = getByRole("tabpanel").querySelectorAll("textarea")[0]!;
     fireEvent.change(watermark, { target: { value: "draft" } });
-    mock.saveSettings.mockImplementation((next) => Promise.resolve(next));
+    mock.saveSettings.mockImplementation((next) => Promise.resolve({ ...settings(), ...next }));
     mock.saveTargets.mockResolvedValue(targets());
     mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
     mock.saveAnalysisPrompts.mockResolvedValue(prompts());
@@ -995,5 +1002,39 @@ describe("SettingsModal — dirty-close confirmation", () => {
       await Promise.resolve();
     });
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsModal — set writes and reset", () => {
+  it("theme Save leaves every workspace set untouched", async () => {
+    const { getByRole } = await renderModal();
+    fireEvent.click(getByRole("radio", { name: "Dark" }));
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
+    expect(mock.saveSettings).not.toHaveBeenCalled();
+    expect(mock.saveTargets).not.toHaveBeenCalled();
+    expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
+    expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Generation", "Reset generation prompts", "generation"],
+    ["Analysis", "Reset analysis prompts", "analysis"],
+  ] as const)("%s reset is staged for Save and deletes the set", async (tab, resetLabel, kind) => {
+    const { getByRole, onClose } = await renderModal();
+    mock.resetGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.resetAnalysisPrompts.mockResolvedValue(prompts());
+    const panel = openTab(getByRole, tab);
+    fireEvent.click(within(panel).getByRole("button", { name: resetLabel }));
+    expect(mock.resetGenerationPrompts).not.toHaveBeenCalled();
+    expect(mock.resetAnalysisPrompts).not.toHaveBeenCalled();
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+    expect(kind === "generation" ? mock.resetGenerationPrompts : mock.resetAnalysisPrompts).toHaveBeenCalledOnce();
+    expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
+    expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+    expect(mock.saveSettings).not.toHaveBeenCalled();
+    expect(mock.saveTargets).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
