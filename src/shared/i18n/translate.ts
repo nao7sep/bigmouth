@@ -58,13 +58,14 @@ export function createTranslator(language: Language, locale: string = language):
   const pluralRules = new Intl.PluralRules(language);
 
   function template(key: MessageKey, values: MessageValues | undefined): string {
-    const entry = catalogue[key];
+    // A key the catalogue lacks reads in English (localization-stack-conventions).
+    const entry = catalogue[key] ?? ENGLISH[key];
     if (typeof entry === "string") {
       return entry;
     }
-    // A key the catalogue does not carry shows as itself rather than taking the
-    // window down; the catalogue gate and the on-screen-key check both fail on
-    // it, so it cannot reach a release unnoticed.
+    // A key English lacks too shows as itself rather than taking the window down;
+    // the catalogue gate and the on-screen-key check both fail on it, so it
+    // cannot reach a release unnoticed.
     if (entry === undefined || entry === null) {
       return key;
     }
