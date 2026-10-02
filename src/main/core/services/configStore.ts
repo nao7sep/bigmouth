@@ -224,12 +224,8 @@ export function updateAiConfig(
   if (!target) {
     throw new Error(`AI config with id "${id}" not found`);
   }
-  // Applied by walking the editable keys rather than one `if` per field. The
-  // field list was written twice — once in UpdateAiConfigPatch, once here — and
-  // had fallen out of sync: `thinking` and `maxTokens` were declared, validated
-  // by the IPC handler and logged as changed, then dropped on the floor. The
-  // user toggled Thinking or edited Max tokens, saw the modal repaint from the
-  // returned view with the old values, and every AI call kept the old budget.
+  // Every editable field of UpdateAiConfigPatch is applied here; the list must
+  // name each of them, or an edit the IPC handler accepts is silently dropped.
   const editable = ["name", "provider", "model", "thinking", "maxTokens"] as const;
   let metadataChanged = false;
   for (const key of editable) {

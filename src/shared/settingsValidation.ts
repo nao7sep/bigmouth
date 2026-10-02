@@ -1,14 +1,7 @@
 /**
- * The value rules for workspace settings, in one place.
- *
- * They were written three times — the Settings modal's Save gate, the modal's
- * message producer, and the IPC persistence gate — and the three had already
- * drifted: `maxUploadMb` was "integer ≥ 1" in the UI and `> 0` at the boundary,
- * so `0.5` was rejected on screen and accepted on the wire; `supportedLanguages`
- * was "non-empty, two-letter, unique" in the UI and "any array of strings" at
- * the boundary; `timezone` was Intl-resolvable in the UI and "non-empty string"
- * at the boundary. The content-font bounds are the counter-example that shows
- * the fix works: both sides import the same constants and cannot drift.
+ * The value rules for workspace settings, in one place. The Settings modal's
+ * Save gate, its field messages and the IPC persistence gate all read them, so
+ * the screen and the boundary accept exactly the same values.
  *
  * Type narrowing stays in the main process, where the payload arrives as
  * `unknown`. This module is about values a person can get wrong, so it takes an
@@ -66,9 +59,7 @@ function timezoneError(timezone: string): Message | null {
 /**
  * Duplicates are deliberately NOT an error: the store de-duplicates and sorts
  * the list on save, which is commit-time cleanup rather than a mistake to
- * refuse. The modal used to call them invalid and block Save on them, while the
- * boundary accepted them and the store quietly fixed them — one of the three
- * disagreements this module exists to end.
+ * refuse.
  */
 function languagesError(languages: readonly string[]): Message | null {
   if (languages.length === 0) return message("settings.languagesRequired");

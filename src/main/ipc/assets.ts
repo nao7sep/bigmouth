@@ -87,9 +87,8 @@ export function registerAssetHandlers(): void {
     return assets;
   });
 
-  // Upload now receives raw bytes over IPC (the renderer reads the picked File to
-  // an ArrayBuffer) instead of a multipart stream — multer is gone. The byte-length
-  // check replaces multer's fileSize limit.
+  // Upload receives raw bytes over IPC: the renderer reads the picked File to an
+  // ArrayBuffer, and the byte length is checked against the workspace's limit.
   ipcMain.handle(CHANNELS.uploadAsset, async (_event, wsId: string, postId: string, file: AssetUploadInput) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const pid = readPostId(postId);
@@ -97,7 +96,7 @@ export function registerAssetHandlers(): void {
     if (!file || typeof file.name !== "string" || !file.data) throw new Error("No file provided");
 
     const buffer = Buffer.from(file.data);
-    const limitMb = getSettings(dir).maxUploadMb ?? 500;
+    const limitMb = getSettings(dir).maxUploadMb;
     if (buffer.length > limitMb * 1024 * 1024) {
       return { ok: false, admission: { code: "file-too-large", limitMb } } satisfies AssetUploadResult;
     }

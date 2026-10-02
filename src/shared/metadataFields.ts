@@ -1,12 +1,9 @@
 /**
  * The generatable metadata fields, in the order the UI shows them.
  *
- * One list. It was declared byte-identically in the main process and the
- * renderer: the main copy decided which keys `config.json` persists and which
- * fields the generator accepts, the renderer copy decided which rows Settings
- * renders. Adding a key to one meant either the UI editing a prompt the store
- * dropped on save, or the store carrying a prompt no UI showed — and the
- * renderer's own header claimed it carried no copy.
+ * One list for both processes: it decides which keys `config.json` persists,
+ * which fields the generator accepts and which rows Settings renders, so a key
+ * added here reaches all three.
  */
 
 export const GENERATION_PROMPT_KEYS = [
@@ -30,12 +27,9 @@ export function isMetadataField(value: unknown): value is MetadataField {
  * The rest are always in the draft's language.
  *
  * Declared here, beside the field list, because it is a property of the fields
- * themselves rather than of any one consumer. It had previously been stated
- * only inside the per-field generation prompts ("Write the English title…"),
- * which a user can edit — so the one place the app said a field must be English
- * was also the one place a user could delete it. The generator now states the
- * rule at the top of its own system prompt and holds the response to it, and
- * both read the set from here.
+ * themselves rather than of any one consumer. The generator states the rule in
+ * its own system prompt and holds the response to it, both from this set, so it
+ * does not depend on the per-field prompts a user can edit.
  */
 export const ENGLISH_METADATA_FIELDS: ReadonlySet<MetadataField> = new Set<MetadataField>([
   "titleEn",
@@ -53,9 +47,8 @@ export const ENGLISH_METADATA_FIELDS: ReadonlySet<MetadataField> = new Set<Metad
  * allowed, because rejecting a slug someone deliberately wrote is not this
  * field's job.
  *
- * Both were spelled out at four sites with two different regexes, including the
- * generator's JSON schema and a post-hoc check inside the same file — so
- * relaxing the schema still threw on a slug the schema now permitted.
+ * Every site, the generator's JSON schema and its check of the response
+ * included, reads these, so the schema and the check cannot disagree.
  */
 export const GENERATED_SLUG_PATTERN = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 export const GENERATED_SLUG_MAX_LENGTH = 60;

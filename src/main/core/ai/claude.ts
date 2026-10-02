@@ -228,8 +228,8 @@ export class ClaudeProvider implements AiProvider {
         // An omitted option must be an omitted KEY, not a key set to undefined: the SDK
         // validates request options on the way in and rejects a key set to undefined
         // outright rather than reading it as absent. So the spread is what keeps this
-        // signature's optionality honest. Surfaced by the 0.111 -> 0.120 bump; a mocked
-        // SDK validates nothing, so the suite could not see it.
+        // signature's optionality honest. A mocked SDK validates nothing, so the suite
+        // cannot see it.
         ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
         signal,
       }
@@ -342,10 +342,9 @@ function textOf(message: Anthropic.Message): string {
  * Rejects any completion that is not whole.
  *
  * Written as an allowlist of the two reasons that mean "the model finished",
- * not a denylist of the ones known to be bad. It used to enumerate `max_tokens`
- * and `refusal` only, so `model_context_window_exceeded` fell straight through
- * and a truncated answer was returned as a complete one — the exact class the
- * guard exists for, missed because the SDK's union grew.
+ * not a denylist of the ones known to be bad, so any other reason, such as
+ * `model_context_window_exceeded` or one the SDK adds later, is rejected rather
+ * than returned as a complete answer.
  */
 function assertCompleteStop(message: Anthropic.Message): void {
   const { stop_reason: stopReason } = message;
@@ -366,10 +365,8 @@ function assertCompleteStop(message: Anthropic.Message): void {
  * A refusal, with the reason the provider actually gave.
  *
  * The SDK populates `stop_details` precisely when the stop reason is a refusal,
- * and it carries the policy category and a human-readable explanation. Reporting
- * a bare "Claude refused the request." threw that away and left a writer whose
- * draft tripped a classifier with a dead end and nothing to act on — while the
- * one thing that tells them what to change was sitting in the response.
+ * and it carries the policy category and a human-readable explanation: the one
+ * thing that tells a writer whose draft tripped a classifier what to change.
  */
 function refusalMessage(message: Anthropic.Message): string {
   const details = message.stop_details;
