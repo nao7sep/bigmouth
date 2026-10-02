@@ -5,10 +5,10 @@
 
 import type { AiConfig } from "../shared/types.js";
 import { findModelDef, resolveThinking, validateMaxTokens } from "@shared/types";
-import type { AiProvider } from "./provider.js";
+import type { AiProvider, ProviderCallContext } from "./provider.js";
 import { ClaudeProvider } from "./claude.js";
 
-export function createProvider(config: AiConfig): AiProvider {
+export function createProvider(config: AiConfig, call: ProviderCallContext): AiProvider {
   if (!config.apiKey) {
     throw new Error("AI API key is not configured");
   }
@@ -32,7 +32,7 @@ export function createProvider(config: AiConfig): AiProvider {
       // `true` from before a model swap must never reach the API.
       thinking: resolveThinking(model, config.thinking),
       maxTokens: config.maxTokens,
-    });
+    }, call);
   }
 
   throw new Error(`Unknown AI provider: ${config.provider}`);

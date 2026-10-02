@@ -38,7 +38,14 @@ vi.mock("@anthropic-ai/sdk/helpers/json-schema", () => ({
   jsonSchemaOutputFormat: (schema: unknown) => ({ __outputFormat: schema }),
 }));
 
+const recorded = vi.hoisted(() => ({ calls: [] as unknown[] }));
+vi.mock("@main/core/services/recordsStore.js", () => ({
+  writeProviderCall: (call: unknown) => recorded.calls.push(call),
+}));
+
 import { ClaudeProvider, type ClaudeRequest } from "@main/core/ai/claude.js";
+
+const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
 
 // The model fields a provider is built from. A test names only what it asserts.
 function req(model = "m", over: Partial<ClaudeRequest> = {}): ClaudeRequest {
@@ -94,6 +101,7 @@ function fakeStream() {
 }
 
 beforeEach(() => {
+  recorded.calls.length = 0;
   sdk.ctorArgs = null;
   sdk.create.mockReset();
   sdk.stream.mockReset();
@@ -103,8 +111,40 @@ describe("ClaudeProvider construction", () => {
   // Every call is paid: the SDK's default of two retries could bill a request
   // up to three times, so the client never retries on its own.
   it("passes the api key and turns off the SDK's own retries", () => {
-    new ClaudeProvider("sk-test", req("claude-test-model"));
+    new ClaudeProvider("sk-test", req("claude-test-model"), CALL);
     expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", maxRetries: 0 });
+  });
+});
+
+describe("provider call records", () => {
+  it("records each call with its context, the request sent and the message received", async () => {
+    const reply = message({ text: "ok" });
+    sdk.create.mockResolvedValue(reply);
+    await new ClaudeProvider("k", req("m"), CALL).generateText("s", "u");
+    expect(recorded.calls).toEqual([
+      expect.objectContaining({
+        ...CALL,
+        provider: "anthropic",
+        request: sdk.create.mock.calls[0][0],
+        response: reply,
+        error: undefined,
+      }),
+    ]);
+  });
+
+  it("records a streamed call that fails with its error", async () => {
+    const f = fakeStream();
+    sdk.stream.mockReturnValue(f.handle);
+    const { finished } = new ClaudeProvider("k", req("m"), CALL).generateTextStream("s", "u", () => {});
+    f.rejectFinal(new Error("socket closed"));
+    await expect(finished).rejects.toThrow("socket closed");
+    expect(recorded.calls).toEqual([
+      expect.objectContaining({
+        request: sdk.stream.mock.calls[0][0],
+        response: undefined,
+        error: expect.objectContaining({ message: "socket closed" }),
+      }),
+    ]);
   });
 });
 
@@ -113,7 +153,7 @@ describe("ClaudeProvider construction", () => {
 describe("thinking parameter", () => {
   it("asks for adaptive thinking with a summarized display when thinking is on", async () => {
     sdk.create.mockResolvedValue(message({ text: "ok" }));
-    await new ClaudeProvider("k", req("m", { thinking: true })).generateText("s", "u");
+    await new ClaudeProvider("k", req("m", { thinking: true }), CALL).generateText("s", "u");
 
     expect(sdk.create.mock.calls[0][0].thinking).toEqual({
       type: "adaptive",
@@ -123,7 +163,7 @@ describe("thinking parameter", () => {
 
   it("disables thinking explicitly when thinking is off", async () => {
     sdk.create.mockResolvedValue(message({ text: "ok" }));
-    await new ClaudeProvider("k", req("m", { thinking: false })).generateText("s", "u");
+    await new ClaudeProvider("k", req("m", { thinking: false }), CALL).generateText("s", "u");
 
     expect(sdk.create.mock.calls[0][0].thinking).toEqual({ type: "disabled" });
   });
@@ -131,7 +171,7 @@ describe("thinking parameter", () => {
   it("states thinking on every route, not just free-text generation", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+    const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
 
     provider.generateTextStream("s", "u", () => {});
     void provider.generateJson("s", "u", { type: "object" });
@@ -147,7 +187,7 @@ describe("generateText", () => {
     sdk.create.mockResolvedValue(
       message({ blocks: [{ type: "text", text: "Hello " }, { type: "text", text: "world" }] }),
     );
-    const provider = new ClaudeProvider("k", req("my-model", { maxTokens: 777 }));
+    const provider = new ClaudeProvider("k", req("my-model", { maxTokens: 777 }), CALL);
 
     const text = await provider.generateText("Be brief.", "Say hi.");
 
@@ -162,7 +202,7 @@ describe("generateText", () => {
 
   it("omits the system parameter when the system prompt is empty", async () => {
     sdk.create.mockResolvedValue(message({ text: "ok" }));
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await provider.generateText("", "user only");
 
@@ -178,28 +218,28 @@ describe("generateText", () => {
         ],
       }),
     );
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     expect(await provider.generateText("s", "u")).toBe("visible");
   });
 
   it("throws when the response was truncated at the output token limit", async () => {
     sdk.create.mockResolvedValue(message({ text: "partial", stop_reason: "max_tokens" }));
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(provider.generateText("s", "u")).rejects.toThrow(/output token limit/i);
   });
 
   it("throws when the request was refused", async () => {
     sdk.create.mockResolvedValue(message({ text: "", stop_reason: "refusal" }));
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(provider.generateText("s", "u")).rejects.toThrow(/refused/i);
   });
 
   it("throws when the response carries no text", async () => {
     sdk.create.mockResolvedValue(message({ blocks: [{ type: "thinking", text: "x" }] }));
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(provider.generateText("s", "u")).rejects.toThrow(/Unexpected response type/);
   });
@@ -218,7 +258,7 @@ describe("generateJson", () => {
   }
 
   it("maps the request with the schema output format and forwards request options", async () => {
-    const provider = new ClaudeProvider("k", req("json-model", { maxTokens: 555 }));
+    const provider = new ClaudeProvider("k", req("json-model", { maxTokens: 555 }), CALL);
 
     const result = await jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "end_turn" }), {
       maxDurationMs: 1234,
@@ -242,7 +282,7 @@ describe("generateJson", () => {
   });
 
   it("takes its budget from the config rather than a per-call default", async () => {
-    const provider = new ClaudeProvider("k", req("m", { maxTokens: 31337 }));
+    const provider = new ClaudeProvider("k", req("m", { maxTokens: 31337 }), CALL);
 
     await jsonRun(provider, message({ parsed_output: {}, stop_reason: "end_turn" }));
 
@@ -252,7 +292,7 @@ describe("generateJson", () => {
   it("omits the system parameter when the system prompt is empty", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     const promise = provider.generateJson("", "usr", schema);
     f.resolveFinal(message({ parsed_output: {}, stop_reason: "end_turn" }));
@@ -262,7 +302,7 @@ describe("generateJson", () => {
   });
 
   it("aborts the request when the caller's signal aborts", async () => {
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
     const controller = new AbortController();
 
     await jsonRun(provider, message({ parsed_output: {}, stop_reason: "end_turn" }), { signal: controller.signal });
@@ -291,7 +331,7 @@ describe("generateJson", () => {
     }
 
     it("keeps a call alive for as long as reasoning or output keeps arriving", async () => {
-      const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+      const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
       const { f, promise } = start(provider, { maxDurationMs: 10 * 60_000 });
 
       for (let i = 0; i < 4; i += 1) {
@@ -305,7 +345,7 @@ describe("generateJson", () => {
     });
 
     it("abandons a call that goes silent, and says so", async () => {
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
       const { promise } = start(provider);
 
       const rejection = expect(promise).rejects.toThrow(/stopped sending output for 120s/);
@@ -314,7 +354,7 @@ describe("generateJson", () => {
     });
 
     it("gives up at the outer cap even while output keeps arriving", async () => {
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
       const { f, promise } = start(provider, { maxDurationMs: 5 * 60_000 });
 
       const rejection = expect(promise).rejects.toThrow(/did not finish within 5 minutes/);
@@ -326,7 +366,7 @@ describe("generateJson", () => {
     });
 
     it("reports the caller's abort as itself", async () => {
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
       const controller = new AbortController();
       const { promise } = start(provider, { signal: controller.signal });
 
@@ -337,7 +377,7 @@ describe("generateJson", () => {
   });
 
   it("throws when structured generation hit the token cap", async () => {
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(
       jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "max_tokens" })),
@@ -345,7 +385,7 @@ describe("generateJson", () => {
   });
 
   it("throws when structured generation was refused", async () => {
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(
       jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "refusal" })),
@@ -353,7 +393,7 @@ describe("generateJson", () => {
   });
 
   it("throws when parsed_output is null", async () => {
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(
       jsonRun(provider, message({ parsed_output: null, stop_reason: "end_turn" })),
@@ -361,7 +401,7 @@ describe("generateJson", () => {
   });
 
   it("throws when the response carries no parsed output at all", async () => {
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     await expect(jsonRun(provider, message({ stop_reason: "end_turn" }))).rejects.toThrow(
       /Unexpected structured response/,
@@ -383,7 +423,7 @@ describe("generateJson request options", () => {
 
   it("omits the KEY for an option the caller did not give", async () => {
     sdk.stream.mockReturnValue(streamReturning({ ok: true }));
-    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 });
+    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 }, CALL);
     await provider.generateJson("sys", "user", { type: "object" });
     const opts = sdk.stream.mock.calls[0]?.[1] ?? {};
     expect("timeout" in opts).toBe(false);
@@ -395,7 +435,7 @@ describe("generateJson request options", () => {
   it("passes each option through when the caller does give it", async () => {
     sdk.stream.mockReturnValue(streamReturning({ ok: true }));
     const controller = new AbortController();
-    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 });
+    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 }, CALL);
     await provider.generateJson("sys", "user", { type: "object" },
       { maxDurationMs: 12_345, maxRetries: 2, signal: controller.signal });
     expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 2 });
@@ -406,7 +446,7 @@ describe("generateTextStream", () => {
   it("maps the request, forwards text deltas, and resolves with the final text", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("stream-model", { maxTokens: 999 }));
+    const provider = new ClaudeProvider("k", req("stream-model", { maxTokens: 999 }), CALL);
 
     const received: string[] = [];
     const { finished } = provider.generateTextStream("sys", "usr", (d) => received.push(d));
@@ -428,7 +468,7 @@ describe("generateTextStream", () => {
   it("forwards reasoning deltas to onThinking, separately from the answer text", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+    const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
 
     const text: string[] = [];
     const thinking: string[] = [];
@@ -457,7 +497,7 @@ describe("generateTextStream", () => {
     // and the caller's optional callback is what is conditional.
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     expect(() => provider.generateTextStream("s", "u", () => {})).not.toThrow();
     expect(f.thinkingListenerCount()).toBe(1);
@@ -487,7 +527,7 @@ describe("generateTextStream", () => {
     it("abandons a stream that goes silent, and says so", async () => {
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
 
       const { finished } = provider.generateTextStream("s", "u", () => {});
       rejectOnAbort(f);
@@ -502,7 +542,7 @@ describe("generateTextStream", () => {
     it("treats every delta as progress and starts the clock over", async () => {
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
 
       const { finished } = provider.generateTextStream("s", "u", () => {});
       rejectOnAbort(f);
@@ -522,7 +562,7 @@ describe("generateTextStream", () => {
       // answer token. That is a working stream.
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req("m", { thinking: true }));
+      const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
 
       const { finished } = provider.generateTextStream("s", "u", () => {});
       rejectOnAbort(f);
@@ -538,7 +578,7 @@ describe("generateTextStream", () => {
     it("stops watching once the stream has finished", async () => {
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
 
       const { finished } = provider.generateTextStream("s", "u", () => {});
       rejectOnAbort(f);
@@ -553,7 +593,7 @@ describe("generateTextStream", () => {
     it("reports a user abort as itself, not as a stall", async () => {
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req());
+      const provider = new ClaudeProvider("k", req(), CALL);
 
       const { finished, abort } = provider.generateTextStream("s", "u", () => {});
       const rejection = expect(finished).rejects.toThrow(/Request was aborted/);
@@ -569,7 +609,7 @@ describe("generateTextStream", () => {
   it("omits the system parameter when the system prompt is empty", () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     provider.generateTextStream("", "usr", () => {});
 
@@ -579,7 +619,7 @@ describe("generateTextStream", () => {
   it("forwards abort() to the underlying SDK stream", () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     const { abort } = provider.generateTextStream("s", "u", () => {});
     abort();
@@ -590,7 +630,7 @@ describe("generateTextStream", () => {
   it("rejects `finished` when the final message was truncated", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     const { finished } = provider.generateTextStream("s", "u", () => {});
     f.resolveFinal(message({ text: "partial", stop_reason: "max_tokens" }));
@@ -601,7 +641,7 @@ describe("generateTextStream", () => {
   it("rejects `finished` when the final message was a refusal", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     const { finished } = provider.generateTextStream("s", "u", () => {});
     f.resolveFinal(message({ text: "", stop_reason: "refusal" }));
@@ -612,7 +652,7 @@ describe("generateTextStream", () => {
   it("propagates a rejection from the underlying stream's finalMessage()", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
 
     const { finished } = provider.generateTextStream("s", "u", () => {});
     f.rejectFinal(new Error("stream blew up"));
@@ -630,7 +670,7 @@ describe("incomplete completions", () => {
   function runStream(msg: unknown) {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req());
+    const provider = new ClaudeProvider("k", req(), CALL);
     const { finished } = provider.generateTextStream("s", "u", () => {});
     const rejection = finished;
     f.resolveFinal(msg);

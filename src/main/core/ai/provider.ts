@@ -12,6 +12,13 @@
  * fixed for the provider's lifetime, so they are not per-call arguments.
  */
 
+/** What a provider call belongs to, kept on its record. */
+export type ProviderCallContext = {
+  workspaceId: string;
+  postId: string;
+  purpose: "analysis" | "metadata" | "imaging";
+};
+
 export interface AiProvider {
   generateText(systemPrompt: string, userContent: string): Promise<string>;
   generateJson(

@@ -3,16 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describeAiError, aiErrorMessage, logAiFailure } from "@main/core/ai/errorDetails.js";
-import { initLogger, closeLogger, getCurrentLogFilePath } from "@main/core/services/logger.js";
+import { DatabaseSync } from "node:sqlite";
+import { initLogger, closeLogger, getRecordsPath } from "@main/core/services/logger.js";
 
 function readLogLines(): Record<string, unknown>[] {
-  const filePath = getCurrentLogFilePath();
-  if (!filePath) throw new Error("logger not initialized");
-  return fs
-    .readFileSync(filePath, "utf-8")
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const dbPath = getRecordsPath();
+  if (!dbPath) throw new Error("logger not initialized");
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return (db.prepare("SELECT event FROM log_records ORDER BY id").all() as { event: string }[]).map(
+      (row) => JSON.parse(row.event) as Record<string, unknown>,
+    );
+  } finally {
+    db.close();
+  }
 }
 
 describe("describeAiError", () => {
@@ -81,7 +85,7 @@ describe("logAiFailure", () => {
 
   beforeEach(() => {
     logsDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-aierr-"));
-    initLogger(logsDir);
+    initLogger(path.join(logsDir, "records.sqlite3"), path.join(logsDir, "logs"));
   });
 
   afterEach(() => {

@@ -4,7 +4,10 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
-import type { AiProvider } from "./provider.js";
+import type { AiProvider, ProviderCallContext } from "./provider.js";
+import { utcNow } from "../shared/timestamps.js";
+import { serializeError } from "../services/logger.js";
+import { writeProviderCall } from "../services/recordsStore.js";
 
 /**
  * How long a stream may go with NO output at all before it is abandoned.
@@ -68,13 +71,40 @@ export interface ClaudeRequest {
 export class ClaudeProvider implements AiProvider {
   private client: Anthropic;
   private request: ClaudeRequest;
+  private call: ProviderCallContext;
 
-  constructor(apiKey: string, request: ClaudeRequest) {
+  constructor(apiKey: string, request: ClaudeRequest, call: ProviderCallContext) {
     // Every call here is paid, so retries are the caller's policy, never the
     // SDK's default of two: a retried request can bill again. A call that wants
     // one passes `maxRetries` itself.
     this.client = new Anthropic({ apiKey, maxRetries: 0 });
     this.request = request;
+    this.call = call;
+  }
+
+  /** Records one request with what came back (data-lifecycle-conventions, Records). */
+  private record(startedAt: Date, request: unknown, outcome: { response: unknown } | { error: unknown }): void {
+    writeProviderCall({
+      ...this.call,
+      provider: "anthropic",
+      startedAt,
+      finishedAt: utcNow(),
+      request,
+      response: "response" in outcome ? outcome.response : undefined,
+      error: "error" in outcome ? serializeError(outcome.error) : undefined,
+    });
+  }
+
+  /** Settles `pending` after recording it. */
+  private async recorded<T>(startedAt: Date, request: unknown, pending: Promise<T>): Promise<T> {
+    try {
+      const response = await pending;
+      this.record(startedAt, request, { response });
+      return response;
+    } catch (error) {
+      this.record(startedAt, request, { error });
+      throw error;
+    }
   }
 
   /**
@@ -108,9 +138,11 @@ export class ClaudeProvider implements AiProvider {
     // A whole-call deadline: a non-streaming call has no deltas to watch.
     const budget = options.timeoutMs !== undefined ? AbortSignal.timeout(options.timeoutMs) : undefined;
     const signal = budget && options.signal ? AbortSignal.any([budget, options.signal]) : (budget ?? options.signal);
-    const message = await this.client.messages.create(
-      this.baseParams(systemPrompt, userContent),
-      signal !== undefined ? { signal } : {},
+    const params = this.baseParams(systemPrompt, userContent);
+    const message = await this.recorded(
+      utcNow(),
+      params,
+      this.client.messages.create(params, signal !== undefined ? { signal } : {}),
     );
 
     // Surface a truncated/refused response as an error rather than returning a
@@ -154,13 +186,15 @@ export class ClaudeProvider implements AiProvider {
     const signal = AbortSignal.any(
       [watchdog.signal, cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined),
     );
-    const stream = this.client.messages.stream(
-      {
-        ...this.baseParams(systemPrompt, userContent),
-        output_config: {
-          format: jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
-        },
+    const params = {
+      ...this.baseParams(systemPrompt, userContent),
+      output_config: {
+        format: jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
       },
+    };
+    const startedAt = utcNow();
+    const stream = this.client.messages.stream(
+      params,
       {
         // An omitted option must be an omitted KEY, not a key set to undefined: the SDK
         // validates request options on the way in and rejects a key set to undefined
@@ -176,7 +210,7 @@ export class ClaudeProvider implements AiProvider {
 
     let message: Anthropic.Message;
     try {
-      message = await stream.finalMessage();
+      message = await this.recorded(startedAt, params, stream.finalMessage());
     } catch (err) {
       if (watchdog.tripped()) throw new Error(idleMessage("request"));
       if (cap.signal.aborted && !options.signal?.aborted) {
@@ -218,7 +252,9 @@ export class ClaudeProvider implements AiProvider {
     // finalMessage() pending for ever, and with it the caller's whole feature.
     const watchdog = idleWatchdog();
 
-    const stream = this.client.messages.stream(this.baseParams(systemPrompt, userContent), {
+    const params = this.baseParams(systemPrompt, userContent);
+    const startedAt = utcNow();
+    const stream = this.client.messages.stream(params, {
       signal: watchdog.signal,
     });
 
@@ -238,7 +274,7 @@ export class ClaudeProvider implements AiProvider {
 
     // `finished` rejects on a truncated/refused completion so the caller can tell
     // a complete analysis from one cut short — even after deltas have streamed.
-    const finished = stream.finalMessage().then(
+    const finished = this.recorded(startedAt, params, stream.finalMessage()).then(
       (message) => {
         watchdog.stop();
         assertCompleteStop(message);

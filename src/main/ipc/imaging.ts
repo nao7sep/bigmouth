@@ -86,7 +86,7 @@ async function generateImaging(
   if (!activeConfig) throw new Error("No active AI configuration selected");
   let provider;
   try {
-    provider = createProvider(activeConfig);
+    provider = createProvider(activeConfig, { workspaceId: ws.id, postId, purpose: "imaging" });
   } catch (err) {
     logError("imaging provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("Request failed");

@@ -13,7 +13,7 @@ interface State { failed: boolean; }
  * blank page, and so the failure reaches the session log.
  *
  * Deliberately offers no "try again": whatever state produced the error is
- * still there, so re-rendering would fail the same way. The log file is the
+ * still there, so re-rendering would fail the same way. The log is the
  * actionable thing, and its location is where the About dialog already says.
  */
 export class ErrorBoundary extends Component<Props, State> {

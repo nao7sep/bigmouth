@@ -26,7 +26,7 @@ vi.mock("@main/core/services/logger.js", () => ({
   warn: logged.warn,
   error: logged.error,
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
-  getCurrentLogFilePath: () => loggerState.currentLogFilePath,
+  getRecordsPath: () => loggerState.currentLogFilePath,
 }));
 
 import { registerLogHandlers } from "@main/ipc/logs.js";

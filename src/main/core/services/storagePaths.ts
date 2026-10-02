@@ -256,6 +256,11 @@ export function getBackupsDbPath(): string {
   return path.join(getAppRoot(), "backups.sqlite3");
 }
 
+/** The records database: log lines and provider calls. */
+export function getRecordsDbPath(): string {
+  return path.join(getAppRoot(), "records.sqlite3");
+}
+
 /**
  * Absolutizes a user-supplied workspace directory while preserving literal
  * filename characters. A leading tilde is the one supported shorthand.

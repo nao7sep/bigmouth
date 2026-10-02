@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   initLogger,
   closeLogger,
-  getCurrentLogFilePath,
+  getRecordsPath,
   debug,
   info,
   warn,
@@ -13,37 +14,104 @@ import {
   isDebugLoggingEnabled,
   serializeError,
 } from "@main/core/services/logger.js";
+import { writeProviderCall } from "@main/core/services/recordsStore.js";
 
-// Reads every JSON object written to the current session log file.
-function readLogLines(): Record<string, unknown>[] {
-  const filePath = getCurrentLogFilePath();
-  if (!filePath) throw new Error("logger not initialized");
-  const raw = fs.readFileSync(filePath, "utf-8");
-  return raw
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-}
-
+let rootDir: string;
+let dbPath: string;
 let logsDir: string;
 
+function query<T>(sql: string): T[] {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return db.prepare(sql).all() as T[];
+  } finally {
+    db.close();
+  }
+}
+
+// Every log line recorded this session, as the JSON object it was emitted as.
+function readLogLines(): Record<string, unknown>[] {
+  return query<{ event: string }>("SELECT event FROM log_records ORDER BY id").map(
+    (row) => JSON.parse(row.event) as Record<string, unknown>,
+  );
+}
+
 beforeEach(() => {
-  logsDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-log-"));
-  initLogger(logsDir);
+  rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-log-"));
+  dbPath = path.join(rootDir, "records.sqlite3");
+  logsDir = path.join(rootDir, "logs");
+  initLogger(dbPath, logsDir);
   delete process.env.BIGMOUTH_DEBUG;
 });
 
 afterEach(() => {
   closeLogger();
   delete process.env.BIGMOUTH_DEBUG;
-  fs.rmSync(logsDir, { recursive: true, force: true });
+  fs.rmSync(rootDir, { recursive: true, force: true });
 });
 
-describe("session file", () => {
-  it("names the file with the millisecond UTC session-start stamp and nothing else", () => {
-    const filePath = getCurrentLogFilePath();
-    expect(filePath).not.toBeNull();
-    expect(path.basename(filePath as string)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
+describe("records", () => {
+  it("keeps each line as a record in the records database", () => {
+    expect(getRecordsPath()).toBe(dbPath);
+    info("hello", { workspace: "ws-1", postId: "p-1", count: 2 });
+    warn("no ids");
+    const rows = query<Record<string, unknown>>(
+      "SELECT session, time, level, message, workspace_id, post_id FROM log_records ORDER BY id",
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ level: "info", message: "hello", workspace_id: "ws-1", post_id: "p-1" });
+    expect(rows[1]).toMatchObject({ level: "warn", message: "no ids", workspace_id: null, post_id: null });
+    expect(rows[0]!.session).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(rows[1]!.session).toBe(rows[0]!.session);
+    expect(fs.existsSync(logsDir)).toBe(false);
+  });
+
+  it("names a new session at each launch", async () => {
+    info("first");
+    closeLogger();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    initLogger(dbPath, logsDir);
+    info("second");
+    const sessions = query<{ session: string }>("SELECT session FROM log_records ORDER BY id");
+    expect(sessions[0]!.session).not.toBe(sessions[1]!.session);
+  });
+
+  it("records a provider call whole", () => {
+    writeProviderCall({
+      workspaceId: "ws-1",
+      postId: "p-1",
+      purpose: "analysis",
+      provider: "anthropic",
+      startedAt: new Date("2026-10-02T00:00:00.000Z"),
+      finishedAt: new Date("2026-10-02T00:00:01.500Z"),
+      request: { model: "m", system: "s", messages: [{ role: "user", content: "u" }] },
+      response: { content: [{ type: "text", text: "r" }], usage: { input_tokens: 1 } },
+      error: undefined,
+    });
+    const [row] = query<Record<string, string | null>>("SELECT * FROM provider_calls");
+    expect(row).toMatchObject({
+      workspace_id: "ws-1",
+      post_id: "p-1",
+      purpose: "analysis",
+      started_at: "2026-10-02T00:00:00.000Z",
+      finished_at: "2026-10-02T00:00:01.500Z",
+      error: null,
+    });
+    expect(JSON.parse(row!.request!)).toEqual({ model: "m", system: "s", messages: [{ role: "user", content: "u" }] });
+    expect(JSON.parse(row!.response!)).toEqual({ content: [{ type: "text", text: "r" }], usage: { input_tokens: 1 } });
+  });
+
+  it("falls back to a plain text file under logs/ when the database cannot be opened", () => {
+    closeLogger();
+    fs.rmSync(dbPath, { force: true });
+    fs.mkdirSync(dbPath);
+    initLogger(dbPath, logsDir);
+    info("kept anyway", { count: 1 });
+    const fallback = getRecordsPath()!;
+    expect(path.dirname(fallback)).toBe(logsDir);
+    expect(path.basename(fallback)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
+    const [line] = fs.readFileSync(fallback, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(line).toMatchObject({ level: "info", message: "kept anyway", count: 1 });
   });
 });
 
@@ -177,11 +245,9 @@ describe("serializeError", () => {
   });
 });
 
-describe("durability and fallback", () => {
-  it("does not throw when no session file is open", () => {
+describe("durability", () => {
+  it("does not throw when no session is open", () => {
     closeLogger();
     expect(() => info("after close")).not.toThrow();
-    // Reopen so afterEach has a file to clean up cleanly.
-    initLogger(logsDir);
   });
 });

@@ -35,7 +35,7 @@ function resolveAnalysisRequest(
 
   let provider;
   try {
-    provider = createProvider(aiConfig);
+    provider = createProvider(aiConfig, { workspaceId: ws.id, postId, purpose: "analysis" });
   } catch (err) {
     logError("analysis provider init failed", { workspace: ws.id, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("AI provider error");

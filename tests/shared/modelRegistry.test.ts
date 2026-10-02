@@ -10,6 +10,8 @@ import {
 import { makeDefaultAiConfigs } from "@main/core/shared/defaults.js";
 import { createProvider } from "@main/core/ai/factory.js";
 
+const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
+
 // The model list is app-owned and closed: the user picks a row and never edits
 // it. The ai-model-routing conventions require a closed list to ship a guard
 // test, and there was none — so a typo'd row id would have surfaced only as a
@@ -47,7 +49,7 @@ describe("the model registry", () => {
           model: model.id,
           thinking: model.supportsAdaptiveThinking,
           maxTokens: defaultMaxTokens(model),
-        }),
+        }, CALL),
       ).not.toThrow();
     }
   });

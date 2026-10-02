@@ -1,24 +1,7 @@
-/**
- * Logging module.
- *
- * Writes one JSON object per line (JSON Lines) to a per-launch session file at
- * ~/.bigmouth/logs/yyyymmdd-hhmmss-fff-utc.log (the UTC session-start stamp, to
- * the millisecond — the timestamp-conventions' machine-paced form), and echoes
- * each line to the console. Logs are shared across all workspaces (the app is a
- * single process).
- *
- * Contract (see conventions/20260610-030818-utc-logging-conventions.md):
- *   - The logging call takes a STRUCTURED object, never a rendered string. Every
- *     line carries the envelope { time, level, message } plus any extra fields.
- *   - Four levels: debug / info / warn / error. `debug` is developer-only — it is
- *     emitted only when explicitly enabled by BIGMOUTH_DEBUG=1 or --debug-logs.
- *   - Writes are synchronous, so the last lines before a crash reach disk; if the
- *     file cannot be written the logger degrades to the console and never throws.
- */
+/** The app's logger (logging-conventions). Each line is echoed to the console and kept as a record. */
 
-import fs from "node:fs";
-import path from "node:path";
-import { utcNow, formatForFilenameMs, formatUtcIso } from "../shared/timestamps.js";
+import { utcNow, formatUtcIso } from "../shared/timestamps.js";
+import { closeRecords, currentRecordsPath, openRecords, writeLogRecord } from "./recordsStore.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
@@ -31,47 +14,18 @@ type DebugLogEnv = Readonly<Record<string, string | undefined>>;
 // the real envelope value.
 const ENVELOPE_KEYS = new Set(["time", "level", "message"]);
 
-let logFd: number | null = null;
-let currentLogFilePath: string | null = null;
-// Once a file write fails we keep going on the console alone, but only announce
-// the degradation once so a full disk does not spam stderr on every line.
-let fileWriteDegraded = false;
-
-/**
- * Opens the per-launch session log file in the given logs directory. Must be
- * called once at startup. If the file cannot be opened the logger stays on the
- * console (best-effort) rather than failing the launch.
- */
-export function initLogger(logsDir: string): void {
-  fs.mkdirSync(logsDir, { recursive: true });
-
-  const logFilePath = path.join(logsDir, `${formatForFilenameMs(utcNow())}.log`);
-  currentLogFilePath = logFilePath;
-
-  try {
-    // Exclusive create ("wx"): a fresh file per session, never appended across
-    // launches. On the rare same-millisecond filename clash the create fails and
-    // the logger degrades to the console fallback below (logging-conventions).
-    logFd = fs.openSync(logFilePath, "wx");
-  } catch (err) {
-    logFd = null;
-    reportFileFailure(err);
-  }
+/** Starts this launch's session in the records database. Must be called once at startup. */
+export function initLogger(recordsDbPath: string, logsDir: string): void {
+  openRecords(recordsDbPath, logsDir, utcNow());
 }
 
-/** Closes the session log file. Called on a clean shutdown. */
+/** Closes the records database. Called on a clean shutdown. */
 export function closeLogger(): void {
-  if (logFd === null) return;
-  try {
-    fs.closeSync(logFd);
-  } catch {
-    // Best-effort: nothing useful to do if the log file fails to close on exit.
-  }
-  logFd = null;
+  closeRecords();
 }
 
-export function getCurrentLogFilePath(): string | null {
-  return currentLogFilePath;
+export function getRecordsPath(): string | null {
+  return currentRecordsPath();
 }
 
 /**
@@ -144,20 +98,18 @@ function emit(level: LogLevel, message: string, fields?: LogFields): void {
     console.log(line);
   }
 
-  if (logFd !== null) {
-    try {
-      fs.writeSync(logFd, line + "\n");
-    } catch (err) {
-      reportFileFailure(err);
-    }
-  }
+  writeLogRecord({
+    time: record.time as string,
+    level,
+    message,
+    workspaceId: domainId(fields?.workspace ?? fields?.workspaceId),
+    postId: domainId(fields?.postId),
+    event: line,
+  });
 }
 
-function reportFileFailure(err: unknown): void {
-  if (fileWriteDegraded) return; // announce once; the console still has every line
-  fileWriteDegraded = true;
-  const detail = err instanceof Error ? err.message : String(err);
-  console.error(`[logger] File logging degraded — continuing on console only: ${detail}`);
+function domainId(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }
 
 export function isDebugLoggingEnabled({

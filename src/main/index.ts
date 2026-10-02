@@ -7,7 +7,7 @@ import {
 } from "./dialogs.js";
 
 import { initAppDir } from "./core/services/workspaceStore.js";
-import { getLogsDir } from "./core/services/storagePaths.js";
+import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
 import { flushAllPendingEdits } from "./core/services/postStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
@@ -18,7 +18,7 @@ import {
   info,
   error as logError,
   serializeError,
-  getCurrentLogFilePath,
+  getRecordsPath,
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
@@ -43,7 +43,7 @@ let shuttingDown = false;
 // (modal-dialog-conventions) — flush best-effort and let the shutdown proceed.
 let systemShutdown = false;
 
-// Startup sequence: resolve the storage root, bring up file logging, register the
+// Startup sequence: resolve the storage root, bring up logging, register the
 // asset protocol and the IPC handlers the renderer calls, install the application
 // menu, and open the window. The main process owns the single storage resolver and
 // the filesystem (storage-path-conventions).
@@ -51,7 +51,7 @@ async function bootstrap(): Promise<void> {
   // First, so that even a failure below is reported in the computer's language.
   detectComputerLanguage();
   const appConfig = initAppDir();
-  initLogger(getLogsDir());
+  initLogger(getRecordsDbPath(), getLogsDir());
   // State store (view state: pane widths + last workspace) resolves state.json under
   // the same storage root, so it must init after initAppDir(); after initLogger too,
   // so a self-heal warning on an invalid file is actually logged.
@@ -67,7 +67,7 @@ async function bootstrap(): Promise<void> {
     version: __APP_VERSION__,
     workspaceCount: appConfig.workspaces.length,
     debug: isDebugLoggingEnabled(),
-    logFile: getCurrentLogFilePath(),
+    records: getRecordsPath(),
   });
 
   handleAssetProtocol();
@@ -150,7 +150,7 @@ if (!ownsInstance) {
   });
 
   // Clean shutdown: hold the quit once, write any buffered content and metadata
-  // edits, flush the log file by closing it, then exit deterministically. The
+  // edits, close the records database, then exit deterministically. The
   // post store owns pending edits (write-behind), so this flush — not a renderer
   // round-trip — is what guarantees the newest keystroke is on disk. A second quit during
   // shutdown falls through (force-quit).

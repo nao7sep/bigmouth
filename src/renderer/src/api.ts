@@ -452,7 +452,7 @@ export function assetUrl(postId: string, filename: string, workspaceId?: string)
 /**
  * Records a renderer-side failure in the session log.
  *
- * The renderer is sandboxed and opens no log file, so everything it recovers
+ * The renderer is sandboxed and writes no records, so everything it recovers
  * from used to leave no trace anywhere — a failed `listReferrers` silently
  * downgraded a delete confirmation from naming the posts that would be unlinked
  * to a bare "cannot be undone", and a failed clipboard write still flashed
