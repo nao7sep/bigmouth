@@ -1,8 +1,7 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
-import { workspaceSetHasShape } from "@shared/configSets";
-import { isMetadataField } from "@shared/metadataFields";
+import { workspaceSetIssue } from "@shared/configSets";
 import type { GenerationPromptsData } from "@shared/types";
 import { getGenerationPrompts, saveGenerationPrompts } from "../core/services/configStore.js";
 import { DEFAULT_GENERATION_PROMPTS_DATA } from "../core/shared/defaults.js";
@@ -26,12 +25,8 @@ export function registerGenerationPromptHandlers(): void {
 
   ipcMain.handle(CHANNELS.saveGenerationPrompts, (_event, wsId: string, body: unknown) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    if (
-      !workspaceSetHasShape("generationPrompts", body) ||
-      !Object.keys((body as GenerationPromptsData).prompts).every(isMetadataField)
-    ) {
-      throw new Error("prompts must map every generation prompt key, and no other, to a string");
-    }
+    const issue = workspaceSetIssue("generationPrompts", body);
+    if (issue !== null) throw new Error(issue);
     const prompts = saveGenerationPrompts(dir, { prompts: (body as GenerationPromptsData).prompts });
     info("generation prompts saved", { workspace: wsId, count: Object.keys(prompts.prompts).length });
     return prompts;

@@ -2,33 +2,11 @@ import { ipcMain } from "electron";
 
 import { CHANNELS, type TargetRenameResult } from "@shared/ipc";
 import type { Target } from "@shared/types";
+import { workspaceSetIssue } from "@shared/configSets";
 import { getTargets, saveTargets } from "../core/services/configStore.js";
 import { renameTarget } from "../core/services/postStore.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-
-// Validates the targets payload; throws on the first invalid field.
-function validateTargets(body: unknown): Target[] {
-  if (!Array.isArray(body)) {
-    throw new Error("targets must be an array");
-  }
-  for (const target of body) {
-    if (!target || typeof target !== "object") {
-      throw new Error("each target must be an object");
-    }
-    const t = target as Record<string, unknown>;
-    if (typeof t.name !== "string" || !t.name.trim()) {
-      throw new Error("each target needs a non-empty name");
-    }
-    if (typeof t.defaultLanguage !== "string") {
-      throw new Error("each target needs a defaultLanguage string");
-    }
-    if (typeof t.requiresMetadata !== "boolean") {
-      throw new Error("each target needs a boolean requiresMetadata");
-    }
-  }
-  return body as Target[];
-}
 
 export function registerTargetHandlers(): void {
   ipcMain.handle(CHANNELS.listTargets, (_event, wsId: string) => {
@@ -40,8 +18,9 @@ export function registerTargetHandlers(): void {
 
   ipcMain.handle(CHANNELS.saveTargets, (_event, wsId: string, body: unknown) => {
     const ws = resolveWorkspace(wsId);
-    const validated = validateTargets(body);
-    const targets = saveTargets(ws.dataDirectory, validated);
+    const issue = workspaceSetIssue("targets", body);
+    if (issue !== null) throw new Error(issue);
+    const targets = saveTargets(ws.dataDirectory, body as Target[]);
     info("targets saved", { workspace: ws.id, count: targets.length });
     return targets;
   });

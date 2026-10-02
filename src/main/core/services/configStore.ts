@@ -13,8 +13,7 @@ import type {
   WorkspaceConfig,
   Workspace,
 } from "../shared/types.js";
-import { normalizeTimeZonePreference } from "@shared/timeZone";
-import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, setsDifferingFromBuiltIn, workspaceSetHasShape } from "@shared/configSets";
+import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, setsDifferingFromBuiltIn, workspaceSetIssue } from "@shared/configSets";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeSetFile } from "../shared/setFile.js";
 import { makeDefaultConfig } from "../shared/defaults.js";
@@ -24,8 +23,6 @@ import { getApiKeysPath } from "./storagePaths.js";
 import { resolveActiveConfigId, setActiveConfigId } from "./activeConfig.js";
 
 const CONFIG_FILE = "config.json";
-
-const warnedSets = new Set<string>();
 
 function readMap(dataDir: string): Record<string, unknown> {
   const filePath = path.join(dataDir, CONFIG_FILE);
@@ -53,18 +50,10 @@ function readConfig(dataDir: string): WorkspaceConfig {
   const config = structuredClone(makeDefaultConfig());
   for (const key of WORKSPACE_SET_KEYS) {
     if (!Object.hasOwn(map, key)) continue;
-    if (workspaceSetHasShape(key, map[key])) {
-      Object.assign(config, { [key]: map[key] });
-    } else {
-      const warningId = `${dataDir}:${key}`;
-      if (!warnedSets.has(warningId)) {
-        warnedSets.add(warningId);
-        warn("workspace config set has invalid shape; using built-in", { path: path.join(dataDir, CONFIG_FILE), key });
-      }
-    }
+    const issue = workspaceSetIssue(key, map[key]);
+    if (issue === null) Object.assign(config, { [key]: map[key] });
+    else warn("workspace config set is invalid; using built-in", { path: path.join(dataDir, CONFIG_FILE), key, issue });
   }
-  // Time-zone value validity remains with the existing owner.
-  config.timezone = normalizeTimeZonePreference(config.timezone);
   return config;
 }
 
@@ -77,7 +66,6 @@ function normalizeSettings(settings: Settings): Settings {
   const known = Object.fromEntries(SETTINGS_SET_KEYS.map((key) => [key, settings[key]])) as unknown as Settings;
   return {
     ...known,
-    timezone: normalizeTimeZonePreference(settings.timezone),
     supportedLanguages: [...new Set(settings.supportedLanguages)].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })),
   };

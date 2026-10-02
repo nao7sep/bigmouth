@@ -419,12 +419,11 @@ describe("settings stored by set", () => {
     expect(getGenerationPrompts(dataDir)).toEqual(generationPrompts);
   });
 
-  it("reads a partial generation prompt map as absent and warns once without changing the file", () => {
+  it("reads a partial generation prompt map as absent and warns without changing the file", () => {
     const partial = { generationPrompts: { prompts: { title: "Custom" } } };
     fs.writeFileSync(file(), JSON.stringify(partial));
     const warning = vi.spyOn(logger, "warn");
     try {
-      expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
       expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
       expect(warning).toHaveBeenCalledOnce();
       expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "generationPrompts" }));
@@ -477,15 +476,25 @@ it("a partial dialog save preserves another set changed after the dialog opened"
   expect(JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"))).toEqual({ timezone: "UTC", uiFontFamily: "Iosevka" });
 });
 
-it("warns once per invalid workspace set and names its key", () => {
+it("warns on each read of an invalid workspace set and names its key", () => {
   const warning = vi.spyOn(logger, "warn");
   try {
     fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ contentFont: { family: "Partial" } }));
     getSettings(dataDir);
     getTargets(dataDir);
-    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledTimes(2);
     expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "contentFont" }));
   } finally { warning.mockRestore(); }
+});
+
+it.each([
+  ["a value outside the app's own range", { publishedPostsPerLoad: 0 }, "publishedPostsPerLoad"],
+  ["a target with a blank name", { targets: [{ name: " ", defaultLanguage: "en", requiresMetadata: false }] }, "targets"],
+  ["an analysis prompt with a blank name", { analysisPrompts: [{ name: "", text: "t" }] }, "analysisPrompts"],
+])("reads %s as its built-in, by the validator Save uses", (_case, stored, key) => {
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify(stored));
+  const config = { ...makeDefaultConfig(), ...getSettings(dataDir), targets: getTargets(dataDir), analysisPrompts: getAnalysisPrompts(dataDir) };
+  expect(config[key as keyof typeof config]).toEqual(makeDefaultConfig()[key as keyof ReturnType<typeof makeDefaultConfig>]);
 });
 
 it("a settings save writes every set from what the store holds", () => {

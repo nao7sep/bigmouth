@@ -225,11 +225,12 @@ describe("uploadAsset", () => {
 
   it("rejects an upload that exceeds the configured size limit", async () => {
     const id = createDraft();
-    // Drop the limit to 0 MB so even a tiny file trips the guard, no large buffer needed.
+    // The smallest valid limit keeps the oversized buffer small.
     const settings = getSettings(dataDir);
-    saveSettings(dataDir, { ...settings, maxUploadMb: 0 });
-    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
-      { ok: false, admission: { code: "file-too-large", limitMb: 0 } },
+    saveSettings(dataDir, { ...settings, maxUploadMb: 1 });
+    const oversized = Buffer.concat([PNG_1x1, Buffer.alloc(1024 * 1024)]);
+    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", oversized))).resolves.toEqual(
+      { ok: false, admission: { code: "file-too-large", limitMb: 1 } },
     );
   });
 

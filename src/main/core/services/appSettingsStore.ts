@@ -15,7 +15,6 @@ import { moveAsideInvalid } from "../shared/quarantine.js";
 import { getAppConfigPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
-const warnedSets = new Set<string>();
 let configPath: string | null = null;
 let current: AppSettings | null = null;
 let quarantinedTo: string | null = null;
@@ -89,13 +88,7 @@ function effectiveSettings(map: Record<string, unknown>): AppSettings {
   for (const key of APP_SETTINGS_SET_KEYS) {
     if (!Object.hasOwn(map, key)) continue;
     if (appSettingsSetHasShape(key, map[key])) Object.assign(settings, { [key]: map[key] });
-    else {
-      const warningId = `${requirePath()}:${key}`;
-      if (!warnedSets.has(warningId)) {
-        warnedSets.add(warningId);
-        warn("app config set has invalid shape; using built-in", { path: requirePath(), key });
-      }
-    }
+    else warn("app config set is invalid; using built-in", { path: requirePath(), key });
   }
   return settings;
 }

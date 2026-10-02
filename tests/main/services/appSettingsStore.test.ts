@@ -128,13 +128,13 @@ it("saving built-ins on a fresh install creates no file", () => {
   expect(fs.existsSync(configPath())).toBe(false);
 });
 
-it("warns once per invalid app set and names its key", () => {
+it("warns on each load of an invalid app set and names its key", () => {
   const warning = vi.spyOn(logger, "warn");
   try {
     fs.writeFileSync(configPath(), JSON.stringify({ theme: "sepia" }));
     initAppSettingsStore();
     initAppSettingsStore();
-    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledTimes(2);
     expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "theme" }));
   } finally { warning.mockRestore(); }
 });

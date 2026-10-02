@@ -1,5 +1,6 @@
 import type { Settings } from "./types.js";
-import { AI_PROVIDERS, isAiConfigId } from "./types.js";
+import { AI_PROVIDERS, isAiConfigId, validateMaxTokens } from "./types.js";
+import { settingsSetErrors } from "./settingsValidation.js";
 import { GENERATION_PROMPT_KEYS } from "./metadataFields.js";
 
 export const SETTINGS_SET_KEYS = [
@@ -17,32 +18,73 @@ function strings(value: unknown): boolean {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-/** Shape only; feature boundaries still own value validity. */
-export function workspaceSetHasShape(key: (typeof WORKSPACE_SET_KEYS)[number], value: unknown): boolean {
+export type WorkspaceSetKey = (typeof WORKSPACE_SET_KEYS)[number];
+
+function isSettingsKey(key: WorkspaceSetKey): key is keyof Settings {
+  return (SETTINGS_SET_KEYS as readonly string[]).includes(key);
+}
+
+function shapeIssue(key: WorkspaceSetKey, value: unknown): string | null {
   switch (key) {
-    case "supportedLanguages": return strings(value);
+    case "supportedLanguages":
+      return strings(value) ? null : "supportedLanguages must be an array of strings";
     case "publishedPostsPerLoad":
-    case "maxUploadMb": return typeof value === "number";
-    case "contentFont": return object(value) &&
-      typeof value.family === "string" &&
-      [value.size, value.lineHeight, value.padding].every((v) => typeof v === "number") &&
-      [value.bold, value.italic, value.underline].every((v) => typeof v === "boolean");
-    case "targets": return Array.isArray(value) && value.every((v) => object(v) &&
-      typeof v.name === "string" && typeof v.defaultLanguage === "string" &&
-      typeof v.requiresMetadata === "boolean");
-    case "analysisPrompts": return Array.isArray(value) && value.every((v) => object(v) &&
-      typeof v.name === "string" && typeof v.text === "string");
-    case "generationPrompts": return object(value) && object(value.prompts) &&
-      GENERATION_PROMPT_KEYS.every((key) => Object.hasOwn(value.prompts as object, key)) &&
-      Object.values(value.prompts).every((v) => typeof v === "string");
-    case "aiConfigs": return Array.isArray(value) && value.every((v) => object(v) &&
-      isAiConfigId(v.id) && typeof v.name === "string" &&
-      AI_PROVIDERS.includes(v.provider as typeof AI_PROVIDERS[number]) &&
-      typeof v.model === "string" && typeof v.thinking === "boolean" &&
-      typeof v.maxTokens === "number") &&
-      new Set(value.map((v) => v.id)).size === value.length;
-    default: return typeof value === "string";
+    case "maxUploadMb":
+      return typeof value === "number" ? null : `${key} must be a number`;
+    case "contentFont":
+      if (!object(value)) return "contentFont must be an object";
+      if (typeof value.family !== "string") return "contentFont.family must be a string";
+      if (![value.size, value.lineHeight, value.padding].every((v) => typeof v === "number")) {
+        return "contentFont.size, .lineHeight, and .padding must be numbers";
+      }
+      if (![value.bold, value.italic, value.underline].every((v) => typeof v === "boolean")) {
+        return "contentFont.bold, .italic, and .underline must be booleans";
+      }
+      return null;
+    case "targets":
+      if (!Array.isArray(value)) return "targets must be an array";
+      for (const target of value) {
+        if (!object(target)) return "each target must be an object";
+        if (typeof target.name !== "string" || !target.name.trim()) return "each target needs a non-empty name";
+        if (typeof target.defaultLanguage !== "string") return "each target needs a defaultLanguage string";
+        if (typeof target.requiresMetadata !== "boolean") return "each target needs a boolean requiresMetadata";
+      }
+      return null;
+    case "analysisPrompts":
+      if (!Array.isArray(value)) return "analysis prompts must be an array";
+      for (const prompt of value) {
+        if (!object(prompt)) return "each prompt must be an object";
+        if (typeof prompt.name !== "string" || !prompt.name.trim()) return "each prompt needs a non-empty name";
+        if (typeof prompt.text !== "string") return "each prompt needs a text string";
+      }
+      return null;
+    case "generationPrompts": {
+      const prompts = object(value) && object(value.prompts) ? value.prompts : null;
+      const valid = prompts !== null &&
+        Object.keys(prompts).length === GENERATION_PROMPT_KEYS.length &&
+        GENERATION_PROMPT_KEYS.every((k) => typeof prompts[k] === "string");
+      return valid ? null : "prompts must map every generation prompt key, and no other, to a string";
+    }
+    case "aiConfigs": {
+      const valid = Array.isArray(value) && value.every((v) => object(v) &&
+        isAiConfigId(v.id) && typeof v.name === "string" &&
+        AI_PROVIDERS.includes(v.provider as typeof AI_PROVIDERS[number]) &&
+        typeof v.model === "string" && typeof v.thinking === "boolean" &&
+        typeof v.maxTokens === "number" && validateMaxTokens(v.maxTokens) === null) &&
+        new Set(value.map((v) => v.id)).size === value.length;
+      return valid ? null : "aiConfigs must be a list of valid AI configs with unique ids";
+    }
+    default:
+      return typeof value === "string" ? null : `${key} must be a string`;
   }
+}
+
+/** The one check per set, applied where Save accepts it and where it is read (config-sets-conventions). */
+export function workspaceSetIssue(key: WorkspaceSetKey, value: unknown): string | null {
+  const issue = shapeIssue(key, value);
+  if (issue !== null || !isSettingsKey(key)) return issue;
+  const [field, error] = Object.entries(settingsSetErrors(key, value as Settings[typeof key]))[0] ?? [];
+  return field && error ? `${field}: ${error.key}` : null;
 }
 
 function canonical(value: unknown): unknown {

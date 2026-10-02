@@ -76,42 +76,43 @@ function languagesError(languages: readonly string[]): Message | null {
   return null;
 }
 
-export function settingsFieldErrors(settings: Settings): SettingsFieldErrors {
+/** The value rules for one set; the sets without rules have no messages. */
+export function settingsSetErrors<K extends keyof Settings>(key: K, value: Settings[K]): SettingsFieldErrors {
   const errors: SettingsFieldErrors = {};
   const set = (field: SettingsField, error: Message | null): void => {
     if (error !== null) errors[field] = error;
   };
   const positiveInteger = message("settings.positiveInteger");
   const between = (min: number, max: number) => message("settings.between", { min, max });
+  const bounded = (field: SettingsField, v: number, min: number, max: number) =>
+    set(field, withinBounds(v, min, max) ? null : between(min, max));
 
-  const font = settings.contentFont;
-  set("timezone", timezoneError(settings.timezone));
-  set("supportedLanguages", languagesError(settings.supportedLanguages));
-  set(
-    "publishedPostsPerLoad",
-    isPositiveInteger(settings.publishedPostsPerLoad) ? null : positiveInteger,
-  );
-  set("maxUploadMb", isPositiveInteger(settings.maxUploadMb) ? null : positiveInteger);
-  set(
-    "contentFont.size",
-    withinBounds(font.size, CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX)
-      ? null
-      : between(CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX),
-  );
-  set(
-    "contentFont.lineHeight",
-    withinBounds(font.lineHeight, CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX)
-      ? null
-      : between(CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX),
-  );
-  set(
-    "contentFont.padding",
-    withinBounds(font.padding, CONTENT_PADDING_MIN, CONTENT_PADDING_MAX)
-      ? null
-      : between(CONTENT_PADDING_MIN, CONTENT_PADDING_MAX),
-  );
-
+  switch (key) {
+    case "timezone":
+      set("timezone", timezoneError(value as Settings["timezone"]));
+      break;
+    case "supportedLanguages":
+      set("supportedLanguages", languagesError(value as Settings["supportedLanguages"]));
+      break;
+    case "publishedPostsPerLoad":
+    case "maxUploadMb":
+      set(key, isPositiveInteger(value as number) ? null : positiveInteger);
+      break;
+    case "contentFont": {
+      const font = value as Settings["contentFont"];
+      bounded("contentFont.size", font.size, CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX);
+      bounded("contentFont.lineHeight", font.lineHeight, CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX);
+      bounded("contentFont.padding", font.padding, CONTENT_PADDING_MIN, CONTENT_PADDING_MAX);
+      break;
+    }
+  }
   return errors;
+}
+
+const RULED_SETS = ["timezone", "supportedLanguages", "publishedPostsPerLoad", "maxUploadMb", "contentFont"] as const;
+
+export function settingsFieldErrors(settings: Settings): SettingsFieldErrors {
+  return Object.assign({}, ...RULED_SETS.map((key) => settingsSetErrors(key, settings[key])));
 }
 
 /** The first offending field and its message, or null when every field is valid. */
