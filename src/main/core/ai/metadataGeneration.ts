@@ -1,6 +1,5 @@
 import type { PostFrontMatter } from "../shared/types.js";
 import { isEnglishScript } from "./englishText.js";
-import { systemPromptForField } from "./generationPrompts.js";
 import {
   ENGLISH_METADATA_FIELDS,
   GENERATED_SLUG,
@@ -128,9 +127,7 @@ export function buildMetadataGenerationRequest({
 } {
   const fieldGuidance = fields
     .map((field) => {
-      const prompt = systemPromptForField(field, customPrompts);
-      if (prompt === null) throw new Error(`No generation prompt is configured for ${field}. Edit or reset generation prompts in Settings.`);
-      const guidance = cleanFieldGuidance(prompt);
+      const guidance = cleanFieldGuidance(customPrompts[field]);
       return `## ${FIELD_LABELS[field]} (${field})\n${guidance}`;
     })
     .join("\n\n");

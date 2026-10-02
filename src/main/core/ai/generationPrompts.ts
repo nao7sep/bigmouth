@@ -52,15 +52,3 @@ export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
     `- Do not add extra drama or stronger emotion.\n` +
     `- Aim for 120-160 characters.`,
 };
-
-/**
- * Returns the system prompt for a given field key.
- * Returns null if the field is not a generatable metadata key.
- */
-export function systemPromptForField(
-  field: string,
-  customPrompts: Record<string, string>
-): string | null {
-  if (!(field in DEFAULT_GENERATION_PROMPTS)) return null;
-  return customPrompts[field] ?? null;
-}

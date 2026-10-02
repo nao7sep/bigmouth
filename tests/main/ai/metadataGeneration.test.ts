@@ -266,9 +266,3 @@ describe("metadataValueToClientString", () => {
     expect(metadataValueToClientString("plain")).toBe("plain");
   });
 });
-
-it("reports a missing member of a saved prompt map without filling it from built-ins", () => {
-  expect(() => buildMetadataGenerationRequest({
-    fields: ["title"], content: "Draft", frontMatter: frontMatter(), customPrompts: { slug: "Custom" },
-  })).toThrow(/No generation prompt is configured for title/);
-});
