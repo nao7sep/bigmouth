@@ -154,7 +154,7 @@ function isWorkspaceDirectory(dir: string): boolean {
   });
   if (!dirsPresent) return false;
 
-  // An untouched workspace has no config file; a present file must be a JSON object.
+  // An untouched workspace has no config file; a present one must be a workspace config.
   const configPath = path.join(dir, "config.json");
   if (!fs.existsSync(configPath)) return true;
   let parsed: unknown;

@@ -33,6 +33,7 @@ import { registerGenerationPromptHandlers } from "@main/ipc/generationPrompts.js
 
 let home: string;
 let wsId: string;
+let wsDir: string;
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T>(channel: string, ...args: unknown[]): T {
@@ -45,7 +46,7 @@ beforeEach(() => {
   initAppDir();
   handlers.clear();
   registerGenerationPromptHandlers();
-  wsId = createWorkspace("WS").id;
+  ({ id: wsId, dataDirectory: wsDir } = createWorkspace("WS"));
 });
 
 afterEach(() => {
@@ -75,22 +76,21 @@ describe("generation-prompt IPC handlers", () => {
     expect(invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId)).toEqual(saved);
   });
 
-  it("preserves the user's complete prompt map on save", () => {
-    const prompts = { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "kept", bogus: "kept too" };
-    const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, { prompts });
-    expect(saved.prompts.title).toBe("kept");
-    expect(saved.prompts).toEqual(prompts);
-    expect(invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId)).toEqual(saved);
-  });
-
   it("validates the save payload before reaching the store", () => {
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, null)).toThrow(/prompts must be an object/);
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, {})).toThrow(/prompts must be an object/);
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, { prompts: [] })).toThrow(/prompts must be an object/);
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, { prompts: "x" })).toThrow(/prompts must be an object/);
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, { prompts: { title: 5 } })).toThrow(
-      /every prompt value must be a string/,
-    );
+    const full = DEFAULT_GENERATION_PROMPTS_DATA.prompts;
+    const { title: _title, ...partial } = full;
+    for (const body of [
+      null,
+      {},
+      { prompts: [] },
+      { prompts: "x" },
+      { prompts: { ...full, title: 5 } },
+      { prompts: partial },
+      { prompts: { ...full, bogus: "unknown key" } },
+    ]) {
+      expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, body)).toThrow(/prompts must map every/);
+    }
+    expect(fs.existsSync(path.join(wsDir, "config.json"))).toBe(false);
   });
 
   it("surfaces an unknown workspace as a thrown Error", () => {

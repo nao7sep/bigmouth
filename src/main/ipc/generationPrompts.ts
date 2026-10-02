@@ -1,6 +1,8 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
+import { workspaceSetHasShape } from "@shared/configSets";
+import { isMetadataField } from "@shared/metadataFields";
 import type { GenerationPromptsData } from "@shared/types";
 import { getGenerationPrompts, saveGenerationPrompts, resetGenerationPrompts } from "../core/services/configStore.js";
 import { DEFAULT_GENERATION_PROMPTS_DATA } from "../core/shared/defaults.js";
@@ -30,14 +32,13 @@ export function registerGenerationPromptHandlers(): void {
 
   ipcMain.handle(CHANNELS.saveGenerationPrompts, (_event, wsId: string, body: unknown) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    const b = body as { prompts?: unknown } | null | undefined;
-    if (!b?.prompts || typeof b.prompts !== "object" || Array.isArray(b.prompts)) {
-      throw new Error("prompts must be an object");
+    if (
+      !workspaceSetHasShape("generationPrompts", body) ||
+      !Object.keys((body as GenerationPromptsData).prompts).every(isMetadataField)
+    ) {
+      throw new Error("prompts must map every generation prompt key, and no other, to a string");
     }
-    if (!Object.values(b.prompts as Record<string, unknown>).every((v) => typeof v === "string")) {
-      throw new Error("every prompt value must be a string");
-    }
-    const prompts = saveGenerationPrompts(dir, body as GenerationPromptsData);
+    const prompts = saveGenerationPrompts(dir, { prompts: (body as GenerationPromptsData).prompts });
     info("generation prompts saved", { workspace: wsId, count: Object.keys(prompts.prompts).length });
     return prompts;
   });

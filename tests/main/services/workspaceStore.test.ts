@@ -270,11 +270,24 @@ describe("openWorkspace gating", () => {
   });
 
   it("accepts a sparse config object in a workspace directory", () => {
-    const dir = tempDir("blog");
+    const dir = tempDir("sparse");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ timezone: "UTC" }));
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
+  });
+
+  it("rejects a generic folder whose config.json is not a BigMouth config", () => {
+    // A blog or static-site folder can hold config.json + posts/ + assets/ without
+    // being a workspace; accepting it would overwrite its config on the first save.
+    const dir = tempDir("blog");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.mkdirSync(path.join(dir, "assets"));
+    const foreign = JSON.stringify({ title: "My Blog", theme: "dark" });
+    fs.writeFileSync(path.join(dir, "config.json"), foreign);
+    expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
+    expect(listWorkspaces()).toHaveLength(0);
+    expect(fs.readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(foreign);
   });
 
   it("rejects opening a workspace nested inside a registered workspace", () => {
