@@ -13,7 +13,6 @@ import {
   type MetadataField,
 } from "../core/ai/metadataGeneration.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { metadataKeys, safeAiConfigLogContext, safeGeneratedFieldSummary } from "../core/shared/logSummaries.js";
 import { info as logInfo, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
@@ -81,25 +80,30 @@ async function generateMetadata(
   const contentSource = content?.trim() ? "request" : "stored";
   const customPrompts = getGenerationPrompts(dir).prompts;
 
-  logInfo("metadata generation started", {
-    workspace: wsId,
-    postId,
-    fields: validFields,
-    mode: "structured",
-    contentSource,
-    contentLength: postContent.length,
-    language: post.frontMatter.language,
-    target: post.frontMatter.target,
-    existingMetadataKeys: metadataKeys(post.frontMatter),
-    ai: safeAiConfigLogContext(activeConfig),
-  });
-
   try {
     const request = buildMetadataGenerationRequest({
       fields: validFields,
       content: postContent,
       frontMatter: post.frontMatter,
       customPrompts,
+    });
+    logInfo("metadata generation started", {
+      workspace: wsId,
+      postId,
+      fields: validFields,
+      mode: "structured",
+      contentSource,
+      contentLength: postContent.length,
+      language: post.frontMatter.language,
+      target: post.frontMatter.target,
+      frontMatter: post.frontMatter,
+      aiConfigId: activeConfig.id,
+      model: activeConfig.model,
+      thinking: activeConfig.thinking,
+      maxTokens: activeConfig.maxTokens,
+      systemPrompt: request.systemPrompt,
+      userContent: request.userContent,
+      schema: request.schema,
     });
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
       maxDurationMs: METADATA_GENERATION_MAX_MS,
@@ -119,7 +123,7 @@ async function generateMetadata(
       postId,
       fields: validFields,
       mode: "structured",
-      resultSummary: safeGeneratedFieldSummary(values),
+      result: raw,
     });
   } catch (err) {
     if (signal.aborted) {
@@ -141,8 +145,7 @@ async function generateMetadata(
           contentLength: postContent.length,
           language: post.frontMatter.language,
           target: post.frontMatter.target,
-          existingMetadataKeys: metadataKeys(post.frontMatter),
-          ai: safeAiConfigLogContext(activeConfig),
+          aiConfigId: activeConfig.id,
         },
       },
       err,

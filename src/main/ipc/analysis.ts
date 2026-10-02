@@ -7,7 +7,6 @@ import { getAnalysisPrompts, getActiveAiConfig } from "../core/services/configSt
 import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { safeAiConfigLogContext, safePostLogContext } from "../core/shared/logSummaries.js";
 import { debug as logDebug, info as logInfo, warn as logWarn, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
@@ -64,8 +63,12 @@ export function registerAnalysisHandlers(): void {
       contentSource: request.contentSource,
       contentLength: request.postContent.length,
       promptMode: request.promptMode,
-      ai: safeAiConfigLogContext(request.aiConfig),
-      post: safePostLogContext(request.post),
+      aiConfigId: request.aiConfig.id,
+      model: request.aiConfig.model,
+      thinking: request.aiConfig.thinking,
+      maxTokens: request.aiConfig.maxTokens,
+      systemPrompt: request.systemPrompt,
+      userContent: request.userContent,
     });
 
     let wroteDelta = false;
@@ -107,7 +110,7 @@ export function registerAnalysisHandlers(): void {
           workspace: params.wsId,
           postId: request.postId,
           wroteDelta,
-          resultLength: finalText.length,
+          result: finalText,
         });
       })
       .catch((err: unknown) => {
@@ -122,7 +125,7 @@ export function registerAnalysisHandlers(): void {
               contentSource: request.contentSource,
               contentLength: request.postContent.length,
               promptMode: request.promptMode,
-              ai: safeAiConfigLogContext(request.aiConfig),
+              aiConfigId: request.aiConfig.id,
               wroteDelta,
             },
           },

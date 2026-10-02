@@ -31,7 +31,6 @@ import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
 import { validateMetadataEdit, validatePostUpdate } from "../core/shared/postUpdate.js";
 import { isPostStatus } from "../core/shared/postLifecycle.js";
-import { presentString, safePostLogContext } from "../core/shared/logSummaries.js";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { message, type Message } from "@shared/i18n/translate";
@@ -294,7 +293,7 @@ export function registerPostHandlers(): void {
       throw new Error("Source post not found");
     }
 
-    const oldSlug = presentString(existing.frontMatter.slug);
+    const oldSlug = existing.frontMatter.slug?.trim() ?? "";
     const oldFilePath = existing.filePath;
     const post = updatePost(dir, id, { content, frontMatter: edits });
     if (!post) {
@@ -302,7 +301,7 @@ export function registerPostHandlers(): void {
       throw new Error("Post not found");
     }
 
-    const newSlug = presentString(post.frontMatter.slug);
+    const newSlug = post.frontMatter.slug?.trim() ?? "";
     info("post updated", {
       workspace: wsId,
       postId: post.frontMatter.id,
@@ -310,8 +309,8 @@ export function registerPostHandlers(): void {
       frontMatterKeys: Object.keys(edits),
       slugChanged: oldSlug !== newSlug,
       fileChanged: oldFilePath !== post.filePath,
-      before: safePostLogContext(existing),
-      after: safePostLogContext(post),
+      before: existing.frontMatter,
+      after: post.frontMatter,
     });
 
     // Include the canonical list summary so the renderer's optimistic update uses
@@ -345,8 +344,8 @@ export function registerPostHandlers(): void {
         statusBefore: before.frontMatter.status,
         statusAfter: post.frontMatter.status,
         fileChanged: before.filePath !== post.filePath,
-        before: safePostLogContext(before),
-        after: safePostLogContext(post),
+        before: before.frontMatter,
+        after: post.frontMatter,
       });
       return {
         frontMatter: post.frontMatter,

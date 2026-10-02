@@ -18,7 +18,6 @@ import {
   type ImagingOptions,
 } from "../core/ai/imaging.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { metadataKeys, safeAiConfigLogContext, safePromptListSummary } from "../core/shared/logSummaries.js";
 import { info as logInfo, error as logError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
@@ -99,10 +98,13 @@ async function generateImaging(
     options,
     mode: "structured",
     contentLength: postContent.length,
-    metadataKeys: metadataKeys(post.frontMatter),
-    ai: safeAiConfigLogContext(activeConfig),
-    systemLength: systemPrompt.length,
-    userLength: userContent.length,
+    frontMatter: post.frontMatter,
+    aiConfigId: activeConfig.id,
+    model: activeConfig.model,
+    thinking: activeConfig.thinking,
+    maxTokens: activeConfig.maxTokens,
+    systemPrompt,
+    userContent,
   });
 
   try {
@@ -117,7 +119,7 @@ async function generateImaging(
       postId,
       itemCount: items.length,
       mode: "structured",
-      promptSummary: safePromptListSummary(items),
+      result: raw,
     });
     return items;
   } catch (err) {
@@ -137,8 +139,7 @@ async function generateImaging(
           maxDurationMs: IMAGING_GENERATION_MAX_MS,
           maxRetries: IMAGING_GENERATION_MAX_RETRIES,
           contentLength: postContent.length,
-          metadataKeys: metadataKeys(post.frontMatter),
-          ai: safeAiConfigLogContext(activeConfig),
+          aiConfigId: activeConfig.id,
         },
       },
       err,

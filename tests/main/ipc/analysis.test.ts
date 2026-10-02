@@ -74,12 +74,6 @@ vi.mock("@main/core/ai/errorDetails.js", () => ({
   logAiFailure: () => "ai failure",
 }));
 
-vi.mock("@main/core/shared/logSummaries.js", () => ({
-  metadataKeys: () => [],
-  safeAiConfigLogContext: () => ({}),
-  safePostLogContext: () => ({}),
-}));
-
 vi.mock("@main/core/services/logger.js", () => ({
   debug: () => {},
   info: () => {},
