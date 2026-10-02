@@ -106,11 +106,26 @@ it("changing one set preserves another known copy and drops version metadata", (
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: "dark", language: "ja" });
 });
 
-it("a partial dialog save preserves another set changed after loading", () => {
+it("a save removes each set equal to its built-in and keeps the file", () => {
+  fs.writeFileSync(configPath(), JSON.stringify({ theme: "dark", language: "ja" }));
   initAppSettingsStore();
-  fs.writeFileSync(configPath(), JSON.stringify({ theme: "dark" }));
-  expect(saveAppSettings({ language: "ja" })).toEqual({ theme: "dark", language: "ja" });
-  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: "dark", language: "ja" });
+  saveAppSettings({ theme: "system", language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ language: "ja" });
+  saveAppSettings({ theme: "system", language: "system" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({});
+});
+
+it("an invalid set loses its key at the next save", () => {
+  fs.writeFileSync(configPath(), JSON.stringify({ theme: true, language: "ja" }));
+  initAppSettingsStore();
+  saveAppSettings({ theme: "system", language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ language: "ja" });
+});
+
+it("saving built-ins on a fresh install creates no file", () => {
+  initAppSettingsStore();
+  saveAppSettings({ theme: "system", language: "system" });
+  expect(fs.existsSync(configPath())).toBe(false);
 });
 
 it("warns once per invalid app set and names its key", () => {

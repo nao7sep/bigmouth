@@ -9,7 +9,8 @@ import {
   defaultAppSettings,
   normalizeAppSettings,
 } from "@shared/appSettings";
-import { writeManagedText } from "../shared/atomicWrite.js";
+import { setsDifferingFromBuiltIn } from "@shared/configSets";
+import { writeSetFile } from "../shared/setFile.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
 import { getAppConfigPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
@@ -99,29 +100,10 @@ function effectiveSettings(map: Record<string, unknown>): AppSettings {
   return settings;
 }
 
-/** Writes changed sets while preserving the file's other known copies. */
 export function saveAppSettings(next: Partial<AppSettings>): AppSettings {
-  let map: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(requirePath(), "utf-8"));
-    const issue = appSettingsShapeIssue(parsed);
-    if (issue) throw new Error(`App settings rejected: ${issue}`);
-    map = parsed as Record<string, unknown>;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  const previous = effectiveSettings(map);
-  const normalized = normalizeAppSettings({ ...previous, ...next });
-  const saved: Record<string, unknown> = {};
-  let changed = false;
-  for (const key of APP_SETTINGS_SET_KEYS) {
-    if (Object.hasOwn(map, key)) saved[key] = map[key];
-    if (Object.hasOwn(next, key) && normalized[key] !== previous[key]) {
-      saved[key] = normalized[key];
-      changed = true;
-    }
-  }
-  if (changed) writeManagedText(requirePath(), JSON.stringify(saved, null, 2) + "\n");
+  if (!current) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
+  const normalized = normalizeAppSettings({ ...current, ...next });
+  writeSetFile(requirePath(), setsDifferingFromBuiltIn(normalized, defaultAppSettings(), APP_SETTINGS_SET_KEYS));
   current = normalized;
   return normalized;
 }

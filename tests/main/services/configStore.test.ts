@@ -15,10 +15,8 @@ import {
   saveTargets,
   getAnalysisPrompts,
   saveAnalysisPrompts,
-  resetAnalysisPrompts,
   getGenerationPrompts,
   saveGenerationPrompts,
-  resetGenerationPrompts,
   saveSettings,
   createAiConfig,
   updateAiConfig,
@@ -117,10 +115,9 @@ describe("corrupt config files", () => {
     expect(getTargets(dataDir)).toEqual(authoredTargets);
     saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
 
-    // The other stored sets survive the unrelated font edit.
+    // The save writes what the store holds: the invalid set and every built-in copy lose their keys.
     const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    expect(afterwards.targets).toEqual(authoredTargets);
-    expect(afterwards.analysisPrompts).toBe("not an array");
+    expect(afterwards).toEqual({ targets: authoredTargets, uiFontFamily: "Inter" });
   });
 
   it("ignores a retired version key and drops it at the next write", () => {
@@ -418,7 +415,7 @@ describe("settings stored by set", () => {
     fs.writeFileSync(file(), JSON.stringify({ version: 7, timezone: "UTC", targets: [] }));
     const generationPrompts = { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } };
     saveGenerationPrompts(dataDir, generationPrompts);
-    expect(saved()).toEqual({ timezone: "UTC", targets: [], generationPrompts });
+    expect(saved()).toEqual({ timezone: "UTC", generationPrompts });
     expect(getGenerationPrompts(dataDir)).toEqual(generationPrompts);
   });
 
@@ -446,20 +443,30 @@ describe("settings stored by set", () => {
     expect(saved()).toEqual({ aiConfigs: [{ ...makeDefaultAiConfigs()[0], name: "Mine" }] });
   });
 
-  it("reset deletes only its prompt set and exposes the live built-in", () => {
-    saveTargets(dataDir, []);
-    saveGenerationPrompts(dataDir, { prompts: { title: "Custom" } });
+  it("saving a set equal to its built-in removes its key and keeps the file", () => {
+    const targets = [{ name: "blog", defaultLanguage: "en", requiresMetadata: false }];
+    saveTargets(dataDir, targets);
+    saveGenerationPrompts(dataDir, { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } });
     saveAnalysisPrompts(dataDir, [{ name: "Mine", text: "Custom" }]);
-    expect(resetGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
-    expect(saved()).toEqual({ targets: [], analysisPrompts: [{ name: "Mine", text: "Custom" }] });
-    expect(resetAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
-    expect(saved()).toEqual({ targets: [] });
+    saveGenerationPrompts(dataDir, structuredClone(DEFAULT_GENERATION_PROMPTS_DATA));
+    expect(saved()).toEqual({ targets, analysisPrompts: [{ name: "Mine", text: "Custom" }] });
+    saveAnalysisPrompts(dataDir, structuredClone(DEFAULT_ANALYSIS_PROMPTS));
+    saveTargets(dataDir, []);
+    expect(saved()).toEqual({});
   });
 
-  it("resetting untouched prompts creates no file", () => {
-    resetGenerationPrompts(dataDir);
-    resetAnalysisPrompts(dataDir);
+  it("saving built-ins into a fresh workspace creates no file", () => {
+    saveGenerationPrompts(dataDir, structuredClone(DEFAULT_GENERATION_PROMPTS_DATA));
+    saveAnalysisPrompts(dataDir, structuredClone(DEFAULT_ANALYSIS_PROMPTS));
+    saveSettings(dataDir, getSettings(dataDir));
     expect(fs.existsSync(file())).toBe(false);
+  });
+
+  it("compares a set with its built-in regardless of key order", () => {
+    const reordered = { prompts: Object.fromEntries(Object.entries(DEFAULT_GENERATION_PROMPTS_DATA.prompts).reverse()) };
+    saveTargets(dataDir, [{ name: "blog", defaultLanguage: "en", requiresMetadata: false }]);
+    saveGenerationPrompts(dataDir, reordered);
+    expect(Object.keys(saved())).toEqual(["targets"]);
   });
 });
 
@@ -481,9 +488,12 @@ it("warns once per invalid workspace set and names its key", () => {
   } finally { warning.mockRestore(); }
 });
 
-it("an unrelated set save leaves the stored language list and its effective value unchanged", () => {
+it("a settings save writes every set from what the store holds", () => {
   fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ supportedLanguages: ["ja", "en", "ja"] }));
   const saved = saveSettings(dataDir, { uiFontFamily: "Iosevka" });
-  expect(saved.supportedLanguages).toEqual(["ja", "en", "ja"]);
-  expect(getSettings(dataDir).supportedLanguages).toEqual(saved.supportedLanguages);
+  expect(saved.supportedLanguages).toEqual(["en", "ja"]);
+  expect(JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"))).toEqual({
+    supportedLanguages: ["en", "ja"],
+    uiFontFamily: "Iosevka",
+  });
 });

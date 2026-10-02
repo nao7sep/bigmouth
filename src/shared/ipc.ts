@@ -124,13 +124,11 @@ export const CHANNELS = {
   // Generation prompts
   getGenerationPrompts: "generationPrompts:get",
   getGenerationPromptDefaults: "generationPrompts:defaults",
-  resetGenerationPrompts: "generationPrompts:reset",
   saveGenerationPrompts: "generationPrompts:save",
 
   // Analysis prompts
   listAnalysisPrompts: "analysisPrompt:list",
   listAnalysisPromptDefaults: "analysisPrompt:defaults",
-  resetAnalysisPrompts: "analysisPrompts:reset",
   saveAnalysisPrompts: "analysisPrompt:save",
 
   // Assets
@@ -368,13 +366,11 @@ export interface BigMouthApi {
   // Generation prompts
   getGenerationPrompts(wsId: string): Promise<GenerationPromptsData>;
   getGenerationPromptDefaults(wsId: string): Promise<GenerationPromptsData>;
-  resetGenerationPrompts(wsId: string): Promise<GenerationPromptsData>;
   saveGenerationPrompts(wsId: string, data: GenerationPromptsData): Promise<GenerationPromptsData>;
 
   // Analysis prompts
   listAnalysisPrompts(wsId: string): Promise<AnalysisPrompt[]>;
   listAnalysisPromptDefaults(wsId: string): Promise<AnalysisPrompt[]>;
-  resetAnalysisPrompts(wsId: string): Promise<AnalysisPrompt[]>;
   saveAnalysisPrompts(wsId: string, prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]>;
 
   // Assets

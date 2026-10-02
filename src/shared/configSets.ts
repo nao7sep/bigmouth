@@ -45,11 +45,21 @@ export function workspaceSetHasShape(key: (typeof WORKSPACE_SET_KEYS)[number], v
   }
 }
 
-/** A dialog sends only the set copies whose drafts changed. */
-export function changedSets<T extends object>(draft: T, initial: T): Partial<T> {
-  const changes: Partial<T> = {};
-  for (const key of Object.keys(draft) as (keyof T)[]) {
-    if (JSON.stringify(draft[key]) !== JSON.stringify(initial[key])) changes[key] = draft[key];
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!object(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+}
+
+/** The file content per config-sets-conventions: each set that differs from its built-in, whole. */
+export function setsDifferingFromBuiltIn<T extends object>(
+  values: T,
+  builtIn: T,
+  keys: readonly (keyof T & string)[],
+): Record<string, unknown> {
+  const sets: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (JSON.stringify(canonical(values[key])) !== JSON.stringify(canonical(builtIn[key]))) sets[key] = values[key];
   }
-  return changes;
+  return sets;
 }

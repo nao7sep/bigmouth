@@ -24,7 +24,6 @@ vi.mock("@renderer/api", () => ({
   listAnalysisPrompts: vi.fn(),
   listAnalysisPromptDefaults: vi.fn(),
   saveAnalysisPrompts: vi.fn(),
-  resetAnalysisPrompts: vi.fn(),
   listAiConfigs: vi.fn(),
   createAiConfig: vi.fn(),
   updateAiConfig: vi.fn(),
@@ -33,7 +32,6 @@ vi.mock("@renderer/api", () => ({
   getGenerationPrompts: vi.fn(),
   getGenerationPromptDefaults: vi.fn(),
   saveGenerationPrompts: vi.fn(),
-  resetGenerationPrompts: vi.fn(),
   rebuildPostIndex: vi.fn(),
 }));
 
@@ -52,7 +50,6 @@ const mock = {
   listAnalysisPrompts: vi.mocked(api.listAnalysisPrompts),
   listAnalysisPromptDefaults: vi.mocked(api.listAnalysisPromptDefaults),
   saveAnalysisPrompts: vi.mocked(api.saveAnalysisPrompts),
-  resetAnalysisPrompts: vi.mocked(api.resetAnalysisPrompts),
   listAiConfigs: vi.mocked(api.listAiConfigs),
   createAiConfig: vi.mocked(api.createAiConfig),
   updateAiConfig: vi.mocked(api.updateAiConfig),
@@ -61,7 +58,6 @@ const mock = {
   getGenerationPrompts: vi.mocked(api.getGenerationPrompts),
   getGenerationPromptDefaults: vi.mocked(api.getGenerationPromptDefaults),
   saveGenerationPrompts: vi.mocked(api.saveGenerationPrompts),
-  resetGenerationPrompts: vi.mocked(api.resetGenerationPrompts),
 };
 
 function settings(): Settings {
@@ -472,7 +468,7 @@ describe("SettingsModal — interface language", () => {
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
     });
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ language: "ja" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "system", language: "ja" });
   });
 });
 
@@ -500,7 +496,7 @@ describe("SettingsModal — theme", () => {
       fireEvent.click(save);
     });
 
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark", language: "system" });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -1010,7 +1006,7 @@ describe("SettingsModal — set writes and reset", () => {
     const { getByRole } = await renderModal();
     fireEvent.click(getByRole("radio", { name: "Dark" }));
     await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
-    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark" });
+    expect(mock.saveAppSettings).toHaveBeenCalledWith({ theme: "dark", language: "system" });
     expect(mock.saveSettings).not.toHaveBeenCalled();
     expect(mock.saveTargets).not.toHaveBeenCalled();
     expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
@@ -1020,19 +1016,25 @@ describe("SettingsModal — set writes and reset", () => {
   it.each([
     ["Generation", "Reset generation prompts", "generation"],
     ["Analysis", "Reset analysis prompts", "analysis"],
-  ] as const)("%s reset is staged for Save and deletes the set", async (tab, resetLabel, kind) => {
+  ] as const)("%s reset fills the draft with the built-ins, which Save sends", async (tab, resetLabel, kind) => {
+    mock.getGenerationPrompts.mockResolvedValueOnce({ prompts: { title: "Mine" } });
+    mock.listAnalysisPrompts.mockResolvedValueOnce([{ name: "Mine", text: "Mine {content}" }]);
     const { getByRole, onClose } = await renderModal();
-    mock.resetGenerationPrompts.mockResolvedValue(genPrompts());
-    mock.resetAnalysisPrompts.mockResolvedValue(prompts());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
     const panel = openTab(getByRole, tab);
     fireEvent.click(within(panel).getByRole("button", { name: resetLabel }));
-    expect(mock.resetGenerationPrompts).not.toHaveBeenCalled();
-    expect(mock.resetAnalysisPrompts).not.toHaveBeenCalled();
-    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
-    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
-    expect(kind === "generation" ? mock.resetGenerationPrompts : mock.resetAnalysisPrompts).toHaveBeenCalledOnce();
     expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
     expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+    if (kind === "generation") {
+      expect(mock.saveGenerationPrompts).toHaveBeenCalledWith(genPrompts());
+      expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+    } else {
+      expect(mock.saveAnalysisPrompts).toHaveBeenCalledWith(prompts());
+      expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
+    }
     expect(mock.saveSettings).not.toHaveBeenCalled();
     expect(mock.saveTargets).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();

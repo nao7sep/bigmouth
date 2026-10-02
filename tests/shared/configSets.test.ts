@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { changedSets, workspaceSetHasShape } from "@shared/configSets";
+import { setsDifferingFromBuiltIn, workspaceSetHasShape } from "@shared/configSets";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { GENERATION_PROMPT_KEYS } from "@shared/metadataFields";
 
 describe("config sets", () => {
-  it("diffs per set and carries every member of a changed cluster", () => {
-    const initial = { uiFontFamily: "", contentFont: DEFAULT_CONTENT_FONT };
+  it("keeps each set that differs from its built-in, whole, and drops the rest", () => {
+    const builtIn = { uiFontFamily: "", contentFont: DEFAULT_CONTENT_FONT };
+    const keys = ["uiFontFamily", "contentFont"] as const;
     const contentFont = { ...DEFAULT_CONTENT_FONT, family: "Iosevka" };
-    expect(changedSets({ ...initial, contentFont }, initial)).toEqual({ contentFont });
-    expect(changedSets(initial, structuredClone(initial))).toEqual({});
+    expect(setsDifferingFromBuiltIn({ ...builtIn, contentFont }, builtIn, keys)).toEqual({ contentFont });
+    expect(setsDifferingFromBuiltIn(structuredClone(builtIn), builtIn, keys)).toEqual({});
+    const reordered = Object.fromEntries(Object.entries(DEFAULT_CONTENT_FONT).reverse()) as typeof DEFAULT_CONTENT_FONT;
+    expect(setsDifferingFromBuiltIn({ ...builtIn, contentFont: reordered }, builtIn, keys)).toEqual({});
   });
   it("validates the cluster shape without judging provider or numeric ranges", () => {
     expect(workspaceSetHasShape("contentFont", { family: "Partial" })).toBe(false);

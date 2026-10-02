@@ -4,7 +4,7 @@ import { CHANNELS } from "@shared/ipc";
 import { workspaceSetHasShape } from "@shared/configSets";
 import { isMetadataField } from "@shared/metadataFields";
 import type { GenerationPromptsData } from "@shared/types";
-import { getGenerationPrompts, saveGenerationPrompts, resetGenerationPrompts } from "../core/services/configStore.js";
+import { getGenerationPrompts, saveGenerationPrompts } from "../core/services/configStore.js";
 import { DEFAULT_GENERATION_PROMPTS_DATA } from "../core/shared/defaults.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -21,12 +21,6 @@ export function registerGenerationPromptHandlers(): void {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const prompts = getGenerationPrompts(dir);
     info("generation prompts loaded", { workspace: wsId, count: Object.keys(prompts.prompts).length });
-    return prompts;
-  });
-
-  ipcMain.handle(CHANNELS.resetGenerationPrompts, (_event, wsId: string) => {
-    const prompts = resetGenerationPrompts(resolveWorkspace(wsId).dataDirectory);
-    info("generation prompts reset", { workspace: wsId });
     return prompts;
   });
 

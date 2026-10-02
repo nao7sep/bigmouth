@@ -14,9 +14,9 @@ import type {
   Workspace,
 } from "../shared/types.js";
 import { normalizeTimeZonePreference } from "@shared/timeZone";
-import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, workspaceSetHasShape } from "@shared/configSets";
+import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, setsDifferingFromBuiltIn, workspaceSetHasShape } from "@shared/configSets";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
-import { writeManagedText } from "../shared/atomicWrite.js";
+import { writeSetFile } from "../shared/setFile.js";
 import { makeDefaultConfig } from "../shared/defaults.js";
 import { warn } from "./logger.js";
 import * as apiKeys from "./apiKeys.js";
@@ -68,15 +68,9 @@ function readConfig(dataDir: string): WorkspaceConfig {
   return config;
 }
 
-function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>, deleted: (keyof WorkspaceConfig)[] = []): void {
-  const map = readMap(dataDir);
-  if (!Object.keys(changes).length && !deleted.some((key) => Object.hasOwn(map, key))) return;
-  const saved: Record<string, unknown> = {};
-  for (const key of WORKSPACE_SET_KEYS) {
-    if (Object.hasOwn(map, key) && !deleted.includes(key)) saved[key] = map[key];
-    if (Object.hasOwn(changes, key)) saved[key] = changes[key];
-  }
-  writeManagedText(path.join(dataDir, CONFIG_FILE), JSON.stringify(saved, null, 2) + "\n");
+function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>): void {
+  const config = { ...readConfig(dataDir), ...changes };
+  writeSetFile(path.join(dataDir, CONFIG_FILE), setsDifferingFromBuiltIn(config, makeDefaultConfig(), WORKSPACE_SET_KEYS));
 }
 
 function normalizeSettings(settings: Settings): Settings {
@@ -114,15 +108,7 @@ export function getSettings(dataDir: string): Settings {
 }
 
 export function saveSettings(dataDir: string, settings: Partial<Settings>): Settings {
-  const config = readConfig(dataDir);
-  const normalized = normalizeSettings({ ...config, ...settings });
-  const changes: Partial<Settings> = {};
-  for (const key of SETTINGS_SET_KEYS) {
-    if (Object.hasOwn(settings, key) && JSON.stringify(settings[key]) !== JSON.stringify(config[key])) {
-      Object.assign(changes, { [key]: normalized[key] });
-    }
-  }
-  if (Object.keys(changes).length) writeSets(dataDir, changes);
+  writeSets(dataDir, normalizeSettings({ ...getSettings(dataDir), ...settings }));
   return getSettings(dataDir);
 }
 
@@ -344,14 +330,4 @@ export function saveGenerationPrompts(
 ): GenerationPromptsData {
   writeSets(dataDir, { generationPrompts: data });
   return data;
-}
-
-export function resetAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
-  writeSets(dataDir, {}, ["analysisPrompts"]);
-  return getAnalysisPrompts(dataDir);
-}
-
-export function resetGenerationPrompts(dataDir: string): GenerationPromptsData {
-  writeSets(dataDir, {}, ["generationPrompts"]);
-  return getGenerationPrompts(dataDir);
 }

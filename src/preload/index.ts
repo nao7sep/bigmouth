@@ -184,8 +184,6 @@ const api = {
     ipcRenderer.invoke(CHANNELS.getGenerationPrompts, wsId) as Promise<GenerationPromptsData>,
   getGenerationPromptDefaults: (wsId: string) =>
     ipcRenderer.invoke(CHANNELS.getGenerationPromptDefaults, wsId) as Promise<GenerationPromptsData>,
-  resetGenerationPrompts: (wsId: string) =>
-    ipcRenderer.invoke(CHANNELS.resetGenerationPrompts, wsId) as Promise<GenerationPromptsData>,
   saveGenerationPrompts: (wsId: string, data: GenerationPromptsData) =>
     ipcRenderer.invoke(CHANNELS.saveGenerationPrompts, wsId, data) as Promise<GenerationPromptsData>,
 
@@ -194,8 +192,6 @@ const api = {
     ipcRenderer.invoke(CHANNELS.listAnalysisPrompts, wsId) as Promise<AnalysisPrompt[]>,
   listAnalysisPromptDefaults: (wsId: string) =>
     ipcRenderer.invoke(CHANNELS.listAnalysisPromptDefaults, wsId) as Promise<AnalysisPrompt[]>,
-  resetAnalysisPrompts: (wsId: string) =>
-    ipcRenderer.invoke(CHANNELS.resetAnalysisPrompts, wsId) as Promise<AnalysisPrompt[]>,
   saveAnalysisPrompts: (wsId: string, prompts: AnalysisPrompt[]) =>
     ipcRenderer.invoke(CHANNELS.saveAnalysisPrompts, wsId, prompts) as Promise<AnalysisPrompt[]>,
 

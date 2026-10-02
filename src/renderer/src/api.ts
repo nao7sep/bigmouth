@@ -494,11 +494,3 @@ function describeError(err: unknown, seen = new WeakSet<object>()): Record<strin
   }
   return { error: String(err) };
 }
-
-export function resetAnalysisPrompts(): Promise<AnalysisPrompt[]> {
-  return bridge().resetAnalysisPrompts(requireWs());
-}
-
-export function resetGenerationPrompts(): Promise<GenerationPromptsData> {
-  return bridge().resetGenerationPrompts(requireWs());
-}
