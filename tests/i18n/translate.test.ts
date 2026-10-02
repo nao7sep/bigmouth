@@ -1,8 +1,10 @@
 import { isValidElement, type ReactElement } from "react";
-import { describe, expect, it } from "vitest";
-import type { MessageKey } from "@shared/i18n/catalogues";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadCatalogue, type MessageKey } from "@shared/i18n/catalogues";
 import { createTranslator as createTextTranslator, message } from "@shared/i18n/translate";
 import { createTranslator } from "@renderer/i18n/I18nContext";
+
+beforeAll(() => Promise.all((["de", "fr", "ja"] as const).map(loadCatalogue)));
 
 describe("createTranslator", () => {
   it("fills placeholders", () => {
@@ -44,5 +46,13 @@ describe("createTranslator", () => {
     // could still reach it, and a window must not go down over one string.
     const missing = "gone.missing" as unknown as MessageKey;
     expect(createTextTranslator("ja").t(missing)).toBe("gone.missing");
+  });
+});
+
+describe("catalogue loading", () => {
+  it("builds a translator only for a language whose catalogue is loaded", async () => {
+    expect(() => createTextTranslator("ko")).toThrow();
+    await loadCatalogue("ko");
+    expect(createTextTranslator("ko").t("common.cancel")).toBe("취소");
   });
 });

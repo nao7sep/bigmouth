@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ BrowserWindow: {}, nativeTheme: { shouldUseDarkColors: false } }));
 
 import { renderPlainMessageDialogHtml } from "@main/plain-message-dialog";
 import { createTranslator } from "@shared/i18n/translate";
+import { loadCatalogue } from "@shared/i18n/catalogues";
+
+beforeAll(() => loadCatalogue("ja"));
 
 describe("plain message dialog", () => {
   it("keeps header and footer fixed while only the body scrolls", () => {

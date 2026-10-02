@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { MenuItemConstructorOptions } from "electron";
 
 vi.mock("electron", () => ({ Menu: {}, app: {}, BrowserWindow: {} }));
 
 import { applicationMenuTemplate } from "@main/menu";
 import { createTranslator } from "@shared/i18n/translate";
+import { loadCatalogue } from "@shared/i18n/catalogues";
+
+beforeAll(() => Promise.all((["ja", "de", "fr"] as const).map(loadCatalogue)));
 
 function labels(items: MenuItemConstructorOptions[]): string[] {
   return items.flatMap((item) => [

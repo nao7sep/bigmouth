@@ -14,7 +14,7 @@ export function registerAppSettingsHandlers(): void {
 
   ipcMain.handle(CHANNELS.getInterfaceLanguage, () => interfaceLanguage());
 
-  ipcMain.handle(CHANNELS.saveAppSettings, (_event, settings: Partial<AppSettings>) => {
+  ipcMain.handle(CHANNELS.saveAppSettings, async (_event, settings: Partial<AppSettings>) => {
     const issue = appSettingsShapeIssue(settings);
     if (issue !== null) throw new Error(`App settings rejected: ${issue}`);
     for (const key of APP_SETTINGS_SET_KEYS) {
@@ -24,7 +24,7 @@ export function registerAppSettingsHandlers(): void {
     applyThemePreference(saved.theme);
     // The window hears about a new language from the broadcast, and the menu
     // bar is rebuilt in it. macOS's own menu items follow at the next launch.
-    changeLanguagePreference(saved.language, installApplicationMenu);
+    await changeLanguagePreference(saved.language, installApplicationMenu);
     info("app settings saved", { theme: saved.theme, language: saved.language });
     return saved;
   });

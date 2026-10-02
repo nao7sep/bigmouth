@@ -3,8 +3,7 @@ import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
-import { CATALOGUES } from "@shared/i18n/catalogues";
-import { LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
+import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import type { MessageKey } from "@shared/i18n/catalogues";
@@ -669,7 +668,7 @@ function GeneralTab({
           <option value="system">{t("settings.languageSystem")}</option>
           {LANGUAGES.map((language) => (
             <option key={language} value={language} lang={language}>
-              {CATALOGUES[language]["language.name"] as string}
+              {LANGUAGE_NAMES[language]}
             </option>
           ))}
         </select>

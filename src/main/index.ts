@@ -49,7 +49,7 @@ let systemShutdown = false;
 // the filesystem (storage-path-conventions).
 async function bootstrap(): Promise<void> {
   // First, so that even a failure below is reported in the computer's language.
-  detectComputerLanguage();
+  await detectComputerLanguage();
   const appConfig = initAppDir();
   initLogger(getRecordsDbPath(), getLogsDir());
   // State store (view state: pane widths + last workspace) resolves state.json under
@@ -61,7 +61,7 @@ async function bootstrap(): Promise<void> {
   const appSettings = initAppSettingsStore();
   applyThemePreference(appSettings.theme);
   // The menu, dialogs and the window's first text all speak the saved language.
-  applyLanguagePreference(appSettings.language);
+  await applyLanguagePreference(appSettings.language);
   followOsThemeChanges();
   info("app started", {
     version: __APP_VERSION__,

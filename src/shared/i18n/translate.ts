@@ -1,4 +1,4 @@
-import { CATALOGUES, type Catalogue, type MessageKey } from "./catalogues.js";
+import { ENGLISH, loadedCatalogue, type Catalogue, type MessageKey } from "./catalogues.js";
 import type { Language } from "./languages.js";
 
 // A value is plain text, a number formatted for the locale, or another
@@ -24,7 +24,7 @@ export function isMessage(value: unknown): value is Message {
     typeof value === "object" &&
     value !== null &&
     typeof (value as { key?: unknown }).key === "string" &&
-    (value as { key: string }).key in CATALOGUES.en
+    (value as { key: string }).key in ENGLISH
   );
 }
 
@@ -50,7 +50,7 @@ export type Translator = {
 };
 
 export function createTranslator(language: Language, locale: string = language): Translator {
-  const catalogue: Catalogue = CATALOGUES[language];
+  const catalogue: Catalogue = loadedCatalogue(language);
   const numberFormat = new Intl.NumberFormat(locale);
   const percentFormat = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
   const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();

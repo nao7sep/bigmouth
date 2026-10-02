@@ -1,7 +1,8 @@
-import { Fragment, createContext, createElement, useContext, useEffect, useMemo, type ReactNode } from "react";
-import { isLanguage, type Language } from "@shared/i18n/languages";
+import { Fragment, createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { isLanguage, type InterfaceLanguage, type Language } from "@shared/i18n/languages";
 import { createTranslator as createTextTranslator, type Translator as TextTranslator } from "@shared/i18n/translate";
-import type { MessageKey } from "@shared/i18n/catalogues";
+import { loadCatalogue, type MessageKey } from "@shared/i18n/catalogues";
+import { reportProblem } from "../api";
 
 // The renderer's translator: the shared one, plus rich text, whose
 // placeholders may be filled with markup (a <code> path, say).
@@ -30,6 +31,8 @@ export function createTranslator(language: Language, locale: string = language):
 // (in a test, say) still has text.
 const I18nContext = createContext<Translator>(createTranslator("en"));
 
+// The first language given must already be loaded. A later one, saved in
+// Settings, replaces it once its catalogue has loaded.
 export function I18nProvider({
   language,
   locale,
@@ -39,14 +42,29 @@ export function I18nProvider({
   locale: string;
   children: ReactNode;
 }) {
-  const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
+  const [shown, setShown] = useState<InterfaceLanguage>({ language, locale });
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCatalogue(language).then(
+      () => {
+        if (!cancelled) setShown({ language, locale });
+      },
+      (err: unknown) => reportProblem("renderer: interface catalogue load failed", err),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [language, locale]);
+
+  const translator = useMemo(() => createTranslator(shown.language, shown.locale), [shown.language, shown.locale]);
 
   // <html lang> picks the right glyphs for Chinese, Japanese and Korean text and
   // tells the last-resort error boundary, which sits outside this provider,
   // which language to speak.
   useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
+    document.documentElement.lang = shown.language;
+  }, [shown.language]);
 
   return <I18nContext.Provider value={translator}>{children}</I18nContext.Provider>;
 }

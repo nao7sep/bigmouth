@@ -8,6 +8,7 @@ import { denyUnhandledExternalDrop } from "./util/externalDropBoundary";
 import { installWindowActivityState } from "./windowActivity";
 import { InterfaceLanguageRoot } from "./i18n/InterfaceLanguageRoot";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
+import { loadCatalogue } from "@shared/i18n/catalogues";
 
 window.addEventListener("dragover", denyUnhandledExternalDrop);
 window.addEventListener("drop", denyUnhandledExternalDrop);
@@ -28,11 +29,14 @@ window.addEventListener("unhandledrejection", (event) => {
   reportProblem("renderer: unhandled promise rejection", event.reason);
 });
 
-// No text until the language is known, so the first words on screen are
-// already in it. English only if main cannot say, which leaves the window usable.
+// No text until the language is known and its catalogue loaded, so the first
+// words on screen are already in it. English only if main cannot say or the
+// catalogue cannot load, which leaves the window usable.
 async function interfaceLanguage(): Promise<InterfaceLanguage> {
   try {
-    return await window.bigmouth.getInterfaceLanguage();
+    const language = await window.bigmouth.getInterfaceLanguage();
+    await loadCatalogue(language.language);
+    return language;
   } catch (err) {
     reportProblem("renderer: interface language unavailable", err);
     return { language: "en", locale: "en" };

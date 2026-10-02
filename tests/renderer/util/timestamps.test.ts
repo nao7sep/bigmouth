@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { formatLocalDateTime } from "@renderer/util/timestamps";
 import { createTranslator } from "@shared/i18n/translate";
+import { loadCatalogue } from "@shared/i18n/catalogues";
+
+beforeAll(() => loadCatalogue("ja"));
 
 // Display formatting takes an explicit IANA zone, so its output depends on the
 // passed zone, never on the host machine's local zone, and on the interface
