@@ -43,7 +43,7 @@ export type LogRecord = {
   event: string;
 };
 
-/** One request to an AI provider, recorded whole: the body sent and the response or error received. */
+/** One request to an AI provider, recorded whole: the request as sent, headers included, and the response or error received. */
 export type ProviderCallRecord = {
   workspaceId: string;
   postId: string;

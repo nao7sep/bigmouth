@@ -2,7 +2,7 @@
  * Claude provider — uses the Anthropic Messages API with a proper system/user split.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { type Middleware } from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import type { AiProvider, ProviderCallContext } from "./provider.js";
 import { utcNow } from "../shared/timestamps.js";
@@ -68,6 +68,25 @@ export interface ClaudeRequest {
   maxTokens: number;
 }
 
+/**
+ * One call's request as it leaves the client, headers and API key included
+ * (data-lifecycle-conventions, Nothing is cut). Until something is sent, it is the
+ * parameters the call was given.
+ */
+function requestCapture(params: unknown): { middleware: Middleware[]; request: () => unknown } {
+  let sent: unknown;
+  const observe: Middleware = (request, next) => {
+    sent = {
+      method: request.method,
+      url: request.url,
+      headers: Object.fromEntries(request.headers),
+      body: typeof request.body === "string" ? JSON.parse(request.body) : request.body,
+    };
+    return next(request);
+  };
+  return { middleware: [observe], request: () => sent ?? params };
+}
+
 export class ClaudeProvider implements AiProvider {
   private client: Anthropic;
   private request: ClaudeRequest;
@@ -96,13 +115,17 @@ export class ClaudeProvider implements AiProvider {
   }
 
   /** Settles `pending` after recording it. */
-  private async recorded<T>(startedAt: Date, request: unknown, pending: Promise<T>): Promise<T> {
+  private async recorded<T>(
+    startedAt: Date,
+    capture: ReturnType<typeof requestCapture>,
+    pending: Promise<T>,
+  ): Promise<T> {
     try {
       const response = await pending;
-      this.record(startedAt, request, { response });
+      this.record(startedAt, capture.request(), { response });
       return response;
     } catch (error) {
-      this.record(startedAt, request, { error });
+      this.record(startedAt, capture.request(), { error });
       throw error;
     }
   }
@@ -139,10 +162,14 @@ export class ClaudeProvider implements AiProvider {
     const budget = options.timeoutMs !== undefined ? AbortSignal.timeout(options.timeoutMs) : undefined;
     const signal = budget && options.signal ? AbortSignal.any([budget, options.signal]) : (budget ?? options.signal);
     const params = this.baseParams(systemPrompt, userContent);
+    const capture = requestCapture(params);
     const message = await this.recorded(
       utcNow(),
-      params,
-      this.client.messages.create(params, signal !== undefined ? { signal } : {}),
+      capture,
+      this.client.messages.create(params, {
+        middleware: capture.middleware,
+        ...(signal !== undefined ? { signal } : {}),
+      }),
     );
 
     // Surface a truncated/refused response as an error rather than returning a
@@ -192,10 +219,12 @@ export class ClaudeProvider implements AiProvider {
         format: jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
       },
     };
+    const capture = requestCapture(params);
     const startedAt = utcNow();
     const stream = this.client.messages.stream(
       params,
       {
+        middleware: capture.middleware,
         // An omitted option must be an omitted KEY, not a key set to undefined: the SDK
         // validates request options on the way in and rejects a key set to undefined
         // outright rather than reading it as absent. So the spread is what keeps this
@@ -210,7 +239,7 @@ export class ClaudeProvider implements AiProvider {
 
     let message: Anthropic.Message;
     try {
-      message = await this.recorded(startedAt, params, stream.finalMessage());
+      message = await this.recorded(startedAt, capture, stream.finalMessage());
     } catch (err) {
       if (watchdog.tripped()) throw new Error(idleMessage("request"));
       if (cap.signal.aborted && !options.signal?.aborted) {
@@ -253,8 +282,10 @@ export class ClaudeProvider implements AiProvider {
     const watchdog = idleWatchdog();
 
     const params = this.baseParams(systemPrompt, userContent);
+    const capture = requestCapture(params);
     const startedAt = utcNow();
     const stream = this.client.messages.stream(params, {
+      middleware: capture.middleware,
       signal: watchdog.signal,
     });
 
@@ -274,7 +305,7 @@ export class ClaudeProvider implements AiProvider {
 
     // `finished` rejects on a truncated/refused completion so the caller can tell
     // a complete analysis from one cut short — even after deltas have streamed.
-    const finished = this.recorded(startedAt, params, stream.finalMessage()).then(
+    const finished = this.recorded(startedAt, capture, stream.finalMessage()).then(
       (message) => {
         watchdog.stop();
         assertCompleteStop(message);

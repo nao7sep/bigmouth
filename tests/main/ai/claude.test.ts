@@ -43,6 +43,7 @@ vi.mock("@main/core/services/recordsStore.js", () => ({
   writeProviderCall: (call: unknown) => recorded.calls.push(call),
 }));
 
+import type { Middleware } from "@anthropic-ai/sdk";
 import { ClaudeProvider, type ClaudeRequest } from "@main/core/ai/claude.js";
 
 const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
@@ -128,6 +129,31 @@ describe("provider call records", () => {
         request: sdk.create.mock.calls[0][0],
         response: reply,
         error: undefined,
+      }),
+    ]);
+  });
+
+  it("records the request as it was sent, headers and API key included", async () => {
+    const reply = message({ text: "ok" });
+    sdk.create.mockImplementation(async (params: unknown, options: { middleware: Middleware[] }) => {
+      const sent = {
+        method: "POST",
+        url: "https://api.anthropic.com/v1/messages",
+        headers: new Headers({ "x-api-key": "sk-secret", "anthropic-version": "2023-06-01" }),
+        body: JSON.stringify(params),
+      };
+      for (const observe of options.middleware) await observe(sent, async () => new Response(), {} as never);
+      return reply;
+    });
+    await new ClaudeProvider("sk-secret", req("m"), CALL).generateText("s", "u");
+    expect(recorded.calls).toEqual([
+      expect.objectContaining({
+        request: {
+          method: "POST",
+          url: "https://api.anthropic.com/v1/messages",
+          headers: { "x-api-key": "sk-secret", "anthropic-version": "2023-06-01" },
+          body: sdk.create.mock.calls[0][0],
+        },
       }),
     ]);
   });
