@@ -298,10 +298,9 @@ describe("backup store — the choke point is wired to the real record sites", (
     // The .md file exists and its first version is recorded.
     const first = rows(post.filePath);
     expect(first).toHaveLength(1);
-    // A real content edit adds a second version; the index.json (also managed text) is recorded too.
+    // A real content edit adds a second version.
     updatePost(ws.dataDirectory, post.frontMatter.id, { content: "a genuinely new body" });
     expect(rows(post.filePath).length).toBeGreaterThanOrEqual(2);
-    expect(rows(path.join(ws.dataDirectory, "posts", "index.json")).length).toBeGreaterThanOrEqual(1);
     clearCache(ws.dataDirectory);
   });
 });
@@ -318,5 +317,19 @@ describe("state.json is not recorded", () => {
 
     expect(JSON.parse(fs.readFileSync(statePath, "utf-8")).paneLeftWidth).toBe(402);
     expect(rows(statePath)).toHaveLength(0);
+  });
+});
+
+describe("posts/index.json is not recorded", () => {
+  it("writes the index to disk without recording it", async () => {
+    const { createWorkspace } = await import("@main/core/services/workspaceStore.js");
+    const { createPost, clearCache } = await import("@main/core/services/postStore.js");
+    const ws = createWorkspace("Index WS");
+    const post = createPost(ws.dataDirectory, "blogger", "en");
+    const indexPath = path.join(ws.dataDirectory, "posts", "index.json");
+
+    expect(fs.readFileSync(indexPath, "utf-8")).toContain(post.frontMatter.id);
+    expect(rows(indexPath)).toHaveLength(0);
+    clearCache(ws.dataDirectory);
   });
 });

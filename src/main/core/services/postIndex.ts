@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
-import { writeManagedText } from "../shared/atomicWrite.js";
+import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { compareInstants } from "@shared/postOrder";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
@@ -86,8 +86,8 @@ export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
 
 /**
  * Inserts or updates many rows and writes the index once. A bulk change (a
- * target rename, clearing a deleted source) must not rewrite the whole file —
- * and add a full backup row — once per post.
+ * target rename, clearing a deleted source) must not rewrite the whole file
+ * once per post.
  */
 export function upsertEntries(dataDir: string, entries: readonly PostIndexEntry[]): void {
   const map = state(dataDir);
@@ -375,12 +375,8 @@ function findDuplicateSlugGroups(entries: Iterable<PostIndexEntry>): DuplicateSl
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
-  // recorded: posts/index.json is a durable managed JSON store — it sits in the text-bearing posts/
-  // directory (NOT a binary-bearing one), and it carries user-authored derived text (titles, slugs,
-  // excerpts). Though rebuildable from the .md files, the default is to record every managed text store,
-  // and write-gating (upsert no-ops) plus the store's own dedup absorb its churn (data-backup
-  // conventions: every durable JSON store is recorded).
-  writeManagedText(indexPath(dataDir), canonicalIndexJson([...map.values()]));
+  // not recorded: posts/index.json is a cache rebuilt from the post files (data-backup conventions).
+  writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()]));
 }
 
 // --- Canonical serialization (byte-identical across rebuilds) ---
