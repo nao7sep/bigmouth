@@ -227,7 +227,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const applySettings = useCallback((settings: Settings) => {
       if (settings.publishedPostsPerLoad) setPubBatchSize(settings.publishedPostsPerLoad);
-      if (settings.maxUploadMb) setMaxUploadMb(settings.maxUploadMb);
+      setMaxUploadMb(settings.maxUploadMb);
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
