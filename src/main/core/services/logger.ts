@@ -12,9 +12,6 @@
  *     line carries the envelope { time, level, message } plus any extra fields.
  *   - Four levels: debug / info / warn / error. `debug` is developer-only — it is
  *     emitted only when explicitly enabled by BIGMOUTH_DEBUG=1 or --debug-logs.
- *   - A mandatory, non-destructive redactor replaces the VALUE of any field whose
- *     name matches a denied key (exact, case-insensitive). It never edits the
- *     message, never scans string contents, and cannot drop fields or throw.
  *   - Writes are synchronous, so the last lines before a crash reach disk; if the
  *     file cannot be written the logger degrades to the console and never throws.
  */
@@ -29,13 +26,6 @@ export type LogFields = Record<string, unknown>;
 const DEBUG_LOG_FLAG = "--debug-logs";
 
 type DebugLogEnv = Readonly<Record<string, string | undefined>>;
-
-// Field names whose values are replaced with the redaction marker. Matched by
-// exact, case-insensitive name (stored lower-cased) — never as a substring, so
-// `token` never matches `tokenCount` or `broken`. This app owns and extends this
-// set; there is no shared cross-app taxonomy.
-const DENIED_KEYS = new Set(["apikey", "authorization", "token", "password", "secret"]);
-const REDACTION_MARKER = "[redacted]";
 
 // Reserved envelope keys: a caller's field of the same name must never overwrite
 // the real envelope value.
@@ -85,45 +75,6 @@ export function getCurrentLogFilePath(): string | null {
 }
 
 /**
- * Non-destructive, pure, total, cycle-safe redactor. Replaces the value of any
- * field whose name is a denied key (exact, case-insensitive) with the marker;
- * recurses through plain objects and arrays; passes every other value through
- * byte-identical. Never inspects string contents and never drops a field.
- */
-export function redact(value: unknown): unknown {
-  return redactInner(value, new WeakSet());
-}
-
-function redactInner(value: unknown, seen: WeakSet<object>): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (seen.has(value)) return "[circular]";
-  seen.add(value);
-
-  if (Array.isArray(value)) {
-    return value.map((item) => redactInner(item, seen));
-  }
-
-  // A Date is passed through whole so the serializer renders it faithfully
-  // rather than flattening it to `{}`. Everything else is walked.
-  //
-  // This used to pass through EVERY object with a non-plain prototype, which
-  // meant a class instance in a log field was serialized by its own enumerable
-  // properties with nothing redacted — so an `apiKey` on one would have been
-  // written verbatim. Nothing carries a key through that path today, but the
-  // redactor exists as the backstop for the case nobody foresaw, and that is
-  // exactly where an unforeseen object lands.
-  if (value instanceof Date) return value;
-
-  const out: Record<string, unknown> = {};
-  for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = DENIED_KEYS.has(key.toLowerCase())
-      ? REDACTION_MARKER
-      : redactInner(entryValue, seen);
-  }
-  return out;
-}
-
-/**
  * Canonical error serialization for full fidelity: type, message, stack, and the
  * recursive cause chain. Used everywhere an error is logged so the record is the
  * same shape regardless of where the error surfaced. Non-Error throws are
@@ -151,8 +102,8 @@ function serializeErrorInner(err: unknown, seen: WeakSet<object>): unknown {
     return out;
   }
   if (err !== null && typeof err === "object") {
-    // A non-Error object was thrown; surface its own fields (redaction still
-    // applies to the final record) rather than a useless "[object Object]".
+    // A non-Error object was thrown; surface its own fields rather than a
+    // useless "[object Object]".
     return err;
   }
   return { message: String(err) };
@@ -166,8 +117,7 @@ function emit(level: LogLevel, message: string, fields?: LogFields): void {
   };
 
   if (fields) {
-    const redacted = redact(fields) as Record<string, unknown>;
-    for (const [key, value] of Object.entries(redacted)) {
+    for (const [key, value] of Object.entries(fields)) {
       if (ENVELOPE_KEYS.has(key)) continue; // envelope always wins
       record[key] = value;
     }

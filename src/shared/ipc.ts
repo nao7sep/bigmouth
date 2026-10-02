@@ -44,8 +44,8 @@ export interface TargetRenameResult {
 
 /**
  * One renderer-side event for the session log. `detail` carries whatever the
- * call site knows — a serialized error, an id, a count; main redacts it like any
- * other log field before writing.
+ * call site knows — a serialized error, an id, a count; main writes it like any
+ * other log field.
  */
 export interface RendererLogEntry {
   level: "warn" | "error";

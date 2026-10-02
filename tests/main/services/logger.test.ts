@@ -11,7 +11,6 @@ import {
   warn,
   error,
   isDebugLoggingEnabled,
-  redact,
   serializeError,
 } from "@main/core/services/logger.js";
 
@@ -125,74 +124,6 @@ describe("debug gating", () => {
   });
 });
 
-describe("redaction", () => {
-  it("replaces the value of denied keys with the marker, case-insensitively", () => {
-    const out = redact({
-      apiKey: "sk-1",
-      Authorization: "Bearer x",
-      TOKEN: "t",
-      password: "p",
-      Secret: "s",
-    }) as Record<string, unknown>;
-    expect(out.apiKey).toBe("[redacted]");
-    expect(out.Authorization).toBe("[redacted]");
-    expect(out.TOKEN).toBe("[redacted]");
-    expect(out.password).toBe("[redacted]");
-    expect(out.Secret).toBe("[redacted]");
-  });
-
-  it("matches whole field names only — never substrings", () => {
-    const out = redact({ tokenCount: 5, broken: "no", token: "yes" }) as Record<string, unknown>;
-    expect(out.tokenCount).toBe(5);
-    expect(out.broken).toBe("no");
-    expect(out.token).toBe("[redacted]");
-  });
-
-  it("recurses through nested objects and arrays", () => {
-    const out = redact({
-      config: { apiKey: "deep" },
-      list: [{ password: "p" }, { keep: 1 }],
-    }) as { config: Record<string, unknown>; list: Record<string, unknown>[] };
-    expect(out.config.apiKey).toBe("[redacted]");
-    expect(out.list[0].password).toBe("[redacted]");
-    expect(out.list[1].keep).toBe(1);
-  });
-
-  it("is type-preserving and never scans string contents", () => {
-    const out = redact({ note: "my password is hunter2", n: 42, arr: [1, 2] }) as Record<
-      string,
-      unknown
-    >;
-    // The value contains the word "password" but the KEY is not denied — untouched.
-    expect(out.note).toBe("my password is hunter2");
-    expect(out.n).toBe(42);
-    expect(Array.isArray(out.arr)).toBe(true);
-  });
-
-  it("never edits the envelope message even when a denied key is present", () => {
-    info("password reset for user", { password: "hunter2", user: "ann" });
-    const [line] = readLogLines();
-    expect(line.message).toBe("password reset for user");
-    expect(line.password).toBe("[redacted]");
-    expect(line.user).toBe("ann");
-  });
-
-  it("is total — does not throw on a cyclic structure", () => {
-    const cyclic: Record<string, unknown> = { a: 1 };
-    cyclic.self = cyclic;
-    expect(() => redact(cyclic)).not.toThrow();
-    const out = redact(cyclic) as Record<string, unknown>;
-    expect(out.a).toBe(1);
-    expect(out.self).toBe("[circular]");
-  });
-
-  it("passes primitives and null through unchanged", () => {
-    expect(redact(42)).toBe(42);
-    expect(redact("x")).toBe("x");
-    expect(redact(null)).toBeNull();
-  });
-});
-
 describe("serializeError", () => {
   it("preserves nested recovery failures and a reused cause through JSON", () => {
     const original = Object.assign(new Error("primary query failed"), {
@@ -252,31 +183,5 @@ describe("durability and fallback", () => {
     expect(() => info("after close")).not.toThrow();
     // Reopen so afterEach has a file to clean up cleanly.
     initLogger(logsDir);
-  });
-});
-
-// The redactor is the backstop for the field nobody thought about, so it has to
-// walk whatever it is handed. It used to pass through every object with a
-// non-plain prototype untouched, and JSON.stringify then wrote that object's own
-// enumerable properties out unredacted.
-describe("redact walks objects that are not plain", () => {
-  it("redacts a denied key on a class instance", () => {
-    class ProviderError extends Error {
-      apiKey = "sk-ant-should-never-be-written";
-      status = 401;
-    }
-
-    const redacted = redact({ cause: new ProviderError("denied") }) as {
-      cause: { apiKey: string; status: number };
-    };
-
-    expect(redacted.cause.apiKey).not.toContain("sk-ant");
-    // Everything else is untouched.
-    expect(redacted.cause.status).toBe(401);
-  });
-
-  it("still renders a Date faithfully rather than flattening it", () => {
-    const when = new Date("2026-08-21T00:00:00.000Z");
-    expect(redact({ when })).toEqual({ when });
   });
 });

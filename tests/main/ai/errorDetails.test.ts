@@ -97,7 +97,7 @@ describe("logAiFailure", () => {
         workspaceId: "ws-1",
         postId: "p-1",
         promptName: "tone",
-        extra: { contentLength: 1200, apiKey: "sk-should-be-hidden" },
+        extra: { contentLength: 1200 },
       },
       new Error("model failed")
     );
@@ -114,8 +114,6 @@ describe("logAiFailure", () => {
     expect(line.postId).toBe("p-1");
     expect(line.promptName).toBe("tone");
     expect(line.contentLength).toBe(1200);
-    // The redactor catches a denied key even when it rides in via `extra`.
-    expect(line.apiKey).toBe("[redacted]");
     expect((line.error as Record<string, unknown>).message).toBe("model failed");
   });
 

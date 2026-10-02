@@ -86,7 +86,6 @@ vi.mock("@main/core/services/logger.js", () => ({
   closeLogger: () => {},
   getCurrentLogFilePath: () => null,
   isDebugLoggingEnabled: () => false,
-  redact: (value: unknown) => value,
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
   debug: () => {},
   info: () => {},
