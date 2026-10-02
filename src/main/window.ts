@@ -93,13 +93,11 @@ export function buildWindowOptions(
 }
 
 /**
- * Restores the saved zoom level and keeps it saved.
+ * Restores the saved zoom level and keeps it saved (app-chrome-conventions).
  *
- * Electron's zoom roles mutate webContents in memory only, so a user who zoomed
- * for readability was back at 100% on every relaunch with no indication why —
- * the app-chrome conventions require the level to persist wherever zoom exists.
- * `zoom-changed` covers the trackpad/scroll gesture; the menu roles do not fire
- * it, so the level is read back after each of them too.
+ * Electron's zoom roles change webContents in memory only. `zoom-changed`
+ * covers the trackpad/scroll gesture; the menu roles do not fire it, so the
+ * level is read back after each of them too.
  */
 function configureZoom(window: BrowserWindow): void {
   const { zoomLevel } = getUiState();

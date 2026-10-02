@@ -44,13 +44,8 @@ export function PreviewTab({ workspaceId, content, postId, contentFont }: Previe
     return <div className="preview-empty">{t("export.empty")}</div>;
   }
 
-  // The preview renders the user's own document, so it is content, not chrome:
-  // it shares the editor's font FAMILY and sets its own size, line height and
-  // padding (app-chrome-conventions, "where reading and writing are separate
-  // surfaces, split the size but share the family"). A blank family inherits the
-  // UI font, exactly as the editor treats it. Reading it used to be stuck at the
-  // UI sans-serif at 14px however the editor was configured, so an accessibility
-  // setting covered only half the artifact.
+  // The preview shows the user's document in the content font, as the editor
+  // does; a blank family inherits the UI font (app-chrome-conventions).
   const style = {
     ...(contentFont.family ? { fontFamily: contentFont.family } : {}),
     fontSize: contentFont.size,

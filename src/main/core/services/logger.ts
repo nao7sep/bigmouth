@@ -1,4 +1,4 @@
-/** The app's logger (logging-conventions). Each line is echoed to the console and kept as a record. */
+/** The app's logger (logging-conventions). */
 
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { closeRecords, currentRecordsPath, openRecords, writeLogRecord } from "./recordsStore.js";
