@@ -31,3 +31,19 @@ export function windowMinimumForZoom(zoomFactor: number): { width: number; heigh
     height: Math.ceil(WINDOW_MIN_HEIGHT * zoomFactor),
   };
 }
+
+// The records window: a user-adjustable list pane (filters above the record
+// list) beside the detail pane, which takes the rest, with the shared divider
+// between them. Mirrors `.records-*` in src/renderer/src/App.css.
+export const RECORDS_LIST_WIDTH = { min: 320, default: 380, max: 640 } as const;
+export const RECORDS_DETAIL_MIN_WIDTH = 420;
+// The filter band: 12px padding above and below a search field and two rows of
+// selects (three 32px controls, 8px apart), and the line below it.
+export const RECORDS_FILTERS_HEIGHT = 12 * 2 + 32 * 3 + 8 * 2 + 1;
+export const RECORDS_LIST_MIN_HEIGHT = 160;
+
+// Derived — do not hand-edit.
+export const RECORDS_WINDOW_MIN_WIDTH = RECORDS_LIST_WIDTH.min + DIVIDER + RECORDS_DETAIL_MIN_WIDTH;
+
+// Derived — do not hand-edit.
+export const RECORDS_WINDOW_MIN_HEIGHT = RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT;

@@ -2,8 +2,8 @@
  * UI-state I/O.
  *
  * Manages ~/.bigmouth/state.json — the app's ephemeral view state (side-pane
- * intent widths, zoom level, last active workspace id, and the selected AI config id per
- * workspace). It is a distinct persisted KIND
+ * intent widths, zoom level, last active workspace id, the selected AI config id per
+ * workspace, and the records window's list width). It is a distinct persisted KIND
  * from the workspace registry (workspaces.json) and every per-workspace
  * config.json, so it gets its own store and type (persisted-store-separation
  * conventions): a settings reset must not touch it, and its splitter-drag churn
@@ -57,6 +57,10 @@ function normalizeUiState(raw: unknown): UiState {
         ? source.zoomLevel
         : base.zoomLevel,
     activeAiConfigIds: normalizeIdMap(source.activeAiConfigIds),
+    recordsListWidth:
+      typeof source.recordsListWidth === "number" && Number.isFinite(source.recordsListWidth)
+        ? source.recordsListWidth
+        : base.recordsListWidth,
   };
 }
 

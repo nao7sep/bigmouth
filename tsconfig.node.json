@@ -28,6 +28,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // The records reader's worker imports its queries by their .ts name, so
+    // Node can run it from source in tests (recordsReaderWorker.ts).
+    "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
     "lib": ["ES2022"],
     "types": ["node"]

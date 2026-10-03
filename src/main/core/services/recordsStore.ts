@@ -66,6 +66,13 @@ type OpenRecords = {
 let records: OpenRecords | null = null;
 // The console hears about a failing sink once, not on every entry.
 let failureReported = false;
+// Called after each entry the database stored; an entry that went to the
+// fallback file is not in the database, so it calls nothing.
+let storedListener: (() => void) | null = null;
+
+export function onRecordStored(listener: (() => void) | null): void {
+  storedListener = listener;
+}
 
 /**
  * Opens the database for one session, a process launch named by its start time. When it cannot be
@@ -102,6 +109,11 @@ export function closeRecords(): void {
     // Closing at exit has nothing left to protect.
   }
   records = null;
+}
+
+/** This launch's session, as every record of it carries; null before the database is opened. */
+export function currentRecordsSession(): string | null {
+  return records?.session ?? null;
 }
 
 /** Where this session's records are: the database, or the fallback file once the database failed. */
@@ -150,11 +162,16 @@ export function writeProviderCall(call: ProviderCallRecord): void {
 function insertOrFallBack(sql: string, values: (string | null)[], line: () => string): void {
   const open = records!;
   if (open.db) {
+    let stored = false;
     try {
       open.db.prepare(sql).run(...values);
-      return;
+      stored = true;
     } catch (err) {
       reportFailure("records database write failed", err);
+    }
+    if (stored) {
+      storedListener?.();
+      return;
     }
   }
   try {

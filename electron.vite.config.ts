@@ -27,6 +27,17 @@ export default defineConfig({
     },
     build: {
       outDir: "out/main",
+      rollupOptions: {
+        // The records reader's thread is its own entry beside index.js, where
+        // recordsReader.ts looks for it.
+        input: {
+          index: resolve("src/main/index.ts"),
+          "records-reader-worker": resolve("src/main/core/services/recordsReaderWorker.ts"),
+        },
+        output: {
+          entryFileNames: "[name].js",
+        },
+      },
     },
     resolve: {
       alias: {
@@ -61,6 +72,12 @@ export default defineConfig({
     build: {
       outDir: resolve("out/renderer"),
       emptyOutDir: true,
+      rollupOptions: {
+        input: {
+          index: resolve("src/renderer/index.html"),
+          records: resolve("src/renderer/records.html"),
+        },
+      },
       minify: true,
       // Loaded from disk, not over a network: the default 500 kB warning measures
       // transfer cost. 2000 keeps a runaway bundle loud without flagging the

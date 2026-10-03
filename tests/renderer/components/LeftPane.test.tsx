@@ -43,7 +43,7 @@ function baseProps() {
     onOpenSettings: vi.fn(),
     onOpenShortcuts: vi.fn(),
     onOpenAbout: vi.fn(),
-    onRevealCurrentLogFile: vi.fn(),
+    onOpenRecords: vi.fn(),
     onSwitchWorkspace: vi.fn(),
     workspaceName: "My Workspace",
     timezone: "Asia/Tokyo",
@@ -195,7 +195,7 @@ describe("LeftPane header actions", () => {
 
   it("opens the hamburger menu and wires every item to its callback", () => {
     const handlers = {
-      onRevealCurrentLogFile: vi.fn(),
+      onOpenRecords: vi.fn(),
       onSwitchWorkspace: vi.fn(),
       onOpenSettings: vi.fn(),
       onOpenShortcuts: vi.fn(),
@@ -207,8 +207,8 @@ describe("LeftPane header actions", () => {
     // The workspace name shows as a non-interactive label.
     expect(within(menu).getByText("WS Name")).toBeTruthy();
 
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Reveal Log" }));
-    expect(handlers.onRevealCurrentLogFile).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Records" }));
+    expect(handlers.onOpenRecords).toHaveBeenCalledTimes(1);
 
     fireEvent.click(container.querySelector(".btn-hamburger")!);
     fireEvent.click(screen.getByRole("menuitem", { name: "Workspaces" }));

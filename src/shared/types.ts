@@ -15,6 +15,8 @@ export interface Workspace {
 
 // --- UI state (state.json) ---
 
+import { RECORDS_LIST_WIDTH } from "./layout.js";
+
 // The side-pane INTENT defaults (px) — what a fresh install starts each pane at,
 // before the user drags. The single source for both the persisted default
 // (defaultUiState) and the renderer's in-memory seed (App.tsx), so the two can't
@@ -45,6 +47,8 @@ export interface UiState {
   // workspace id -> the AI config id last selected in that workspace. An id that no
   // longer names a config is ignored on read (the first config is active, as before).
   activeAiConfigIds: Record<string, string>;
+  // The records window's list pane INTENT width (px), clamped when shown.
+  recordsListWidth: number;
 }
 
 /** A fresh UI state: default pane widths and no remembered workspace. */
@@ -55,6 +59,7 @@ export function defaultUiState(): UiState {
     activeWorkspaceId: "",
     zoomLevel: 0,
     activeAiConfigIds: {},
+    recordsListWidth: RECORDS_LIST_WIDTH.default,
   };
 }
 

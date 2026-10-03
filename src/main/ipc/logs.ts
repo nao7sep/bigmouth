@@ -1,7 +1,7 @@
-import { ipcMain, shell } from "electron";
+import { ipcMain } from "electron";
 
 import { CHANNELS, type RendererLogEntry } from "@shared/ipc";
-import { getRecordsPath, error as logError, info, warn } from "../core/services/logger.js";
+import { error as logError, warn } from "../core/services/logger.js";
 
 export function registerLogHandlers(): void {
   // The renderer forwards its warnings and errors here; it is sandboxed and
@@ -13,16 +13,5 @@ export function registerLogHandlers(): void {
     const fields = { process: "renderer", ...(entry.detail ?? {}) };
     if (entry.level === "error") logError(entry.message, fields);
     else warn(entry.message, fields);
-  });
-
-  ipcMain.handle(CHANNELS.revealCurrentLogFile, () => {
-    const path = getRecordsPath();
-    if (!path) {
-      warn("current log reveal failed", { reason: "no-current-log" });
-      throw new Error("Current log file is not available");
-    }
-    shell.showItemInFolder(path);
-    info("current log revealed", { path });
-    return path;
   });
 }

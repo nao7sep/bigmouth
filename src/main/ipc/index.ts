@@ -2,6 +2,7 @@ import { registerWorkspaceHandlers } from "./workspaces.js";
 import { registerStateHandlers } from "./state.js";
 import { registerAppSettingsHandlers } from "./appSettings.js";
 import { registerLogHandlers } from "./logs.js";
+import { registerRecordsHandlers } from "./records.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerTargetHandlers } from "./targets.js";
 import { registerPostHandlers } from "./posts.js";
@@ -26,6 +27,7 @@ export function registerIpcHandlers(): void {
   registerStateHandlers();
   registerAppSettingsHandlers();
   registerLogHandlers();
+  registerRecordsHandlers();
   registerSettingsHandlers();
   registerTargetHandlers();
   registerPostHandlers();

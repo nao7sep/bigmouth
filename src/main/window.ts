@@ -171,15 +171,21 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     window.show();
   });
 
+  await loadRendererPage(window, "index.html");
+  return window;
+}
+
+// Each renderer page is a single-page app that never legitimately navigates its
+// top-level frame or opens a window of its own. Any attempt to replace it is
+// blocked; a same-URL reload is left alone so dev full-reloads still work, and a
+// real external link opens in the browser. The page's own context menu over
+// text speaks the interface language.
+export async function loadRendererPage(window: BrowserWindow, page: "index.html" | "records.html"): Promise<void> {
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfAllowed(url);
     return { action: "deny" };
   });
 
-  // The renderer is a single-page app that never legitimately navigates the
-  // top-level frame. Block any attempt to replace it; a same-URL reload is left
-  // alone so dev full-reloads still work, and a real external link opens in the
-  // browser.
   window.webContents.on("will-navigate", (event, url) => {
     if (url === window.webContents.getURL()) {
       return;
@@ -228,12 +234,10 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
+    await window.loadURL(new URL(page, `${process.env.ELECTRON_RENDERER_URL}/`).toString());
   } else {
     // The Content-Security-Policy travels in the HTML, not a response header:
     // this is a file:// load, which a header CSP cannot reach. See src/shared/csp.ts.
-    await window.loadFile(join(__dirname, "../renderer/index.html"));
+    await window.loadFile(join(__dirname, "../renderer", page));
   }
-
-  return window;
 }

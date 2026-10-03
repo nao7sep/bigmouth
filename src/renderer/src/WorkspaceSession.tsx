@@ -13,7 +13,7 @@ import {
   getPost,
   listTargets,
   getSettings,
-  revealCurrentLogFile,
+  openRecordsWindow,
   onPostContentSaved,
 } from "./api";
 import { presentFailure } from "./util/presentFailure";
@@ -607,14 +607,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       });
     }, [loadPosts, expiredOffset]);
 
-    const handleRevealCurrentLogFile = useCallback(async () => {
+    const handleOpenRecords = useCallback(async () => {
       try {
         setLoadError(null);
-        await revealCurrentLogFile();
+        await openRecordsWindow();
       } catch (err) {
         setLoadError(presentFailure(
-          message("session.revealLogFailed"),
-          "renderer: reveal current log failed",
+          message("session.openRecordsFailed"),
+          "renderer: records window open failed",
           err,
         ));
       }
@@ -669,7 +669,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenAbout={() => setAboutOpen(true)}
-            onRevealCurrentLogFile={handleRevealCurrentLogFile}
+            onOpenRecords={handleOpenRecords}
             onSwitchWorkspace={onSwitchWorkspace}
             workspaceName={workspace.name}
             timezone={timezone}

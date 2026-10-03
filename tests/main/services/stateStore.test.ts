@@ -3,6 +3,7 @@
 // Tests cover lazy first write, corrupt-state fallback, and per-field normalization.
 
 import { defaultUiState } from "@shared/types";
+import { RECORDS_LIST_WIDTH } from "@shared/layout";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -148,5 +149,22 @@ describe("stateStore — selected AI config", () => {
     fs.writeFileSync(statePath(), JSON.stringify({ activeAiConfigIds: { ok: "c1", bad: 7, empty: "" } }));
     initStateStore();
     expect(getUiState().activeAiConfigIds).toEqual({ ok: "c1" });
+  });
+});
+
+describe("stateStore — records list width", () => {
+  it("keeps the dragged width across a relaunch, defaulting until one is saved", () => {
+    initStateStore();
+    expect(getUiState().recordsListWidth).toBe(RECORDS_LIST_WIDTH.default);
+    updateUiState({ recordsListWidth: 512 });
+
+    initStateStore();
+    expect(getUiState().recordsListWidth).toBe(512);
+  });
+
+  it("falls back to the default for a width that is not a number", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ recordsListWidth: "wide" }));
+    initStateStore();
+    expect(getUiState().recordsListWidth).toBe(RECORDS_LIST_WIDTH.default);
   });
 });

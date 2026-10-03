@@ -38,6 +38,7 @@ import type {
   Workspace,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
 import type { Message } from "@shared/i18n/translate";
 
 // Per-window counter for AI request ids. Generated renderer-side so the renderer
@@ -93,12 +94,24 @@ const api = {
   updateWorkspace: (id: string, updates: { name: string }) =>
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
-  revealCurrentLogFile: () => ipcRenderer.invoke(CHANNELS.revealCurrentLogFile) as Promise<string>,
   openExternal: (url: string) => ipcRenderer.invoke(CHANNELS.openExternal, url) as Promise<void>,
   // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
   // something can never turn into a second failure the caller has to handle.
   writeRendererLog: (entry: RendererLogEntry) => ipcRenderer.send(CHANNELS.writeRendererLog, entry),
   pickDirectory: () => ipcRenderer.invoke(CHANNELS.pickDirectory) as Promise<string | null>,
+
+  // --- The records window ---
+  openRecordsWindow: () => ipcRenderer.invoke(CHANNELS.openRecordsWindow) as Promise<void>,
+  readRecordsPage: (query: RecordsQuery) =>
+    ipcRenderer.invoke(CHANNELS.readRecordsPage, query) as Promise<RecordsPage>,
+  readRecordDetail: (kind: RecordKind, id: number) =>
+    ipcRenderer.invoke(CHANNELS.readRecordDetail, kind, id) as Promise<RecordDetail | null>,
+  readRecordSources: () => ipcRenderer.invoke(CHANNELS.readRecordSources) as Promise<RecordSources>,
+  onRecordsChanged: (listener: () => void) => {
+    const wrapped = (): void => listener();
+    ipcRenderer.on(CHANNELS.recordsChanged, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.recordsChanged, wrapped);
+  },
 
   // --- UI state (state.json) ---
   getUiState: () => ipcRenderer.invoke(CHANNELS.getUiState) as Promise<UiState>,

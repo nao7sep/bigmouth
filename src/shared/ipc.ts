@@ -31,6 +31,7 @@ import type {
 } from "./types";
 import type { InterfaceLanguage } from "./i18n/languages";
 import type { Message } from "./i18n/translate";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "./records";
 
 /**
  * What a target rename did. `postsSkipped` names the post files it could not
@@ -61,7 +62,6 @@ export const CHANNELS = {
   openOrCreateWorkspace: "workspace:openOrCreate",
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
-  revealCurrentLogFile: "log:revealCurrent",
   openExternal: "shell:openExternal",
   // The renderer's only way into the session log: it is sandboxed and opens no
   // file of its own, so it forwards a structured record to main (logging
@@ -70,6 +70,14 @@ export const CHANNELS = {
   writeRendererLog: "log:write",
   pickDirectory: "dialog:pickDirectory",
   windowActivityChanged: "window:activityChanged",
+
+  // The records window: opened from the main window, it reads records.sqlite3,
+  // and main tells it each time a record is stored.
+  openRecordsWindow: "records:open",
+  readRecordsPage: "records:page",
+  readRecordDetail: "records:detail",
+  readRecordSources: "records:sources",
+  recordsChanged: "records:changed",
 
   // UI state (state.json)
   getUiState: "state:get",
@@ -296,11 +304,18 @@ export interface BigMouthApi {
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<void>;
-  revealCurrentLogFile(): Promise<string>;
   /** Opens an allowed web or mail URL in the OS handler. */
   openExternal(url: string): Promise<void>;
   /** Native folder picker for choosing a workspace directory; null if cancelled. */
   pickDirectory(): Promise<string | null>;
+
+  // The records window. Opening it again brings it forward.
+  openRecordsWindow(): Promise<void>;
+  readRecordsPage(query: RecordsQuery): Promise<RecordsPage>;
+  readRecordDetail(kind: RecordKind, id: number): Promise<RecordDetail | null>;
+  readRecordSources(): Promise<RecordSources>;
+  /** A record was stored in the records database. */
+  onRecordsChanged(listener: () => void): () => void;
 
   // UI state (state.json) — persisted view state: side-pane widths and the last
   // active workspace id. Its own store, separate from workspace config.

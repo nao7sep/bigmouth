@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { CENTER_MIN, LEFT_MIN, RIGHT_MIN } from "@shared/layout";
+import { CENTER_MIN, LEFT_MIN, RECORDS_DETAIL_MIN_WIDTH, RECORDS_LIST_WIDTH, RIGHT_MIN } from "@shared/layout";
 
 // Load the stylesheet into jsdom and check the values the browser computes,
 // rather than matching the spelling or placement of individual CSS rules.
@@ -64,6 +64,8 @@ describe("App.css pane minimums match the shared layout", () => {
     ["pane-left", LEFT_MIN],
     ["pane-center", CENTER_MIN],
     ["pane-right", RIGHT_MIN],
+    ["records-list-pane", RECORDS_LIST_WIDTH.min],
+    ["records-detail-pane", RECORDS_DETAIL_MIN_WIDTH],
   ])("%s uses the shared minimum", (className, expected) => {
     expect(minWidthOf(className)).toBe(expected);
   });

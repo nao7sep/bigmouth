@@ -32,7 +32,7 @@ interface LeftPaneProps {
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenAbout: () => void;
-  onRevealCurrentLogFile: () => Promise<void> | void;
+  onOpenRecords: () => Promise<void> | void;
   onSwitchWorkspace: () => void;
   workspaceName: string;
   timezone: string;
@@ -66,7 +66,7 @@ export function LeftPane({
   onOpenSettings,
   onOpenShortcuts,
   onOpenAbout,
-  onRevealCurrentLogFile,
+  onOpenRecords,
   onSwitchWorkspace,
   workspaceName,
   timezone,
@@ -200,7 +200,7 @@ export function LeftPane({
               )}
             >
               <div className="menu-label">{workspaceName}</div>
-              <MenuItem onSelect={() => void onRevealCurrentLogFile()}>{t("left.revealLog")}</MenuItem>
+              <MenuItem onSelect={() => void onOpenRecords()}>{t("left.records")}</MenuItem>
               <MenuItem onSelect={onSwitchWorkspace}>{t("workspaces.title")}</MenuItem>
               <MenuItem onSelect={onOpenSettings}>{t("settings.title")}</MenuItem>
               <MenuItem onSelect={onOpenShortcuts}>{t("shortcuts.title")}</MenuItem>

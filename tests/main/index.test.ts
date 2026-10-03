@@ -25,6 +25,7 @@ const shell = vi.hoisted(() => ({
   quitRequests: 0,
   ownsInstance: true,
   windows: [] as { isMinimized: () => boolean; restore: () => void; focus: () => void }[],
+  mainWindow: { minimized: false, restores: 0, focuses: 0 },
   dialogs: [] as { detail?: string }[],
   // What the user clicks in the unsaved-changes dialog: 0 = Cancel (the default).
   dialogChoice: 0,
@@ -65,6 +66,9 @@ vi.mock("@main/window.js", () => ({
     webContents: { id: MAIN_WINDOW_ID },
     isDestroyed: () => false,
     close: () => { shell.windowCloses++; },
+    isMinimized: () => shell.mainWindow.minimized,
+    restore: () => { shell.mainWindow.restores++; },
+    focus: () => { shell.mainWindow.focuses++; },
   }),
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
@@ -130,6 +134,7 @@ async function bootApp(): Promise<PostStore> {
   shell.quitRequests = 0;
   shell.ownsInstance = true;
   shell.windows.length = 0;
+  shell.mainWindow = { minimized: false, restores: 0, focuses: 0 };
   shell.dialogs.length = 0;
   shell.dialogChoice = 0;
   shell.windowLoadFailure = null;
@@ -343,18 +348,24 @@ describe("single app-process ownership", () => {
     expect(appHandlers.has("before-quit")).toBe(false);
   });
 
-  it("focuses the existing window when another launch is redirected to it", async () => {
+  it("focuses the main window when another launch is redirected to it", async () => {
     await bootApp();
-    const existing = {
-      isMinimized: vi.fn(() => true),
-      restore: vi.fn(),
-      focus: vi.fn(),
-    };
-    shell.windows.push(existing);
+    // Another window, such as the records window, may be first in the list.
+    const other = { isMinimized: vi.fn(() => false), restore: vi.fn(), focus: vi.fn() };
+    shell.windows.push(other);
+    shell.mainWindow.minimized = true;
 
     appHandlers.get("second-instance")!();
 
-    expect(existing.restore).toHaveBeenCalledOnce();
-    expect(existing.focus).toHaveBeenCalledOnce();
+    expect(shell.mainWindow).toMatchObject({ restores: 1, focuses: 1 });
+    expect(other.focus).not.toHaveBeenCalled();
+  });
+
+  it("quits off macOS when the main window closes, whatever else is open, and only once", async () => {
+    await bootApp();
+    const quits = shell.quitRequests;
+    windowHandlers.get("closed")!();
+    appHandlers.get("window-all-closed")!();
+    expect(shell.quitRequests).toBe(process.platform === "darwin" ? quits : quits + 1);
   });
 });

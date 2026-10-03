@@ -23,7 +23,7 @@ vi.mock("@renderer/api", () => ({
   createPost: vi.fn(),
   listTargets: vi.fn(),
   getSettings: vi.fn(),
-  revealCurrentLogFile: vi.fn(),
+  openRecordsWindow: vi.fn(),
   onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
@@ -93,8 +93,8 @@ vi.mock("@renderer/components/LeftPane", () => ({
         <button data-testid="left-about" onClick={() => (p.onOpenAbout as () => void)()}>
           about
         </button>
-        <button data-testid="left-log" onClick={() => void (p.onRevealCurrentLogFile as () => void)()}>
-          log
+        <button data-testid="left-records" onClick={() => void (p.onOpenRecords as () => void)()}>
+          records
         </button>
         <button data-testid="left-switch" onClick={() => (p.onSwitchWorkspace as () => void)()}>
           switch
@@ -244,13 +244,13 @@ vi.mock("@renderer/components/ShortcutsModal", () => ({
 vi.mock("@renderer/components/AboutModal", () => ({ AboutModal: modalMock("about-modal") }));
 
 import { WorkspaceSession, type WorkspaceSessionHandle } from "@renderer/WorkspaceSession";
-import { listPosts, createPost, listTargets, getSettings, revealCurrentLogFile } from "@renderer/api";
+import { listPosts, createPost, listTargets, getSettings, openRecordsWindow } from "@renderer/api";
 
 const mockListPosts = vi.mocked(listPosts);
 const mockCreatePost = vi.mocked(createPost);
 const mockListTargets = vi.mocked(listTargets);
 const mockGetSettings = vi.mocked(getSettings);
-const mockRevealLog = vi.mocked(revealCurrentLogFile);
+const mockOpenRecords = vi.mocked(openRecordsWindow);
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -352,7 +352,7 @@ beforeEach(() => {
   mockCreatePost.mockReset().mockResolvedValue(POST_B_CREATED);
   mockListTargets.mockReset().mockResolvedValue(TARGETS);
   mockGetSettings.mockReset().mockResolvedValue(SETTINGS);
-  mockRevealLog.mockReset().mockResolvedValue("/path/to/log");
+  mockOpenRecords.mockReset().mockResolvedValue();
   rightFlush.mockReset().mockResolvedValue(true);
   insertAtCursor.mockReset();
   onSwitchWorkspace.mockReset();
@@ -782,20 +782,20 @@ describe("WorkspaceSession load more / log", () => {
     expect(getByText("More expired posts could not be loaded. The posts already shown are unchanged; try again.")).toBeTruthy();
   });
 
-  it("reveals the current log file and surfaces a failure", async () => {
+  it("opens the records window and surfaces a failure", async () => {
     const { getByTestId, getByText } = await mountLoaded();
     await act(async () => {
-      fireEvent.click(getByTestId("left-log"));
+      fireEvent.click(getByTestId("left-records"));
       await Promise.resolve();
     });
-    expect(mockRevealLog).toHaveBeenCalledTimes(1);
+    expect(mockOpenRecords).toHaveBeenCalledTimes(1);
 
-    mockRevealLog.mockRejectedValue(new Error("no log"));
+    mockOpenRecords.mockRejectedValue(new Error("no window"));
     await act(async () => {
-      fireEvent.click(getByTestId("left-log"));
+      fireEvent.click(getByTestId("left-records"));
       await Promise.resolve();
     });
-    expect(getByText("The current log could not be revealed. Try again.")).toBeTruthy();
+    expect(getByText("The records window could not be opened. Try again.")).toBeTruthy();
   });
 });
 

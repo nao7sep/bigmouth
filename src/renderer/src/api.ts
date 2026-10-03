@@ -38,6 +38,7 @@ import {
 import { AssetUploadAdmissionError } from "./util/assetUpload";
 import { message, type Message } from "@shared/i18n/translate";
 import { isImageAssetFilename } from "@shared/assetNames";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
 // (`window.bigmouth`) over IPC. The active workspace id is tracked here and
@@ -73,8 +74,26 @@ export function deleteWorkspace(id: string): Promise<void> {
   return bridge().deleteWorkspace(id);
 }
 
-export function revealCurrentLogFile(): Promise<string> {
-  return bridge().revealCurrentLogFile();
+// --- The records window (no workspace context) ---
+
+export function openRecordsWindow(): Promise<void> {
+  return bridge().openRecordsWindow();
+}
+
+export function readRecordsPage(query: RecordsQuery): Promise<RecordsPage> {
+  return bridge().readRecordsPage(query);
+}
+
+export function readRecordDetail(kind: RecordKind, id: number): Promise<RecordDetail | null> {
+  return bridge().readRecordDetail(kind, id);
+}
+
+export function readRecordSources(): Promise<RecordSources> {
+  return bridge().readRecordSources();
+}
+
+export function onRecordsChanged(listener: () => void): () => void {
+  return bridge().onRecordsChanged(listener);
 }
 
 export function openExternal(url: string): Promise<void> {

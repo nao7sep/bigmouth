@@ -22,6 +22,9 @@ import {
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
+import { notifyRecordsChanged } from "./records-window.js";
+import { closeRecordsReader, initRecordsReader } from "./core/services/recordsReader.js";
+import { onRecordStored } from "./core/services/recordsStore.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata, forgetRefusedMetadata, holdsRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
@@ -39,6 +42,10 @@ const ownsInstance = app.requestSingleInstanceLock();
 
 let shuttingDown = false;
 
+// The main window, apart from the records window beside it: closing it quits
+// on Windows and Linux, and on macOS the Dock reopens it.
+let mainWindow: BrowserWindow | null = null;
+
 // Set when the OS itself is going down: quit must then never block on a dialog
 // (modal-dialog-conventions) — flush best-effort and let the shutdown proceed.
 let systemShutdown = false;
@@ -52,6 +59,8 @@ async function bootstrap(): Promise<void> {
   await detectComputerLanguage();
   const appConfig = initAppDir();
   initLogger(getRecordsDbPath(), getLogsDir());
+  initRecordsReader(getRecordsDbPath());
+  onRecordStored(notifyRecordsChanged);
   // State store (view state: pane widths + last workspace) resolves state.json under
   // the same storage root, so it must init after initAppDir(); after initLogger too,
   // so a self-heal warning on an invalid file is actually logged.
@@ -76,7 +85,7 @@ async function bootstrap(): Promise<void> {
   await openMainWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow === null) {
       void openMainWindow().catch(handleStartupFailure);
     }
   });
@@ -92,6 +101,11 @@ async function bootstrap(): Promise<void> {
 // after the window closes; quit has its own check in before-quit.
 async function openMainWindow(): Promise<void> {
   const window = await createMainWindow();
+  mainWindow = window;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+    if (process.platform !== "darwin") app.quit();
+  });
   window.on("session-end", () => {
     systemShutdown = true;
   });
@@ -135,19 +149,17 @@ if (!ownsInstance) {
   registerAssetScheme();
 
   app.on("second-instance", () => {
-    const existing = BrowserWindow.getAllWindows()[0];
-    if (!existing) return;
-    if (existing.isMinimized()) existing.restore();
-    existing.focus();
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
   });
 
   app.whenReady().then(bootstrap).catch(handleStartupFailure);
 
-  app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
-      app.quit();
-    }
-  });
+  // Quitting off macOS follows the main window's close (openMainWindow), once:
+  // a second quit while the first is held would skip the unsaved-changes check.
+  // This listener only stops Electron's default quit when every window is gone.
+  app.on("window-all-closed", () => {});
 
   // Clean shutdown: hold the quit once, write any buffered content and metadata
   // edits, close the records database, then exit deterministically. The
@@ -174,6 +186,7 @@ if (!ownsInstance) {
       }
 
       info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
+      closeRecordsReader();
       closeLogger();
       app.exit(0);
     })();

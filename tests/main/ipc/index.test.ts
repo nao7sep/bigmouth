@@ -32,6 +32,7 @@ describe("registerIpcHandlers", () => {
       CHANNELS.postContentSaveFailed,
       CHANNELS.windowActivityChanged,
       CHANNELS.interfaceLanguageChanged,
+      CHANNELS.recordsChanged,
     ]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {

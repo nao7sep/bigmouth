@@ -7,6 +7,12 @@ import {
   WINDOW_MIN_WIDTH,
   WINDOW_MIN_HEIGHT,
   windowMinimumForZoom,
+  RECORDS_DETAIL_MIN_WIDTH,
+  RECORDS_FILTERS_HEIGHT,
+  RECORDS_LIST_MIN_HEIGHT,
+  RECORDS_LIST_WIDTH,
+  RECORDS_WINDOW_MIN_HEIGHT,
+  RECORDS_WINDOW_MIN_WIDTH,
 } from "@shared/layout";
 
 describe("window minimums", () => {
@@ -38,5 +44,20 @@ describe("window minimums", () => {
       width: Math.ceil(WINDOW_MIN_WIDTH * 1.5),
       height: Math.ceil(WINDOW_MIN_HEIGHT * 1.5),
     });
+  });
+});
+
+describe("records window minimums", () => {
+  it("holds the list pane, the divider and the detail pane at their minimums", () => {
+    expect(RECORDS_WINDOW_MIN_WIDTH).toBeGreaterThanOrEqual(RECORDS_LIST_WIDTH.min + DIVIDER + RECORDS_DETAIL_MIN_WIDTH);
+  });
+
+  it("holds the filter band above a usable list", () => {
+    expect(RECORDS_WINDOW_MIN_HEIGHT).toBeGreaterThanOrEqual(RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT);
+  });
+
+  it("opens the list pane at its default within its bounds", () => {
+    expect(RECORDS_LIST_WIDTH.min).toBeLessThanOrEqual(RECORDS_LIST_WIDTH.default);
+    expect(RECORDS_LIST_WIDTH.default).toBeLessThanOrEqual(RECORDS_LIST_WIDTH.max);
   });
 });
