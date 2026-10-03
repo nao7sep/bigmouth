@@ -34,6 +34,7 @@ function setup(opts: {
   selectedId?: string | null;
   pageSize?: number;
   autoActivateFirst?: boolean;
+  followFocus?: boolean;
 }) {
   const onActivate = vi.fn<(id: string) => void>();
   composingRef.current = false;
@@ -46,6 +47,7 @@ function setup(opts: {
         pageSize: opts.pageSize ?? 3,
         composingRef,
         autoActivateFirst: opts.autoActivateFirst,
+        followFocus: opts.followFocus,
       }),
     { initialProps: { rows: opts.rows, selectedId: opts.selectedId ?? null } },
   );
@@ -180,6 +182,22 @@ describe("usePostListbox — manual activation", () => {
     act(() => result.current.getRowProps("c").onClick());
     expect(onActivate).toHaveBeenCalledWith("c");
     expect(result.current.activeId).toBe("c");
+  });
+});
+
+describe("usePostListbox — activation follows focus", () => {
+  it("commits each row the cursor moves to, by arrow, End or type-ahead", () => {
+    const { press, onActivate } = setup({ rows: THREE, followFocus: true });
+    press({ key: "ArrowDown" });
+    press({ key: "End" });
+    press({ key: "a" });
+    expect(onActivate.mock.calls.map(([id]) => id)).toEqual(["a", "c", "a"]);
+  });
+
+  it("commits nothing on a move without followFocus", () => {
+    const { press, onActivate } = setup({ rows: THREE });
+    press({ key: "ArrowDown" });
+    expect(onActivate).not.toHaveBeenCalled();
   });
 });
 

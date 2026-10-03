@@ -31,9 +31,10 @@ import { hasMod } from "../util/shortcuts";
 //   - Up/Down/Home/End/PageUp/PageDown move the active cursor (scrolled into
 //     view as it moves); stop-at-ends.
 //   - Type-ahead by row label, composition-guarded for IME.
-//   - MANUAL activation: arrows move only the cursor; Enter/Space commit via
-//     `onActivate`. Committing a post flushes/can-discard in-progress editor
-//     state, so it must not fire on every keystroke.
+//   - MANUAL activation by default: arrows move only the cursor; Enter/Space
+//     commit via `onActivate`. Committing a post flushes/can-discard
+//     in-progress editor state, so it must not fire on every keystroke. A list
+//     whose commit is cheap (the records list) opts into `followFocus`.
 //   - The active cursor (hook-owned `activeId`) and the committed selection
 //     (`selectedId`, the app's source of truth) are separate state.
 //   - Recovery: when the active row leaves the rendered set, the cursor moves to
@@ -104,6 +105,7 @@ export function usePostListbox({
   pageSize,
   composingRef,
   autoActivateFirst = false,
+  followFocus = false,
 }: {
   rows: readonly PostListRow[];
   selectedId: string | null;
@@ -120,6 +122,11 @@ export function usePostListbox({
    * selection is, and an unselected one rests on the container.
    */
   autoActivateFirst?: boolean;
+  /**
+   * Activation follows focus: every cursor move also commits the row it lands
+   * on. Only for a list whose commit is cheap and discards nothing.
+   */
+  followFocus?: boolean;
   /**
    * Per-row actions driven from the active row, by key.
    *
@@ -198,8 +205,9 @@ export function usePostListbox({
       const id = ids[index];
       setActiveId(id);
       scrollActiveIntoView(id);
+      if (followFocus && !expandedById.has(id)) onActivate(id);
     },
-    [ids, scrollActiveIntoView],
+    [ids, scrollActiveIntoView, followFocus, expandedById, onActivate],
   );
 
   const onKeyDown = useCallback(
