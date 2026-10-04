@@ -12,13 +12,26 @@ export function recordKey(record: { kind: RecordKind; id: number }): string {
   return `${record.kind}:${record.id}`;
 }
 
-// Stored JSON, indented for reading; text that is not JSON is shown as it is.
-export function prettyJson(text: string): string {
+// A stored value with nothing in it, which gets no block.
+function isEmptyValue(value: unknown): boolean {
+  if (value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+// A block's text: stored JSON indented for reading, and text that is not JSON
+// as it is; null when the value holds nothing, so the block is left out.
+export function blockText(text: string | null): string | null {
+  if (text === null || text.trim() === "") return null;
+  let value: unknown;
   try {
-    return JSON.stringify(JSON.parse(text), null, 2);
+    value = JSON.parse(text);
   } catch {
     return text;
   }
+  return isEmptyValue(value) ? null : JSON.stringify(value, null, 2);
 }
 
 export function durationSeconds(startedAt: string, finishedAt: string): number {

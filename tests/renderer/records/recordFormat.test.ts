@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cursorAfter, durationSeconds, mergeNewestPage, prettyJson, purposeLabel, recordKey } from "@renderer/records/recordFormat";
+import { blockText, cursorAfter, durationSeconds, mergeNewestPage, purposeLabel, recordKey } from "@renderer/records/recordFormat";
 import type { RecordSummary } from "@shared/records";
 
 const row = (id: number, time: string, title = `row ${id}`): RecordSummary => ({
@@ -45,8 +45,19 @@ describe("mergeNewestPage", () => {
 
 describe("record formatting", () => {
   it("indents stored JSON and leaves other text as it is", () => {
-    expect(prettyJson('{"a":1}')).toBe('{\n  "a": 1\n}');
-    expect(prettyJson("not json")).toBe("not json");
+    expect(blockText('{"a":1}')).toBe('{\n  "a": 1\n}');
+    expect(blockText("not json")).toBe("not json");
+  });
+
+  it("gives no block text for a value that holds nothing", () => {
+    for (const empty of [null, "", "  \n", "{}", "null", "[]", '""', '"  "']) expect(blockText(empty)).toBeNull();
+  });
+
+  it("keeps a value that holds something, however small", () => {
+    expect(blockText("0")).toBe("0");
+    expect(blockText("false")).toBe("false");
+    expect(blockText('[""]')).toBe('[\n  ""\n]');
+    expect(blockText('{"a":null}')).toBe('{\n  "a": null\n}');
   });
 
   it("continues after the last row shown, and from the start when there is none", () => {

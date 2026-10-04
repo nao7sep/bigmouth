@@ -35,10 +35,10 @@ import {
   KIND_LABELS,
   LEVEL_FILTER_LABELS,
   LEVEL_LABELS,
+  blockText,
   cursorAfter,
   durationSeconds,
   mergeNewestPage,
-  prettyJson,
   purposeLabel,
   recordKey,
 } from "./recordFormat";
@@ -571,13 +571,17 @@ function RecordDetailView({
   add(t("records.post"), record.postId === null ? null : <code>{record.postId}</code>);
   add(t("records.launch"), launchLabel(record.session));
 
+  // A block is shown only when its value holds something.
   const blocks: { label: string; text: string }[] = [];
+  const addBlock = (label: string, text: string | null): void => {
+    if (text !== null) blocks.push({ label, text });
+  };
   if (record.kind === "log") {
-    blocks.push({ label: t("records.event"), text: prettyJson(record.event) });
+    addBlock(t("records.event"), blockText(record.event));
   } else {
-    blocks.push({ label: t("records.request"), text: prettyJson(record.request) });
-    if (record.response !== null) blocks.push({ label: t("records.response"), text: prettyJson(record.response) });
-    if (record.error !== null) blocks.push({ label: t("records.error"), text: prettyJson(record.error) });
+    addBlock(t("records.request"), blockText(record.request));
+    addBlock(t("records.response"), blockText(record.response));
+    addBlock(t("records.error"), blockText(record.error));
   }
 
   return (

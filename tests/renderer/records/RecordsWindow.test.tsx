@@ -182,9 +182,9 @@ describe("RecordsWindow", () => {
       block.querySelector("h3")?.textContent,
       block.querySelector("pre")?.textContent,
     ]);
+    // The stored response is null, so it has no block.
     expect(blocks).toEqual([
       ["Request", JSON.stringify(JSON.parse(callDetail.request), null, 2)],
-      ["Response", "null"],
       ["Error", JSON.stringify({ name: "Error", message: "quota" }, null, 2)],
     ]);
     const body = document.querySelector(".records-detail-body")!.textContent!;
@@ -196,6 +196,15 @@ describe("RecordsWindow", () => {
     expect(body).toContain("2.500");
     expect(body).toContain("(this launch)");
     expect(options()[0]!.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("leaves out every block of a provider call that holds nothing", async () => {
+    api.readRecordDetail.mockResolvedValue({ ...callDetail, request: "{}", response: "[]", error: "  " });
+    await mount();
+    await click(options()[0]!);
+
+    expect(document.querySelector(".records-detail-title")?.textContent).toBe("anthropic metadata");
+    expect(document.querySelectorAll(".records-block")).toHaveLength(0);
   });
 
   it("shows a log line's emitted line whole", async () => {
