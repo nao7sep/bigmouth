@@ -207,13 +207,26 @@ describe("RecordsWindow", () => {
     expect(document.querySelectorAll(".records-block")).toHaveLength(0);
   });
 
-  it("shows a log line's emitted line whole", async () => {
+  it("shows no Event block for a log line whose fields the pane already shows", async () => {
     await mount();
     await click(options()[1]!);
 
     expect(api.readRecordDetail).toHaveBeenCalledWith("log", 9);
     expect(document.querySelector(".records-detail-title")?.textContent).toBe("post save failed");
-    expect(document.querySelector(".records-block pre")?.textContent).toBe(JSON.stringify(JSON.parse(lineDetail.event), null, 2));
+    expect(document.querySelectorAll(".records-block")).toHaveLength(0);
+  });
+
+  it("shows only the fields of a log line the pane does not already show", async () => {
+    const event = JSON.stringify({
+      time: lineDetail.time, level: "warn", message: "post save failed", postId: "post-1", reason: "disk full",
+    });
+    api.readRecordDetail.mockResolvedValue({ ...lineDetail, event });
+    await mount();
+    await click(options()[1]!);
+
+    const blocks = Array.from(document.querySelectorAll(".records-block"));
+    expect(blocks.map((block) => block.querySelector("h3")?.textContent)).toEqual(["Event"]);
+    expect(blocks[0]!.querySelector("pre")?.textContent).toBe(JSON.stringify({ reason: "disk full" }, null, 2));
   });
 
   it("moves the selection with the arrow keys, the cursor drawn on the row", async () => {

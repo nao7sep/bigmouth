@@ -1,5 +1,6 @@
 import type { MessageKey } from "@shared/i18n/catalogues";
 import type {
+  LogRecordDetail,
   RecordCursor,
   RecordKind,
   RecordLevel,
@@ -32,6 +33,30 @@ export function blockText(text: string | null): string | null {
     return text;
   }
   return isEmptyValue(value) ? null : JSON.stringify(value, null, 2);
+}
+
+// A log record's Event block: the fields of its emitted line that the detail
+// pane does not already show, or null when none remain. A field is left out
+// only when it holds the value shown; the logger takes the workspace from
+// either `workspace` or `workspaceId`.
+export function logEventText(record: LogRecordDetail): string | null {
+  let line: unknown;
+  try {
+    line = JSON.parse(record.event);
+  } catch {
+    return blockText(record.event);
+  }
+  if (line === null || typeof line !== "object" || Array.isArray(line)) return blockText(record.event);
+  const shown: Readonly<Record<string, unknown>> = {
+    time: record.time,
+    level: record.level,
+    message: record.message,
+    workspace: record.workspaceId,
+    workspaceId: record.workspaceId,
+    postId: record.postId,
+  };
+  const rest = Object.entries(line).filter(([key, value]) => !(Object.hasOwn(shown, key) && value === shown[key]));
+  return blockText(JSON.stringify(Object.fromEntries(rest)));
 }
 
 export function durationSeconds(startedAt: string, finishedAt: string): number {

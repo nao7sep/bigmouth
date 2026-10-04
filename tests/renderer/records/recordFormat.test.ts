@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { blockText, cursorAfter, durationSeconds, mergeNewestPage, purposeLabel, recordKey } from "@renderer/records/recordFormat";
-import type { RecordSummary } from "@shared/records";
+import {
+  blockText,
+  cursorAfter,
+  durationSeconds,
+  logEventText,
+  mergeNewestPage,
+  purposeLabel,
+  recordKey,
+} from "@renderer/records/recordFormat";
+import type { LogRecordDetail, RecordSummary } from "@shared/records";
 
 const row = (id: number, time: string, title = `row ${id}`): RecordSummary => ({
   kind: "log", id, session: "s", time, level: "info", title, text: null,
@@ -74,5 +82,35 @@ describe("record formatting", () => {
     expect(purposeLabel("metadata")).toBe("tabs.metadata");
     expect(purposeLabel("imaging")).toBe("tabs.imaging");
     expect(purposeLabel("toString")).toBeNull();
+  });
+});
+
+describe("logEventText", () => {
+  const time = "2026-10-02T08:00:30.000Z";
+  const logRecord = (event: Record<string, unknown> | string, ids: Partial<LogRecordDetail> = {}): LogRecordDetail => ({
+    kind: "log", id: 1, session: "s", time, level: "warn", message: "post save failed",
+    workspaceId: "ws-1", postId: "post-1", ...ids,
+    event: typeof event === "string" ? event : JSON.stringify(event),
+  });
+  const envelope = { time, level: "warn", message: "post save failed" };
+
+  it("leaves out the fields the pane already shows", () => {
+    const record = logRecord({ ...envelope, workspace: "ws-1", postId: "post-1", attempt: 2 });
+    expect(logEventText(record)).toBe(JSON.stringify({ attempt: 2 }, null, 2));
+  });
+
+  it("gives nothing when every field is already shown", () => {
+    expect(logEventText(logRecord({ ...envelope, workspaceId: "ws-1", postId: "post-1" }))).toBeNull();
+    expect(logEventText(logRecord(envelope, { workspaceId: null, postId: null }))).toBeNull();
+  });
+
+  it("keeps a field of a shown name whose value the pane does not show", () => {
+    const record = logRecord({ ...envelope, workspace: "ws-1", workspaceId: "ws-2" });
+    expect(logEventText(record)).toBe(JSON.stringify({ workspaceId: "ws-2" }, null, 2));
+  });
+
+  it("shows a line that is not a JSON object as stored", () => {
+    expect(logEventText(logRecord("not json"))).toBe("not json");
+    expect(logEventText(logRecord("[1]"))).toBe("[\n  1\n]");
   });
 });

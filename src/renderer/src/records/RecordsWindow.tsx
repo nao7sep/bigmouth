@@ -38,6 +38,7 @@ import {
   blockText,
   cursorAfter,
   durationSeconds,
+  logEventText,
   mergeNewestPage,
   purposeLabel,
   recordKey,
@@ -577,7 +578,7 @@ function RecordDetailView({
     if (text !== null) blocks.push({ label, text });
   };
   if (record.kind === "log") {
-    addBlock(t("records.event"), blockText(record.event));
+    addBlock(t("records.event"), logEventText(record));
   } else {
     addBlock(t("records.request"), blockText(record.request));
     addBlock(t("records.response"), blockText(record.response));
