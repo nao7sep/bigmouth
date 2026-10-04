@@ -451,6 +451,7 @@
   "records.loadFailed": "ログを読み込めませんでした。",
   "records.detailFailed": "この項目を読み込めませんでした。",
   "records.noSelection": "項目を選択すると、その内容がすべて表示されます。",
+  "records.resizeList": "レコード一覧の幅を変更",
   "records.details": "詳細",
   "records.time": "時刻",
   "records.started": "開始",

@@ -451,6 +451,7 @@
   "records.loadFailed": "无法读取日志。",
   "records.detailFailed": "无法读取此条目。",
   "records.noSelection": "选择一个条目即可查看其全部内容。",
+  "records.resizeList": "调整记录列表的宽度",
   "records.details": "详情",
   "records.time": "时间",
   "records.started": "开始",

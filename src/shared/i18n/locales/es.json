@@ -477,6 +477,7 @@
   "records.loadFailed": "No se pudieron leer los registros.",
   "records.detailFailed": "No se pudo leer este registro.",
   "records.noSelection": "Selecciona un registro para ver todo lo que contiene.",
+  "records.resizeList": "Cambiar el ancho de la lista de registros",
   "records.details": "Detalles",
   "records.time": "Hora",
   "records.started": "Comienzo",

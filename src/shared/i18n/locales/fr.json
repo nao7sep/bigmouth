@@ -477,6 +477,7 @@
   "records.loadFailed": "Le journal n’a pas pu être lu.",
   "records.detailFailed": "Cette entrée n’a pas pu être lue.",
   "records.noSelection": "Sélectionnez une entrée pour voir tout ce qu’elle contient.",
+  "records.resizeList": "Redimensionner la liste des enregistrements",
   "records.details": "Détails",
   "records.time": "Heure",
   "records.started": "Début",

@@ -404,10 +404,16 @@ body {
   background: var(--bm-border);
 }
 
-.pane-divider:hover::after {
+.pane-divider:hover::after,
+.pane-divider:focus-visible::after {
   background: var(--bm-accent);
   left: 1px;
   width: 3px;
+}
+
+/* A divider that takes keys shows its focus as the same accent bar. */
+.pane-divider:focus-visible {
+  outline: none;
 }
 
 /* Empty state: center + right merged. Carries the center minimum too, so the

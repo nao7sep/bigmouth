@@ -490,6 +490,7 @@
   "records.loadFailed": "Не удалось прочитать журнал.",
   "records.detailFailed": "Не удалось прочитать эту запись.",
   "records.noSelection": "Выберите запись, чтобы увидеть всё, что она содержит.",
+  "records.resizeList": "Изменить ширину списка записей",
   "records.details": "Подробности",
   "records.time": "Время",
   "records.started": "Начало",

@@ -54,6 +54,8 @@ const LIVE_INTERVAL_MS = 1000;
 const PAGE_STEP = 10;
 // Everything beside the list pane on its row: the divider and the detail pane's minimum.
 const LIST_SIBLING_MIN = DIVIDER + RECORDS_DETAIL_MIN_WIDTH;
+// How far one arrow press moves the divider.
+const KEY_RESIZE_STEP = 16;
 
 type ListState =
   | { status: "loading" }
@@ -334,8 +336,14 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     if (rows.length > 0 && target >= rows.length - 1) loadMore();
   };
 
-  // Drag intent: window-conventions, Content-based minimum size. Only a drag
-  // persists, and it persists the intent.
+  // Drag intent: window-conventions, Content-based minimum size. Only a drag or
+  // a key on the divider persists, and it persists the intent once, when the
+  // gesture ends.
+  const saveListWidth = (width: number): void => {
+    void updateUiState({ recordsListWidth: width }).catch((err: unknown) =>
+      reportProblem("renderer: records list width save failed", err),
+    );
+  };
   const startDrag = (event: ReactMouseEvent): void => {
     event.preventDefault();
     const startX = event.clientX;
@@ -349,10 +357,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     };
     const onUp = (): void => {
       endDrag();
-      if (dragged === null) return;
-      void updateUiState({ recordsListWidth: dragged }).catch((err: unknown) =>
-        reportProblem("renderer: records list width save failed", err),
-      );
+      if (dragged !== null) saveListWidth(dragged);
     };
     const endDrag = (): void => {
       document.body.style.cursor = "";
@@ -364,6 +369,29 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
     activeDragRef.current = endDrag;
+  };
+  // The same bounds from the keyboard (the window splitter pattern): arrows move
+  // the divider, Home and End take it to either bound, and releasing the key
+  // saves, so a held arrow writes once.
+  const keyedWidth = useRef<number | null>(null);
+  const resizeByKey = (event: ReactKeyboardEvent): void => {
+    // A held key moves on from where the last press left it, rendered or not.
+    const from = keyedWidth.current ?? listWidth;
+    const target =
+      event.key === "ArrowLeft" ? from - KEY_RESIZE_STEP
+      : event.key === "ArrowRight" ? from + KEY_RESIZE_STEP
+      : event.key === "Home" ? RECORDS_LIST_WIDTH.min
+      : event.key === "End" ? RECORDS_LIST_WIDTH.max
+      : null;
+    if (target === null) return;
+    event.preventDefault();
+    keyedWidth.current = clamp(target, RECORDS_LIST_WIDTH.min, RECORDS_LIST_WIDTH.max);
+    setListIntent(keyedWidth.current);
+  };
+  const commitKeyedWidth = (): void => {
+    if (keyedWidth.current === null) return;
+    saveListWidth(keyedWidth.current);
+    keyedWidth.current = null;
   };
   useEffect(() => () => activeDragRef.current?.(), []);
 
@@ -387,7 +415,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       className="records-shell"
       style={{ "--records-list-width": `${listWidth}px` } as CSSProperties}
     >
-      <section className="records-list-pane" aria-label={t("records.title")}>
+      <section id="records-list-pane" className="records-list-pane" aria-label={t("records.title")}>
         <div className="records-filters">
           <input
             type="search"
@@ -462,7 +490,21 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
           ) : null}
         </div>
       </section>
-      <div className="pane-divider" onMouseDown={startDrag} />
+      <div
+        className="pane-divider"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("records.resizeList")}
+        aria-controls="records-list-pane"
+        aria-valuemin={RECORDS_LIST_WIDTH.min}
+        aria-valuemax={RECORDS_LIST_WIDTH.max}
+        aria-valuenow={listWidth}
+        tabIndex={0}
+        onMouseDown={startDrag}
+        onKeyDown={resizeByKey}
+        onKeyUp={commitKeyedWidth}
+        onBlur={commitKeyedWidth}
+      />
       <section className="records-detail-pane" aria-busy={detail.status === "loading"}>
         {detail.status === "ready" ? (
           <RecordDetailView record={detail.record} sources={sources} launchLabel={launchLabel} />
