@@ -181,6 +181,124 @@ describe("provider call records", () => {
   });
 });
 
+// A failed call the provider refused or never received is resent, up to three
+// attempts, and every attempt is its own record (tapebox's rule): a retry never
+// overwrites what an earlier attempt sent or got back.
+describe("retries", () => {
+  function refused(code: number, headers?: Record<string, string>) {
+    return Object.assign(new Error(`${code} from the provider`), { status: code, headers: new Headers(headers) });
+  }
+  // A stream whose final message settles at once, as a refused request does.
+  function settled(outcome: { message: unknown } | { error: unknown }) {
+    return {
+      on() { return this; },
+      finalMessage: () => ("error" in outcome ? Promise.reject(outcome.error) : Promise.resolve(outcome.message)),
+      abort: vi.fn(),
+    };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("resends a 429 after its Retry-After and records each attempt as its own row", async () => {
+    const reply = message({ parsed_output: { a: "b" } });
+    sdk.stream
+      .mockReturnValueOnce(settled({ error: refused(429, { "retry-after": "3" }) }))
+      .mockReturnValueOnce(settled({ message: reply }));
+    const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
+
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual({ a: "b" });
+
+    expect(sdk.stream).toHaveBeenCalledTimes(2);
+    expect(recorded.calls).toEqual([
+      expect.objectContaining({ response: undefined, error: expect.objectContaining({ message: "429 from the provider" }) }),
+      expect.objectContaining({ response: reply, error: undefined }),
+    ]);
+  });
+
+  it("gives up after three attempts, with three rows", async () => {
+    sdk.stream.mockImplementation(() => settled({ error: refused(503) }));
+    const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
+    const rejection = expect(pending).rejects.toThrow("503 from the provider");
+    await vi.advanceTimersByTimeAsync(2_000 + 5_000);
+    await rejection;
+    expect(sdk.stream).toHaveBeenCalledTimes(3);
+    expect(recorded.calls).toHaveLength(3);
+  });
+
+  it("resends a refused connection", async () => {
+    const refusedConnection = Object.assign(new Error("Connection error."), {
+      cause: Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } }),
+    });
+    sdk.stream
+      .mockReturnValueOnce(settled({ error: refusedConnection }))
+      .mockReturnValueOnce(settled({ message: message({ parsed_output: {} }) }));
+    const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(pending).resolves.toEqual({});
+    expect(recorded.calls).toHaveLength(2);
+  });
+
+  it.each([
+    ["a 500", refused(500)],
+    ["a 529", refused(529)],
+    ["a dropped connection", Object.assign(new Error("Connection error."), { cause: { code: "ECONNRESET" } })],
+  ])("reports %s to the waiting user without resending it", async (_case, error) => {
+    sdk.stream.mockReturnValue(settled({ error }));
+    await expect(new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" })).rejects.toBe(error);
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+    expect(recorded.calls).toHaveLength(1);
+  });
+
+  it("stops waiting to resend when the caller stops", async () => {
+    sdk.stream.mockReturnValue(settled({ error: refused(429) }));
+    const stop = new AbortController();
+    const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" }, { signal: stop.signal });
+    const rejection = expect(pending).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(500);
+    stop.abort();
+    await rejection;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it("resends an analysis stream refused before any output, and only then", async () => {
+    sdk.stream
+      .mockReturnValueOnce(settled({ error: refused(429) }))
+      .mockReturnValueOnce(settled({ message: message({ text: "fine" }) }));
+    const { finished } = new ClaudeProvider("k", req("m"), CALL).generateTextStream("s", "u", () => {});
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(finished).resolves.toBe("fine");
+    expect(recorded.calls).toHaveLength(2);
+
+    // Once output reached the caller, a failure is reported, never resent.
+    const f = fakeStream();
+    sdk.stream.mockReset();
+    sdk.stream.mockReturnValue(f.handle);
+    recorded.calls.length = 0;
+    const second = new ClaudeProvider("k", req("m"), CALL).generateTextStream("s", "u", () => {});
+    f.emitText("partial");
+    f.rejectFinal(refused(429));
+    await expect(second.finished).rejects.toThrow("429 from the provider");
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+    expect(recorded.calls).toHaveLength(1);
+  });
+
+  it("aborting an analysis while it waits to resend stops it", async () => {
+    sdk.stream.mockReturnValue(settled({ error: refused(503) }));
+    const { abort, finished } = new ClaudeProvider("k", req("m"), CALL).generateTextStream("s", "u", () => {});
+    const rejection = expect(finished).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(100);
+    abort();
+    await rejection;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+  });
+});
+
 // The provider sends what the request builder builds; its branches are pinned
 // in claudeRequest.test.ts.
 describe("request building", () => {
@@ -220,12 +338,11 @@ describe("generateJson", () => {
     return promise;
   }
 
-  it("maps the request with the schema output format and forwards request options", async () => {
+  it("maps the request with the schema output format and bounds it by a signal", async () => {
     const provider = new ClaudeProvider("k", req("json-model"), CALL);
 
     const result = await jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "end_turn" }), {
       maxDurationMs: 1234,
-      maxRetries: 2,
     });
 
     expect(result).toEqual({ a: "b" });
@@ -240,7 +357,8 @@ describe("generateJson", () => {
     // The call is bounded by a signal (inactivity plus the outer cap), never by
     // the SDK's own `timeout`, which is cleared once the response headers arrive.
     expect("timeout" in requestOptions).toBe(false);
-    expect(requestOptions.maxRetries).toBe(2);
+    // The app's retry policy is the only loop: the client was built with none.
+    expect("maxRetries" in requestOptions).toBe(false);
     expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -361,39 +479,6 @@ describe("generateJson", () => {
     await expect(jsonRun(provider, message({ stop_reason: "end_turn" }))).rejects.toThrow(
       /Unexpected structured response/,
     );
-  });
-});
-
-// The SDK validates request options on the way in: a key present-but-undefined is an error,
-// not an absence. Asserting the KEYS we send (rather than a mocked outcome) is the only way a
-// fake SDK can catch this — the fake validates nothing, so a wrong shape passes silently and
-// only fails against the real client.
-describe("generateJson request options", () => {
-  function streamReturning(parsed: unknown) {
-    return {
-      on: () => {},
-      finalMessage: async () => ({ stop_reason: "end_turn", parsed_output: parsed }),
-    };
-  }
-
-  it("omits the KEY for an option the caller did not give", async () => {
-    sdk.stream.mockReturnValue(streamReturning({ ok: true }));
-    const provider = new ClaudeProvider("sk-test", req("claude-opus-5-5", { thinking: "adaptive" }), CALL);
-    await provider.generateJson("sys", "user", { type: "object" });
-    const opts = sdk.stream.mock.calls[0]?.[1] ?? {};
-    expect("timeout" in opts).toBe(false);
-    expect("maxRetries" in opts).toBe(false);
-    // Always present: the inactivity bound rides on it.
-    expect(opts.signal).toBeInstanceOf(AbortSignal);
-  });
-
-  it("passes each option through when the caller does give it", async () => {
-    sdk.stream.mockReturnValue(streamReturning({ ok: true }));
-    const controller = new AbortController();
-    const provider = new ClaudeProvider("sk-test", req("claude-opus-5-5", { thinking: "adaptive" }), CALL);
-    await provider.generateJson("sys", "user", { type: "object" },
-      { maxDurationMs: 12_345, maxRetries: 2, signal: controller.signal });
-    expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 2 });
   });
 });
 

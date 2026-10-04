@@ -6,6 +6,7 @@ import Anthropic, { type Middleware } from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import type { AiProvider, ProviderCallContext } from "./provider.js";
 import { buildClaudeParams } from "./claudeRequest.js";
+import { MAX_ATTEMPTS, isRetryable, retryDelayMs, waitFor } from "./retryPolicy.js";
 import { utcNow } from "../shared/timestamps.js";
 import { serializeError } from "../services/logger.js";
 import { writeProviderCall } from "../services/recordsStore.js";
@@ -91,15 +92,14 @@ export class ClaudeProvider implements AiProvider {
   private call: ProviderCallContext;
 
   constructor(apiKey: string, request: ClaudeRequest, call: ProviderCallContext) {
-    // Every call here is paid, so retries are the caller's policy, never the
-    // SDK's default of two: a retried request can bill again. A call that wants
-    // one passes `maxRetries` itself.
+    // Every call here is paid, so the SDK never retries on its own: the app's
+    // retryPolicy is the only loop, and each attempt is recorded.
     this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0 });
     this.request = request;
     this.call = call;
   }
 
-  /** Records one request with what came back (data-lifecycle-conventions, Records). */
+  /** Records one attempt with what came back (data-lifecycle-conventions, Records). */
   private record(startedAt: Date, request: unknown, outcome: { response: unknown } | { error: unknown }): void {
     writeProviderCall({
       ...this.call,
@@ -133,6 +133,26 @@ export class ClaudeProvider implements AiProvider {
   }
 
   /**
+   * Runs attempts until one settles, resending only a failure the retry policy
+   * allows and `mayResend` agrees to, and never once `signal` has aborted. Each
+   * attempt records its own row, so a retry never overwrites an earlier one.
+   */
+  private async withRetries<T>(
+    signal: AbortSignal,
+    attempt: () => Promise<T>,
+    mayResend: () => boolean = () => true,
+  ): Promise<T> {
+    for (let count = 1; ; count += 1) {
+      try {
+        return await attempt();
+      } catch (err) {
+        if (signal.aborted || count >= MAX_ATTEMPTS || !isRetryable(err) || !mayResend()) throw err;
+        await waitFor(retryDelayMs(err, count), signal);
+      }
+    }
+  }
+
+  /**
    * Structured generation. This streams internally even though it resolves with a
    * whole value: the SDK refuses a non-streaming request whose `max_tokens` it
    * estimates could run past ten minutes, which would put an arbitrary ceiling on a
@@ -144,50 +164,28 @@ export class ClaudeProvider implements AiProvider {
     schema: Record<string, unknown>,
     options: {
       maxDurationMs?: number;
-      maxRetries?: number;
       signal?: AbortSignal;
     } = {}
   ): Promise<unknown> {
-    // Bounded like the analysis stream, by inactivity, so a thinking-enabled
-    // config is never cut off mid-answer by a deadline sized for a fast model.
-    // `maxDurationMs` is only a generous outer cap; the caller's signal is the
-    // user's Stop.
-    const watchdog = idleWatchdog();
+    // Bounded like the analysis stream, by inactivity per attempt, so a
+    // thinking model is never cut off mid-answer by a deadline sized for a fast
+    // one. `maxDurationMs` is only a generous outer cap over every attempt; the
+    // caller's signal is the user's Stop.
     const cap = new AbortController();
     const capTimer =
       options.maxDurationMs !== undefined ? setTimeout(() => cap.abort(), options.maxDurationMs) : undefined;
     capTimer?.unref();
-    const signal = AbortSignal.any(
-      [watchdog.signal, cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined),
-    );
+    const outer = AbortSignal.any([cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined));
     const params = this.params(
       systemPrompt,
       userContent,
       jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
     );
-    const capture = requestCapture(params);
-    const startedAt = utcNow();
-    const stream = this.client.messages.stream(
-      params,
-      {
-        middleware: capture.middleware,
-        // An omitted option must be an omitted KEY, not a key set to undefined: the SDK
-        // validates request options on the way in and rejects a key set to undefined
-        // outright rather than reading it as absent. So the spread is what keeps this
-        // signature's optionality honest. A mocked SDK validates nothing, so the suite
-        // cannot see it.
-        ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
-        signal,
-      }
-    );
-    stream.on("text", watchdog.progress);
-    stream.on("thinking", watchdog.progress);
 
     let message: Anthropic.Message;
     try {
-      message = await this.recorded(startedAt, capture, stream.finalMessage());
+      message = await this.withRetries(outer, () => this.jsonAttempt(params, outer));
     } catch (err) {
-      if (watchdog.tripped()) throw new Error(idleMessage("request"));
       if (cap.signal.aborted && !options.signal?.aborted) {
         throw new Error(
           `Claude did not finish within ${Math.round(options.maxDurationMs! / 60_000)} minutes, so the request was abandoned.`,
@@ -195,7 +193,6 @@ export class ClaudeProvider implements AiProvider {
       }
       throw err;
     } finally {
-      watchdog.stop();
       clearTimeout(capTimer);
     }
 
@@ -211,6 +208,29 @@ export class ClaudeProvider implements AiProvider {
     return parsed;
   }
 
+  private async jsonAttempt(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+    outer: AbortSignal,
+  ): Promise<Anthropic.Message> {
+    const watchdog = idleWatchdog();
+    const capture = requestCapture(params);
+    const startedAt = utcNow();
+    const stream = this.client.messages.stream(params, {
+      middleware: capture.middleware,
+      signal: AbortSignal.any([watchdog.signal, outer]),
+    });
+    stream.on("text", watchdog.progress);
+    stream.on("thinking", watchdog.progress);
+    try {
+      return await this.recorded(startedAt, capture, stream.finalMessage());
+    } catch (err) {
+      if (watchdog.tripped()) throw new Error(idleMessage("request"));
+      throw err;
+    } finally {
+      watchdog.stop();
+    }
+  }
+
   generateTextStream(
     systemPrompt: string,
     userContent: string,
@@ -220,57 +240,69 @@ export class ClaudeProvider implements AiProvider {
     abort: () => void;
     finished: Promise<string>;
   } {
-    // The inactivity watchdog. Every delta — answer text OR reasoning — is
-    // progress and restarts it; only total silence trips it. It has to exist
-    // because nothing else bounds a stream: the SDK's timeout is spent once the
-    // headers land, so a connection that goes quiet afterwards leaves
-    // finalMessage() pending for ever, and with it the caller's whole feature.
-    const watchdog = idleWatchdog();
-
     const params = this.params(systemPrompt, userContent);
-    const capture = requestCapture(params);
-    const startedAt = utcNow();
-    const stream = this.client.messages.stream(params, {
-      middleware: capture.middleware,
-      signal: watchdog.signal,
-    });
+    const stop = new AbortController();
+    let current: { stream: ReturnType<Anthropic["messages"]["stream"]>; watchdog: ReturnType<typeof idleWatchdog> } | null = null;
+    // A stream is resent only before any of it reached the caller: what was
+    // already shown cannot be taken back.
+    let received = false;
 
-    stream.on("text", (delta) => {
-      watchdog.progress();
-      onText(delta);
-    });
+    const attempt = async (): Promise<Anthropic.Message> => {
+      // The inactivity watchdog. Every delta — answer text OR reasoning — is
+      // progress and restarts it; only total silence trips it. It has to exist
+      // because nothing else bounds a stream: the SDK's timeout is spent once the
+      // headers land, so a connection that goes quiet afterwards leaves
+      // finalMessage() pending for ever, and with it the caller's whole feature.
+      const watchdog = idleWatchdog();
+      const capture = requestCapture(params);
+      const startedAt = utcNow();
+      const stream = this.client.messages.stream(params, {
+        middleware: capture.middleware,
+        signal: watchdog.signal,
+      });
+      current = { stream, watchdog };
 
-    // Only fires when thinking is adaptive (display "summarized"); with thinking off
-    // there is nothing to report and the callback is simply never called. Still
-    // counts as progress: a model can reason for a long time before its first
-    // answer token, and that is a working stream, not a stalled one.
-    stream.on("thinking", (delta) => {
-      watchdog.progress();
-      onThinking?.(delta);
-    });
+      stream.on("text", (delta) => {
+        received = true;
+        watchdog.progress();
+        onText(delta);
+      });
 
-    // `finished` rejects on a truncated/refused completion so the caller can tell
-    // a complete analysis from one cut short — even after deltas have streamed.
-    const finished = this.recorded(startedAt, capture, stream.finalMessage()).then(
-      (message) => {
-        watchdog.stop();
-        assertCompleteStop(message);
-        return textOf(message);
-      },
-      (err: unknown) => {
-        watchdog.stop();
+      // Only fires when thinking is adaptive (display "summarized"); with thinking off
+      // there is nothing to report and the callback is simply never called. Still
+      // counts as progress: a model can reason for a long time before its first
+      // answer token, and that is a working stream, not a stalled one.
+      stream.on("thinking", (delta) => {
+        received = true;
+        watchdog.progress();
+        onThinking?.(delta);
+      });
+
+      try {
+        return await this.recorded(startedAt, capture, stream.finalMessage());
+      } catch (err) {
         // The SDK reports the watchdog's abort the same way it reports the
         // user's, so say which one it was — otherwise a stall reads to the user
         // as though they cancelled.
         if (watchdog.tripped()) throw new Error(idleMessage("analysis"));
         throw err;
-      },
-    );
+      } finally {
+        watchdog.stop();
+      }
+    };
+
+    // `finished` rejects on a truncated/refused completion so the caller can tell
+    // a complete analysis from one cut short — even after deltas have streamed.
+    const finished = this.withRetries(stop.signal, attempt, () => !received).then((message) => {
+      assertCompleteStop(message);
+      return textOf(message);
+    });
 
     return {
       abort: () => {
-        watchdog.stop();
-        stream.abort();
+        stop.abort();
+        current?.watchdog.stop();
+        current?.stream.abort();
       },
       finished,
     };

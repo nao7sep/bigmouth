@@ -129,19 +129,6 @@ describe("metadata generation IPC handler", () => {
     await expect(pending).rejects.toThrow(/cancelled/);
   });
 
-  // A call the user waits on is resent only by the user, never by the SDK.
-  it("asks the provider not to retry the paid call", async () => {
-    let received: { maxRetries?: number } | undefined;
-    ai.generateJsonImpl = (_s, _u, _schema, opts) => {
-      received = opts as { maxRetries?: number };
-      return { title: "T" };
-    };
-
-    await invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
-
-    expect(received?.maxRetries).toBe(0);
-  });
-
   it("generates the requested fields from the structured AI response", async () => {
     ai.generateJsonImpl = () => ({
       title: "Spring Gardening",

@@ -27,10 +27,6 @@ import { trackAiRequest } from "./aiRequests.js";
 // producing output is never cut off after its tokens are billed, and the user
 // can stop it at any time.
 const IMAGING_GENERATION_MAX_MS = 10 * 60_000;
-// The user waits on this call and its outcome can be unknown after a timeout or
-// a dropped connection, so it is never resent behind them: no SDK retry, and
-// only the user's own resend runs it again (ai-model-routing-conventions).
-const IMAGING_GENERATION_MAX_RETRIES = 0;
 
 export function registerImagingHandlers(): void {
   ipcMain.handle(
@@ -107,7 +103,6 @@ async function generateImaging(
   try {
     const raw = await provider.generateJson(systemPrompt, userContent, buildImagingSchema(options.count), {
       maxDurationMs: IMAGING_GENERATION_MAX_MS,
-      maxRetries: IMAGING_GENERATION_MAX_RETRIES,
       signal,
     });
     const items = normalizeImagingOutput(raw, options.count);
@@ -134,8 +129,7 @@ async function generateImaging(
           ...options,
           mode: "structured",
           maxDurationMs: IMAGING_GENERATION_MAX_MS,
-          maxRetries: IMAGING_GENERATION_MAX_RETRIES,
-          contentLength: postContent.length,
+              contentLength: postContent.length,
           model: roleCall.model,
         },
       },

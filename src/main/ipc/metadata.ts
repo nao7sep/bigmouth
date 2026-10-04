@@ -22,10 +22,6 @@ import { trackAiRequest } from "./aiRequests.js";
 // producing output is never cut off after its tokens are billed, and the user
 // can stop it at any time.
 const METADATA_GENERATION_MAX_MS = 10 * 60_000;
-// The user waits on this call and its outcome can be unknown after a timeout or
-// a dropped connection, so it is never resent behind them: no SDK retry, and
-// only the user's own resend runs it again (ai-model-routing-conventions).
-const METADATA_GENERATION_MAX_RETRIES = 0;
 
 export function registerMetadataHandlers(): void {
   ipcMain.handle(
@@ -104,7 +100,6 @@ async function generateMetadata(
     });
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
       maxDurationMs: METADATA_GENERATION_MAX_MS,
-      maxRetries: METADATA_GENERATION_MAX_RETRIES,
       signal,
     });
     const generated = normalizeGeneratedMetadata(raw, validFields);
@@ -137,8 +132,7 @@ async function generateMetadata(
           fields: validFields,
           mode: "structured",
           maxDurationMs: METADATA_GENERATION_MAX_MS,
-          maxRetries: METADATA_GENERATION_MAX_RETRIES,
-          contentSource,
+              contentSource,
           contentLength: postContent.length,
           language: post.frontMatter.language,
           target: post.frontMatter.target,
