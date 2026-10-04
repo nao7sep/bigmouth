@@ -44,9 +44,6 @@ export interface UiState {
   // menu's zoom roles mutate webContents in memory only, so without persisting it
   // a user who zoomed for readability was back at 100% every launch, silently.
   zoomLevel: number;
-  // workspace id -> the AI config id last selected in that workspace. An id that no
-  // longer names a config is ignored on read (the first config is active, as before).
-  activeAiConfigIds: Record<string, string>;
   // The records window's list pane INTENT width (px), clamped when shown.
   recordsListWidth: number;
 }
@@ -58,7 +55,6 @@ export function defaultUiState(): UiState {
     paneRightWidth: DEFAULT_PANE_RIGHT_WIDTH,
     activeWorkspaceId: "",
     zoomLevel: 0,
-    activeAiConfigIds: {},
     recordsListWidth: RECORDS_LIST_WIDTH.default,
   };
 }
@@ -218,53 +214,29 @@ export interface AssetMeta {
   uploadedAt: string;
 }
 
-// --- AI config ---
+// --- AI settings ---
 
-// The model list and its derivations live in ./modelRegistry — re-exported here
-// because every consumer already reaches for "@shared/types" and the split is an
-// organizing choice, not a change of surface.
-export {
-  DEFAULT_MODEL_ID,
-  MODEL_DEFS,
-  defaultMaxTokens,
-  findModelDef,
-  resolveThinking,
-  validateMaxTokens,
-  type ModelDef,
-} from "./modelRegistry.js";
+import type { AiRole } from "./aiModels.js";
 
-export const AI_PROVIDERS = ["anthropic"] as const;
-export type AiProvider = (typeof AI_PROVIDERS)[number];
-
-// AI config ids are durable links between the git-versioned workspace config,
-// the machine-local key store, and every management IPC operation. One predicate
-// owns their nanoid-compatible grammar so a row accepted from disk is guaranteed
-// to remain selectable, updateable, and deletable through the app.
-const AI_CONFIG_ID_RE = /^[A-Za-z0-9_-]+$/;
-
-export function isAiConfigId(value: unknown): value is string {
-  return typeof value === "string" && AI_CONFIG_ID_RE.test(value);
+/**
+ * A workspace's Anthropic section (ai-model-routing-conventions): the endpoint, a
+ * model per role, and each role's thinking value. Each is its own config set.
+ */
+export interface AnthropicSettings {
+  endpoint: string;
+  models: Record<AiRole, string>;
+  thinking: Record<AiRole, string>;
 }
 
-// User-facing display names. The internal id is the conventional vendor/env name
-// (api-key-storage-conventions); the product label is a display mapping only.
-export const PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: "Claude" };
-
-export interface AiConfig {
-  id: string;
-  name: string;
-  provider: AiProvider;
-  apiKey: string; // empty in responses to the renderer; the stored key never crosses the bridge
-  hasApiKey?: boolean; // a key is stored for THIS config (env-independent)
-  usingEnvKey?: boolean; // the provider's env var is set, so it overrides any stored key
-  model: string; // an id from MODEL_DEFS
-  thinking: boolean; // adaptive thinking; always false on a model that rejects it
-  maxTokens: number; // within maxTokensRange() of the selected model
+/** The section as the renderer reads it. The stored key never crosses the bridge. */
+export interface AnthropicSettingsView extends AnthropicSettings {
+  hasApiKey: boolean; // a key is stored for this workspace (env-independent)
+  usingEnvKey: boolean; // ANTHROPIC_API_KEY is set, so it overrides any stored key
 }
 
-export interface AiConfigsData {
-  activeId: string;
-  configs: AiConfig[];
+/** What Save sends: an omitted or blank `apiKey` keeps the stored key. */
+export interface AnthropicSettingsInput extends AnthropicSettings {
+  apiKey?: string;
 }
 
 // --- Generation prompts ---

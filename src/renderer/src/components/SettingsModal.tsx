@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import type { AppSettings, Settings, Target, AnalysisPrompt, AiConfig, AiConfigsData, GenerationPromptsData } from "@shared/types";
+import type { AppSettings, Settings, Target, AnalysisPrompt, AnthropicSettingsView, GenerationPromptsData } from "@shared/types";
+import { AI_ROLE_IDS, PROVIDER_LABELS, defaultThinkingFor, hasThinkingChoice, rowFor, type AiRole } from "@shared/aiModels";
+import { isEndpoint } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
 import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
@@ -8,13 +10,6 @@ import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import type { MessageKey } from "@shared/i18n/catalogues";
 import {
-  AI_PROVIDERS,
-  PROVIDER_LABELS,
-  MODEL_DEFS,
-  DEFAULT_MODEL_ID,
-  findModelDef,
-  defaultMaxTokens,
-  validateMaxTokens,
   CONTENT_FONT_SIZE_MAX,
   CONTENT_FONT_SIZE_MIN,
   CONTENT_LINE_HEIGHT_MAX,
@@ -34,16 +29,12 @@ import {
   listAnalysisPrompts,
   listAnalysisPromptDefaults,
   saveAnalysisPrompts,
-  listAiConfigs,
-  createAiConfig,
-  updateAiConfig,
-  deleteAiConfig,
-  setActiveAiConfig,
+  getAnthropicSettings,
+  saveAnthropicSettings,
   getGenerationPrompts,
   getGenerationPromptDefaults,
   saveGenerationPrompts,
   rebuildPostIndex,
-  reportProblem,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import {
@@ -63,19 +54,22 @@ interface SettingsModalProps {
 /** A post file a target rename could not read, with the target it still names. */
 type RenameSkip = { fileName: string; reason: string; oldName: string };
 
-type Tab = "general" | "targets" | "providers" | "analysis" | "generation";
+type Tab = "general" | "targets" | "ai" | "analysis" | "generation";
+
+/** The Anthropic section as Settings edits it: the loaded view plus a key the user typed. */
+type AnthropicDraft = AnthropicSettingsView & { apiKey: string };
 
 type EditableTarget = Target & {
   rowId: string;
   originalName?: string;
 };
 
-const TABS: Tab[] = ["general", "targets", "providers", "analysis", "generation"];
+const TABS: Tab[] = ["general", "targets", "ai", "analysis", "generation"];
 
 const TAB_LABELS: Record<Tab, MessageKey> = {
   general: "settings.tabGeneral",
   targets: "settings.tabTargets",
-  providers: "settings.tabAiConfigs",
+  ai: "settings.tabAi",
   analysis: "tabs.analysis",
   generation: "settings.tabGeneration",
 };
@@ -106,7 +100,7 @@ export function SettingsModal({
   // App-wide (the storage root's config.json), edited and saved with the
   // workspace's own settings so the theme applies on Save like everything else.
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  const [aiConfigs, setAiConfigs] = useState<AiConfigsData | null>(null);
+  const [anthropic, setAnthropic] = useState<AnthropicDraft | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
   const [targets, setTargets] = useState<EditableTarget[]>([]);
@@ -124,7 +118,7 @@ export function SettingsModal({
   // Snapshot of the loaded values, used for dirty detection.
   const initialSettings = useRef<Settings | null>(null);
   const initialAppSettings = useRef<AppSettings | null>(null);
-  const initialAiConfigs = useRef<AiConfigsData | null>(null);
+  const initialAnthropic = useRef<AnthropicDraft | null>(null);
   const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
   const initialTargets = useRef<EditableTarget[]>([]);
   const initialPrompts = useRef<AnalysisPrompt[]>([]);
@@ -138,7 +132,7 @@ export function SettingsModal({
     Promise.all([
       getAppSettings(),
       getSettings(),
-      listAiConfigs(),
+      getAnthropicSettings(),
       getGenerationPromptDefaults(),
       getGenerationPrompts(),
       listTargets(),
@@ -151,8 +145,9 @@ export function SettingsModal({
         initialAppSettings.current = app.settings;
         setSettings(s);
         initialSettings.current = s;
-        setAiConfigs(ai);
-        initialAiConfigs.current = ai;
+        const draft = { ...ai, apiKey: "" };
+        setAnthropic(draft);
+        initialAnthropic.current = draft;
         setGenerationPromptDefaults(genDefaults);
         setGenerationPrompts(gen);
         initialGenerationPrompts.current = gen;
@@ -183,9 +178,9 @@ export function SettingsModal({
   const generationDirty = JSON.stringify(generationPrompts) !== JSON.stringify(initialGenerationPrompts.current);
   const analysisDirty = JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
   const targetsDirty = JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current));
+  const anthropicDirty = JSON.stringify(anthropic) !== JSON.stringify(initialAnthropic.current);
   const isDirty =
-    appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty ||
-    JSON.stringify(aiConfigs) !== JSON.stringify(initialAiConfigs.current);
+    appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty || anthropicDirty;
 
   const handleRequestClose = async () => {
     if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
@@ -205,17 +200,7 @@ export function SettingsModal({
     // The settings fields answer from the one module the inputs render their
     // messages from, so an inline error can never sit beside an enabled Save.
     if (firstSettingsError(settings) !== null) return false;
-    if (
-      aiConfigs?.configs.some(
-        (c) =>
-          !c.name.trim() ||
-          !c.model.trim() ||
-          // Rendered under the input at :836 but never gated on, so clearing Max
-          // tokens showed the error AND left Save clickable, writing NaN.
-          validateMaxTokens(c.maxTokens) !== null ||
-          !findModelDef(c.model),
-      )
-    ) {
+    if (anthropic && (!isEndpoint(anthropic.endpoint) || AI_ROLE_IDS.some((role) => !anthropic.models[role].trim()))) {
       return false;
     }
     const tNames = targets.map((t) => t.name.trim());
@@ -235,84 +220,8 @@ export function SettingsModal({
     idBase: "settings",
   });
 
-  // Commit AI-config edits as a sequence of per-resource calls. Order:
-  //   1. Create new configs   (so their ids exist)
-  //   2. Update existing ones (so the data is current before the active swap)
-  //   3. Set the active id    (the new active must exist; current active must
-  //                            differ from any config we are about to delete)
-  //   4. Delete removed ones  (the store refuses to delete the active config)
-  //
-  // On any failure mid-sequence, resync `initialAiConfigs.current` from what's
-  // actually persisted so a retry diffs against that rather than re-issuing the
-  // work already committed (a create would fail with "already exists", etc.).
-  const commitAiConfigChanges = async (): Promise<AiConfigsData | null> => {
-    if (!aiConfigs) return null;
-    const initial = initialAiConfigs.current;
-    if (!initial) return aiConfigs;
-
-    const initialById = new Map(initial.configs.map((c) => [c.id, c]));
-    const currentIds = new Set(aiConfigs.configs.map((c) => c.id));
-
-    const added = aiConfigs.configs.filter((c) => !initialById.has(c.id));
-    const removedIds = initial.configs
-      .filter((c) => !currentIds.has(c.id))
-      .map((c) => c.id);
-
-    let latest: AiConfigsData = initial;
-
-    try {
-      for (const c of added) {
-        latest = await createAiConfig({
-          id: c.id,
-          name: c.name,
-          provider: c.provider,
-          model: c.model,
-          thinking: c.thinking,
-          maxTokens: c.maxTokens,
-          apiKey: c.apiKey.trim() ? c.apiKey : undefined,
-        });
-      }
-
-      for (const c of aiConfigs.configs) {
-        const prev = initialById.get(c.id);
-        if (!prev) continue; // newly added — handled above
-        const patch: Parameters<typeof updateAiConfig>[1] = {};
-        if (c.name !== prev.name) patch.name = c.name;
-        if (c.provider !== prev.provider) patch.provider = c.provider;
-        if (c.model !== prev.model) patch.model = c.model;
-        if (c.thinking !== prev.thinking) patch.thinking = c.thinking;
-        if (c.maxTokens !== prev.maxTokens) patch.maxTokens = c.maxTokens;
-        // The UI keeps the apiKey input empty unless the user typed a new key,
-        // so a non-empty value here always means "replace". There is no UI
-        // for explicit clearing today.
-        if (c.apiKey.trim()) patch.apiKey = c.apiKey;
-        if (Object.keys(patch).length === 0) continue;
-        latest = await updateAiConfig(c.id, patch);
-      }
-
-      if (aiConfigs.activeId !== initial.activeId) {
-        latest = await setActiveAiConfig(aiConfigs.activeId);
-      }
-
-      for (const id of removedIds) {
-        latest = await deleteAiConfig(id);
-      }
-
-      return latest;
-    } catch (err) {
-      try {
-        initialAiConfigs.current = await listAiConfigs();
-      } catch (resyncErr) {
-        // Best-effort resync; the original error is what the user sees, so this
-        // one would otherwise leave no trace at all.
-        reportProblem("could not resync AI configs after a failed save", resyncErr);
-      }
-      throw err;
-    }
-  };
-
   const handleSaveAll = async () => {
-    if (!appSettings || !settings || !aiConfigs || !generationPrompts) return;
+    if (!appSettings || !settings || !anthropic || !generationPrompts) return;
     setSaving(true);
     setSaveError(null);
     setRenameSkips([]);
@@ -324,10 +233,13 @@ export function SettingsModal({
         }))
         .filter(({ oldName, newName }) => oldName && newName && oldName !== newName);
 
-      const [savedAppSettings, savedSettings, savedAiConfigs, savedGenPrompts, savedPrompts] = await Promise.all([
+      const { endpoint, models, thinking, apiKey } = anthropic;
+      const [savedAppSettings, savedSettings, savedAnthropic, savedGenPrompts, savedPrompts] = await Promise.all([
         appSettingsDirty ? saveAppSettings(appSettings) : Promise.resolve(appSettings),
         settingsDirty ? saveSettings(settings) : Promise.resolve(settings),
-        commitAiConfigChanges(),
+        anthropicDirty
+          ? saveAnthropicSettings({ endpoint, models, thinking, ...(apiKey.trim() ? { apiKey } : {}) })
+          : Promise.resolve(anthropic),
         generationDirty ? saveGenerationPrompts(generationPrompts) : Promise.resolve(generationPrompts),
         analysisDirty ? saveAnalysisPrompts(prompts) : Promise.resolve(prompts),
       ]);
@@ -341,10 +253,9 @@ export function SettingsModal({
 
       setAppSettings(savedAppSettings);
       initialAppSettings.current = savedAppSettings;
-      if (savedAiConfigs) {
-        setAiConfigs(savedAiConfigs);
-        initialAiConfigs.current = savedAiConfigs;
-      }
+      const savedDraft = { ...savedAnthropic, apiKey: "" };
+      setAnthropic(savedDraft);
+      initialAnthropic.current = savedDraft;
       setSettings(savedSettings);
       initialSettings.current = savedSettings;
       setGenerationPrompts(savedGenPrompts);
@@ -414,10 +325,10 @@ export function SettingsModal({
                 onAppSettingsChange={setAppSettings}
               />
             )}
-            {tab === "providers" && aiConfigs && (
+            {tab === "ai" && anthropic && (
               <AiTab
-                aiConfigs={aiConfigs}
-                onChange={setAiConfigs}
+                draft={anthropic}
+                onChange={setAnthropic}
               />
             )}
             {tab === "targets" && (
@@ -873,202 +784,128 @@ function RebuildIndexSection() {
 
 // --- AI ---
 
-function AiTab({
-  aiConfigs,
-  onChange,
-}: {
-  aiConfigs: AiConfigsData;
-  onChange: (d: AiConfigsData) => void;
+const ROLE_LABELS: Record<AiRole, MessageKey> = {
+  analysis: "settings.modelAnalysis",
+  metadata: "settings.modelMetadata",
+  imagingPrompts: "settings.modelImagingPrompts",
+};
+
+const ROLE_HINTS: Record<AiRole, MessageKey> = {
+  analysis: "settings.modelAnalysisHint",
+  metadata: "settings.modelMetadataHint",
+  imagingPrompts: "settings.modelImagingPromptsHint",
+};
+
+/**
+ * One role's model field: free-typed, with a warning line when the id has no row
+ * in SUPPORTED_MODELS, and beside it the role's Thinking field when the row lists
+ * more than one value (ai-model-routing-conventions). Changing the model resets
+ * the Thinking field to the new model's default for the role.
+ */
+function ModelField({ role, model, thinking, onChange }: {
+  role: AiRole;
+  model: string;
+  thinking: string;
+  onChange: (model: string, thinking: string) => void;
 }) {
   const { t } = useI18n();
-  const updateConfig = (id: string, patch: Partial<AiConfig>) =>
-    onChange({
-      ...aiConfigs,
-      configs: aiConfigs.configs.map((c) =>
-        c.id === id ? { ...c, ...patch } : c
-      ),
-    });
+  const row = rowFor(model);
+  const modelId = `settings-model-${role}`;
+  const thinkingId = `settings-thinking-${role}`;
+  return (
+    <div className="form-row">
+      <div className="form-field" style={{ flex: 2 }}>
+        <label className="form-label" htmlFor={modelId}>{t(ROLE_LABELS[role])}</label>
+        <input
+          id={modelId}
+          className="form-input"
+          spellCheck={false}
+          value={model}
+          onChange={(e) => {
+            const next = rowFor(e.target.value);
+            onChange(e.target.value, next ? defaultThinkingFor(next, role) : thinking);
+          }}
+        />
+        <p className="settings-hint">{t(ROLE_HINTS[role])}</p>
+        {!model.trim() ? (
+          <FieldError msg={message("settings.modelRequired")} />
+        ) : !row ? (
+          <p className="settings-hint-warning">{t("settings.modelUnsupported")}</p>
+        ) : null}
+      </div>
+      {hasThinkingChoice(row) && (
+        <div className="form-field" style={{ flex: 1 }}>
+          <label className="form-label" htmlFor={thinkingId}>{t("settings.thinking")}</label>
+          <select
+            id={thinkingId}
+            className="form-select"
+            value={thinking}
+            onChange={(e) => onChange(model, e.target.value)}
+          >
+            {row.thinking.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
 
-  // Switching model re-derives the fields that belong to it: a budget scaled to the
-  // old model is meaningless against the new one, and thinking a model rejects must
-  // never survive the swap.
-  const selectModel = (id: string, modelId: string) => {
-    const model = findModelDef(modelId);
-    if (!model) return;
-    updateConfig(id, {
-      model: model.id,
-      thinking: model.supportsAdaptiveThinking,
-      maxTokens: defaultMaxTokens(model),
-    });
-  };
-
-  const addConfig = () => {
-    const id = nanoid();
-    const model = findModelDef(DEFAULT_MODEL_ID) ?? MODEL_DEFS[0];
+function AiTab({
+  draft,
+  onChange,
+}: {
+  draft: AnthropicDraft;
+  onChange: (d: AnthropicDraft) => void;
+}) {
+  const { t } = useI18n();
+  const setRole = (role: AiRole, model: string, thinking: string) =>
     onChange({
-      ...aiConfigs,
-      configs: [
-        ...aiConfigs.configs,
-        {
-          id,
-          name: "",
-          provider: "anthropic",
-          apiKey: "",
-          hasApiKey: false,
-          model: model.id,
-          thinking: model.supportsAdaptiveThinking,
-          maxTokens: defaultMaxTokens(model),
-        },
-      ],
+      ...draft,
+      models: { ...draft.models, [role]: model },
+      thinking: { ...draft.thinking, [role]: thinking },
     });
-  };
-
-  const deleteConfig = (id: string) => {
-    const remaining = aiConfigs.configs.filter((c) => c.id !== id);
-    onChange({
-      configs: remaining,
-      activeId:
-        aiConfigs.activeId === id
-          ? (remaining[0]?.id ?? "")
-          : aiConfigs.activeId,
-    });
-  };
 
   return (
     <div className="settings-section">
+      <div className="settings-subheading">{PROVIDER_LABELS.anthropic}</div>
+      <p className="settings-hint">{t("settings.onlyProvider", { provider: PROVIDER_LABELS.anthropic })}</p>
       <div className="form-field">
-        <label className="form-label">{t("settings.activeAiConfig")}</label>
-        <select
-          className="form-select"
-          value={aiConfigs.activeId}
-          onChange={(e) =>
-            onChange({ ...aiConfigs, activeId: e.target.value })
-          }
-        >
-          {aiConfigs.configs.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name || t("settings.unnamed")}
-            </option>
-          ))}
-        </select>
+        <label className="form-label" htmlFor="settings-endpoint">{t("settings.endpoint")}</label>
+        <input
+          id="settings-endpoint"
+          className="form-input"
+          spellCheck={false}
+          value={draft.endpoint}
+          onChange={(e) => onChange({ ...draft, endpoint: e.target.value })}
+        />
+        <p className="settings-hint">{t("settings.endpointHint", { provider: PROVIDER_LABELS.anthropic })}</p>
+        {!isEndpoint(draft.endpoint) && <FieldError msg={message("settings.endpointInvalid")} />}
       </div>
-
-      <div className="settings-subheading">{t("settings.tabAiConfigs")}</div>
-
-      {aiConfigs.configs.map((c) => (
-        <div key={c.id} className="settings-list-item">
-          <div className="form-field">
-            <label className="form-label">{t("workspaces.name")}</label>
-            <input
-              className="form-input"
-              value={c.name}
-              onChange={(e) => updateConfig(c.id, { name: e.target.value })}
-            />
-            {!c.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
-          </div>
-          <div className="form-row">
-            <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">{t("settings.provider")}</label>
-              <select
-                className="form-select"
-                value={c.provider}
-                onChange={(e) =>
-                  updateConfig(c.id, {
-                    provider: e.target.value as AiConfig["provider"],
-                  })
-                }
-              >
-                {AI_PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
-                    {PROVIDER_LABELS[p] ?? p}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-field" style={{ flex: 2 }}>
-              <label className="form-label">{t("settings.model")}</label>
-              <select
-                className="form-select"
-                value={c.model}
-                onChange={(e) => selectModel(c.id, e.target.value)}
-              >
-                {MODEL_DEFS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-                {/* A model from an older version is shown rather than silently
-                    swapped, so the config still reads as what it is. */}
-                {!findModelDef(c.model) && (
-                  <option value={c.model}>{t("settings.modelUnavailable", { model: c.model })}</option>
-                )}
-              </select>
-              {!findModelDef(c.model) && (
-                <FieldError msg={message("settings.modelRetired")} />
-              )}
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">{t("settings.maxTokens")}</label>
-              <input
-                className="form-input"
-                type="number"
-                min={1}
-                step={1}
-                value={c.maxTokens}
-                onChange={(e) =>
-                  updateConfig(c.id, { maxTokens: Number.parseInt(e.target.value, 10) })
-                }
-              />
-              {validateMaxTokens(c.maxTokens) !== null && (
-                <FieldError msg={message("settings.maxTokensInvalid")} />
-              )}
-            </div>
-            <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">{t("settings.thinking")}</label>
-              <label className="settings-checkbox">
-                <input
-                  type="checkbox"
-                  checked={c.thinking}
-                  disabled={!findModelDef(c.model)?.supportsAdaptiveThinking}
-                  onChange={(e) => updateConfig(c.id, { thinking: e.target.checked })}
-                />
-                {t("settings.adaptiveThinking")}
-              </label>
-              {findModelDef(c.model) && !findModelDef(c.model)!.supportsAdaptiveThinking && (
-                <p className="settings-hint">
-                  {t("settings.noThinking", { model: findModelDef(c.model)!.label })}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="form-field">
-            <label className="form-label">{t("settings.apiKey")}</label>
-            <input
-              className="form-input"
-              type="password"
-              value={c.apiKey}
-              onChange={(e) => updateConfig(c.id, { apiKey: e.target.value })}
-              placeholder={c.hasApiKey ? t("settings.apiKeyKeep") : t("settings.apiKeyOptional")}
-            />
-            {c.usingEnvKey && (
-              <p className="settings-hint">{t("settings.envKey", { variable: "ANTHROPIC_API_KEY" })}</p>
-            )}
-          </div>
-          <button
-            className="btn-toolbar btn-delete"
-            onClick={() => deleteConfig(c.id)}
-            disabled={aiConfigs.configs.length === 1}
-          >
-            {t("common.delete")}
-          </button>
-        </div>
+      <div className="form-field">
+        <label className="form-label" htmlFor="settings-api-key">{t("settings.apiKey")}</label>
+        <input
+          id="settings-api-key"
+          className="form-input"
+          type="password"
+          value={draft.apiKey}
+          onChange={(e) => onChange({ ...draft, apiKey: e.target.value })}
+          placeholder={draft.hasApiKey ? t("settings.apiKeyKeep") : t("settings.apiKeyOptional")}
+        />
+        {draft.usingEnvKey && (
+          <p className="settings-hint">{t("settings.envKey", { variable: "ANTHROPIC_API_KEY" })}</p>
+        )}
+      </div>
+      {AI_ROLE_IDS.map((role) => (
+        <ModelField
+          key={role}
+          role={role}
+          model={draft.models[role]}
+          thinking={draft.thinking[role]}
+          onChange={(model, thinking) => setRole(role, model, thinking)}
+        />
       ))}
-
-      <button className="btn-action" onClick={addConfig}>
-        {t("settings.addAiConfig")}
-      </button>
     </div>
   );
 }

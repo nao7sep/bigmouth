@@ -31,12 +31,12 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   de: ["common.ok", "settings.languageSystem", "settings.themeSystem", "common.optional", "workspaces.name", "about.version", "shortcuts.groupApp", "shortcuts.groupTabs", "tabs.assets", "export.html", "imaging.mood.neutral", "imaging.style.illustration", "imaging.style.anime", "imaging.promptNumber", "metadata.slug", "metadata.tags", "settings.timezoneSystem", "settings.apiKeyOptional", "records.levelInfo", "records.levelDebug", "records.details"],
   es: ["nativeMenu.zoom", "export.html", "imaging.literalness.literal", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "common.no", "settings.tabGeneral", "records.levelError", "records.error"],
   fr: ["common.ok", "nativeMenu.services", "left.menu", "about.version", "shortcuts.groupApp", "export.html", "center.source", "editor.diagnostics", "imaging.relation.direct", "imaging.mood.intense", "imaging.style.photo", "imaging.style.illustration", "imaging.style.anime", "imaging.style", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.description", "settings.maintenance"],
-  it: ["common.ok", "left.menu", "shortcuts.groupApp", "shortcuts.groupPost", "export.html", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tagsPlaceholder", "common.no", "records.levelInfo", "records.levelDebug", "records.post"],
-  "pt-BR": ["common.ok", "nativeMenu.zoom", "left.menu", "shortcuts.groupApp", "export.html", "imaging.literalness.literal", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tags", "metadata.tagsPlaceholder"],
+  it: ["common.ok", "left.menu", "shortcuts.groupApp", "shortcuts.groupPost", "export.html", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tagsPlaceholder", "common.no", "records.levelInfo", "records.levelDebug", "records.post", "settings.endpoint"],
+  "pt-BR": ["common.ok", "nativeMenu.zoom", "left.menu", "shortcuts.groupApp", "export.html", "imaging.literalness.literal", "imaging.style.anime", "imaging.promptCount", "imaging.promptNumber", "metadata.slug", "metadata.tags", "metadata.tagsPlaceholder", "settings.endpoint"],
   ru: ["export.html"],
-  ja: ["common.ok", "export.html"],
-  ko: ["export.html"],
-  "zh-Hans": ["export.html"],
+  ja: ["common.ok", "export.html", "settings.tabAi"],
+  ko: ["export.html", "settings.tabAi"],
+  "zh-Hans": ["export.html", "settings.tabAi"],
 };
 
 // The hidden-character-conventions set, plus the no-break spaces, figure space,

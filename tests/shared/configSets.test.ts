@@ -19,9 +19,26 @@ describe("config sets", () => {
     expect(workspaceSetIssue("contentFont", DEFAULT_CONTENT_FONT)).toBeNull();
     expect(workspaceSetIssue("timezone", "Mars/Olympus")).toMatch(/timezone/);
     expect(workspaceSetIssue("targets", [{ name: " ", defaultLanguage: "en", requiresMetadata: false }])).toMatch(/non-empty name/);
-    expect(workspaceSetIssue("aiConfigs", [{ id: "custom", name: "Custom", provider: "anthropic", model: "new-model", thinking: true, maxTokens: 100 }])).toBeNull();
-    expect(workspaceSetIssue("aiConfigs", [{ id: "custom", name: "Custom", provider: "anthropic", model: "new-model", thinking: true, maxTokens: -10 }])).not.toBeNull();
-    expect(workspaceSetIssue("aiConfigs", [{ id: "custom", name: "Custom", provider: "unknown", model: "new-model", thinking: true, maxTokens: 100 }])).not.toBeNull();
+    // A model id is free text the store never judges; a role only needs one.
+    expect(workspaceSetIssue("anthropic.analysis", "new-model")).toBeNull();
+    expect(workspaceSetIssue("anthropic.analysis", " ")).toMatch(/must name a model/);
+    expect(workspaceSetIssue("anthropic.thinking.analysis", "anything")).toBeNull();
+    expect(workspaceSetIssue("anthropic.thinking.analysis", 3)).not.toBeNull();
+    expect(workspaceSetIssue("anthropic.endpoint", "http://localhost:8080/v1")).toBeNull();
+    expect(workspaceSetIssue("anthropic.endpoint", "ftp://example.com")).not.toBeNull();
+    expect(workspaceSetIssue("anthropic.endpoint", "api.anthropic.com")).not.toBeNull();
+  });
+  it("compares a model trimmed and case-insensitively, and a thinking value by what it sends", () => {
+    const keys = ["anthropic.analysis", "anthropic.thinking.analysis"] as const;
+    const builtIn = { "anthropic.analysis": "claude-sonnet-5-5", "anthropic.thinking.analysis": "adaptive" };
+    expect(setsDifferingFromBuiltIn({ ...builtIn, "anthropic.analysis": " Claude-Sonnet-5-5 " }, builtIn, keys)).toEqual({});
+    // Opus's default for the role is adaptive too, so only the model differs.
+    expect(setsDifferingFromBuiltIn({ ...builtIn, "anthropic.analysis": "claude-opus-5-5" }, builtIn, keys))
+      .toEqual({ "anthropic.analysis": "claude-opus-5-5" });
+    expect(setsDifferingFromBuiltIn({ ...builtIn, "anthropic.thinking.analysis": "high" }, builtIn, keys))
+      .toEqual({ "anthropic.thinking.analysis": "high" });
+    // A value the row does not list sends the default, so it equals the built-in.
+    expect(setsDifferingFromBuiltIn({ ...builtIn, "anthropic.thinking.analysis": "off" }, builtIn, keys)).toEqual({});
   });
   it("requires every generation prompt and no other key", () => {
     const prompts = Object.fromEntries(GENERATION_PROMPT_KEYS.map((key) => [key, ""]));

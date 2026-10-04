@@ -31,7 +31,7 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { initAppDir, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
-import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js";
+import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
 import { registerWorkspaceHandlers } from "@main/ipc/workspaces.js";
 
 let home: string;
@@ -132,15 +132,15 @@ describe("workspace IPC handlers", () => {
 
   it("deletes a workspace and clears its stored API keys", () => {
     const ws = invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Keyed");
-    writeApiKey(getApiKeysPath(), ws.id, "c1", "anthropic", "sk-secret");
-    expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(true);
+    writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
+    expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
     const result = invoke<void>(CHANNELS.deleteWorkspace, ws.id);
     expect(result).toBeUndefined();
     expect(listWorkspaces()).toHaveLength(0);
     // The shared secrets file is keyed by workspace id; deletion must take the
     // keys with it rather than orphan them.
-    expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(false);
+    expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(false);
   });
 
   it("throws 'Workspace not found' when deleting an unknown id", () => {

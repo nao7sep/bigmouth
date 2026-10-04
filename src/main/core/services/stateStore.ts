@@ -2,15 +2,15 @@
  * UI-state I/O.
  *
  * Manages ~/.bigmouth/state.json — the app's ephemeral view state (side-pane
- * intent widths, zoom level, last active workspace id, the selected AI config id per
- * workspace, and the records window's list width). It is a distinct persisted KIND
+ * intent widths, zoom level, last active workspace id, and the records window's
+ * list width). It is a distinct persisted KIND
  * from the workspace registry (workspaces.json) and every per-workspace
  * config.json, so it gets its own store and type (persisted-store-separation
  * conventions): a settings reset must not touch it, and its splitter-drag churn
  * must never rewrite a config file.
  *
  * Unlike the registry, losing this file costs almost nothing — default pane
- * widths, a reopened workspace picker and the first AI config active — which
+ * widths and a reopened workspace picker — which
  * shapes all of its rules:
  *   - Materialized lazily: a missing file returns defaults WITHOUT writing (the
  *     convention's "state is written only once there is something to record").
@@ -56,22 +56,11 @@ function normalizeUiState(raw: unknown): UiState {
       typeof source.zoomLevel === "number" && Number.isFinite(source.zoomLevel)
         ? source.zoomLevel
         : base.zoomLevel,
-    activeAiConfigIds: normalizeIdMap(source.activeAiConfigIds),
     recordsListWidth:
       typeof source.recordsListWidth === "number" && Number.isFinite(source.recordsListWidth)
         ? source.recordsListWidth
         : base.recordsListWidth,
   };
-}
-
-/** Keeps only the non-empty string -> non-empty string entries of an arbitrary value. */
-function normalizeIdMap(raw: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (key && typeof value === "string" && value) out[key] = value;
-  }
-  return out;
 }
 
 /**

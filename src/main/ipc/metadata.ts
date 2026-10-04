@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 
 import { CHANNELS, type MetadataGenerationResults } from "@shared/ipc";
 import { getPost } from "../core/services/postStore.js";
-import { getGenerationPrompts, getActiveAiConfig } from "../core/services/configStore.js";
+import { getGenerationPrompts, getRoleCall } from "../core/services/configStore.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildMetadataGenerationRequest,
@@ -66,11 +66,10 @@ async function generateMetadata(
 
   const post = getPost(dir, postId);
   if (!post) throw new Error("Post not found");
-  const activeConfig = getActiveAiConfig(ws);
-  if (!activeConfig) throw new Error("No active AI configuration selected");
+  const roleCall = getRoleCall(ws, "metadata");
   let provider;
   try {
-    provider = createProvider(activeConfig, { workspaceId: ws.id, postId, purpose: "metadata" });
+    provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "metadata" });
   } catch (err) {
     logError("metadata generation provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("AI provider error");
@@ -97,10 +96,8 @@ async function generateMetadata(
       language: post.frontMatter.language,
       target: post.frontMatter.target,
       frontMatter: post.frontMatter,
-      aiConfigId: activeConfig.id,
-      model: activeConfig.model,
-      thinking: activeConfig.thinking,
-      maxTokens: activeConfig.maxTokens,
+      model: roleCall.model,
+      thinking: roleCall.thinking ?? null,
       systemPrompt: request.systemPrompt,
       userContent: request.userContent,
       schema: request.schema,
@@ -145,7 +142,7 @@ async function generateMetadata(
           contentLength: postContent.length,
           language: post.frontMatter.language,
           target: post.frontMatter.target,
-          aiConfigId: activeConfig.id,
+          model: roleCall.model,
         },
       },
       err,

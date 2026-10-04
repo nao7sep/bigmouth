@@ -1,0 +1,85 @@
+// Which models BigMouth supports and how it splits its AI work, per the
+// ai-model-routing-conventions. Each row has its branch in the request builder
+// (src/main/core/ai/claudeRequest.ts); any other id gets the plain request.
+
+export type AiProvider = "anthropic";
+export type ModelKind = "text-frontier" | "text-smart" | "text-balanced" | "text-fast";
+
+export const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
+
+// Product names, a display mapping at the interface edge; the id is the api-key id.
+export const PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: "Anthropic" };
+
+export interface SupportedModel {
+  provider: AiProvider;
+  id: string;
+  kinds: readonly ModelKind[];
+  defaultFor: readonly ModelKind[];
+  // The thinking values the model accepts, in the provider's own words, in the
+  // order its field lists them (thinking-values research).
+  thinking: readonly string[];
+}
+
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export const SUPPORTED_MODELS: readonly SupportedModel[] = [
+  { provider: "anthropic", id: "claude-fable-5-1", kinds: ["text-frontier"], defaultFor: [], thinking: ["adaptive", ...EFFORT_LEVELS] },
+  { provider: "anthropic", id: "claude-opus-5-5", kinds: ["text-smart"], defaultFor: ["text-smart"], thinking: ["adaptive", ...EFFORT_LEVELS] },
+  { provider: "anthropic", id: "claude-sonnet-5-5", kinds: ["text-balanced"], defaultFor: ["text-balanced"], thinking: ["between_tools", "adaptive", ...EFFORT_LEVELS] },
+  { provider: "anthropic", id: "claude-haiku-4-5", kinds: ["text-fast"], defaultFor: ["text-fast"], thinking: ["off"] },
+];
+
+export const AI_ROLES = [
+  // Reads a draft and reasons about it; the balanced tier weighs it well.
+  { id: "analysis", kind: "text-balanced" },
+  // Titles, slugs, summaries and similar fields as structured JSON; short and formulaic.
+  { id: "metadata", kind: "text-fast" },
+  // Prompts written for an image generator; they need judgment.
+  { id: "imagingPrompts", kind: "text-balanced" },
+] as const satisfies readonly { id: string; kind: ModelKind }[];
+
+export type AiRole = (typeof AI_ROLES)[number]["id"];
+export const AI_ROLE_IDS: readonly AiRole[] = AI_ROLES.map((role) => role.id);
+
+export function kindOf(role: AiRole): ModelKind {
+  return AI_ROLES.find(({ id }) => id === role)!.kind;
+}
+
+// A model id is its own key, matched trimmed and case-insensitively.
+export function rowFor(id: string): SupportedModel | undefined {
+  const key = id.trim().toLowerCase();
+  return SUPPORTED_MODELS.find((row) => row.id === key);
+}
+
+export function modelsFor(provider: AiProvider, kind: ModelKind): readonly SupportedModel[] {
+  return SUPPORTED_MODELS.filter((row) => row.provider === provider && row.kinds.includes(kind));
+}
+
+export function defaultModelFor(provider: AiProvider, kind: ModelKind): string {
+  const rows = modelsFor(provider, kind);
+  const row = rows.find((model) => model.defaultFor.includes(kind)) ?? rows[0];
+  if (!row) throw new Error(`No models for ${provider}/${kind}.`);
+  return row.id;
+}
+
+// A fast role thinks as little as the row allows; every other role thinks
+// adaptively where the row offers it, else at medium, else at its first value.
+export function defaultThinkingFor(row: SupportedModel, role: AiRole): string {
+  if (kindOf(role) === "text-fast") {
+    return row.thinking.find((value) => value === "off" || value === "none") ?? row.thinking[0]!;
+  }
+  return ["adaptive", "medium"].find((value) => row.thinking.includes(value)) ?? row.thinking[0]!;
+}
+
+// The value a role sends: its chosen value when the model's row lists it, else the
+// role's default for that row; a model with no row sends no thinking value.
+export function thinkingFor(model: string, role: AiRole, chosen: string): string | undefined {
+  const row = rowFor(model);
+  if (!row) return undefined;
+  return row.thinking.includes(chosen) ? chosen : defaultThinkingFor(row, role);
+}
+
+// A row with one thinking value offers no choice, so it shows no Thinking field.
+export function hasThinkingChoice(row: SupportedModel | undefined): row is SupportedModel {
+  return row !== undefined && row.thinking.length > 1;
+}

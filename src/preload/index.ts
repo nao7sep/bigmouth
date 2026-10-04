@@ -5,8 +5,6 @@ import {
   type PostContentSaveFailedEvent,
   CHANNELS,
   analysisStreamChannel,
-  type AiConfigInput,
-  type AiConfigPatch,
   type AiRequestHandle,
   type AnalysisStreamFrame,
   type AnalysisStreamHandle,
@@ -20,8 +18,9 @@ import {
   type TargetRenameResult,
 } from "@shared/ipc";
 import type {
-  AiConfigsData,
   AnalysisPrompt,
+  AnthropicSettingsInput,
+  AnthropicSettingsView,
   AppSettings,
   AppSettingsLoad,
   AssetMeta,
@@ -181,16 +180,11 @@ const api = {
   saveSettings: (wsId: string, settings: Partial<Settings>) =>
     ipcRenderer.invoke(CHANNELS.saveSettings, wsId, settings) as Promise<Settings>,
 
-  // --- AI configs ---
-  listAiConfigs: (wsId: string) => ipcRenderer.invoke(CHANNELS.listAiConfigs, wsId) as Promise<AiConfigsData>,
-  createAiConfig: (wsId: string, input: AiConfigInput) =>
-    ipcRenderer.invoke(CHANNELS.createAiConfig, wsId, input) as Promise<AiConfigsData>,
-  updateAiConfig: (wsId: string, id: string, patch: AiConfigPatch) =>
-    ipcRenderer.invoke(CHANNELS.updateAiConfig, wsId, id, patch) as Promise<AiConfigsData>,
-  deleteAiConfig: (wsId: string, id: string) =>
-    ipcRenderer.invoke(CHANNELS.deleteAiConfig, wsId, id) as Promise<AiConfigsData>,
-  setActiveAiConfig: (wsId: string, id: string) =>
-    ipcRenderer.invoke(CHANNELS.setActiveAiConfig, wsId, id) as Promise<AiConfigsData>,
+  // --- The Anthropic section ---
+  getAnthropicSettings: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.getAnthropicSettings, wsId) as Promise<AnthropicSettingsView>,
+  saveAnthropicSettings: (wsId: string, input: AnthropicSettingsInput) =>
+    ipcRenderer.invoke(CHANNELS.saveAnthropicSettings, wsId, input) as Promise<AnthropicSettingsView>,
 
   // --- Generation prompts ---
   getGenerationPrompts: (wsId: string) =>

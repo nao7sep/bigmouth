@@ -15,7 +15,6 @@ import { writeManagedText } from "../shared/atomicWrite.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
-import { forgetWorkspace } from "./activeConfig.js";
 import {
   containsDirectory,
   expandWorkspacePath,
@@ -375,6 +374,5 @@ export function deleteWorkspace(id: string): boolean {
   // file keyed by workspace id, so deregistering a workspace must take its keys
   // with it rather than leave them orphaned forever.
   clearWorkspaceKeys(getApiKeysPath(), id);
-  forgetWorkspace(id);
   return true;
 }

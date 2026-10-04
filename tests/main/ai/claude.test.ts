@@ -1,7 +1,7 @@
 // Unit test for the Claude provider — the thin wrapper over the Anthropic
 // Messages SDK. The SDK is fully mocked (a fake Anthropic client whose
-// messages.{create,stream} are vi.fns the tests drive), so this asserts the
-// request mapping (model, max_tokens, thinking, system split, output_config),
+// messages.{create,stream} are vi.fns the tests drive), so this asserts that the
+// request is the builder's (claudeRequest.test.ts covers each branch),
 // response extraction (text blocks, parsed_output), streaming (text + thinking
 // deltas, finalMessage), and the stop-reason / null error handling — without any
 // real network or API key.
@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // The fake SDK surface. Hoisted so the vi.mock factory can close over it.
 const sdk = vi.hoisted(() => ({
-  ctorArgs: null as null | { apiKey: string; maxRetries?: number },
+  ctorArgs: null as null | { apiKey: string; baseURL?: string; maxRetries?: number },
   create: vi.fn(),
   stream: vi.fn(),
 }));
@@ -23,7 +23,7 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@anthropic-ai/sdk", () => {
   class FakeAnthropic {
     messages: { create: typeof sdk.create; stream: typeof sdk.stream };
-    constructor(opts: { apiKey: string; maxRetries?: number }) {
+    constructor(opts: { apiKey: string; baseURL?: string; maxRetries?: number }) {
       sdk.ctorArgs = opts;
       this.messages = { create: sdk.create, stream: sdk.stream };
     }
@@ -45,12 +45,13 @@ vi.mock("@main/core/services/recordsStore.js", () => ({
 
 import type { Middleware } from "@anthropic-ai/sdk";
 import { ClaudeProvider, type ClaudeRequest } from "@main/core/ai/claude.js";
+import { buildClaudeParams, MAX_TOKENS } from "@main/core/ai/claudeRequest.js";
 
 const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
 
-// The model fields a provider is built from. A test names only what it asserts.
+// What a provider is built from. A test names only what it asserts.
 function req(model = "m", over: Partial<ClaudeRequest> = {}): ClaudeRequest {
-  return { model, thinking: false, maxTokens: 4096, ...over };
+  return { endpoint: "https://api.anthropic.com", model, thinking: undefined, ...over };
 }
 
 // Builds an SDK-shaped message with the given text blocks + stop reason.
@@ -111,22 +112,25 @@ beforeEach(() => {
 describe("ClaudeProvider construction", () => {
   // Every call is paid: the SDK's default of two retries could bill a request
   // up to three times, so the client never retries on its own.
-  it("passes the api key and turns off the SDK's own retries", () => {
-    new ClaudeProvider("sk-test", req("claude-test-model"), CALL);
-    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", maxRetries: 0 });
+  it("passes the api key and endpoint and turns off the SDK's own retries", () => {
+    new ClaudeProvider("sk-test", req("claude-test-model", { endpoint: "https://proxy.example/anthropic" }), CALL);
+    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", baseURL: "https://proxy.example/anthropic", maxRetries: 0 });
   });
 });
 
 describe("provider call records", () => {
   it("records each call with its context, the request sent and the message received", async () => {
-    const reply = message({ text: "ok" });
-    sdk.create.mockResolvedValue(reply);
-    await new ClaudeProvider("k", req("m"), CALL).generateText("s", "u");
+    const reply = message({ parsed_output: { a: "b" } });
+    const f = fakeStream();
+    sdk.stream.mockReturnValue(f.handle);
+    const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
+    f.resolveFinal(reply);
+    await pending;
     expect(recorded.calls).toEqual([
       expect.objectContaining({
         ...CALL,
         provider: "anthropic",
-        request: sdk.create.mock.calls[0][0],
+        request: sdk.stream.mock.calls[0][0],
         response: reply,
         error: undefined,
       }),
@@ -134,25 +138,28 @@ describe("provider call records", () => {
   });
 
   it("records the request as it was sent, headers and API key included", async () => {
-    const reply = message({ text: "ok" });
-    sdk.create.mockImplementation(async (params: unknown, options: { middleware: Middleware[] }) => {
+    const reply = message({ parsed_output: { a: "b" } });
+    sdk.stream.mockImplementation((params: unknown, options: { middleware: Middleware[] }) => {
       const sent = {
         method: "POST",
         url: "https://api.anthropic.com/v1/messages",
         headers: new Headers({ "x-api-key": "sk-secret", "anthropic-version": "2023-06-01" }),
         body: JSON.stringify(params),
       };
-      for (const observe of options.middleware) await observe(sent, async () => new Response(), {} as never);
-      return reply;
+      const settled = (async () => {
+        for (const observe of options.middleware) await observe(sent, async () => new Response(), {} as never);
+        return reply;
+      })();
+      return { on: () => {}, finalMessage: () => settled, abort: () => {} };
     });
-    await new ClaudeProvider("sk-secret", req("m"), CALL).generateText("s", "u");
+    await new ClaudeProvider("sk-secret", req("m"), CALL).generateJson("s", "u", { type: "object" });
     expect(recorded.calls).toEqual([
       expect.objectContaining({
         request: {
           method: "POST",
           url: "https://api.anthropic.com/v1/messages",
           headers: { "x-api-key": "sk-secret", "anthropic-version": "2023-06-01" },
-          body: sdk.create.mock.calls[0][0],
+          body: JSON.parse(JSON.stringify(sdk.stream.mock.calls[0][0])),
         },
       }),
     ]);
@@ -174,100 +181,30 @@ describe("provider call records", () => {
   });
 });
 
-// Thinking is never left to the model's default: the same omission means "off" on
-// one model and "adaptive" on another, so the request always says which it wants.
-describe("thinking parameter", () => {
-  it("asks for adaptive thinking with a summarized display when thinking is on", async () => {
-    sdk.create.mockResolvedValue(message({ text: "ok" }));
-    await new ClaudeProvider("k", req("m", { thinking: true }), CALL).generateText("s", "u");
-
-    expect(sdk.create.mock.calls[0][0].thinking).toEqual({
-      type: "adaptive",
-      display: "summarized",
-    });
-  });
-
-  it("disables thinking explicitly when thinking is off", async () => {
-    sdk.create.mockResolvedValue(message({ text: "ok" }));
-    await new ClaudeProvider("k", req("m", { thinking: false }), CALL).generateText("s", "u");
-
-    expect(sdk.create.mock.calls[0][0].thinking).toEqual({ type: "disabled" });
-  });
-
-  it("states thinking on every route, not just free-text generation", async () => {
+// The provider sends what the request builder builds; its branches are pinned
+// in claudeRequest.test.ts.
+describe("request building", () => {
+  it("sends the builder's request on every route", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
+    const provider = new ClaudeProvider("k", req("claude-sonnet-5-5", { thinking: "high" }), CALL);
 
     provider.generateTextStream("s", "u", () => {});
     void provider.generateJson("s", "u", { type: "object" });
 
-    for (const call of sdk.stream.mock.calls) {
-      expect(call[0].thinking).toEqual({ type: "adaptive", display: "summarized" });
-    }
-  });
-});
-
-describe("generateText", () => {
-  it("maps the request and joins text blocks from the response", async () => {
-    sdk.create.mockResolvedValue(
-      message({ blocks: [{ type: "text", text: "Hello " }, { type: "text", text: "world" }] }),
-    );
-    const provider = new ClaudeProvider("k", req("my-model", { maxTokens: 777 }), CALL);
-
-    const text = await provider.generateText("Be brief.", "Say hi.");
-
-    expect(text).toBe("Hello world");
-    const body = sdk.create.mock.calls[0][0];
-    expect(body.model).toBe("my-model");
-    expect(body.messages).toEqual([{ role: "user", content: "Say hi." }]);
-    expect(body.system).toBe("Be brief.");
-    // The budget is the config's, not a constant baked into the provider.
-    expect(body.max_tokens).toBe(777);
+    const [stream, json] = sdk.stream.mock.calls.map((call) => call[0]);
+    expect(stream).toEqual(buildClaudeParams({ model: "claude-sonnet-5-5", system: "s", userContent: "u" }, "high"));
+    expect(json).toEqual(buildClaudeParams(
+      { model: "claude-sonnet-5-5", system: "s", userContent: "u", format: { __outputFormat: { type: "object" } } as never },
+      "high",
+    ));
   });
 
-  it("omits the system parameter when the system prompt is empty", async () => {
-    sdk.create.mockResolvedValue(message({ text: "ok" }));
-    const provider = new ClaudeProvider("k", req(), CALL);
-
-    await provider.generateText("", "user only");
-
-    expect("system" in sdk.create.mock.calls[0][0]).toBe(false);
-  });
-
-  it("ignores non-text content blocks when extracting the response text", async () => {
-    sdk.create.mockResolvedValue(
-      message({
-        blocks: [
-          { type: "thinking", text: "internal" },
-          { type: "text", text: "visible" },
-        ],
-      }),
-    );
-    const provider = new ClaudeProvider("k", req(), CALL);
-
-    expect(await provider.generateText("s", "u")).toBe("visible");
-  });
-
-  it("throws when the response was truncated at the output token limit", async () => {
-    sdk.create.mockResolvedValue(message({ text: "partial", stop_reason: "max_tokens" }));
-    const provider = new ClaudeProvider("k", req(), CALL);
-
-    await expect(provider.generateText("s", "u")).rejects.toThrow(/output token limit/i);
-  });
-
-  it("throws when the request was refused", async () => {
-    sdk.create.mockResolvedValue(message({ text: "", stop_reason: "refusal" }));
-    const provider = new ClaudeProvider("k", req(), CALL);
-
-    await expect(provider.generateText("s", "u")).rejects.toThrow(/refused/i);
-  });
-
-  it("throws when the response carries no text", async () => {
-    sdk.create.mockResolvedValue(message({ blocks: [{ type: "thinking", text: "x" }] }));
-    const provider = new ClaudeProvider("k", req(), CALL);
-
-    await expect(provider.generateText("s", "u")).rejects.toThrow(/Unexpected response type/);
+  it("sends no thinking parameter for a model with no row", () => {
+    const f = fakeStream();
+    sdk.stream.mockReturnValue(f.handle);
+    new ClaudeProvider("k", req("claude-next-9"), CALL).generateTextStream("s", "u", () => {});
+    expect("thinking" in sdk.stream.mock.calls[0][0]).toBe(false);
   });
 });
 
@@ -284,7 +221,7 @@ describe("generateJson", () => {
   }
 
   it("maps the request with the schema output format and forwards request options", async () => {
-    const provider = new ClaudeProvider("k", req("json-model", { maxTokens: 555 }), CALL);
+    const provider = new ClaudeProvider("k", req("json-model"), CALL);
 
     const result = await jsonRun(provider, message({ parsed_output: { a: "b" }, stop_reason: "end_turn" }), {
       maxDurationMs: 1234,
@@ -295,7 +232,7 @@ describe("generateJson", () => {
 
     const [body, requestOptions] = sdk.stream.mock.calls[0];
     expect(body.model).toBe("json-model");
-    expect(body.max_tokens).toBe(555);
+    expect(body.max_tokens).toBe(MAX_TOKENS);
     expect(body.messages).toEqual([{ role: "user", content: "usr" }]);
     expect(body.system).toBe("sys");
     // The schema is wrapped by the (mocked) jsonSchemaOutputFormat helper.
@@ -305,14 +242,6 @@ describe("generateJson", () => {
     expect("timeout" in requestOptions).toBe(false);
     expect(requestOptions.maxRetries).toBe(2);
     expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
-  });
-
-  it("takes its budget from the config rather than a per-call default", async () => {
-    const provider = new ClaudeProvider("k", req("m", { maxTokens: 31337 }), CALL);
-
-    await jsonRun(provider, message({ parsed_output: {}, stop_reason: "end_turn" }));
-
-    expect(sdk.stream.mock.calls[0][0].max_tokens).toBe(31337);
   });
 
   it("omits the system parameter when the system prompt is empty", async () => {
@@ -357,7 +286,7 @@ describe("generateJson", () => {
     }
 
     it("keeps a call alive for as long as reasoning or output keeps arriving", async () => {
-      const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
+      const provider = new ClaudeProvider("k", req("m", { thinking: "adaptive" }), CALL);
       const { f, promise } = start(provider, { maxDurationMs: 10 * 60_000 });
 
       for (let i = 0; i < 4; i += 1) {
@@ -449,7 +378,7 @@ describe("generateJson request options", () => {
 
   it("omits the KEY for an option the caller did not give", async () => {
     sdk.stream.mockReturnValue(streamReturning({ ok: true }));
-    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 }, CALL);
+    const provider = new ClaudeProvider("sk-test", req("claude-opus-5-5", { thinking: "adaptive" }), CALL);
     await provider.generateJson("sys", "user", { type: "object" });
     const opts = sdk.stream.mock.calls[0]?.[1] ?? {};
     expect("timeout" in opts).toBe(false);
@@ -461,7 +390,7 @@ describe("generateJson request options", () => {
   it("passes each option through when the caller does give it", async () => {
     sdk.stream.mockReturnValue(streamReturning({ ok: true }));
     const controller = new AbortController();
-    const provider = new ClaudeProvider("sk-test", { model: "claude-opus-5", thinking: false, maxTokens: 1024 }, CALL);
+    const provider = new ClaudeProvider("sk-test", req("claude-opus-5-5", { thinking: "adaptive" }), CALL);
     await provider.generateJson("sys", "user", { type: "object" },
       { maxDurationMs: 12_345, maxRetries: 2, signal: controller.signal });
     expect(sdk.stream.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 2 });
@@ -472,7 +401,7 @@ describe("generateTextStream", () => {
   it("maps the request, forwards text deltas, and resolves with the final text", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("stream-model", { maxTokens: 999 }), CALL);
+    const provider = new ClaudeProvider("k", req("stream-model"), CALL);
 
     const received: string[] = [];
     const { finished } = provider.generateTextStream("sys", "usr", (d) => received.push(d));
@@ -488,13 +417,13 @@ describe("generateTextStream", () => {
     expect(body.model).toBe("stream-model");
     expect(body.messages).toEqual([{ role: "user", content: "usr" }]);
     expect(body.system).toBe("sys");
-    expect(body.max_tokens).toBe(999);
+    expect(body.max_tokens).toBe(MAX_TOKENS);
   });
 
   it("forwards reasoning deltas to onThinking, separately from the answer text", async () => {
     const f = fakeStream();
     sdk.stream.mockReturnValue(f.handle);
-    const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
+    const provider = new ClaudeProvider("k", req("m", { thinking: "adaptive" }), CALL);
 
     const text: string[] = [];
     const thinking: string[] = [];
@@ -588,7 +517,7 @@ describe("generateTextStream", () => {
       // answer token. That is a working stream.
       const f = fakeStream();
       sdk.stream.mockReturnValue(f.handle);
-      const provider = new ClaudeProvider("k", req("m", { thinking: true }), CALL);
+      const provider = new ClaudeProvider("k", req("m", { thinking: "adaptive" }), CALL);
 
       const { finished } = provider.generateTextStream("s", "u", () => {});
       rejectOnAbort(f);

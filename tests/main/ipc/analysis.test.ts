@@ -37,7 +37,7 @@ vi.mock("@main/core/services/postStore.js", () => ({
 
 vi.mock("@main/core/services/configStore.js", () => ({
   getAnalysisPrompts: () => [{ name: "P", text: "Analyze: {content}" }],
-  getActiveAiConfig: () => ({ id: "c1", name: "cfg", provider: "anthropic", model: "m", apiKey: "k" }),
+  getRoleCall: () => ({ endpoint: "https://api.anthropic.com", model: "m", thinking: "adaptive", apiKey: "k" }),
 }));
 
 vi.mock("@main/core/ai/promptTemplates.js", () => ({
@@ -47,7 +47,6 @@ vi.mock("@main/core/ai/promptTemplates.js", () => ({
 
 vi.mock("@main/core/ai/factory.js", () => ({
   createProvider: () => ({
-    generateText: () => Promise.resolve(""),
     generateJson: () => Promise.resolve({}),
     generateTextStream: (
       _sys: string,

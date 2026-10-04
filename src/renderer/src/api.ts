@@ -9,8 +9,8 @@ import type {
   Settings,
   Target,
   AssetMeta,
-  AiConfig,
-  AiConfigsData,
+  AnthropicSettingsInput,
+  AnthropicSettingsView,
   EditablePostMetadata,
   GenerationPromptsData,
   ImagingOptions,
@@ -28,8 +28,6 @@ import {
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
   assetUrl as buildAssetUrl,
-  type AiConfigInput,
-  type AiConfigPatch,
   type AiRequestHandle,
   type MetadataGenerationResults,
   type PostUpdate,
@@ -241,45 +239,15 @@ export function saveSettings(settings: Partial<Settings>): Promise<Settings> {
   return bridge().saveSettings(requireWs(), settings);
 }
 
-// --- AI configs ---
+// --- The Anthropic section ---
 
-export function listAiConfigs(): Promise<AiConfigsData> {
-  return bridge().listAiConfigs(requireWs());
+export function getAnthropicSettings(): Promise<AnthropicSettingsView> {
+  return bridge().getAnthropicSettings(requireWs());
 }
 
-export function createAiConfig(input: {
-  id: string;
-  name: string;
-  provider: AiConfig["provider"];
-  model: string;
-  thinking: boolean;
-  maxTokens: number;
-  apiKey?: string;
-}): Promise<AiConfigsData> {
-  return bridge().createAiConfig(requireWs(), input satisfies AiConfigInput);
-}
-
-export function updateAiConfig(
-  id: string,
-  patch: {
-    name?: string;
-    provider?: AiConfig["provider"];
-    model?: string;
-    thinking?: boolean;
-    maxTokens?: number;
-    /** Omit to preserve, "" to clear, non-empty to replace. */
-    apiKey?: string;
-  },
-): Promise<AiConfigsData> {
-  return bridge().updateAiConfig(requireWs(), id, patch satisfies AiConfigPatch);
-}
-
-export function deleteAiConfig(id: string): Promise<AiConfigsData> {
-  return bridge().deleteAiConfig(requireWs(), id);
-}
-
-export function setActiveAiConfig(id: string): Promise<AiConfigsData> {
-  return bridge().setActiveAiConfig(requireWs(), id);
+/** A blank or omitted `apiKey` keeps the stored key. */
+export function saveAnthropicSettings(input: AnthropicSettingsInput): Promise<AnthropicSettingsView> {
+  return bridge().saveAnthropicSettings(requireWs(), input);
 }
 
 // --- Generation prompts ---
@@ -426,7 +394,7 @@ export function runAnalysisStream(
   options: {
     signal?: AbortSignal;
     onChunk: (delta: string) => void;
-    /** Reasoning summary, streamed only when the active AI config has thinking on. */
+    /** Reasoning summary, streamed only when the analysis role's thinking is adaptive. */
     onThinking?: (delta: string) => void;
   },
 ): Promise<void> {

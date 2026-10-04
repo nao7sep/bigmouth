@@ -10,7 +10,7 @@ import path from "node:path";
 import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import { writeApiKey, readStoredConfigIds } from "@main/core/services/apiKeys.js";
+import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
@@ -404,14 +404,14 @@ describe("updateWorkspace", () => {
 describe("deleteWorkspace", () => {
   it("removes the workspace and clears its stored API keys", () => {
     const ws = createWorkspace("Keyed", tempDir("ws"));
-    writeApiKey(getApiKeysPath(), ws.id, "c1", "anthropic", "sk-secret");
-    expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(true);
+    writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
+    expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
     expect(deleteWorkspace(ws.id)).toBe(true);
     expect(getWorkspace(ws.id)).toBeUndefined();
     // The shared secrets file is keyed by workspace id; deletion must take its
     // keys with it rather than orphan them.
-    expect(readStoredConfigIds(getApiKeysPath(), ws.id).has("c1")).toBe(false);
+    expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(false);
   });
 
   it("returns false for an unknown workspace id", () => {

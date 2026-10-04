@@ -5,6 +5,7 @@
 import Anthropic, { type Middleware } from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import type { AiProvider, ProviderCallContext } from "./provider.js";
+import { buildClaudeParams } from "./claudeRequest.js";
 import { utcNow } from "../shared/timestamps.js";
 import { serializeError } from "../services/logger.js";
 import { writeProviderCall } from "../services/recordsStore.js";
@@ -57,15 +58,12 @@ function idleWatchdog(): { signal: AbortSignal; progress: () => void; stop: () =
 const idleMessage = (what: string): string =>
   `Claude stopped sending output for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s, so the ${what} was abandoned.`;
 
-/**
- * The model fields of an AI config, resolved against MODEL_DEFS by the factory. A
- * request is built from these alone, so the provider never guesses a capability.
- */
+/** What a role's calls are built from: its endpoint, model, and the thinking value it sends. */
 export interface ClaudeRequest {
+  endpoint: string;
   model: string;
-  /** Adaptive thinking. The factory has already forced this false where the model rejects it. */
-  thinking: boolean;
-  maxTokens: number;
+  /** The role's thinking value; undefined for a model with no row, which sends none. */
+  thinking: string | undefined;
 }
 
 /**
@@ -96,7 +94,7 @@ export class ClaudeProvider implements AiProvider {
     // Every call here is paid, so retries are the caller's policy, never the
     // SDK's default of two: a retried request can bill again. A call that wants
     // one passes `maxRetries` itself.
-    this.client = new Anthropic({ apiKey, maxRetries: 0 });
+    this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0 });
     this.request = request;
     this.call = call;
   }
@@ -130,59 +128,8 @@ export class ClaudeProvider implements AiProvider {
     }
   }
 
-  /**
-   * Thinking must be stated explicitly, never left to the model's default: omitting
-   * the parameter means "no thinking" on some models and "adaptive thinking" on
-   * others, so the same silence would mean two different things. `summarized` is what
-   * lets a caller show the reasoning while it happens — the default omits the text,
-   * which reads as a dead pause before any output.
-   */
-  private thinkingParam(): Anthropic.MessageCreateParams["thinking"] {
-    return this.request.thinking
-      ? { type: "adaptive", display: "summarized" }
-      : { type: "disabled" };
-  }
-
-  private baseParams(systemPrompt: string, userContent: string) {
-    return {
-      model: this.request.model,
-      max_tokens: this.request.maxTokens,
-      thinking: this.thinkingParam(),
-      messages: [{ role: "user" as const, content: userContent }],
-      ...(systemPrompt ? { system: systemPrompt } : {}),
-    };
-  }
-
-  async generateText(
-    systemPrompt: string,
-    userContent: string,
-    options: { timeoutMs?: number; signal?: AbortSignal } = {},
-  ): Promise<string> {
-    // A whole-call deadline: a non-streaming call has no deltas to watch.
-    const budget = options.timeoutMs !== undefined ? AbortSignal.timeout(options.timeoutMs) : undefined;
-    const signal = budget && options.signal ? AbortSignal.any([budget, options.signal]) : (budget ?? options.signal);
-    const params = this.baseParams(systemPrompt, userContent);
-    const capture = requestCapture(params);
-    const message = await this.recorded(
-      utcNow(),
-      capture,
-      this.client.messages.create(params, {
-        middleware: capture.middleware,
-        ...(signal !== undefined ? { signal } : {}),
-      }),
-    );
-
-    // Surface a truncated/refused response as an error rather than returning a
-    // partial result the caller would treat as complete (the same contract as
-    // generateJson and generateTextStream).
-    assertCompleteStop(message);
-
-    const text = textOf(message);
-    if (!text) {
-      throw new Error("Unexpected response type from Claude");
-    }
-
-    return text;
+  private params(system: string, userContent: string, format?: Anthropic.JSONOutputFormat) {
+    return buildClaudeParams({ model: this.request.model, system, userContent, format }, this.request.thinking);
   }
 
   /**
@@ -213,12 +160,11 @@ export class ClaudeProvider implements AiProvider {
     const signal = AbortSignal.any(
       [watchdog.signal, cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined),
     );
-    const params = {
-      ...this.baseParams(systemPrompt, userContent),
-      output_config: {
-        format: jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
-      },
-    };
+    const params = this.params(
+      systemPrompt,
+      userContent,
+      jsonSchemaOutputFormat(schema as { type: "object"; [key: string]: unknown }),
+    );
     const capture = requestCapture(params);
     const startedAt = utcNow();
     const stream = this.client.messages.stream(
@@ -281,7 +227,7 @@ export class ClaudeProvider implements AiProvider {
     // finalMessage() pending for ever, and with it the caller's whole feature.
     const watchdog = idleWatchdog();
 
-    const params = this.baseParams(systemPrompt, userContent);
+    const params = this.params(systemPrompt, userContent);
     const capture = requestCapture(params);
     const startedAt = utcNow();
     const stream = this.client.messages.stream(params, {
@@ -294,7 +240,7 @@ export class ClaudeProvider implements AiProvider {
       onText(delta);
     });
 
-    // Only fires when thinking is on AND display is "summarized"; with thinking off
+    // Only fires when thinking is adaptive (display "summarized"); with thinking off
     // there is nothing to report and the callback is simply never called. Still
     // counts as progress: a model can reason for a long time before its first
     // answer token, and that is a working stream, not a stalled one.

@@ -8,7 +8,7 @@ import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
-import { DEFAULT_SETTINGS, makeDefaultConfig, makeDefaultAiConfigs, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
+import { DEFAULT_SETTINGS, makeDefaultConfig, defaultAnthropicSettings, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
 import {
   getSettings,
   getTargets,
@@ -18,13 +18,11 @@ import {
   getGenerationPrompts,
   saveGenerationPrompts,
   saveSettings,
-  createAiConfig,
-  updateAiConfig,
-  deleteAiConfig,
-  setActiveAiConfig,
-  getActiveAiConfig,
-  getAiConfigsForClient,
+  getAnthropicSettingsForClient,
+  getRoleCall,
+  saveAnthropicSettings,
 } from "@main/core/services/configStore.js";
+import type { AnthropicSettingsInput } from "@shared/types";
 
 let dataDir: string;
 let homeDir: string;
@@ -132,33 +130,18 @@ describe("corrupt config files", () => {
     expect(afterwards.schemaVersion).toBeUndefined();
   });
 
-  it("reads duplicate AI config ids as an invalid aiConfigs set without rewriting", () => {
-    const configPath = path.join(dataDir, "config.json");
-    const healthy = makeDefaultConfig();
-    const duplicate = JSON.stringify({
-      ...healthy,
-      aiConfigs: [healthy.aiConfigs[0], { ...healthy.aiConfigs[0], name: "Ambiguous copy" }],
-    });
-    fs.writeFileSync(configPath, duplicate, "utf8");
-
-    expect(getAiConfigsForClient(ws).configs.map((c) => c.id)).toEqual(["default"]);
-    expect(fs.readFileSync(configPath, "utf8")).toBe(duplicate);
-  });
-
   it.each([
-    ["empty", ""],
-    ["outside the management grammar", "bad id!"],
-  ])("reads an %s AI config id as an invalid set without rewriting", (_case, id) => {
+    ["an endpoint that is not an http(s) URL", { "anthropic.endpoint": "api.anthropic.com" }],
+    ["an empty model", { "anthropic.analysis": "  " }],
+    ["a model that is not a string", { "anthropic.metadata": 7 }],
+  ])("reads %s as the built-in without rewriting", (_case, sets) => {
     const configPath = path.join(dataDir, "config.json");
-    const healthy = makeDefaultConfig();
-    const malformed = JSON.stringify({
-      ...healthy,
-      aiConfigs: [{ ...healthy.aiConfigs[0], id }],
-    });
-    fs.writeFileSync(configPath, malformed, "utf8");
+    const stored = JSON.stringify(sets);
+    fs.writeFileSync(configPath, stored, "utf8");
 
-    expect(getAiConfigsForClient(ws).configs.map((c) => c.id)).toEqual(["default"]);
-    expect(fs.readFileSync(configPath, "utf8")).toBe(malformed);
+    const { endpoint, models, thinking } = getAnthropicSettingsForClient(ws);
+    expect({ endpoint, models, thinking }).toEqual(defaultAnthropicSettings());
+    expect(fs.readFileSync(configPath, "utf8")).toBe(stored);
   });
 });
 
@@ -186,7 +169,6 @@ describe("settings", () => {
         editorWatermark: "",
         extraFieldWatermark: "",
         targets: [],
-        aiConfigs: [],
         analysisPrompts: [],
         generationPrompts: { prompts: {} },
       }),
@@ -211,183 +193,112 @@ describe("settings", () => {
   });
 });
 
-describe("AI config API key handling", () => {
-  it("keeps the key out of the workspace file and in the storage-root secrets file", () => {
-    createAiConfig(ws, {
-      id: "c1",
-      name: "Claude",
-      provider: "anthropic",
-      model: "claude-opus-5",
-      thinking: false,
-      maxTokens: 12800,
-      apiKey: "sk-ant-secret",
+describe("the Anthropic section", () => {
+  const file = () => path.join(dataDir, "config.json");
+  const saved = () => JSON.parse(fs.readFileSync(file(), "utf8"));
+  function input(over: Partial<AnthropicSettingsInput> = {}): AnthropicSettingsInput {
+    return { ...defaultAnthropicSettings(), ...over };
+  }
+
+  it("reads the built-in section, each role at its default model and thinking", () => {
+    expect(getAnthropicSettingsForClient(ws)).toEqual({
+      endpoint: "https://api.anthropic.com",
+      models: { analysis: "claude-sonnet-5-5", metadata: "claude-haiku-4-5", imagingPrompts: "claude-sonnet-5-5" },
+      thinking: { analysis: "adaptive", metadata: "off", imagingPrompts: "adaptive" },
+      hasApiKey: false,
+      usingEnvKey: false,
     });
+    expect(getRoleCall(ws, "metadata")).toEqual({
+      endpoint: "https://api.anthropic.com",
+      model: "claude-haiku-4-5",
+      thinking: "off",
+      apiKey: null,
+    });
+  });
 
-    // The git-versionable workspace file carries no key at all — not even the field.
-    const onDisk = fs.readFileSync(path.join(dataDir, "config.json"), "utf-8");
-    expect(onDisk).not.toContain("sk-ant-secret");
-    expect(onDisk).not.toContain("apiKey");
+  it("keeps the key out of the workspace file and in the storage-root secrets file, under the provider id", () => {
+    saveAnthropicSettings(ws, input({ apiKey: "sk-ant-secret" }));
 
-    // The key lives in the secrets file, keyed by (workspace id, config id), obfuscated.
+    expect(fs.existsSync(file())).toBe(false);
     const secrets = fs.readFileSync(getApiKeysPath(), "utf-8");
     expect(secrets).not.toContain("sk-ant-secret");
-    expect(JSON.parse(secrets).workspaces[ws.id].configs.c1.keys.anthropic).toBeTruthy();
-
-    // Client view carries no key, only the hasApiKey flag.
-    const created = getAiConfigsForClient(ws).configs.find((c) => c.id === "c1");
-    expect(created?.apiKey).toBe("");
-    expect(created?.hasApiKey).toBe(true);
-    expect(created?.usingEnvKey).toBe(false);
-  });
-
-  it("getActiveAiConfig returns the deobfuscated key for the active config", () => {
-    createAiConfig(ws, {
-      id: "c1",
-      name: "Claude",
-      provider: "anthropic",
-      model: "claude-opus-5",
-      thinking: false,
-      maxTokens: 12800,
-      apiKey: "sk-ant-secret",
-    });
-    setActiveAiConfig(ws, "c1");
-
-    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-secret");
-  });
-
-  it("preserves the key when apiKey is omitted from an update", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-ant-secret" });
-    setActiveAiConfig(ws, "c1");
-
-    updateAiConfig(ws, "c1", { name: "Renamed" });
-    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-secret");
-    expect(getAiConfigsForClient(ws).configs.find((c) => c.id === "c1")?.name).toBe("Renamed");
-  });
-
-  it("applies every editable field, not just the three it used to", () => {
-    // thinking and maxTokens were declared on the patch type, validated by the
-    // IPC handler and logged as changed, then dropped: the store applied only
-    // name/provider/model. The user toggled Thinking or edited Max tokens, the
-    // modal repainted from the returned view with the old values, and every AI
-    // call kept the previous budget.
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "k" });
-
-    const returned = updateAiConfig(ws, "c1", { thinking: true, maxTokens: 32000 });
-
-    const applied = returned.configs.find((c) => c.id === "c1");
-    expect(applied?.thinking).toBe(true);
-    expect(applied?.maxTokens).toBe(32000);
-
-    // And it reached disk, not just the returned view.
-    const onDisk = getAiConfigsForClient(ws).configs.find((c) => c.id === "c1");
-    expect(onDisk?.thinking).toBe(true);
-    expect(onDisk?.maxTokens).toBe(32000);
-  });
-
-  it("clears the key when apiKey is blank", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-ant-secret" });
-    setActiveAiConfig(ws, "c1");
-
-    updateAiConfig(ws, "c1", { apiKey: "" });
-    expect(getActiveAiConfig(ws)?.apiKey).toBe("");
-    expect(getAiConfigsForClient(ws).configs[0].hasApiKey).toBe(false);
-  });
-
-  it("a key-only update does not rewrite the git-versioned config.json", () => {
-    createAiConfig(ws, { id: "c1", name: "Claude", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "old" });
-    setActiveAiConfig(ws, "c1");
-    const configPath = path.join(dataDir, "config.json");
-    const before = fs.readFileSync(configPath, "utf-8");
-
-    updateAiConfig(ws, "c1", { apiKey: "new-key" });
-
-    expect(fs.readFileSync(configPath, "utf-8")).toBe(before); // workspace file untouched
-    expect(getActiveAiConfig(ws)?.apiKey).toBe("new-key"); // but the key did change
-  });
-
-  it("deleteAiConfig also removes the stored key", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "sk-c2" });
-    setActiveAiConfig(ws, "c1");
-
-    deleteAiConfig(ws, "c2");
-    const secrets = JSON.parse(fs.readFileSync(getApiKeysPath(), "utf-8"));
-    expect(secrets.workspaces[ws.id]?.configs?.c2).toBeUndefined();
-  });
-
-  it("hasApiKey is stored-only while usingEnvKey reflects the environment", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 }); // no stored key
-    setActiveAiConfig(ws, "c1");
-    process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
-
-    const view = getAiConfigsForClient(ws).configs[0];
-    expect(view.hasApiKey).toBe(false); // nothing stored for this config
-    expect(view.usingEnvKey).toBe(true); // env overrides
-    expect(getActiveAiConfig(ws)?.apiKey).toBe("sk-ant-from-env"); // resolution still env-first
-  });
-
-  it("keeps keys independent for two workspaces that share a config id", () => {
-    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore2-"));
-    try {
-      const ws2 = workspaceAt("ws-2", otherDir);
-      createAiConfig(ws, { id: "shared", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "key-ws1" });
-      createAiConfig(ws2, { id: "shared", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800, apiKey: "key-ws2" });
-      setActiveAiConfig(ws, "shared");
-      setActiveAiConfig(ws2, "shared");
-
-      expect(getActiveAiConfig(ws)?.apiKey).toBe("key-ws1");
-      expect(getActiveAiConfig(ws2)?.apiKey).toBe("key-ws2");
-    } finally {
-      fs.rmSync(otherDir, { recursive: true, force: true });
+    expect(Object.keys(JSON.parse(secrets).workspaces["ws-1"].keys)).toEqual(["anthropic"]);
+    expect(getAnthropicSettingsForClient(ws).hasApiKey).toBe(true);
+    for (const role of ["analysis", "metadata", "imagingPrompts"] as const) {
+      expect(getRoleCall(ws, role).apiKey).toBe("sk-ant-secret");
     }
   });
-});
 
-describe("AI config lifecycle guards", () => {
-  it("deleting the active config falls the active back to the first remaining", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    setActiveAiConfig(ws, "c1");
-    const after = deleteAiConfig(ws, "c1");
-    expect(after.configs.some((c) => c.id === "c1")).toBe(false);
-    expect(after.activeId).toBe(after.configs[0].id); // active = first remaining config
+  it("keeps the stored key when Save sends none or a blank one", () => {
+    saveAnthropicSettings(ws, input({ apiKey: "sk-ant-secret" }));
+    saveAnthropicSettings(ws, input());
+    saveAnthropicSettings(ws, input({ apiKey: "   " }));
+    expect(getRoleCall(ws, "analysis").apiKey).toBe("sk-ant-secret");
   });
 
-  it("deletes a non-active config", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    createAiConfig(ws, { id: "c2", name: "B", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    setActiveAiConfig(ws, "c1");
-
-    const ids = deleteAiConfig(ws, "c2").configs.map((c) => c.id);
-    expect(ids).toContain("c1");
-    expect(ids).not.toContain("c2");
+  it("keeps keys independent for two workspaces", () => {
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-configstore2-"));
+    try {
+      const ws2 = workspaceAt("ws-2", dir2);
+      saveAnthropicSettings(ws, input({ apiKey: "key-ws1" }));
+      saveAnthropicSettings(ws2, input({ apiKey: "key-ws2" }));
+      expect(getRoleCall(ws, "analysis").apiKey).toBe("key-ws1");
+      expect(getRoleCall(ws2, "analysis").apiKey).toBe("key-ws2");
+    } finally {
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
   });
 
-  it("rejects a duplicate config id", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    expect(() =>
-      createAiConfig(ws, { id: "c1", name: "Dup", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 }),
-    ).toThrow(/already exists/i);
+  it("hasApiKey is stored-only while usingEnvKey reflects the environment, and resolution is env-first", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
+    const view = getAnthropicSettingsForClient(ws);
+    expect(view.hasApiKey).toBe(false);
+    expect(view.usingEnvKey).toBe(true);
+    saveAnthropicSettings(ws, input({ apiKey: "stored" }));
+    expect(getRoleCall(ws, "analysis").apiKey).toBe("sk-ant-from-env");
   });
 
-  it("rejects activating a config that does not exist", () => {
-    expect(() => setActiveAiConfig(ws, "ghost")).toThrow(/not found/i);
+  it("stores each set only while it differs from its built-in, a model compared trimmed and case-insensitively", () => {
+    const defaults = defaultAnthropicSettings();
+    saveAnthropicSettings(ws, input({
+      endpoint: " https://proxy.example/anthropic ",
+      models: { ...defaults.models, analysis: "claude-opus-5-5", metadata: " Claude-Haiku-4-5 " },
+      thinking: { ...defaults.thinking, analysis: "max" },
+    }));
+    expect(saved()).toEqual({
+      "anthropic.endpoint": "https://proxy.example/anthropic",
+      "anthropic.analysis": "claude-opus-5-5",
+      "anthropic.thinking.analysis": "max",
+    });
+    expect(getRoleCall(ws, "analysis")).toMatchObject({ model: "claude-opus-5-5", thinking: "max" });
+
+    saveAnthropicSettings(ws, input());
+    expect(saved()).toEqual({});
   });
 
-  it("rejects updating a config that does not exist", () => {
-    expect(() => updateAiConfig(ws, "ghost", { name: "x" })).toThrow(/not found/i);
+  it("stores a role's thinking only while it differs from its model's default", () => {
+    const defaults = defaultAnthropicSettings();
+    // Opus defaults to adaptive: a new model with its default thinking stores only the model.
+    saveAnthropicSettings(ws, input({ models: { ...defaults.models, imagingPrompts: "claude-opus-5-5" } }));
+    expect(saved()).toEqual({ "anthropic.imagingPrompts": "claude-opus-5-5" });
+    saveAnthropicSettings(ws, input({ thinking: { ...defaults.thinking, analysis: "between_tools" } }));
+    expect(saved()).toEqual({ "anthropic.thinking.analysis": "between_tools" });
+    expect(getRoleCall(ws, "analysis").thinking).toBe("between_tools");
   });
 
-  it("an empty active id clears the session selection, falling back to the first config", () => {
-    createAiConfig(ws, { id: "c1", name: "A", provider: "anthropic", model: "m", thinking: false, maxTokens: 12800 });
-    setActiveAiConfig(ws, "c1");
-    const after = setActiveAiConfig(ws, "");
-    expect(after.activeId).toBe(after.configs[0].id); // back to the first config
-  });
+  it("sends no thinking for a model with no row, and the role's default for a value its row does not list", () => {
+    const defaults = defaultAnthropicSettings();
+    saveAnthropicSettings(ws, input({
+      models: { ...defaults.models, analysis: "claude-next-9" },
+      thinking: { ...defaults.thinking, analysis: "between_tools" },
+    }));
+    expect(getRoleCall(ws, "analysis")).toMatchObject({ model: "claude-next-9", thinking: undefined });
+    // A model with no row sends no thinking, so its role's thinking is never stored.
+    expect(saved()).toEqual({ "anthropic.analysis": "claude-next-9" });
 
-  it("resolves to no active config only when there are no configs", () => {
-    for (const c of getAiConfigsForClient(ws).configs) deleteAiConfig(ws, c.id);
-    expect(getAiConfigsForClient(ws).activeId).toBe(""); // no configs → none
-    expect(getActiveAiConfig(ws)).toBeNull();
+    fs.writeFileSync(file(), JSON.stringify({ "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
+    expect(getRoleCall(ws, "analysis").thinking).toBe("adaptive");
+    expect(getAnthropicSettingsForClient(ws).thinking.analysis).toBe("adaptive");
   });
 });
 
@@ -398,7 +309,7 @@ describe("settings stored by set", () => {
   it("reads all built-ins without seeding a file", () => {
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
     expect(getTargets(dataDir)).toEqual([]);
-    expect(getAiConfigsForClient(ws).configs[0]).toMatchObject({ id: "default", maxTokens: 16384 });
+    expect(getRoleCall(ws, "analysis").model).toBe("claude-sonnet-5-5");
     expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
     expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
     expect(fs.existsSync(file())).toBe(false);
@@ -437,9 +348,10 @@ describe("settings stored by set", () => {
     expect(saved()).toEqual({ contentFont: { family: "Custom" } });
   });
 
-  it("editing the built-in AI config writes only aiConfigs, including all its members", () => {
-    updateAiConfig(ws, "default", { name: "Mine" });
-    expect(saved()).toEqual({ aiConfigs: [{ ...makeDefaultAiConfigs()[0], name: "Mine" }] });
+  it("changing one role's model writes only that role's set", () => {
+    const defaults = defaultAnthropicSettings();
+    saveAnthropicSettings(ws, { ...defaults, models: { ...defaults.models, metadata: "claude-sonnet-5-5" }, thinking: { ...defaults.thinking, metadata: "between_tools" } });
+    expect(saved()).toEqual({ "anthropic.metadata": "claude-sonnet-5-5" });
   });
 
   it("saving a set equal to its built-in removes its key and keeps the file", () => {

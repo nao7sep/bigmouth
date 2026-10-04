@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 import { getPost } from "../core/services/postStore.js";
-import { getActiveAiConfig } from "../core/services/configStore.js";
+import { getRoleCall } from "../core/services/configStore.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildImagingSchema,
@@ -82,11 +82,10 @@ async function generateImaging(
     frontMatter: post.frontMatter,
   });
 
-  const activeConfig = getActiveAiConfig(ws);
-  if (!activeConfig) throw new Error("No active AI configuration selected");
+  const roleCall = getRoleCall(ws, "imagingPrompts");
   let provider;
   try {
-    provider = createProvider(activeConfig, { workspaceId: ws.id, postId, purpose: "imaging" });
+    provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "imaging" });
   } catch (err) {
     logError("imaging provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("Request failed");
@@ -99,10 +98,8 @@ async function generateImaging(
     mode: "structured",
     contentLength: postContent.length,
     frontMatter: post.frontMatter,
-    aiConfigId: activeConfig.id,
-    model: activeConfig.model,
-    thinking: activeConfig.thinking,
-    maxTokens: activeConfig.maxTokens,
+    model: roleCall.model,
+    thinking: roleCall.thinking ?? null,
     systemPrompt,
     userContent,
   });
@@ -139,7 +136,7 @@ async function generateImaging(
           maxDurationMs: IMAGING_GENERATION_MAX_MS,
           maxRetries: IMAGING_GENERATION_MAX_RETRIES,
           contentLength: postContent.length,
-          aiConfigId: activeConfig.id,
+          model: roleCall.model,
         },
       },
       err,

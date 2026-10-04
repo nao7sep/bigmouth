@@ -4,10 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import {
   resolveApiKey,
-  readStoredConfigIds,
+  hasStoredApiKey,
   hasEnvApiKey,
   writeApiKey,
-  clearApiKey,
   clearWorkspaceKeys,
 } from "@main/core/services/apiKeys.js";
 import * as logger from "@main/core/services/logger.js";
@@ -31,66 +30,52 @@ afterEach(() => {
 });
 
 describe("apiKeys secret store", () => {
-  it("writes, resolves, and clears a key; stores it obfuscated under the segment, never plaintext", () => {
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
-    expect(readStoredConfigIds(keyFile, W1).has("c1")).toBe(false);
+  it("writes, resolves, and clears a key; stores it obfuscated under the provider id, never plaintext", () => {
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+    expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
 
-    writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-secret");
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-secret");
-    expect(readStoredConfigIds(keyFile, W1).has("c1")).toBe(true);
+    writeApiKey(keyFile, W1, "anthropic", "sk-ant-secret");
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-ant-secret");
+    expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(true);
 
     const raw = fs.readFileSync(keyFile, "utf-8");
     expect(raw).not.toContain("sk-ant-secret"); // obfuscated, not plaintext
-    // Nested: workspace -> configs -> config -> keys -> segment.
-    expect(JSON.parse(raw).workspaces[W1].configs.c1.keys.anthropic).toBeTruthy();
+    // Nested: workspace -> keys -> provider id.
+    expect(JSON.parse(raw)).toEqual({ workspaces: { [W1]: { keys: { anthropic: expect.stringMatching(/^obf:/) } } } });
 
-    clearApiKey(keyFile, W1, "c1");
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+    writeApiKey(keyFile, W1, "anthropic", "");
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+    // The emptied workspace bucket leaves no trace.
+    expect(JSON.parse(fs.readFileSync(keyFile, "utf-8"))).toEqual({ workspaces: {} });
   });
 
-  it("keeps keys independent per config id within a workspace", () => {
-    writeApiKey(keyFile, W1, "c1", "anthropic", "key-one");
-    writeApiKey(keyFile, W1, "c2", "anthropic", "key-two");
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("key-one");
-    expect(resolveApiKey(keyFile, W1, "c2", "anthropic")).toBe("key-two");
+  it("keeps keys independent across workspaces", () => {
+    writeApiKey(keyFile, W1, "anthropic", "key-w1");
+    writeApiKey(keyFile, W2, "anthropic", "key-w2");
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("key-w1");
+    expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("key-w2");
 
-    clearApiKey(keyFile, W1, "c1");
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
-    expect(resolveApiKey(keyFile, W1, "c2", "anthropic")).toBe("key-two");
-  });
-
-  it("keeps keys independent across workspaces that share a config id", () => {
-    // A config id travels in the committed ai-configs.json, so two workspaces (a
-    // copied/cloned folder) can hold the same id without colliding.
-    writeApiKey(keyFile, W1, "shared", "anthropic", "key-w1");
-    writeApiKey(keyFile, W2, "shared", "anthropic", "key-w2");
-    expect(resolveApiKey(keyFile, W1, "shared", "anthropic")).toBe("key-w1");
-    expect(resolveApiKey(keyFile, W2, "shared", "anthropic")).toBe("key-w2");
-
-    clearApiKey(keyFile, W1, "shared");
-    expect(resolveApiKey(keyFile, W1, "shared", "anthropic")).toBeNull();
-    expect(resolveApiKey(keyFile, W2, "shared", "anthropic")).toBe("key-w2");
+    writeApiKey(keyFile, W1, "anthropic", " ");
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+    expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("key-w2");
   });
 
   it("clearWorkspaceKeys drops only that workspace's keys", () => {
-    writeApiKey(keyFile, W1, "c1", "anthropic", "a");
-    writeApiKey(keyFile, W1, "c2", "anthropic", "b");
-    writeApiKey(keyFile, W2, "c1", "anthropic", "c");
+    writeApiKey(keyFile, W1, "anthropic", "a");
+    writeApiKey(keyFile, W2, "anthropic", "c");
 
     clearWorkspaceKeys(keyFile, W1);
-    expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
-    expect(resolveApiKey(keyFile, W1, "c2", "anthropic")).toBeNull();
-    expect(resolveApiKey(keyFile, W2, "c1", "anthropic")).toBe("c");
-    // The emptied workspace bucket leaves no trace.
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+    expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("c");
     expect(JSON.parse(fs.readFileSync(keyFile, "utf-8")).workspaces[W1]).toBeUndefined();
   });
 
-  it("readStoredConfigIds reports only stored ids, excluding the environment", () => {
-    writeApiKey(keyFile, W1, "c1", "anthropic", "stored");
+  it("hasStoredApiKey reports only a stored key, excluding the environment", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
-    const ids = readStoredConfigIds(keyFile, W1);
-    expect(ids.has("c1")).toBe(true);
-    expect(ids.has("c2")).toBe(false);
+    expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
+    writeApiKey(keyFile, W1, "anthropic", "stored");
+    expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(true);
+    expect(hasStoredApiKey(keyFile, W2, "anthropic")).toBe(false);
   });
 
   it("hasEnvApiKey reflects the provider env var", () => {
@@ -101,41 +86,41 @@ describe("apiKeys secret store", () => {
 
   describe("environment-first resolution", () => {
     it("prefers a set env key over the stored one and never persists it", () => {
-      writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-stored");
+      writeApiKey(keyFile, W1, "anthropic", "sk-ant-stored");
       process.env.ANTHROPIC_API_KEY = "sk-ant-from-env";
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-from-env");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-ant-from-env");
       expect(fs.readFileSync(keyFile, "utf-8")).not.toContain("sk-ant-from-env");
 
       delete process.env.ANTHROPIC_API_KEY;
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-stored");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-ant-stored");
     });
 
     it("trims the env value and ignores a blank one", () => {
-      writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-stored");
+      writeApiKey(keyFile, W1, "anthropic", "sk-ant-stored");
       process.env.ANTHROPIC_API_KEY = "  sk-trimmed  ";
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-trimmed");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-trimmed");
 
       process.env.ANTHROPIC_API_KEY = "   ";
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-stored"); // blank env → fall through
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-ant-stored"); // blank env → fall through
     });
   });
 
   describe("blank-key and whitespace handling", () => {
     it("treats a blank or whitespace written key as a removal", () => {
-      writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-secret");
-      writeApiKey(keyFile, W1, "c1", "anthropic", "   ");
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+      writeApiKey(keyFile, W1, "anthropic", "sk-ant-secret");
+      writeApiKey(keyFile, W1, "anthropic", "   ");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     });
 
     it("trims a stored key, so a leading/trailing-space key resolves trimmed", () => {
-      writeApiKey(keyFile, W1, "c1", "anthropic", "  sk-spaced  ");
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-spaced");
+      writeApiKey(keyFile, W1, "anthropic", "  sk-spaced  ");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-spaced");
     });
 
     it("does not create the file when clearing a key that was never set", () => {
-      clearApiKey(keyFile, W1, "c1");
+      clearWorkspaceKeys(keyFile, W1);
       expect(fs.existsSync(keyFile)).toBe(false);
-      writeApiKey(keyFile, W1, "c1", "anthropic", ""); // blank write on an absent key is also a no-op
+      writeApiKey(keyFile, W1, "anthropic", ""); // blank write on an absent key is also a no-op
       expect(fs.existsSync(keyFile)).toBe(false);
     });
   });
@@ -143,8 +128,8 @@ describe("apiKeys secret store", () => {
   describe("corrupt / hand-edited file tolerance", () => {
     it("moves an unparseable file aside and treats it as empty rather than throwing", () => {
       fs.writeFileSync(keyFile, "{ not json");
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
-      expect(readStoredConfigIds(keyFile, W1).size).toBe(0);
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+      expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
       // Preserved aside under the derived-filename grammar: <stem>-<millisecond UTC
       // stamp>.invalid — never the full "api-keys.json" name with ".invalid" dot-appended.
       const entries = fs.readdirSync(dir);
@@ -159,12 +144,13 @@ describe("apiKeys secret store", () => {
         keyFile,
         JSON.stringify({
           workspaces: {
-            [W1]: { configs: { c1: { keys: { anthropic: 123 } }, c2: { keys: { anthropic: "real-pasted" } } } },
+            [W1]: { keys: { anthropic: 123 } },
+            [W2]: { keys: { anthropic: "real-pasted" } },
           },
         }),
       );
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull(); // bad entry → absent
-      expect(resolveApiKey(keyFile, W1, "c2", "anthropic")).toBe("real-pasted"); // untagged → plaintext
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull(); // bad entry → absent
+      expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("real-pasted"); // untagged → plaintext
     });
 
     it("preserves valid JSON with the wrong container shape before a key write", () => {
@@ -172,14 +158,14 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(keyFile, wrongShape);
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
-      writeApiKey(keyFile, W1, "c1", "anthropic", "new-key");
+      writeApiKey(keyFile, W1, "anthropic", "new-key");
 
       const quarantined = fs
         .readdirSync(dir)
         .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
       expect(quarantined).toBeDefined();
       expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("new-key");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringMatching(/wrong shape/),
         expect.objectContaining({ path: keyFile, movedTo: path.join(dir, quarantined!) }),
@@ -187,10 +173,11 @@ describe("apiKeys secret store", () => {
       warnSpy.mockRestore();
     });
 
-    it("preserves a store whose nested configs container has the wrong shape", () => {
-      const wrongShape = JSON.stringify({ workspaces: { [W1]: { configs: [] } } });
+    // The earlier per-config shape is development data, reset rather than migrated.
+    it("preserves a store whose workspace node has the wrong shape", () => {
+      const wrongShape = JSON.stringify({ workspaces: { [W1]: { configs: { c1: { keys: { anthropic: "obf:x" } } } } } });
       fs.writeFileSync(keyFile, wrongShape);
-      expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       const quarantined = fs
         .readdirSync(dir)
         .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
@@ -205,27 +192,27 @@ describe("apiKeys secret store", () => {
         keyFile,
         JSON.stringify({
           workspaces: {
-            [W1]: { configs: { c1: { keys: { anthropic: "obf:!!!not-base64!!!" } } } },
+            [W1]: { keys: { anthropic: "obf:!!!not-base64!!!" } },
           },
         }),
       );
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       try {
-        expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBeNull();
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
         expect(warnSpy).toHaveBeenCalledTimes(1);
         const [message, fields] = warnSpy.mock.calls[0]!;
         expect(message).toMatch(/invalid obf: encoding/);
-        expect(fields).toMatchObject({ workspaceId: W1, configId: "c1", key: "anthropic" });
+        expect(fields).toEqual({ workspaceId: W1, key: "anthropic" });
       } finally {
         warnSpy.mockRestore();
       }
     });
 
     it("round-trips a validly stored key unchanged, with no warning", () => {
-      writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-real-key");
+      writeApiKey(keyFile, W1, "anthropic", "sk-ant-real-key");
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       try {
-        expect(resolveApiKey(keyFile, W1, "c1", "anthropic")).toBe("sk-ant-real-key");
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-ant-real-key");
         expect(warnSpy).not.toHaveBeenCalled();
       } finally {
         warnSpy.mockRestore();
@@ -236,14 +223,14 @@ describe("apiKeys secret store", () => {
 
 describe("file permissions (POSIX only)", () => {
   it.runIf(process.platform !== "win32")("creates the secrets file 0600", () => {
-    writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-secret");
+    writeApiKey(keyFile, W1, "anthropic", "sk-ant-secret");
     expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
   });
 
   it.runIf(process.platform !== "win32")("tightens a group/world-readable file back to 0600 on read", () => {
-    writeApiKey(keyFile, W1, "c1", "anthropic", "sk-ant-secret");
+    writeApiKey(keyFile, W1, "anthropic", "sk-ant-secret");
     fs.chmodSync(keyFile, 0o644);
-    resolveApiKey(keyFile, W1, "c1", "anthropic");
+    resolveApiKey(keyFile, W1, "anthropic");
     expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
   });
 });

@@ -15,9 +15,6 @@
  */
 
 export type {
-  AiConfig,
-  AiConfigsData,
-  AiProvider,
   AnalysisPrompt,
   ContentFont,
   EditablePostMetadata,
@@ -30,10 +27,8 @@ export type {
   Workspace,
 } from "@shared/types";
 
-export { AI_PROVIDERS } from "@shared/types";
-
+import type { AnthropicSetKey } from "@shared/configSets";
 import type {
-  AiProvider,
   AnalysisPrompt,
   GenerationPromptsData,
   PostIndexEntry,
@@ -104,32 +99,15 @@ export interface AppConfig {
 // --- Config file ---
 
 /**
- * The persisted shape of an AI config in the workspace's `config.json` (the
- * `aiConfigs` section). The API key is deliberately absent — it lives in the
- * storage-root secrets file, keyed by (workspace id, config id), so a
- * git-versioned workspace never carries a secret (storage-path conventions). The
- * config id is the link between the committed config and the local key.
- */
-export interface StoredAiConfig {
-  id: string;
-  name: string;
-  provider: AiProvider;
-  model: string;
-  thinking: boolean;
-  maxTokens: number;
-}
-
-/**
  * The single per-workspace config file (`config.json`): all of a workspace's
  * durable settings, flat (no nested "settings" wrapper), with top-level keys
- * ordered to mirror the Settings modal — general fields, then targets, AI
- * configs, analysis prompts, generation prompts. The active AI config is NOT
- * here; it is view state remembered in state.json (services/activeConfig),
- * defaulting to the first config.
+ * ordered to mirror the Settings modal — general fields, then targets, the
+ * Anthropic section, analysis prompts, generation prompts. The API key is not
+ * here: it lives in the storage root's secrets file, keyed by workspace and
+ * provider, so a git-versioned workspace never carries a secret.
  */
-export interface WorkspaceConfig extends Settings {
+export interface WorkspaceConfig extends Settings, Record<AnthropicSetKey, string> {
   targets: Target[];
-  aiConfigs: StoredAiConfig[];
   analysisPrompts: AnalysisPrompt[];
   generationPrompts: GenerationPromptsData;
 }

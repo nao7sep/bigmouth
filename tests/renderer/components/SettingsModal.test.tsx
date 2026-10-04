@@ -4,7 +4,7 @@ import type {
   Settings,
   Target,
   AnalysisPrompt,
-  AiConfigsData,
+  AnthropicSettingsView,
   GenerationPromptsData,
 } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
@@ -24,11 +24,8 @@ vi.mock("@renderer/api", () => ({
   listAnalysisPrompts: vi.fn(),
   listAnalysisPromptDefaults: vi.fn(),
   saveAnalysisPrompts: vi.fn(),
-  listAiConfigs: vi.fn(),
-  createAiConfig: vi.fn(),
-  updateAiConfig: vi.fn(),
-  deleteAiConfig: vi.fn(),
-  setActiveAiConfig: vi.fn(),
+  getAnthropicSettings: vi.fn(),
+  saveAnthropicSettings: vi.fn(),
   getGenerationPrompts: vi.fn(),
   getGenerationPromptDefaults: vi.fn(),
   saveGenerationPrompts: vi.fn(),
@@ -50,11 +47,8 @@ const mock = {
   listAnalysisPrompts: vi.mocked(api.listAnalysisPrompts),
   listAnalysisPromptDefaults: vi.mocked(api.listAnalysisPromptDefaults),
   saveAnalysisPrompts: vi.mocked(api.saveAnalysisPrompts),
-  listAiConfigs: vi.mocked(api.listAiConfigs),
-  createAiConfig: vi.mocked(api.createAiConfig),
-  updateAiConfig: vi.mocked(api.updateAiConfig),
-  deleteAiConfig: vi.mocked(api.deleteAiConfig),
-  setActiveAiConfig: vi.mocked(api.setActiveAiConfig),
+  getAnthropicSettings: vi.mocked(api.getAnthropicSettings),
+  saveAnthropicSettings: vi.mocked(api.saveAnthropicSettings),
   getGenerationPrompts: vi.mocked(api.getGenerationPrompts),
   getGenerationPromptDefaults: vi.mocked(api.getGenerationPromptDefaults),
   saveGenerationPrompts: vi.mocked(api.saveGenerationPrompts),
@@ -85,23 +79,24 @@ function genPrompts(): GenerationPromptsData {
   return { prompts: { title: "" } };
 }
 
-function aiConfigs(overrides?: Partial<AiConfigsData>): AiConfigsData {
+function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSettingsView {
   return {
-    activeId: "c1",
-    configs: [
-      { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
-    ],
+    endpoint: "https://api.anthropic.com",
+    models: { analysis: "claude-sonnet-5-5", metadata: "claude-haiku-4-5", imagingPrompts: "claude-sonnet-5-5" },
+    thinking: { analysis: "adaptive", metadata: "off", imagingPrompts: "adaptive" },
+    hasApiKey: false,
+    usingEnvKey: false,
     ...overrides,
   };
 }
 
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
-function seedLoaders(ai: AiConfigsData = aiConfigs()) {
+function seedLoaders(ai: AnthropicSettingsView = anthropic()) {
   mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
-  mock.listAiConfigs.mockResolvedValue(ai);
+  mock.getAnthropicSettings.mockResolvedValue(ai);
   mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
   mock.getGenerationPrompts.mockResolvedValue(genPrompts());
   mock.listTargets.mockResolvedValue(targets());
@@ -109,7 +104,7 @@ function seedLoaders(ai: AiConfigsData = aiConfigs()) {
   mock.listAnalysisPrompts.mockResolvedValue(prompts());
 }
 
-async function renderModal(ai?: AiConfigsData) {
+async function renderModal(ai?: AnthropicSettingsView) {
   seedLoaders(ai);
   const onClose = vi.fn();
   const onSettingsChanged = vi.fn();
@@ -126,9 +121,9 @@ async function renderModal(ai?: AiConfigsData) {
   return { onClose, onSettingsChanged, ...utils };
 }
 
-// Switch to the AI Configs tab and return its panel for scoped queries.
+// Switch to the AI tab and return its panel for scoped queries.
 function openAiTab(getByRole: ReturnType<typeof render>["getByRole"]) {
-  fireEvent.click(getByRole("tab", { name: "AI Configs" }));
+  fireEvent.click(getByRole("tab", { name: "AI" }));
   return getByRole("tabpanel");
 }
 
@@ -158,7 +153,7 @@ describe("SettingsModal — render and tab switching", () => {
 
   it("surfaces a load error and gates the editor", async () => {
     mock.getSettings.mockRejectedValue(new Error("disk gone"));
-    mock.listAiConfigs.mockResolvedValue(aiConfigs());
+    mock.getAnthropicSettings.mockResolvedValue(anthropic());
     mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
     mock.getGenerationPrompts.mockResolvedValue(genPrompts());
     mock.listTargets.mockResolvedValue(targets());
@@ -182,27 +177,21 @@ describe("SettingsModal — render and tab switching", () => {
 
   it("renders all five tabs and switches the visible panel", async () => {
     const { getByRole, getByText } = await renderModal();
-    for (const label of ["General", "Targets", "AI Configs", "Analysis", "Generation"]) {
+    for (const label of ["General", "Targets", "AI", "Analysis", "Generation"]) {
       expect(getByRole("tab", { name: label })).toBeTruthy();
     }
     // General is the default panel.
     expect(getByText("Time zone")).toBeTruthy();
 
-    // Switch to AI Configs.
+    // Switch to AI.
     const panel = openAiTab(getByRole);
-    expect(within(panel).getByText("Active AI config")).toBeTruthy();
+    expect(within(panel).getByText("Anthropic is the only AI provider BigMouth supports.")).toBeTruthy();
   });
 });
 
-describe("SettingsModal — AI Configs tab hints/placeholders", () => {
+describe("SettingsModal — AI tab key hints/placeholders", () => {
   it("shows the env-key hint when usingEnvKey is set", async () => {
-    const { getByRole } = await renderModal(
-      aiConfigs({
-        configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800, usingEnvKey: true },
-        ],
-      }),
-    );
+    const { getByRole } = await renderModal(anthropic({ usingEnvKey: true }));
     const panel = openAiTab(getByRole);
     expect(
       within(panel).getByText("Using ANTHROPIC_API_KEY; it overrides any stored key."),
@@ -210,16 +199,9 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
   });
 
   it("uses the keep-current placeholder when a key is already stored", async () => {
-    const { getByRole } = await renderModal(
-      aiConfigs({
-        configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800, hasApiKey: true },
-        ],
-      }),
-    );
+    const { getByRole } = await renderModal(anthropic({ hasApiKey: true }));
     const panel = openAiTab(getByRole);
-    const apiKeyInput = within(panel).getByPlaceholderText("Leave blank to keep current key");
-    expect(apiKeyInput).toBeTruthy();
+    expect(within(panel).getByPlaceholderText("Leave blank to keep current key")).toBeTruthy();
   });
 
   it("uses the Optional placeholder when no key is stored and no env key is present", async () => {
@@ -232,137 +214,102 @@ describe("SettingsModal — AI Configs tab hints/placeholders", () => {
   });
 });
 
-describe("SettingsModal — AI Configs add/edit/delete rows", () => {
-  it("adds a new config row", async () => {
+describe("SettingsModal — AI tab model fields", () => {
+  it("shows one Anthropic section with Endpoint, API key and a model field per role, and no Provider control", async () => {
     const { getByRole } = await renderModal();
     const panel = openAiTab(getByRole);
-    expect(within(panel).getAllByText("Name")).toHaveLength(1);
-
-    fireEvent.click(within(panel).getByText("+ Add AI Config"));
-    // A second Name field appears for the new row.
-    expect(within(getByRole("tabpanel")).getAllByText("Name")).toHaveLength(2);
+    expect(within(panel).getByText("Anthropic")).toBeTruthy();
+    expect((within(panel).getByLabelText("Endpoint") as HTMLInputElement).value).toBe("https://api.anthropic.com");
+    expect(within(panel).getByLabelText("API Key")).toBeTruthy();
+    expect((within(panel).getByLabelText("Analysis model") as HTMLInputElement).value).toBe("claude-sonnet-5-5");
+    expect((within(panel).getByLabelText("Metadata model") as HTMLInputElement).value).toBe("claude-haiku-4-5");
+    expect((within(panel).getByLabelText("Imaging prompts model") as HTMLInputElement).value).toBe("claude-sonnet-5-5");
+    expect(within(panel).queryByLabelText("Provider")).toBeNull();
+    expect(within(panel).queryByText("This model is not supported and may not work as expected.")).toBeNull();
   });
 
-  it("disables Delete when only one config remains, and enables it once a second exists", async () => {
+  it("shows a Thinking field only for a role whose model lists more than one value, in the row's order", async () => {
     const { getByRole } = await renderModal();
     const panel = openAiTab(getByRole);
-    const deleteBtn = within(panel).getByRole("button", { name: "Delete" }) as HTMLButtonElement;
-    expect(deleteBtn.disabled).toBe(true);
-
-    fireEvent.click(within(panel).getByText("+ Add AI Config"));
-    const deletes = within(getByRole("tabpanel")).getAllByRole("button", {
-      name: "Delete",
-    }) as HTMLButtonElement[];
-    expect(deletes.every((b) => !b.disabled)).toBe(true);
+    // Sonnet (Analysis, Imaging prompts) lists seven values; Haiku (Metadata) lists only off.
+    const fields = within(panel).getAllByLabelText("Thinking") as HTMLSelectElement[];
+    expect(fields).toHaveLength(2);
+    expect([...fields[0]!.options].map((option) => option.value)).toEqual([
+      "between_tools", "adaptive", "low", "medium", "high", "xhigh", "max",
+    ]);
+    expect(fields[0]!.value).toBe("adaptive");
   });
 
-  it("deletes a config row", async () => {
-    const { getByRole } = await renderModal(
-      aiConfigs({
-        activeId: "c1",
-        configs: [
-          { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
-          { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: false, maxTokens: 12800 },
-        ],
-      }),
-    );
+  it("warns under a model with no row and hides its Thinking field", async () => {
+    const { getByRole } = await renderModal();
     const panel = openAiTab(getByRole);
-    expect(within(panel).getAllByText("Name")).toHaveLength(2);
+    fireEvent.change(within(panel).getByLabelText("Analysis model"), { target: { value: "claude-next-9" } });
+    const p = getByRole("tabpanel");
+    expect(within(p).getAllByText("This model is not supported and may not work as expected.")).toHaveLength(1);
+    expect(within(p).getAllByLabelText("Thinking")).toHaveLength(1);
+    // Free text the store does not judge: Save stays available.
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+  });
 
-    const deletes = within(panel).getAllByRole("button", { name: "Delete" });
-    fireEvent.click(deletes[1]); // remove "Secondary"
-    expect(within(getByRole("tabpanel")).getAllByText("Name")).toHaveLength(1);
+  it("resets a role's Thinking field to the new model's default when its model changes", async () => {
+    const { getByRole } = await renderModal(anthropic({ thinking: { analysis: "between_tools", metadata: "off", imagingPrompts: "adaptive" } }));
+    const panel = openAiTab(getByRole);
+    expect((within(panel).getAllByLabelText("Thinking")[0] as HTMLSelectElement).value).toBe("between_tools");
+    fireEvent.change(within(panel).getByLabelText("Analysis model"), { target: { value: "claude-opus-5-5" } });
+    const fields = within(getByRole("tabpanel")).getAllByLabelText("Thinking") as HTMLSelectElement[];
+    expect(fields[0]!.value).toBe("adaptive");
+    expect([...fields[0]!.options].map((option) => option.value)).not.toContain("between_tools");
+  });
+
+  it("gates Save on an empty model or an endpoint that is not an http(s) address", async () => {
+    const { getByRole } = await renderModal();
+    const panel = openAiTab(getByRole);
+    const save = () => (getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled;
+
+    fireEvent.change(within(panel).getByLabelText("Metadata model"), { target: { value: " " } });
+    expect(within(getByRole("tabpanel")).getByText("Enter a model.")).toBeTruthy();
+    expect(save()).toBe(true);
+    fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Metadata model"), { target: { value: "claude-haiku-4-5" } });
+    expect(save()).toBe(true); // back to what was loaded: nothing to save
+
+    fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Endpoint"), { target: { value: "api.anthropic.com" } });
+    expect(within(getByRole("tabpanel")).getByText("Enter an address starting with https:// or http://.")).toBeTruthy();
+    expect(save()).toBe(true);
   });
 });
 
-describe("SettingsModal — Save flow (AI config sequence)", () => {
+describe("SettingsModal — Save flow (Anthropic section)", () => {
   it("disables Save until the form is dirty", async () => {
     const { getByRole } = await renderModal();
     const save = getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
-    // Edit a config name to make it dirty.
     const panel = openAiTab(getByRole);
-    const nameInput = within(panel).getAllByRole("textbox")[0];
-    fireEvent.change(nameInput, { target: { value: "Renamed" } });
+    fireEvent.change(within(panel).getByLabelText("Endpoint"), { target: { value: "https://proxy.example" } });
     expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("creates, updates, sets-active and deletes in order on Save", async () => {
-    // Start with two configs, c1 active.
-    const initial = aiConfigs({
-      activeId: "c1",
-      configs: [
-        { id: "c1", name: "Primary", provider: "anthropic", apiKey: "", model: "claude-opus-5", thinking: false, maxTokens: 12800 },
-        { id: "c2", name: "Secondary", provider: "anthropic", apiKey: "", model: "claude-sonnet-5", thinking: true, maxTokens: 12800 },
-      ],
-    });
-    const { getByRole, onClose, onSettingsChanged } = await renderModal(initial);
-
-    // Each AI api call resolves with some data; the exact value is not asserted.
-    mock.createAiConfig.mockResolvedValue(initial);
-    mock.updateAiConfig.mockResolvedValue(initial);
-    mock.setActiveAiConfig.mockResolvedValue(initial);
-    mock.deleteAiConfig.mockResolvedValue(initial);
-    mock.saveSettings.mockResolvedValue(settings());
-    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
-    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
-    mock.saveTargets.mockResolvedValue(targets());
+  it("saves the section with each role's model and thinking, and only the edited set", async () => {
+    const { getByRole, onClose, onSettingsChanged } = await renderModal();
+    mock.saveAnthropicSettings.mockImplementation(async ({ endpoint, models, thinking }) => anthropic({ endpoint, models, thinking }));
 
     const panel = openAiTab(getByRole);
+    fireEvent.change(within(panel).getByLabelText("Analysis model"), { target: { value: "claude-opus-5-5" } });
+    fireEvent.change(within(getByRole("tabpanel")).getAllByLabelText("Thinking")[0]!, { target: { value: "max" } });
+    fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Imaging prompts model"), { target: { value: "claude-next-9" } });
 
-    // The API Key input is type="password" (no textbox role) and Model is a select,
-    // so the role="textbox" elements are Name only — one per row. Comboboxes are the
-    // "Active AI config" select first, then Provider + Model per row.
-
-    // 1. Add a new config; with two existing rows its Name is textbox 2 and its
-    //    Model is combobox 6 ([active, c1.provider, c1.model, c2.provider, c2.model,
-    //    new.provider, new.model]).
-    fireEvent.click(within(panel).getByText("+ Add AI Config"));
-    let p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[2], { target: { value: "New" } });
-    p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("combobox")[6], { target: { value: "claude-haiku-4-5" } });
-
-    // 2. Edit c1's model (an update) — combobox index 2.
-    p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("combobox")[2], { target: { value: "claude-sonnet-5" } });
-
-    // 3. Change the active config to c2 — the first combobox.
-    p = getByRole("tabpanel");
-    const activeSelect = within(p).getAllByRole("combobox")[0];
-    fireEvent.change(activeSelect, { target: { value: "c2" } });
-
-    // 4. Active is now c2; the store refuses to delete the active config, so
-    //    delete c1 (the first Delete button) and keep c2 as the survivor.
-    p = getByRole("tabpanel");
-    const deleteButtons = within(p).getAllByRole("button", { name: "Delete" });
-    fireEvent.click(deleteButtons[0]); // remove c1
-
-    // Save.
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
       await Promise.resolve();
       await Promise.resolve();
-      await Promise.resolve();
     });
 
-    // The new config was created — and picking Haiku re-derived the fields that
-    // belong to the model: thinking off (it rejects thinking) and its own budget.
-    expect(mock.createAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "New",
-        model: "claude-haiku-4-5",
-        provider: "anthropic",
-        thinking: false,
-        maxTokens: 6400,
-      }),
-    );
-    // The active swap was issued for c2.
-    expect(mock.setActiveAiConfig).toHaveBeenCalledWith("c2");
-    // c1 was deleted.
-    expect(mock.deleteAiConfig).toHaveBeenCalledWith("c1");
-    // Only the edited AI set is saved.
+    // A blank key field sends no key, so the stored one is kept.
+    expect(mock.saveAnthropicSettings).toHaveBeenCalledWith({
+      endpoint: "https://api.anthropic.com",
+      models: { analysis: "claude-opus-5-5", metadata: "claude-haiku-4-5", imagingPrompts: "claude-next-9" },
+      thinking: { analysis: "max", metadata: "off", imagingPrompts: "adaptive" },
+    });
     expect(mock.saveSettings).not.toHaveBeenCalled();
     expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
     expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
@@ -371,21 +318,11 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("sends an apiKey on create only when one was typed", async () => {
+  it("sends a key only when one was typed", async () => {
     const { getByRole } = await renderModal();
-    mock.createAiConfig.mockResolvedValue(aiConfigs());
-    mock.saveSettings.mockResolvedValue(settings());
-    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
-    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
-    mock.saveTargets.mockResolvedValue(targets());
-
+    mock.saveAnthropicSettings.mockResolvedValue(anthropic({ hasApiKey: true }));
     const panel = openAiTab(getByRole);
-    fireEvent.click(within(panel).getByText("+ Add AI Config"));
-
-    // One existing row + the new row → textboxes are [c1.name, new.name] (Model is a
-    // select). Fill the new row's Name, leave the API key blank.
-    const p = getByRole("tabpanel");
-    fireEvent.change(within(p).getAllByRole("textbox")[1], { target: { value: "Fresh" } });
+    fireEvent.change(within(panel).getByLabelText("API Key"), { target: { value: "sk-new" } });
 
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
@@ -393,29 +330,15 @@ describe("SettingsModal — Save flow (AI config sequence)", () => {
       await Promise.resolve();
     });
 
-    // apiKey omitted (undefined) because it was left blank. The row was added without
-    // touching Model, so it carries the default model and that model's own budget.
-    expect(mock.createAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "Fresh",
-        model: "claude-sonnet-5",
-        maxTokens: 12800,
-        apiKey: undefined,
-      }),
-    );
+    expect(mock.saveAnthropicSettings).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-new" }));
   });
 
   it("surfaces a save error and keeps the modal open", async () => {
     const { getByRole, onClose, getByText } = await renderModal();
-    mock.updateAiConfig.mockRejectedValue(new Error("write failed"));
-    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
-    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
-    mock.saveTargets.mockResolvedValue(targets());
-    mock.listAiConfigs.mockResolvedValue(aiConfigs());
+    mock.saveAnthropicSettings.mockRejectedValue(new Error("write failed"));
 
-    // Make the form dirty.
     const panel = openAiTab(getByRole);
-    fireEvent.change(within(panel).getAllByRole("textbox")[0], { target: { value: "Renamed" } });
+    fireEvent.change(within(panel).getByLabelText("Endpoint"), { target: { value: "https://proxy.example" } });
 
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Save" }));
@@ -754,7 +677,7 @@ describe("SettingsModal — Targets tab", () => {
   it("gates target creation when no supported languages are configured", async () => {
     // Seed settings without languages so the Targets tab disables Add.
     mock.getSettings.mockResolvedValue({ ...settings(), supportedLanguages: [] });
-    mock.listAiConfigs.mockResolvedValue(aiConfigs());
+    mock.getAnthropicSettings.mockResolvedValue(anthropic());
     mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
     mock.getGenerationPrompts.mockResolvedValue(genPrompts());
     mock.listTargets.mockResolvedValue(targets());
@@ -895,7 +818,7 @@ describe("SettingsModal — Analysis tab", () => {
     // seedLoaders sets the defaults to the standard fixture, so seed manually
     // with a *distinct* default and render directly to keep the override.
     mock.getSettings.mockResolvedValue(settings());
-    mock.listAiConfigs.mockResolvedValue(aiConfigs());
+    mock.getAnthropicSettings.mockResolvedValue(anthropic());
     mock.getGenerationPromptDefaults.mockResolvedValue(genPrompts());
     mock.getGenerationPrompts.mockResolvedValue(genPrompts());
     mock.listTargets.mockResolvedValue(targets());
@@ -937,7 +860,7 @@ describe("SettingsModal — Generation tab", () => {
     // Seed manually so the distinct default survives (renderModal/seedLoaders
     // would reset getGenerationPromptDefaults to the standard fixture).
     mock.getSettings.mockResolvedValue(settings());
-    mock.listAiConfigs.mockResolvedValue(aiConfigs());
+    mock.getAnthropicSettings.mockResolvedValue(anthropic());
     mock.getGenerationPromptDefaults.mockResolvedValue({
       prompts: { title: "DEFAULT TITLE PROMPT" },
     });

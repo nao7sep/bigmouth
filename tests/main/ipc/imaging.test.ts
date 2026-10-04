@@ -18,6 +18,7 @@ const ai = vi.hoisted(() => ({
   generateJsonImpl: null as null | ((sys: string, user: string, schema: unknown, opts: unknown) => unknown),
   lastCall: null as null | { systemPrompt: string; userContent: string; schema: unknown; options: unknown },
   createProviderThrows: null as null | Error,
+  roleCall: null as unknown,
 }));
 
 vi.mock("electron", () => ({
@@ -36,10 +37,10 @@ vi.mock("@main/core/services/logger.js", () => ({
 }));
 
 vi.mock("@main/core/ai/factory.js", () => ({
-  createProvider: () => {
+  createProvider: (roleCall: unknown) => {
+    ai.roleCall = roleCall;
     if (ai.createProviderThrows) throw ai.createProviderThrows;
     return {
-      generateText: () => Promise.resolve(""),
       generateJson: (systemPrompt: string, userContent: string, schema: unknown, options: unknown) => {
         ai.lastCall = { systemPrompt, userContent, schema, options };
         if (!ai.generateJsonImpl) return Promise.resolve({});
@@ -52,7 +53,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
-import { deleteAiConfig, getAiConfigsForClient } from "@main/core/services/configStore.js";
+import { saveAnthropicSettings } from "@main/core/services/configStore.js";
 import { registerAiRequestHandlers } from "@main/ipc/aiRequests.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 
@@ -97,6 +98,7 @@ beforeEach(() => {
   ai.generateJsonImpl = null;
   ai.lastCall = null;
   ai.createProviderThrows = null;
+  ai.roleCall = null;
 
   const ws = createWorkspace("WS");
   wsId = ws.id;
@@ -214,13 +216,23 @@ describe("imaging generation IPC handler", () => {
     );
   });
 
-  it("throws when there is no active AI configuration", async () => {
+  it("routes the call by its role, with that role's model and thinking", async () => {
     const ws = { id: wsId, name: "WS", dataDirectory: dataDir };
-    for (const c of getAiConfigsForClient(ws).configs) deleteAiConfig(ws, c.id); // no configs → no active
+    saveAnthropicSettings(ws, {
+      endpoint: "https://proxy.example",
+      models: { analysis: "claude-opus-5-5", metadata: "claude-haiku-4-5", imagingPrompts: "claude-sonnet-5-5" },
+      thinking: { analysis: "max", metadata: "off", imagingPrompts: "between_tools" },
+      apiKey: "sk-ws",
+    });
 
-    await expect(invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions())).rejects.toThrow(
-      /No active AI configuration/i,
-    );
+    await invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions()).catch(() => {});
+
+    expect(ai.roleCall).toEqual({
+      endpoint: "https://proxy.example",
+      model: "claude-sonnet-5-5",
+      thinking: "between_tools",
+      apiKey: "sk-ws",
+    });
   });
 
   it("throws when the post does not exist", async () => {

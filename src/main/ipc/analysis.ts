@@ -3,7 +3,7 @@ import { ipcMain } from "electron";
 import { CHANNELS, analysisStreamChannel, type AnalysisStreamFrame, type AnalysisStreamParams } from "@shared/ipc";
 import type { Workspace } from "@shared/types";
 import { getPost } from "../core/services/postStore.js";
-import { getAnalysisPrompts, getActiveAiConfig } from "../core/services/configStore.js";
+import { getAnalysisPrompts, getRoleCall } from "../core/services/configStore.js";
 import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
 import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
@@ -30,18 +30,16 @@ function resolveAnalysisRequest(
   const { systemPrompt, userContent } = resolvePromptRequest(prompt.text, { content: postContent });
   const promptMode = usesContentPlaceholder(prompt.text) ? "inline-content" : "split-system-user";
 
-  const aiConfig = getActiveAiConfig(ws);
-  if (!aiConfig) throw new Error("No active AI configuration selected");
-
+  const roleCall = getRoleCall(ws, "analysis");
   let provider;
   try {
-    provider = createProvider(aiConfig, { workspaceId: ws.id, postId, purpose: "analysis" });
+    provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "analysis" });
   } catch (err) {
     logError("analysis provider init failed", { workspace: ws.id, postId, ...describeAiError(err) });
     throw err instanceof Error ? err : new Error("AI provider error");
   }
 
-  return { postId, promptName, post, postContent, contentSource, promptMode, systemPrompt, userContent, aiConfig, provider };
+  return { postId, promptName, post, postContent, contentSource, promptMode, systemPrompt, userContent, roleCall, provider };
 }
 
 export function registerAnalysisHandlers(): void {
@@ -63,10 +61,8 @@ export function registerAnalysisHandlers(): void {
       contentSource: request.contentSource,
       contentLength: request.postContent.length,
       promptMode: request.promptMode,
-      aiConfigId: request.aiConfig.id,
-      model: request.aiConfig.model,
-      thinking: request.aiConfig.thinking,
-      maxTokens: request.aiConfig.maxTokens,
+      model: request.roleCall.model,
+      thinking: request.roleCall.thinking ?? null,
       systemPrompt: request.systemPrompt,
       userContent: request.userContent,
     });
@@ -125,7 +121,7 @@ export function registerAnalysisHandlers(): void {
               contentSource: request.contentSource,
               contentLength: request.postContent.length,
               promptMode: request.promptMode,
-              aiConfigId: request.aiConfig.id,
+              model: request.roleCall.model,
               wroteDelta,
             },
           },

@@ -1,78 +1,43 @@
 import { describe, it, expect } from "vitest";
 import { createProvider } from "@main/core/ai/factory.js";
+import { ClaudeProvider } from "@main/core/ai/claude.js";
+import type { RoleCall } from "@main/core/services/configStore.js";
 
 const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
-import { ClaudeProvider } from "@main/core/ai/claude.js";
-import type { AiConfig } from "@main/core/shared/types.js";
 
-function config(overrides: Partial<AiConfig> = {}): AiConfig {
+function roleCall(overrides: Partial<RoleCall> = {}): RoleCall {
   return {
-    id: "cfg1",
-    name: "Claude",
-    provider: "anthropic",
+    endpoint: "https://api.anthropic.com",
+    model: "claude-sonnet-5-5",
+    thinking: "adaptive",
     apiKey: "sk-ant-test",
-    model: "claude-opus-5",
-    thinking: false,
-    maxTokens: 12800,
     ...overrides,
   };
 }
 
-// The provider keeps its request private; this reads what the factory actually built,
-// so the forcing rules below are asserted on the real thing rather than a re-derivation.
-function requestOf(provider: unknown): { model: string; thinking: boolean; maxTokens: number } {
-  return (provider as { request: { model: string; thinking: boolean; maxTokens: number } }).request;
+// The provider keeps its request private; this reads what the factory actually built.
+function requestOf(provider: unknown): unknown {
+  return (provider as { request: unknown }).request;
 }
 
 describe("createProvider", () => {
-  it("returns a ClaudeProvider for a configured claude config", () => {
-    expect(createProvider(config(), CALL)).toBeInstanceOf(ClaudeProvider);
+  it("builds a ClaudeProvider from the role's endpoint, model and thinking", () => {
+    const provider = createProvider(roleCall({ endpoint: "https://proxy.example", thinking: "between_tools" }), CALL);
+    expect(provider).toBeInstanceOf(ClaudeProvider);
+    expect(requestOf(provider)).toEqual({
+      endpoint: "https://proxy.example",
+      model: "claude-sonnet-5-5",
+      thinking: "between_tools",
+    });
   });
 
-  it("throws when the API key is missing", () => {
-    expect(() => createProvider(config({ apiKey: "" }), CALL)).toThrow(
-      /API key is not configured/
-    );
+  it("throws when no API key resolves", () => {
+    expect(() => createProvider(roleCall({ apiKey: null }), CALL)).toThrow(/No Anthropic API key/);
   });
 
-  it("throws for an unknown provider", () => {
-    expect(() =>
-      createProvider(config({ provider: "openai" as AiConfig["provider"] }), CALL)
-    ).toThrow(/Unknown AI provider/);
-  });
-
-  it("passes the config's model and budget through to the provider", () => {
-    const provider = createProvider(config({ model: "claude-sonnet-5", maxTokens: 4242 }), CALL);
-    expect(requestOf(provider)).toMatchObject({ model: "claude-sonnet-5", maxTokens: 4242 });
-  });
-
-  it("keeps thinking on for a model that supports it", () => {
-    const provider = createProvider(config({ model: "claude-sonnet-5", thinking: true }), CALL);
-    expect(requestOf(provider).thinking).toBe(true);
-  });
-
-  // The safety-critical one: Haiku answers a request for adaptive thinking with a 400,
-  // so a stored `true` — left behind when the user switched models — must never reach
-  // the API.
-  it("forces thinking off for a model that rejects it, even when the config says on", () => {
-    const provider = createProvider(config({ model: "claude-haiku-4-5", thinking: true }), CALL);
-    expect(requestOf(provider).thinking).toBe(false);
-  });
-
-  it("names the config when its model is one this version no longer offers", () => {
-    expect(() => createProvider(config({ name: "Old", model: "claude-3-opus-20240229" }), CALL)).toThrow(
-      /"Old" uses a model this version no longer offers: claude-3-opus-20240229/
-    );
-  });
-
-  it("rejects a budget that is not a usable number", () => {
-    expect(() => createProvider(config({ maxTokens: 0 }), CALL)).toThrow(/whole number of 1 or more/);
-    expect(() => createProvider(config({ maxTokens: 1.5 }), CALL)).toThrow(/whole number of 1 or more/);
-  });
-
-  // The app does not own the upper bound: whether a model accepts a large budget is
-  // the API's judgment, surfaced at call time rather than guessed at here.
-  it("accepts a large budget without second-guessing the model", () => {
-    expect(() => createProvider(config({ maxTokens: 999_999 }), CALL)).not.toThrow();
+  // The provider's answer decides whether an id works (ai-model-routing-conventions).
+  it("builds a provider for a model id with no row", () => {
+    const provider = createProvider(roleCall({ model: "claude-next-9", thinking: undefined }), CALL);
+    expect(requestOf(provider)).toMatchObject({ model: "claude-next-9", thinking: undefined });
   });
 });

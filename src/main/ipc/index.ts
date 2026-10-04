@@ -6,7 +6,7 @@ import { registerRecordsHandlers } from "./records.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerTargetHandlers } from "./targets.js";
 import { registerPostHandlers } from "./posts.js";
-import { registerAiConfigHandlers } from "./aiConfigs.js";
+import { registerAnthropicSettingsHandlers } from "./anthropicSettings.js";
 import { registerAnalysisPromptHandlers } from "./analysisPrompts.js";
 import { registerGenerationPromptHandlers } from "./generationPrompts.js";
 import { registerMetadataHandlers } from "./metadata.js";
@@ -31,7 +31,7 @@ export function registerIpcHandlers(): void {
   registerSettingsHandlers();
   registerTargetHandlers();
   registerPostHandlers();
-  registerAiConfigHandlers();
+  registerAnthropicSettingsHandlers();
   registerAnalysisPromptHandlers();
   registerGenerationPromptHandlers();
   registerMetadataHandlers();

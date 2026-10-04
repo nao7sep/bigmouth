@@ -4,7 +4,7 @@ Write blog and social media posts, check each draft with AI before it goes out, 
 
 ## Features
 
-- **Workspaces** — multiple isolated workspaces (posts, assets, settings, AI config). API keys are kept outside the workspace, so committing one never leaks a secret.
+- **Workspaces** — multiple isolated workspaces (posts, assets, settings, AI settings). API keys are kept outside the workspace, so committing one never leaks a secret.
 - **Markdown editor** with autosave and a Draft → Ready → Published → Expired lifecycle; published and expired posts are locked (move back to Draft or Ready to edit).
 - **AI analysis** — run named prompts against a draft to catch issues before publishing, streamed as the model responds.
 - **AI metadata & imaging** — generate title/slug/tags/SEO description, and temporary English image-prompt variants.

@@ -2,40 +2,44 @@
  * Default values used when initializing the app for the first time.
  */
 
-import type { Settings, AnalysisPrompt, StoredAiConfig, GenerationPromptsData, WorkspaceConfig } from "./types.js";
-import { DEFAULT_CONTENT_FONT, DEFAULT_MODEL_ID, findModelDef } from "@shared/types";
+import type { Settings, AnalysisPrompt, GenerationPromptsData, WorkspaceConfig } from "./types.js";
+import { DEFAULT_CONTENT_FONT, type AnthropicSettings } from "@shared/types";
+import { AI_ROLE_IDS, ANTHROPIC_ENDPOINT, defaultModelFor, defaultThinkingFor, kindOf, rowFor, type AiRole } from "@shared/aiModels";
+import { modelSetKey, thinkingSetKey, type AnthropicSetKey } from "@shared/configSets";
 import { SYSTEM_TIME_ZONE } from "@shared/timeZone";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
 
-/**
- * The in-memory AI config for a workspace that has no saved aiConfigs set.
- * Keys are scoped by workspace as well as config id.
- */
-export function makeDefaultAiConfigs(): StoredAiConfig[] {
-  const model = findModelDef(DEFAULT_MODEL_ID);
-  if (!model) throw new Error(`DEFAULT_MODEL_ID is not in MODEL_DEFS: ${DEFAULT_MODEL_ID}`);
-  return [
-    {
-      id: "default",
-      name: "Default",
-      provider: "anthropic",
-      model: model.id,
-      thinking: model.supportsAdaptiveThinking,
-      maxTokens: 16384,
-    },
-  ];
+/** The Anthropic section's built-in: the provider's endpoint, and each role's default model and thinking. */
+export function defaultAnthropicSettings(): AnthropicSettings {
+  const models = {} as Record<AiRole, string>;
+  const thinking = {} as Record<AiRole, string>;
+  for (const role of AI_ROLE_IDS) {
+    models[role] = defaultModelFor("anthropic", kindOf(role));
+    thinking[role] = defaultThinkingFor(rowFor(models[role])!, role);
+  }
+  return { endpoint: ANTHROPIC_ENDPOINT, models, thinking };
+}
+
+/** The section as its config sets. */
+export function anthropicSets(section: AnthropicSettings): Record<AnthropicSetKey, string> {
+  const sets = { "anthropic.endpoint": section.endpoint } as Record<AnthropicSetKey, string>;
+  for (const role of AI_ROLE_IDS) {
+    sets[modelSetKey(role)] = section.models[role];
+    sets[thinkingSetKey(role)] = section.thinking[role];
+  }
+  return sets;
 }
 
 /**
  * The default `config.json` for a freshly initialized workspace: flat, in modal
- * order (general settings, then targets, AI configs, analysis prompts, generation
+ * order (general settings, then targets, the Anthropic section, analysis prompts, generation
  * prompts). These values stay in memory until their set is edited.
  */
 export function makeDefaultConfig(): WorkspaceConfig {
   return {
     ...DEFAULT_SETTINGS,
     targets: [],
-    aiConfigs: makeDefaultAiConfigs(),
+    ...anthropicSets(defaultAnthropicSettings()),
     analysisPrompts: DEFAULT_ANALYSIS_PROMPTS,
     generationPrompts: DEFAULT_GENERATION_PROMPTS_DATA,
   };

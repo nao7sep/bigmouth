@@ -6,21 +6,26 @@ import type {
   Settings,
   Target,
   AnalysisPrompt,
-  AiConfig,
-  AiConfigsData,
-  AiProvider,
   GenerationPromptsData,
   WorkspaceConfig,
   Workspace,
 } from "../shared/types.js";
-import { SETTINGS_SET_KEYS, WORKSPACE_SET_KEYS, setsDifferingFromBuiltIn, workspaceSetIssue } from "@shared/configSets";
+import type { AnthropicSettings, AnthropicSettingsInput, AnthropicSettingsView } from "@shared/types";
+import {
+  SETTINGS_SET_KEYS,
+  WORKSPACE_SET_KEYS,
+  modelSetKey,
+  setsDifferingFromBuiltIn,
+  thinkingSetKey,
+  workspaceSetIssue,
+} from "@shared/configSets";
+import { AI_ROLE_IDS, thinkingFor, type AiRole } from "@shared/aiModels";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeSetFile } from "../shared/setFile.js";
-import { makeDefaultConfig } from "../shared/defaults.js";
+import { anthropicSets, makeDefaultConfig } from "../shared/defaults.js";
 import { warn } from "./logger.js";
 import * as apiKeys from "./apiKeys.js";
 import { getApiKeysPath } from "./storagePaths.js";
-import { resolveActiveConfigId, setActiveConfigId } from "./activeConfig.js";
 
 const CONFIG_FILE = "config.json";
 
@@ -100,182 +105,73 @@ export function saveSettings(dataDir: string, settings: Partial<Settings>): Sett
   return getSettings(dataDir);
 }
 
-// --- AI Configs ---------------------------------------------------------------
+// --- The Anthropic section ----------------------------------------------------
 
-/**
- * Returns the active AI config with its API key resolved (environment-first, then
- * the storage-root secrets file — never the workspace), freshly constructed. For
- * main-process-internal use only (analysis, generation, imaging). NEVER send the
- * result of this function to the renderer.
- *
- * Narrowing the return value to a single config means plaintext keys never exist
- * as a collection: misuse can only ever leak the one config a route was already
- * going to use.
- */
-export function getActiveAiConfig(workspace: Workspace): AiConfig | null {
-  const { aiConfigs } = readConfig(workspace.dataDirectory);
-  const activeId = resolveActiveConfigId(workspace.id, aiConfigs);
-  const stored = aiConfigs.find((c) => c.id === activeId);
-  if (!stored) return null;
-  return {
-    id: stored.id,
-    name: stored.name,
-    provider: stored.provider,
-    model: stored.model,
-    thinking: stored.thinking,
-    maxTokens: stored.maxTokens,
-    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, stored.id, stored.provider) ?? "",
-  };
+function anthropicSection(config: WorkspaceConfig): AnthropicSettings {
+  const models = {} as Record<AiRole, string>;
+  const thinking = {} as Record<AiRole, string>;
+  for (const role of AI_ROLE_IDS) {
+    models[role] = config[modelSetKey(role)];
+    thinking[role] = config[thinkingSetKey(role)];
+  }
+  return { endpoint: config["anthropic.endpoint"], models, thinking };
 }
 
-/**
- * Returns AI configs for the renderer: empty key fields, a per-config `hasApiKey`
- * (a key is stored for THIS config) and `usingEnvKey` (the provider's env var is
- * set and overrides any stored key), plus the session-active config id. The key
- * value never crosses the IPC bridge.
- */
-export function getAiConfigsForClient(workspace: Workspace): AiConfigsData {
-  const { aiConfigs } = readConfig(workspace.dataDirectory);
-  const storedIds = apiKeys.readStoredConfigIds(getApiKeysPath(), workspace.id);
-  return {
-    activeId: resolveActiveConfigId(workspace.id, aiConfigs),
-    configs: aiConfigs.map((config) => ({
-      id: config.id,
-      name: config.name,
-      provider: config.provider,
-      apiKey: "",
-      hasApiKey: storedIds.has(config.id),
-      usingEnvKey: apiKeys.hasEnvApiKey(config.provider),
-      model: config.model,
-      thinking: config.thinking,
-      maxTokens: config.maxTokens,
-    })),
-  };
-}
-
-export type CreateAiConfigInput = {
-  id: string;
-  name: string;
-  provider: AiProvider;
+/** What one role's call is built from. For main-process use only: it carries the plaintext key. */
+export interface RoleCall {
+  endpoint: string;
   model: string;
-  thinking: boolean;
-  maxTokens: number;
-  apiKey?: string;
-};
-
-/**
- * Creates a new AI config with a caller-supplied id. Throws if the id is already
- * in use. Any supplied key goes to the secrets file, not the workspace. Returns
- * the renderer-facing config view.
- */
-export function createAiConfig(workspace: Workspace, input: CreateAiConfigInput): AiConfigsData {
-  const config = readConfig(workspace.dataDirectory);
-  if (config.aiConfigs.some((c) => c.id === input.id)) {
-    throw new Error(`AI config with id "${input.id}" already exists`);
-  }
-  config.aiConfigs = [
-    ...config.aiConfigs,
-    {
-      id: input.id,
-      name: input.name,
-      provider: input.provider,
-      model: input.model,
-      thinking: input.thinking,
-      maxTokens: input.maxTokens,
-    },
-  ];
-  // Config first, then key: the key is only meaningful once its config exists, so
-  // a failed key write at worst leaves a keyless config the user can re-key. (The
-  // workspace file and the secrets file are separate; they cannot be made atomic
-  // without machinery, so ordering bounds the blast radius instead.)
-  writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
-  if (input.apiKey !== undefined) {
-    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, input.id, input.provider, input.apiKey);
-  }
-  return getAiConfigsForClient(workspace);
-}
-
-export type UpdateAiConfigPatch = {
-  name?: string;
-  provider?: AiProvider;
-  model?: string;
-  thinking?: boolean;
-  maxTokens?: number;
-  /**
-   * Key handling (the key lives in the secrets file, not the workspace):
-   *   - field omitted from patch → existing key is preserved
-   *   - blank string             → existing key is cleared
-   *   - non-blank string         → existing key is replaced
-   */
-  apiKey?: string;
-};
-
-/**
- * Applies a partial update to a single AI config. Throws if the id does not
- * exist. Returns the renderer-facing config view.
- */
-export function updateAiConfig(
-  workspace: Workspace,
-  id: string,
-  patch: UpdateAiConfigPatch
-): AiConfigsData {
-  const config = readConfig(workspace.dataDirectory);
-  const target = config.aiConfigs.find((c) => c.id === id);
-  if (!target) {
-    throw new Error(`AI config with id "${id}" not found`);
-  }
-  // Every editable field of UpdateAiConfigPatch is applied here; the list must
-  // name each of them, or an edit the IPC handler accepts is silently dropped.
-  const editable = ["name", "provider", "model", "thinking", "maxTokens"] as const;
-  let metadataChanged = false;
-  for (const key of editable) {
-    if (patch[key] === undefined) continue;
-    // Each key's value type matches the field it is assigned to; the cast is
-    // only because TypeScript cannot see that through a union of keys.
-    Object.assign(target, { [key]: patch[key] });
-    metadataChanged = true;
-  }
-  // Key to the secrets file first, so a failure there leaves the workspace file
-  // untouched. Rewrite the workspace file only when a non-secret field changed —
-  // a key-only edit must not dirty the git-versioned config.json.
-  if (patch.apiKey !== undefined) {
-    apiKeys.writeApiKey(getApiKeysPath(), workspace.id, id, target.provider, patch.apiKey);
-  }
-  if (metadataChanged) {
-    writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
-  }
-  return getAiConfigsForClient(workspace);
+  /** The value the role sends; undefined for a model with no row, which sends none. */
+  thinking: string | undefined;
+  apiKey: string | null;
 }
 
 /**
- * Removes a single AI config and its stored key. Deleting the session-active
- * config is fine — the active selection simply falls back to the first remaining
- * config (or to none when the last is removed); there is no persisted id to
- * orphan.
+ * One role's endpoint, model and thinking, with the workspace's key resolved
+ * (environment first, then the storage-root secrets file — never the
+ * workspace). NEVER send the result to the renderer.
  */
-export function deleteAiConfig(workspace: Workspace, id: string): AiConfigsData {
-  const config = readConfig(workspace.dataDirectory);
-  if (!config.aiConfigs.some((c) => c.id === id)) {
-    throw new Error(`AI config with id "${id}" not found`);
-  }
-  config.aiConfigs = config.aiConfigs.filter((c) => c.id !== id);
-  writeSets(workspace.dataDirectory, { aiConfigs: config.aiConfigs });
-  apiKeys.clearApiKey(getApiKeysPath(), workspace.id, id);
-  return getAiConfigsForClient(workspace);
+export function getRoleCall(workspace: Workspace, role: AiRole): RoleCall {
+  const section = anthropicSection(readConfig(workspace.dataDirectory));
+  const model = section.models[role];
+  return {
+    endpoint: section.endpoint,
+    model,
+    thinking: thinkingFor(model, role, section.thinking[role]),
+    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, "anthropic"),
+  };
 }
 
 /**
- * Selects the active AI config (remembered per workspace in state.json). Accepts an empty
- * string to clear the selection (the active config falls back to the first).
- * Throws if a non-empty id does not refer to an existing config.
+ * The section for the renderer: each role's thinking as the value it sends (a
+ * model with no row keeps the stored one), and whether a key is stored or the
+ * environment overrides it. The key value never crosses the IPC bridge.
  */
-export function setActiveAiConfig(workspace: Workspace, id: string): AiConfigsData {
-  const config = readConfig(workspace.dataDirectory);
-  if (id !== "" && !config.aiConfigs.some((c) => c.id === id)) {
-    throw new Error(`AI config with id "${id}" not found`);
+export function getAnthropicSettingsForClient(workspace: Workspace): AnthropicSettingsView {
+  const section = anthropicSection(readConfig(workspace.dataDirectory));
+  const thinking = {} as Record<AiRole, string>;
+  for (const role of AI_ROLE_IDS) {
+    thinking[role] = thinkingFor(section.models[role], role, section.thinking[role]) ?? section.thinking[role];
   }
-  setActiveConfigId(workspace.id, id);
-  return getAiConfigsForClient(workspace);
+  return {
+    ...section,
+    thinking,
+    hasApiKey: apiKeys.hasStoredApiKey(getApiKeysPath(), workspace.id, "anthropic"),
+    usingEnvKey: apiKeys.hasEnvApiKey("anthropic"),
+  };
+}
+
+/**
+ * Saves the section's sets, trimmed, and a key the user typed. The key goes to
+ * the secrets file first, so a failure there leaves the workspace file untouched;
+ * a blank key keeps the stored one.
+ */
+export function saveAnthropicSettings(workspace: Workspace, input: AnthropicSettingsInput): AnthropicSettingsView {
+  if (input.apiKey?.trim()) apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey);
+  const models = {} as Record<AiRole, string>;
+  for (const role of AI_ROLE_IDS) models[role] = input.models[role].trim();
+  writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
+  return getAnthropicSettingsForClient(workspace);
 }
 
 // --- Targets ------------------------------------------------------------------

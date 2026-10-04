@@ -8,8 +8,8 @@
  * Keeping the two arguments separate lets each provider route them correctly
  * (e.g. Claude's system parameter vs. a user message prefix).
  *
- * The model, its thinking mode, and its output budget come from the AI config and are
- * fixed for the provider's lifetime, so they are not per-call arguments.
+ * The model and its thinking value come from the role's settings and are fixed
+ * for the provider's lifetime, so they are not per-call arguments.
  */
 
 /** What a provider call belongs to, kept on its record. */
@@ -20,7 +20,6 @@ export type ProviderCallContext = {
 };
 
 export interface AiProvider {
-  generateText(systemPrompt: string, userContent: string): Promise<string>;
   generateJson(
     systemPrompt: string,
     userContent: string,
@@ -35,7 +34,7 @@ export interface AiProvider {
   ): Promise<unknown>;
   /**
    * `onThinking` receives the model's reasoning summary as it is produced, which only
-   * happens when the config has thinking on. It is optional: a caller that has nothing
+   * happens when the role's thinking is adaptive. It is optional: a caller that has nothing
    * to show it simply omits it.
    */
   generateTextStream(

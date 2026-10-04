@@ -24,7 +24,7 @@ export function AnalysisTab({
   const [prompts, setPrompts] = useState<AnalysisPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [result, setResult] = useState<string | null>(null);
-  // The model's reasoning, when the active AI config has thinking on. It arrives
+  // The model's reasoning, when the analysis role's thinking is adaptive. It arrives
   // before any answer text, so it is also what fills the wait.
   const [thinking, setThinking] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

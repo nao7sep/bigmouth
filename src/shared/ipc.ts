@@ -10,8 +10,8 @@
 // web typechecks.
 
 import type {
-  AiConfigsData,
-  AiProvider,
+  AnthropicSettingsInput,
+  AnthropicSettingsView,
   AppSettings,
   AppSettingsLoad,
   AnalysisPrompt,
@@ -122,12 +122,9 @@ export const CHANNELS = {
   getSettings: "settings:get",
   saveSettings: "settings:save",
 
-  // AI configs
-  listAiConfigs: "aiConfig:list",
-  createAiConfig: "aiConfig:create",
-  updateAiConfig: "aiConfig:update",
-  deleteAiConfig: "aiConfig:delete",
-  setActiveAiConfig: "aiConfig:setActive",
+  // The Anthropic section
+  getAnthropicSettings: "anthropic:get",
+  saveAnthropicSettings: "anthropic:save",
 
   // Generation prompts
   getGenerationPrompts: "generationPrompts:get",
@@ -223,26 +220,6 @@ export interface PostUpdate {
   frontMatter?: EditablePostMetadata;
 }
 
-export interface AiConfigInput {
-  id: string;
-  name: string;
-  provider: AiProvider;
-  model: string;
-  thinking: boolean;
-  maxTokens: number;
-  apiKey?: string;
-}
-
-export interface AiConfigPatch {
-  name?: string;
-  provider?: AiProvider;
-  model?: string;
-  thinking?: boolean;
-  maxTokens?: number;
-  /** Omit to preserve, "" to clear, non-empty to replace. */
-  apiKey?: string;
-}
-
 export type MetadataGenerationResults = Record<string, { value: string } | { error: string }>;
 
 export interface AnalysisStreamParams {
@@ -257,8 +234,8 @@ export interface AnalysisStreamParams {
  * cut short, so a partial result is never mistaken for a complete one. */
 export type AnalysisStreamFrame =
   | { type: "delta"; text: string }
-  // The model's reasoning summary, produced before the answer when the AI config has
-  // thinking on. A separate frame so the renderer can show it as reasoning rather than
+  // The model's reasoning summary, produced before the answer when the analysis role's
+  // thinking is adaptive. A separate frame so the renderer can show it as reasoning rather than
   // splicing it into the analysis text.
   | { type: "thinking"; text: string }
   | { type: "done" }
@@ -371,12 +348,9 @@ export interface BigMouthApi {
   getSettings(wsId: string): Promise<Settings>;
   saveSettings(wsId: string, settings: Partial<Settings>): Promise<Settings>;
 
-  // AI configs
-  listAiConfigs(wsId: string): Promise<AiConfigsData>;
-  createAiConfig(wsId: string, input: AiConfigInput): Promise<AiConfigsData>;
-  updateAiConfig(wsId: string, id: string, patch: AiConfigPatch): Promise<AiConfigsData>;
-  deleteAiConfig(wsId: string, id: string): Promise<AiConfigsData>;
-  setActiveAiConfig(wsId: string, id: string): Promise<AiConfigsData>;
+  // The Anthropic section
+  getAnthropicSettings(wsId: string): Promise<AnthropicSettingsView>;
+  saveAnthropicSettings(wsId: string, input: AnthropicSettingsInput): Promise<AnthropicSettingsView>;
 
   // Generation prompts
   getGenerationPrompts(wsId: string): Promise<GenerationPromptsData>;

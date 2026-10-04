@@ -1,15 +1,41 @@
 import type { Settings } from "./types.js";
-import { AI_PROVIDERS, isAiConfigId, validateMaxTokens } from "./types.js";
 import { settingsSetErrors } from "./settingsValidation.js";
 import { GENERATION_PROMPT_KEYS } from "./metadataFields.js";
+import { AI_ROLE_IDS, defaultThinkingFor, rowFor, thinkingFor, type AiRole } from "./aiModels.js";
 
 export const SETTINGS_SET_KEYS = [
   "timezone", "supportedLanguages", "publishedPostsPerLoad", "maxUploadMb",
   "editorWatermark", "extraFieldWatermark", "uiFontFamily", "contentFont",
 ] as const satisfies readonly (keyof Settings)[];
+// The Anthropic section (ai-model-routing-conventions): its endpoint, one model
+// per role and one thinking value per role, each its own set.
+export const ANTHROPIC_SET_KEYS = [
+  "anthropic.endpoint",
+  "anthropic.analysis", "anthropic.metadata", "anthropic.imagingPrompts",
+  "anthropic.thinking.analysis", "anthropic.thinking.metadata", "anthropic.thinking.imagingPrompts",
+] as const satisfies readonly (`anthropic.${"endpoint" | AiRole}` | `anthropic.thinking.${AiRole}`)[];
+export type AnthropicSetKey = (typeof ANTHROPIC_SET_KEYS)[number];
+
+export const modelSetKey = (role: AiRole) => `anthropic.${role}` as const;
+export const thinkingSetKey = (role: AiRole) => `anthropic.thinking.${role}` as const;
+
 export const WORKSPACE_SET_KEYS = [
-  ...SETTINGS_SET_KEYS, "targets", "aiConfigs", "analysisPrompts", "generationPrompts",
+  ...SETTINGS_SET_KEYS, "targets", ...ANTHROPIC_SET_KEYS, "analysisPrompts", "generationPrompts",
 ] as const;
+
+const MODEL_SET_ROLES: ReadonlyMap<string, AiRole> = new Map(AI_ROLE_IDS.map((role) => [modelSetKey(role), role]));
+const THINKING_SET_ROLES: ReadonlyMap<string, AiRole> = new Map(AI_ROLE_IDS.map((role) => [thinkingSetKey(role), role]));
+
+/** An endpoint is an absolute http(s) URL; anything else could never be called. */
+export function isEndpoint(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -65,17 +91,13 @@ function shapeIssue(key: WorkspaceSetKey, value: unknown): string | null {
         GENERATION_PROMPT_KEYS.every((k) => typeof prompts[k] === "string");
       return valid ? null : "prompts must map every generation prompt key, and no other, to a string";
     }
-    case "aiConfigs": {
-      const valid = Array.isArray(value) && value.every((v) => object(v) &&
-        isAiConfigId(v.id) && typeof v.name === "string" &&
-        AI_PROVIDERS.includes(v.provider as typeof AI_PROVIDERS[number]) &&
-        typeof v.model === "string" && typeof v.thinking === "boolean" &&
-        typeof v.maxTokens === "number" && validateMaxTokens(v.maxTokens) === null) &&
-        new Set(value.map((v) => v.id)).size === value.length;
-      return valid ? null : "aiConfigs must be a list of valid AI configs with unique ids";
-    }
+    case "anthropic.endpoint":
+      return isEndpoint(value) ? null : "anthropic.endpoint must be an http or https URL";
     default:
-      return typeof value === "string" ? null : `${key} must be a string`;
+      if (typeof value !== "string") return `${key} must be a string`;
+      // A model id is free text the store never judges, but a role needs one.
+      if (MODEL_SET_ROLES.has(key) && !value.trim()) return `${key} must name a model`;
+      return null;
   }
 }
 
@@ -93,6 +115,22 @@ function canonical(value: unknown): unknown {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
 }
 
+// A model id is its own key, compared trimmed and case-insensitively. A role's
+// thinking equals its built-in while the value it sends is the default for the
+// model the role selects, and always for a model with no row.
+function equalsBuiltIn(key: string, values: Record<string, unknown>, builtIn: Record<string, unknown>): boolean {
+  const value = values[key];
+  const thinkingRole = THINKING_SET_ROLES.get(key);
+  if (thinkingRole) {
+    const row = rowFor(String(values[modelSetKey(thinkingRole)] ?? ""));
+    return !row || thinkingFor(row.id, thinkingRole, String(value)) === defaultThinkingFor(row, thinkingRole);
+  }
+  if (MODEL_SET_ROLES.has(key)) {
+    return typeof value === "string" && value.trim().toLowerCase() === String(builtIn[key]).toLowerCase();
+  }
+  return JSON.stringify(canonical(value)) === JSON.stringify(canonical(builtIn[key]));
+}
+
 /** The file content per config-sets-conventions: each set that differs from its built-in, whole. */
 export function setsDifferingFromBuiltIn<T extends object>(
   values: T,
@@ -101,7 +139,7 @@ export function setsDifferingFromBuiltIn<T extends object>(
 ): Record<string, unknown> {
   const sets: Record<string, unknown> = {};
   for (const key of keys) {
-    if (JSON.stringify(canonical(values[key])) !== JSON.stringify(canonical(builtIn[key]))) sets[key] = values[key];
+    if (!equalsBuiltIn(key, values as Record<string, unknown>, builtIn as Record<string, unknown>)) sets[key] = values[key];
   }
   return sets;
 }

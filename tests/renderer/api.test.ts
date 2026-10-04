@@ -21,11 +21,8 @@ import {
   renameTarget,
   getSettings,
   saveSettings,
-  listAiConfigs,
-  createAiConfig,
-  updateAiConfig,
-  deleteAiConfig,
-  setActiveAiConfig,
+  getAnthropicSettings,
+  saveAnthropicSettings,
   listAssets,
   uploadAsset,
   deleteAsset,
@@ -290,43 +287,27 @@ describe("api wrappers — call-through and argument shape", () => {
     });
   });
 
-  describe("AI configs", () => {
+  describe("the Anthropic section", () => {
     beforeEach(() => setActiveWorkspace("w1"));
 
-    it("listAiConfigs forwards the active ws", () => {
+    it("getAnthropicSettings forwards the active ws", () => {
       const b = bridge();
       installBridge(b);
-      void listAiConfigs();
-      expect(b.listAiConfigs).toHaveBeenCalledWith("w1");
+      void getAnthropicSettings();
+      expect(b.getAnthropicSettings).toHaveBeenCalledWith("w1");
     });
 
-    it("createAiConfig forwards ws + the AiConfigInput", () => {
+    it("saveAnthropicSettings forwards ws + the section", () => {
       const b = bridge();
       installBridge(b);
-      const input = { id: "c1", name: "C", provider: "anthropic" as const, model: "m", thinking: false, maxTokens: 12800, apiKey: "k" };
-      void createAiConfig(input);
-      expect(b.createAiConfig).toHaveBeenCalledWith("w1", input);
-    });
-
-    it("updateAiConfig forwards ws + id + patch", () => {
-      const b = bridge();
-      installBridge(b);
-      void updateAiConfig("c1", { name: "New", apiKey: "k2" });
-      expect(b.updateAiConfig).toHaveBeenCalledWith("w1", "c1", { name: "New", apiKey: "k2" });
-    });
-
-    it("deleteAiConfig forwards ws + id", () => {
-      const b = bridge();
-      installBridge(b);
-      void deleteAiConfig("c1");
-      expect(b.deleteAiConfig).toHaveBeenCalledWith("w1", "c1");
-    });
-
-    it("setActiveAiConfig forwards ws + id", () => {
-      const b = bridge();
-      installBridge(b);
-      void setActiveAiConfig("c1");
-      expect(b.setActiveAiConfig).toHaveBeenCalledWith("w1", "c1");
+      const input = {
+        endpoint: "https://api.anthropic.com",
+        models: { analysis: "a", metadata: "m", imagingPrompts: "i" },
+        thinking: { analysis: "adaptive", metadata: "off", imagingPrompts: "adaptive" },
+        apiKey: "k",
+      };
+      void saveAnthropicSettings(input);
+      expect(b.saveAnthropicSettings).toHaveBeenCalledWith("w1", input);
     });
   });
 
