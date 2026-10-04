@@ -28,7 +28,7 @@ import { writeProviderCall } from "../services/recordsStore.js";
  * option the SDK applies to the body. The watchdog is armed before the request
  * leaves, so it covers the wait for the headers as well.
  */
-const STREAM_IDLE_TIMEOUT_MS = 120_000;
+const STREAM_IDLE_TIMEOUT_MS = 60_000;
 
 /**
  * An inactivity watchdog over one streamed call. `progress` restarts the clock;

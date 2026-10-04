@@ -389,7 +389,7 @@ describe("generateJson", () => {
   // A thinking-enabled call can run far past any fixed deadline, so it is bounded
   // by inactivity, as analysis is, and never cut off after its tokens are billed.
   describe("inactivity bound", () => {
-    const IDLE_MS = 120_000;
+    const IDLE_MS = 60_000;
 
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
@@ -421,7 +421,7 @@ describe("generateJson", () => {
       const provider = new ClaudeProvider("k", req(), CALL);
       const { promise } = start(provider);
 
-      const rejection = expect(promise).rejects.toThrow(/stopped sending output for 120s/);
+      const rejection = expect(promise).rejects.toThrow(/stopped sending output for 60s/);
       await vi.advanceTimersByTimeAsync(IDLE_MS);
       await rejection;
     });
@@ -431,9 +431,9 @@ describe("generateJson", () => {
       const { f, promise } = start(provider, { maxDurationMs: 5 * 60_000 });
 
       const rejection = expect(promise).rejects.toThrow(/did not finish within 5 minutes/);
-      for (let i = 0; i < 6; i += 1) {
+      for (let i = 0; i < 11; i += 1) {
         f.emitText("x");
-        await vi.advanceTimersByTimeAsync(60_000);
+        await vi.advanceTimersByTimeAsync(30_000);
       }
       await rejection;
     });
@@ -549,7 +549,7 @@ describe("generateTextStream", () => {
   // a connection that goes quiet afterwards leaves finalMessage() pending for
   // ever — and with it the whole Analysis feature, which has no cancel control.
   describe("inactivity watchdog", () => {
-    const IDLE_MS = 120_000;
+    const IDLE_MS = 60_000;
 
     /**
      * Wires the fake to the SDK's actual contract: an aborted request rejects.
@@ -574,7 +574,7 @@ describe("generateTextStream", () => {
 
       // Assert before advancing: the rejection lands inside the timer advance,
       // and an expectation attached afterwards leaves it briefly unhandled.
-      const rejection = expect(finished).rejects.toThrow(/stopped sending output for 120s/);
+      const rejection = expect(finished).rejects.toThrow(/stopped sending output for 60s/);
       await vi.advanceTimersByTimeAsync(IDLE_MS);
       await rejection;
     });
