@@ -156,22 +156,22 @@ if (!ownsInstance) {
 
   app.whenReady().then(bootstrap).catch(handleStartupFailure);
 
-  // Quitting off macOS follows the main window's close (openMainWindow), once:
-  // a second quit while the first is held would skip the unsaved-changes check.
+  // Quitting off macOS follows the main window's close (openMainWindow), once.
   // This listener only stops Electron's default quit when every window is gone.
   app.on("window-all-closed", () => {});
 
-  // Clean shutdown: hold the quit once, write any buffered content and metadata
+  // Clean shutdown: hold the quit, write any buffered content and metadata
   // edits, close the records database, then exit deterministically. The
   // post store owns pending edits (write-behind), so this flush — not a renderer
-  // round-trip — is what guarantees the newest keystroke is on disk. A second quit during
-  // shutdown falls through (force-quit).
+  // round-trip — is what guarantees the newest keystroke is on disk. A quit
+  // arriving while that runs, the unsaved-changes question included, is held
+  // too, so only the shutdown's own app.exit(0) ends the process.
   app.on("before-quit", (event) => {
+    event.preventDefault();
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
-    event.preventDefault();
 
     const failures = flushAllPendingEdits();
     const refusedMetadata = anyRefusedMetadata();

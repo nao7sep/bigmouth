@@ -29,6 +29,8 @@ const shell = vi.hoisted(() => ({
   dialogs: [] as { detail?: string }[],
   // What the user clicks in the unsaved-changes dialog: 0 = Cancel (the default).
   dialogChoice: 0,
+  // When set, the dialog stays open until the test answers it.
+  dialogAnswer: null as Promise<number> | null,
   windowLoadFailure: null as Error | null,
   windowCloses: 0,
   loggedErrors: [] as unknown[][],
@@ -56,7 +58,7 @@ vi.mock("electron", () => ({
 vi.mock("@main/plain-message-dialog.js", () => ({
   showPlainMessageDialog: async (options: { detail?: string }) => {
     shell.dialogs.push(options);
-    return shell.dialogChoice;
+    return shell.dialogAnswer ?? shell.dialogChoice;
   },
 }));
 
@@ -137,6 +139,7 @@ async function bootApp(): Promise<PostStore> {
   shell.mainWindow = { minimized: false, restores: 0, focuses: 0 };
   shell.dialogs.length = 0;
   shell.dialogChoice = 0;
+  shell.dialogAnswer = null;
   shell.windowLoadFailure = null;
   shell.windowCloses = 0;
   shell.loggedErrors.length = 0;
@@ -294,6 +297,61 @@ describe("a refused metadata value on screen", () => {
     windowHandlers.get("close")!({ preventDefault });
     expect(preventDefault).not.toHaveBeenCalled();
     expect(shell.dialogs).toEqual([]);
+  });
+});
+
+// Electron raises before-quit again for a second Cmd+Q, a Dock quit or a
+// window-all-closed while the first is still shutting down. Letting that one
+// through ended the process before the shutdown it interrupted had finished.
+describe("a quit while shutdown runs", () => {
+  it("is held, and only the shutdown's own exit ends the process", async () => {
+    await bootApp();
+    const { setMetadataRefusal } = await import("@main/ipc/refusedMetadata.js");
+    setMetadataRefusal({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "p1", true);
+    let answer!: (choice: number) => void;
+    shell.dialogAnswer = new Promise((resolve) => { answer = resolve; });
+    const handler = appHandlers.get("before-quit")!;
+
+    const first = vi.fn();
+    handler({ preventDefault: first });
+    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+
+    const second = vi.fn();
+    handler({ preventDefault: second });
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(shell.dialogs).toHaveLength(1);
+    expect(shell.exits).toEqual([]);
+
+    answer(1); // Quit Anyway
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+  });
+
+  it("is held when nothing needs asking, and the process exits once", async () => {
+    await bootApp();
+    const handler = appHandlers.get("before-quit")!;
+    const first = vi.fn();
+    const second = vi.fn();
+    handler({ preventDefault: first });
+    handler({ preventDefault: second });
+    expect(second).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shell.exits).toEqual([0]);
+  });
+
+  it("is let through again once the user cancelled the first", async () => {
+    await bootApp();
+    const { setMetadataRefusal } = await import("@main/ipc/refusedMetadata.js");
+    setMetadataRefusal({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "p1", true);
+    await quit(); // Cancel
+    expect(shell.exits).toEqual([]);
+
+    shell.dialogChoice = 1;
+    const again = vi.fn();
+    appHandlers.get("before-quit")!({ preventDefault: again });
+    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(2));
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
   });
 });
 
