@@ -23,6 +23,7 @@ import {
   saveSettings,
   getAnthropicSettings,
   saveAnthropicSettings,
+  onWindowActivated,
   listAssets,
   uploadAsset,
   deleteAsset,
@@ -284,6 +285,22 @@ describe("api wrappers — call-through and argument shape", () => {
       };
       void saveSettings(settings);
       expect(b.saveSettings).toHaveBeenCalledWith("w1", settings);
+    });
+  });
+
+  describe("onWindowActivated", () => {
+    it("calls the listener only when the window comes to the front, and unsubscribes", () => {
+      let relay: ((active: boolean) => void) | null = null;
+      const off = vi.fn();
+      installBridge({ onWindowActivityChanged: (listener: (active: boolean) => void) => { relay = listener; return off; } });
+      const listener = vi.fn();
+      const unsubscribe = onWindowActivated(listener);
+      relay!(false);
+      relay!(true);
+      relay!(false);
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsubscribe();
+      expect(off).toHaveBeenCalledOnce();
     });
   });
 

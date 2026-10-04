@@ -198,6 +198,38 @@ describe("listPosts", () => {
   });
 });
 
+// Post files are the user's to edit outside the app (git, another editor), and
+// nothing watches them: every list read reconciles the index with them first.
+describe("listPosts after an edit on disk", () => {
+  function postFile(id: string): string {
+    const dir = path.join(dataDir, "posts");
+    const name = fs.readdirSync(dir).find((file) => fs.readFileSync(path.join(dir, file), "utf8").includes(id));
+    return path.join(dir, name!);
+  }
+
+  it("shows a status and title changed in the file since the last read", () => {
+    const id = createDraft();
+    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0).drafts.map((d) => d.frontMatter.id)).toContain(id);
+
+    const file = postFile(id);
+    const edited = fs.readFileSync(file, "utf8").replace("status: draft", "status: ready").replace(/^---\n/, "---\ntitle: Edited in git\n");
+    fs.writeFileSync(file, edited);
+    const later = new Date(Date.now() + 10_000);
+    fs.utimesSync(file, later, later);
+
+    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0);
+    expect(res.drafts.map((d) => d.frontMatter.id)).not.toContain(id);
+    expect(res.ready.find((d) => d.frontMatter.id === id)?.frontMatter.title).toBe("Edited in git");
+  });
+
+  it("drops a post whose file was removed since the last read", () => {
+    const id = createDraft();
+    invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0);
+    fs.rmSync(postFile(id));
+    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0).drafts.map((d) => d.frontMatter.id)).not.toContain(id);
+  });
+});
+
 describe("updatePost", () => {
   it("updates content + editable front matter and returns a summary", () => {
     const id = createDraft();

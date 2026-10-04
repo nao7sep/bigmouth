@@ -338,6 +338,15 @@ export function flushAllPendingEdits(): { id: string; message: string }[] {
 
 // --- List ---
 
+/**
+ * Brings the index up to date with post files edited outside the app (git,
+ * another editor), which nothing watches. A list read calls this first, so the
+ * Posts list shows such an edit the next time it is read.
+ */
+export function refreshIndex(dataDir: string): void {
+  index.refresh(dataDir);
+}
+
 export function listDrafts(dataDir: string): PostSummary[] {
   return summaries(dataDir, "draft", byCreatedDesc);
 }

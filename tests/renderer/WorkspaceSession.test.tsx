@@ -17,6 +17,8 @@ import { DEFAULT_CONTENT_FONT } from "@shared/types";
 // Content-save events from the main-process saver; the captured listeners let
 // tests play the main process's part.
 const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: unknown }) => void>());
+// The window's activations, played by the tests.
+const activationListeners = vi.hoisted(() => new Set<() => void>());
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   listPosts: vi.fn(),
@@ -27,6 +29,10 @@ vi.mock("@renderer/api", () => ({
   onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
+  },
+  onWindowActivated: (cb: () => void) => {
+    activationListeners.add(cb);
+    return () => activationListeners.delete(cb);
   },
 }));
 
@@ -796,6 +802,110 @@ describe("WorkspaceSession load more / log", () => {
       await Promise.resolve();
     });
     expect(getByText("The records window could not be opened. Try again.")).toBeTruthy();
+  });
+});
+
+// Post files edited on disk outside the app (git, another editor) show once the
+// window comes back to the front.
+describe("WorkspaceSession reread on activation", () => {
+  const activate = () => activationListeners.forEach((listener) => listener());
+  const EDITED: PostListResponse = { ...LIST, drafts: [summary("b", "draft"), summary("x", "draft")] };
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  async function settle(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  it("rereads the list once for activations in quick succession", async () => {
+    const { getByTestId } = await mountLoaded();
+    mockListPosts.mockClear().mockResolvedValue(EDITED);
+
+    act(() => {
+      activate();
+      activate();
+    });
+    await settle(200);
+    act(() => activate());
+    await settle(299);
+    expect(mockListPosts).not.toHaveBeenCalled();
+    await settle(1);
+
+    expect(mockListPosts).toHaveBeenCalledTimes(1);
+    expect(getByTestId("left-drafts").textContent).toBe("b,x");
+  });
+
+  it("keeps as many published posts loaded as were shown", async () => {
+    const { getByTestId } = await mountLoaded();
+    mockListPosts.mockResolvedValueOnce({ ...LIST, published: [summary("p2", "published")] });
+    await act(async () => {
+      fireEvent.click(getByTestId("left-more-pub"));
+      await Promise.resolve();
+    });
+    mockListPosts.mockClear().mockResolvedValue(LIST);
+
+    act(() => activate());
+    await settle(300);
+
+    // The batch size is 25, more than either archive shows, so a page of it is read.
+    expect(mockListPosts).toHaveBeenCalledExactlyOnceWith(0, 25, 0);
+  });
+
+  it("drops a reread the app's own list change overtook", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    let answer!: (list: PostListResponse) => void;
+    mockListPosts.mockClear().mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+
+    act(() => activate());
+    await settle(300);
+    act(() => {
+      fireEvent.click(getByTestId("center-updated")); // a: draft -> ready, while the read is out
+    });
+    await act(async () => answer(LIST));
+
+    expect(getByTestId("left-drafts").textContent).toBe("b");
+    expect(getByTestId("left-ready").textContent).toBe("c,a");
+  });
+
+  it("leaves the open post alone", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    act(() => {
+      fireEvent.click(getByTestId("center-loaded"));
+      fireEvent.click(getByTestId("center-content"));
+    });
+    const frontMatter = props.right?.frontMatter;
+    expect(frontMatter).toBe(POST_A.frontMatter);
+    mockListPosts.mockClear().mockResolvedValue(EDITED);
+
+    act(() => activate());
+    await settle(300);
+
+    expect(mockListPosts).toHaveBeenCalledTimes(1);
+    expect(getByTestId("center-postid").textContent).toBe("a");
+    expect(props.right?.frontMatter).toBe(frontMatter);
+    expect(props.right?.content).toBe("BODY");
+  });
+
+  it("surfaces a failed reread and stops listening once the session closes", async () => {
+    const { getByText, unmount } = await mountLoaded();
+    mockListPosts.mockClear().mockRejectedValue(new Error("disk gone"));
+    act(() => activate());
+    await settle(300);
+    expect(getByText(/post list/i)).toBeTruthy();
+
+    unmount();
+    expect(activationListeners.size).toBe(0);
   });
 });
 

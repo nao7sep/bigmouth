@@ -167,6 +167,13 @@ export function onPostContentSaved(
   return bridge().onPostContentSaved(listener);
 }
 
+/** Calls `listener` each time this window comes back to the front. */
+export function onWindowActivated(listener: () => void): () => void {
+  return bridge().onWindowActivityChanged((active) => {
+    if (active) listener();
+  });
+}
+
 export function onPostContentSaveFailed(
   listener: (event: PostContentSaveFailedEvent) => void,
 ): () => void {

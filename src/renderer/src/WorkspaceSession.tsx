@@ -15,6 +15,7 @@ import {
   getSettings,
   openRecordsWindow,
   onPostContentSaved,
+  onWindowActivated,
 } from "./api";
 import { presentFailure } from "./util/presentFailure";
 import { LeftPane } from "./components/LeftPane";
@@ -47,6 +48,9 @@ import { applyPostMutationToBuckets } from "./util/postBuckets";
 import { effectiveTimeZone, systemTimeZone } from "@shared/timeZone";
 import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+
+// Activations closer together than this read the list once.
+const ACTIVATION_COALESCE_MS = 300;
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -142,6 +146,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const publishedTotalRef = useRef(0);
     const expiredRef = useRef<PostSummary[]>([]);
     const expiredTotalRef = useRef(0);
+    // Counts the app's own writes to the lists, so a background reread that was
+    // out while one happened knows it is older and is dropped.
+    const listVersionRef = useRef(0);
 
     const flushRightPaneChanges = useCallback(
       async () => (await rightPaneRef.current?.flushPendingChanges()) ?? true,
@@ -193,6 +200,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         const expOffset = opts?.expiredOffset ?? 0;
         const data = await listPosts(pubOffset, pubBatchSize, expOffset);
 
+        listVersionRef.current += 1;
         draftsRef.current = data.drafts;
         readyRef.current = data.ready;
         setDrafts(data.drafts);
@@ -224,6 +232,59 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       },
       [pubBatchSize]
     );
+
+    /**
+     * Reads the lists again as they are on disk, keeping as many published and
+     * expired posts loaded as are shown now. Post files can change outside the
+     * app (git, another editor) and nothing watches them. The open post is left
+     * as it is, unsaved edits and all; only the lists are reread.
+     */
+    const refreshPosts = useCallback(async () => {
+      const version = listVersionRef.current;
+      const publishedShown = Math.max(pubBatchSize, publishedRef.current.length);
+      const expiredShown = Math.max(pubBatchSize, expiredRef.current.length);
+      const data = await listPosts(0, Math.max(publishedShown, expiredShown), 0);
+      // The app changed the lists while this read was out: they are newer.
+      if (listVersionRef.current !== version) return;
+
+      const nextPublished = data.published.slice(0, publishedShown);
+      const nextExpired = data.expired.slice(0, expiredShown);
+      draftsRef.current = data.drafts;
+      readyRef.current = data.ready;
+      publishedRef.current = nextPublished;
+      publishedTotalRef.current = data.publishedTotal;
+      expiredRef.current = nextExpired;
+      expiredTotalRef.current = data.expiredTotal;
+      setDrafts(data.drafts);
+      setReady(data.ready);
+      setPublished(nextPublished);
+      setPublishedTotal(data.publishedTotal);
+      setPublishedOffset(nextPublished.length);
+      setExpired(nextExpired);
+      setExpiredTotal(data.expiredTotal);
+      setExpiredOffset(nextExpired.length);
+    }, [pubBatchSize]);
+
+    // The window coming back to the front is when edits made elsewhere matter.
+    useEffect(() => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const off = onWindowActivated(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          refreshPosts().catch((err: unknown) => {
+            setLoadError(presentFailure(
+              message("session.postListFailed"),
+              "renderer: post list refresh on activation failed",
+              err,
+            ));
+          });
+        }, ACTIVATION_COALESCE_MS);
+      });
+      return () => {
+        off();
+        clearTimeout(timer);
+      };
+    }, [refreshPosts]);
 
     const applySettings = useCallback((settings: Settings) => {
       if (settings.publishedPostsPerLoad) setPubBatchSize(settings.publishedPostsPerLoad);
@@ -409,6 +470,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     };
 
     const handlePostDeleted = useCallback(() => {
+      listVersionRef.current += 1;
       const deletedId = selectedPostIdRef.current;
       // Drop only the deleted post from the back stack (it can't be navigated to
       // anymore), keeping the rest so Back still works through the other posts.
@@ -506,6 +568,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         );
 
         // Eagerly, because the next mutation may land before React re-renders.
+        listVersionRef.current += 1;
         draftsRef.current = next.drafts;
         readyRef.current = next.ready;
         publishedRef.current = next.published;

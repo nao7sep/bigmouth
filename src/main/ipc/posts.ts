@@ -8,6 +8,7 @@ import {
 } from "@shared/ipc";
 import type { PostStatus } from "@shared/types";
 import {
+  refreshIndex,
   listDrafts,
   listReady,
   listPublished,
@@ -147,6 +148,7 @@ export function registerPostHandlers(): void {
     const eOff = Math.max(0, expiredOffset || 0);
     const lim = limit || getSettings(dir).publishedPostsPerLoad;
 
+    refreshIndex(dir);
     const drafts = listDrafts(dir);
     const ready = listReady(dir);
     const published = listPublished(dir, pOff, lim);
