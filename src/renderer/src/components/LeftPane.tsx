@@ -200,9 +200,9 @@ export function LeftPane({
               )}
             >
               <div className="menu-label">{workspaceName}</div>
-              <MenuItem onSelect={() => void onOpenRecords()}>{t("left.records")}</MenuItem>
               <MenuItem onSelect={onSwitchWorkspace}>{t("workspaces.title")}</MenuItem>
               <MenuItem onSelect={onOpenSettings}>{t("settings.title")}</MenuItem>
+              <MenuItem onSelect={() => void onOpenRecords()}>{t("left.records")}</MenuItem>
               <MenuItem onSelect={onOpenShortcuts}>{t("shortcuts.title")}</MenuItem>
               <MenuItem onSelect={onOpenAbout}>{t("left.about")}</MenuItem>
             </Menu>
