@@ -76,6 +76,16 @@ export function thinkingFor(model: string, chosen: string): string | undefined {
   return row.thinking.includes(chosen) ? chosen : row.defaultThinking;
 }
 
+// The Thinking value a role holds after its model field is edited: the chosen value
+// while the edit resolves to the same row, or still to none; else the new row's
+// default. A model with no row has no default and sends no value, so it keeps the
+// chosen one.
+export function thinkingAfterModelEdit(previousModel: string, nextModel: string, chosen: string): string {
+  const next = rowFor(nextModel);
+  if (next === rowFor(previousModel) || !next) return chosen;
+  return next.defaultThinking;
+}
+
 // A row with one thinking value offers no choice, so it shows no Thinking field.
 export function hasThinkingChoice(row: SupportedModel | undefined): row is SupportedModel {
   return row !== undefined && row.thinking.length > 1;

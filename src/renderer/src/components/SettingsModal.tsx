@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AnthropicSettingsView, GenerationPromptsData } from "@shared/types";
-import { AI_ROLE_IDS, PROVIDER_LABELS, hasThinkingChoice, rowFor, type AiRole } from "@shared/aiModels";
+import { AI_ROLE_IDS, PROVIDER_LABELS, hasThinkingChoice, rowFor, thinkingAfterModelEdit, type AiRole } from "@shared/aiModels";
 import { isEndpoint } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
@@ -799,8 +799,8 @@ const ROLE_HINTS: Record<AiRole, MessageKey> = {
 /**
  * One role's model field: free-typed, with a warning line when the id has no row
  * in SUPPORTED_MODELS, and beside it the role's Thinking field when the row lists
- * more than one value (ai-model-routing-conventions). Changing the model resets
- * the Thinking field to the new model's default.
+ * more than one value (ai-model-routing-conventions). An edit that resolves the
+ * model to a different row resets the Thinking field to that row's default.
  */
 function ModelField({ role, model, thinking, onChange }: {
   role: AiRole;
@@ -821,10 +821,7 @@ function ModelField({ role, model, thinking, onChange }: {
           className="form-input"
           spellCheck={false}
           value={model}
-          onChange={(e) => {
-            const next = rowFor(e.target.value);
-            onChange(e.target.value, next ? next.defaultThinking : thinking);
-          }}
+          onChange={(e) => onChange(e.target.value, thinkingAfterModelEdit(model, e.target.value, thinking))}
         />
         <p className="settings-hint">{t(ROLE_HINTS[role])}</p>
         {!model.trim() ? (

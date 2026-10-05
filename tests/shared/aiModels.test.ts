@@ -15,6 +15,7 @@ import {
   kindOf,
   modelsFor,
   rowFor,
+  thinkingAfterModelEdit,
   thinkingFor,
 } from "@shared/aiModels";
 import { WORKSPACE_SET_KEYS, modelSetKey, thinkingSetKey } from "@shared/configSets";
@@ -91,6 +92,19 @@ describe("the model tables", () => {
     expect(thinkingFor("claude-haiku-4-5", "adaptive")).toBe("off");
     expect(hasThinkingChoice(rowFor("claude-haiku-4-5"))).toBe(false);
     expect(hasThinkingChoice(sonnet)).toBe(true);
+  });
+
+  it("keeps the chosen thinking while a model edit resolves to the same row, else takes the new row's default", () => {
+    const sonnet = "claude-sonnet-5-5";
+    for (const same of [`${sonnet} `, ` ${sonnet}`, "Claude-Sonnet-5-5", sonnet]) {
+      expect(thinkingAfterModelEdit(sonnet, same, "between_tools"), same).toBe("between_tools");
+    }
+    expect(thinkingAfterModelEdit(sonnet, "claude-opus-5-5", "max")).toBe("adaptive");
+    expect(thinkingAfterModelEdit(sonnet, "claude-haiku-4-5", "max")).toBe("off");
+    // Between a row and no row: the new row's default, or the chosen value kept unsent.
+    expect(thinkingAfterModelEdit("claude-next-9", sonnet, "max")).toBe("adaptive");
+    expect(thinkingAfterModelEdit(sonnet, "claude-next-9", "max")).toBe("max");
+    expect(thinkingAfterModelEdit("claude-next-9", "claude-next-10", "max")).toBe("max");
   });
 
   it("gives every role a model set and a thinking set, holding its defaults", () => {
