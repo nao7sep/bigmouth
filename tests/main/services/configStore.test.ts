@@ -72,7 +72,7 @@ describe("time zone", () => {
   function writeConfig(fields: Record<string, unknown>): void {
     const configPath = path.join(dataDir, "config.json");
     const current = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : {};
-    fs.writeFileSync(configPath, JSON.stringify({ ...current, ...fields }), "utf-8");
+    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...current, ...fields }), "utf-8");
   }
 
   it("defaults a new workspace to System", () => {
@@ -116,7 +116,7 @@ describe("corrupt config files", () => {
     const authoredTargets = [{ rowId: "r1", name: "blog", defaultLanguage: "en", requiresMetadata: false }];
     fs.writeFileSync(
       configPath,
-      JSON.stringify({ ...healthy, targets: authoredTargets, analysisPrompts: "not an array" }),
+      JSON.stringify({ formatVersion: 1, ...healthy, targets: authoredTargets, analysisPrompts: "not an array" }),
       "utf-8",
     );
 
@@ -132,7 +132,7 @@ describe("corrupt config files", () => {
   it("ignores a retired version key and drops it at the next write", () => {
     const configPath = path.join(dataDir, "config.json");
     const healthy = makeDefaultConfig();
-    fs.writeFileSync(configPath, JSON.stringify({ ...healthy, schemaVersion: 99 }), "utf-8");
+    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...healthy, schemaVersion: 99 }), "utf-8");
 
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
     saveTargets(dataDir, []);
@@ -147,7 +147,7 @@ describe("corrupt config files", () => {
     ["a model that is not a string", { "anthropic.metadata": 7 }],
   ])("reads %s as the built-in without rewriting", (_case, sets) => {
     const configPath = path.join(dataDir, "config.json");
-    const stored = JSON.stringify(sets);
+    const stored = JSON.stringify({ formatVersion: 1, ...sets });
     fs.writeFileSync(configPath, stored, "utf8");
 
     const { endpoint, models, thinking } = getAnthropicSettingsForClient(ws);
@@ -172,6 +172,7 @@ describe("settings", () => {
     fs.writeFileSync(
       path.join(dataDir, "config.json"),
       JSON.stringify({
+        formatVersion: 1,
         schemaVersion: 1,
         timezone: "UTC",
         supportedLanguages: ["en"],
@@ -307,7 +308,7 @@ describe("the Anthropic section", () => {
     // A model with no row sends no thinking; its role's choice is kept for when a listed row returns.
     expect(saved()).toEqual({ "anthropic.analysis": "claude-next-9", "anthropic.thinking.analysis": "between_tools" });
 
-    fs.writeFileSync(file(), JSON.stringify({ "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
+    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
     expect(getRoleCall(ws, "analysis").thinking).toBe("adaptive");
     expect(getAnthropicSettingsForClient(ws).thinking.analysis).toBe("adaptive");
   });
@@ -393,7 +394,7 @@ describe("settings stored by set", () => {
   });
 
   it("preserves other known copies and removes unknown keys on write", () => {
-    fs.writeFileSync(file(), JSON.stringify({ version: 7, timezone: "UTC", targets: [] }));
+    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, version: 7, timezone: "UTC", targets: [] }));
     const generationPrompts = { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } };
     saveGenerationPrompts(dataDir, generationPrompts);
     expect(saved()).toEqual({ timezone: "UTC", generationPrompts });
@@ -401,7 +402,7 @@ describe("settings stored by set", () => {
   });
 
   it("reads a partial generation prompt map as absent and warns without changing the file", () => {
-    const partial = { generationPrompts: { prompts: { title: "Custom" } } };
+    const partial = { formatVersion: 1, generationPrompts: { prompts: { title: "Custom" } } };
     fs.writeFileSync(file(), JSON.stringify(partial));
     const warning = vi.spyOn(logger, "warn");
     try {
@@ -413,9 +414,9 @@ describe("settings stored by set", () => {
   });
 
   it("reads a partial contentFont as absent rather than merging its members", () => {
-    fs.writeFileSync(file(), JSON.stringify({ contentFont: { family: "Custom" } }));
+    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, contentFont: { family: "Custom" } }));
     expect(getSettings(dataDir).contentFont).toEqual(DEFAULT_CONTENT_FONT);
-    expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual({ contentFont: { family: "Custom" } });
+    expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual({ formatVersion: 1, contentFont: { family: "Custom" } });
   });
 
   it("changing one role's model writes only that role's set", () => {
@@ -464,7 +465,7 @@ it("a partial dialog save preserves another set changed after the dialog opened"
 it("warns on each read of an invalid workspace set and names its key", () => {
   const warning = vi.spyOn(logger, "warn");
   try {
-    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ contentFont: { family: "Partial" } }));
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, contentFont: { family: "Partial" } }));
     getSettings(dataDir);
     getTargets(dataDir);
     expect(warning).toHaveBeenCalledTimes(2);
@@ -477,13 +478,13 @@ it.each([
   ["a target with a blank name", { targets: [{ name: " ", defaultLanguage: "en", requiresMetadata: false }] }, "targets"],
   ["an analysis prompt with a blank name", { analysisPrompts: [{ name: "", text: "t" }] }, "analysisPrompts"],
 ])("reads %s as its built-in, by the validator Save uses", (_case, stored, key) => {
-  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify(stored));
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, ...stored }));
   const config = { ...makeDefaultConfig(), ...getSettings(dataDir), targets: getTargets(dataDir), analysisPrompts: getAnalysisPrompts(dataDir) };
   expect(config[key as keyof typeof config]).toEqual(makeDefaultConfig()[key as keyof ReturnType<typeof makeDefaultConfig>]);
 });
 
 it("a settings save writes every set from what the store holds", () => {
-  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ supportedLanguages: ["ja", "en", "ja"] }));
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, supportedLanguages: ["ja", "en", "ja"] }));
   const saved = saveSettings(dataDir, { uiFontFamily: "Iosevka" });
   expect(saved.supportedLanguages).toEqual(["en", "ja"]);
   expect(setsIn(path.join(dataDir, "config.json"))).toEqual({
@@ -495,9 +496,11 @@ it("a settings save writes every set from what the store holds", () => {
 describe("workspace config format version", () => {
   const file = () => path.join(dataDir, "config.json");
 
-  it("reads a file with no format version as version 1", () => {
-    fs.writeFileSync(file(), JSON.stringify({ timezone: "UTC" }));
-    expect(getSettings(dataDir).timezone).toBe("UTC");
+  it("refuses a file without its format version as unreadable, leaving it unchanged", () => {
+    const body = JSON.stringify({ timezone: "UTC" });
+    fs.writeFileSync(file(), body);
+    expect(() => getSettings(dataDir)).toThrow(/config\.json at .*: it has no formatVersion/);
+    expect(fs.readFileSync(file(), "utf8")).toBe(body);
   });
 
   it("writes this build's format version and reads it back", () => {

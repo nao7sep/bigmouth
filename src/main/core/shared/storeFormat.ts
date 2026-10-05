@@ -1,9 +1,9 @@
 /**
  * How every store reads and writes its format version (store-recovery-conventions):
  * `formatVersion` at the top of a JSON file or a post's front matter, and
- * `PRAGMA user_version` in SQLite. A missing marker reads as 1. A store newer
- * than this build is reported by name and never written; what each store does
- * instead is its own load path's choice.
+ * `PRAGMA user_version` in SQLite. A store without its marker is unreadable,
+ * and a store newer than this build is reported by name and never written; what
+ * each store does then is its own load path's choice.
  */
 
 import fs from "node:fs";
@@ -36,7 +36,7 @@ export type FormatCheck =
 /** Checks the `formatVersion` of a parsed JSON store or front matter. */
 export function checkFormatVersion(format: StoreFormat, value: Record<string, unknown>): FormatCheck {
   const recorded = value[FORMAT_VERSION_KEY];
-  if (recorded === undefined) return { kind: "read", version: 1 };
+  if (recorded === undefined) return { kind: "unreadable", detail: `it has no ${FORMAT_VERSION_KEY}` };
   if (typeof recorded !== "number" || !Number.isInteger(recorded) || recorded < 1) {
     return { kind: "unreadable", detail: `its ${FORMAT_VERSION_KEY} is not a whole number from 1` };
   }
@@ -81,10 +81,11 @@ export function jsonStoreText(format: StoreFormat, body: Record<string, unknown>
 }
 
 /**
- * Opens a SQLite store, refusing one a newer build wrote before anything is
- * written to it. `prepare` sets the connection up and creates the schema; the
- * file is then stamped with this build's version. Throws NewerFormatError for a
- * newer store, and closes the connection on any failure.
+ * Opens a SQLite store, refusing one a newer build wrote or one without its
+ * version before anything is written to it. `prepare` sets the connection up and
+ * creates the schema; a new, empty database is stamped with this build's
+ * version. Throws NewerFormatError for a newer store, and closes the connection
+ * on any failure.
  */
 export function openSqliteStore(
   format: StoreFormat,
@@ -95,8 +96,12 @@ export function openSqliteStore(
   try {
     const recorded = sqliteUserVersion(db);
     if (isNewerThanBuild(format, recorded)) throw new NewerFormatError(filePath, recorded);
+    // SQLite starts every database at 0: with no tables yet it is new, and with
+    // tables it is a store without its version.
+    const isNew = recorded === 0 && db.prepare("SELECT 1 FROM sqlite_master LIMIT 1").get() === undefined;
+    if (recorded === 0 && !isNew) throw new Error(`${filePath} has no format version (user_version 0); it was left unchanged.`);
     prepare(db);
-    if (recorded !== FORMAT_VERSIONS[format]) db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);
+    if (isNew) db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);
     return db;
   } catch (error) {
     try {
@@ -108,7 +113,7 @@ export function openSqliteStore(
   }
 }
 
-/** A database's `user_version`; a new file's 0 is a missing marker, which reads as 1 wherever it is compared. */
+/** A database's `user_version`; SQLite's 0 means none was set. */
 export function sqliteUserVersion(db: DatabaseSync): number {
   return (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
 }

@@ -84,7 +84,7 @@ describe("stateStore — persistence", () => {
   });
 
   it("falls back to the default zoom when the stored value is not a number", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: "big" }), "utf-8");
+    fs.writeFileSync(statePath(), JSON.stringify({ formatVersion: 1, zoomLevel: "big" }), "utf-8");
     initStateStore();
     expect(getUiState().zoomLevel).toBe(defaultUiState().zoomLevel);
   });
@@ -100,7 +100,7 @@ describe("stateStore — self-healing", () => {
   it("replaces a non-finite or wrong-typed field with its default on load", () => {
     fs.writeFileSync(
       statePath(),
-      JSON.stringify({ paneLeftWidth: "wide", paneRightWidth: Infinity, activeWorkspaceId: 7 }),
+      JSON.stringify({ formatVersion: 1, paneLeftWidth: "wide", paneRightWidth: Infinity, activeWorkspaceId: 7 }),
     );
     initStateStore();
     // Bad number/string fields heal to defaults; a numeric id is not a string, so it heals too.
@@ -110,7 +110,7 @@ describe("stateStore — self-healing", () => {
   it("keeps the valid fields of a partially-bad file", () => {
     fs.writeFileSync(
       statePath(),
-      JSON.stringify({ paneLeftWidth: 520, paneRightWidth: null, activeWorkspaceId: "ws-keep" }),
+      JSON.stringify({ formatVersion: 1, paneLeftWidth: 520, paneRightWidth: null, activeWorkspaceId: "ws-keep" }),
     );
     initStateStore();
     expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
@@ -128,7 +128,7 @@ describe("stateStore — records list width", () => {
   });
 
   it("falls back to the default for a width that is not a number", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({ recordsListWidth: "wide" }));
+    fs.writeFileSync(statePath(), JSON.stringify({ formatVersion: 1, recordsListWidth: "wide" }));
     initStateStore();
     expect(getUiState().recordsListWidth).toBe(RECORDS_LIST_WIDTH.default);
   });
@@ -143,9 +143,9 @@ describe("stateStore — format version", () => {
     expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 2 });
   });
 
-  it("reads a state.json with no format version as version 1", () => {
+  it("reads a state.json without its format version as unreadable: defaults", () => {
     fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: 3 }));
-    expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 3 });
+    expect(initStateStore()).toEqual(defaultUiState());
   });
 
   it("keeps view state in memory over a state.json a newer version wrote, leaving it byte-identical", () => {

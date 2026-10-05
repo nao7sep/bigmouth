@@ -7,7 +7,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 
 import { readRecords, type RecordsRead } from "./recordsQueries.ts";
-import { isNewerThanBuild } from "../shared/formatVersions.ts";
+import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
 export type RecordsReaderRequest = { id: number; read: RecordsRead };
 
@@ -24,15 +24,15 @@ const { databasePath } = workerData as { databasePath: string };
 let db: DatabaseSync | null = null;
 
 // A lock the writer holds is waited on for a bounded time, well inside the
-// reader's own timeout. A database a newer version of BigMouth wrote is not read
-// (store-recovery-conventions).
+// reader's own timeout. A database in any format but this build's, newer or
+// without its version, is not read (store-recovery-conventions).
 function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true });
   try {
     opened.exec("PRAGMA busy_timeout = 2000");
     const { user_version: version } = opened.prepare("PRAGMA user_version").get() as { user_version: number };
-    if (isNewerThanBuild("records", version)) {
-      throw new Error(`${databasePath} was written by a newer version of BigMouth (format ${version}); it was left unchanged.`);
+    if (version !== FORMAT_VERSIONS.records) {
+      throw new Error(`${databasePath} is in format ${version}, which this build cannot read; it was left unchanged.`);
     }
   } catch (error: unknown) {
     opened.close();

@@ -145,6 +145,7 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(
         keyFile,
         JSON.stringify({
+          formatVersion: 1,
           workspaces: {
             [W1]: { keys: { anthropic: 123 } },
             [W2]: { keys: { anthropic: "real-pasted" } },
@@ -156,7 +157,7 @@ describe("apiKeys secret store", () => {
     });
 
     it("preserves valid JSON with the wrong container shape before a key write", () => {
-      const wrongShape = '{"workspaces":[],"future":"keep me"}\n';
+      const wrongShape = '{"formatVersion":1,"workspaces":[],"future":"keep me"}\n';
       fs.writeFileSync(keyFile, wrongShape);
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
@@ -177,7 +178,7 @@ describe("apiKeys secret store", () => {
 
     // The earlier per-config shape is development data, reset rather than migrated.
     it("preserves a store whose workspace node has the wrong shape", () => {
-      const wrongShape = JSON.stringify({ workspaces: { [W1]: { configs: { c1: { keys: { anthropic: "obf:x" } } } } } });
+      const wrongShape = JSON.stringify({ formatVersion: 1, workspaces: { [W1]: { configs: { c1: { keys: { anthropic: "obf:x" } } } } } });
       fs.writeFileSync(keyFile, wrongShape);
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       const quarantined = fs
@@ -193,6 +194,7 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(
         keyFile,
         JSON.stringify({
+          formatVersion: 1,
           workspaces: {
             [W1]: { keys: { anthropic: "obf:!!!not-base64!!!" } },
           },
@@ -237,9 +239,22 @@ describe("file permissions (POSIX only)", () => {
   });
 
   describe("format version", () => {
-    it("reads a file with no format version as version 1", () => {
-      fs.writeFileSync(keyFile, JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
-      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-plain");
+    it("sets a file without its format version aside as unusable and reads it as no key", () => {
+      const body = JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } });
+      fs.writeFileSync(keyFile, body);
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/set aside/),
+          expect.objectContaining({ detail: expect.stringMatching(/no formatVersion/) }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+      const quarantined = fs.readdirSync(dir).find((entry) => entry.endsWith(".invalid"));
+      expect(fs.readFileSync(path.join(dir, quarantined!), "utf-8")).toBe(body);
+      expect(fs.existsSync(keyFile)).toBe(false);
     });
 
     it("writes this build's format version first and reads the key back", () => {

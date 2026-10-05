@@ -203,10 +203,10 @@ describe("asset metadata format version", () => {
     expect(listAssets(dataDir, POST)).toEqual([meta("a.png")]);
   });
 
-  it("reads a meta.json with no format version as version 1", () => {
+  it("reads a meta.json without its format version as unreadable: listed from the files", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...meta("a.png"), width: 7 }] }));
-    expect(listAssets(dataDir, POST)).toEqual([{ ...meta("a.png"), width: 7 }]);
+    expect(listAssets(dataDir, POST)).toEqual([{ filename: "a.png", size: 3 }]);
   });
 
   it("lists from the files over a meta.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {

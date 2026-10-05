@@ -496,13 +496,17 @@ describe("post file format version", () => {
     expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.formatVersion).toBe(1);
   });
 
-  it("reads a post file with no format version as version 1", () => {
+  it("skips a post file without its format version as unreadable, leaving it unchanged", () => {
     const post = createPost(dataDir, "blogger", "en");
-    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1\n", ""));
+    const body = fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1\n", "");
+    fs.writeFileSync(post.filePath, body);
     clearCache(dataDir);
 
-    expect(rebuildIndex(dataDir).skipped).toEqual([]);
-    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.id).toBe(post.frontMatter.id);
+    expect(rebuildIndex(dataDir).skipped).toEqual([
+      { fileName: path.basename(post.filePath), reason: expect.stringMatching(/no formatVersion/) },
+    ]);
+    expect(getPost(dataDir, post.frontMatter.id)).toBeNull();
+    expect(fs.readFileSync(post.filePath, "utf-8")).toBe(body);
   });
 
   it("skips a post file a newer version wrote and leaves it byte-identical", () => {
@@ -543,17 +547,15 @@ describe("post index format version", () => {
     expect(indexBytes()).toBe(before);
   });
 
-  it("reads an index with no format version as version 1, without rewriting it", () => {
+  it("rebuilds an index without its format version as unreadable", () => {
     const post = createPost(dataDir, "blogger", "en");
-    const { posts } = JSON.parse(indexBytes()) as { posts: PostIndexEntry[] };
-    const body = JSON.stringify({ posts });
-    fs.writeFileSync(indexFile(), body);
-    const later = new Date(Date.now() + 60_000);
-    fs.utimesSync(indexFile(), later, later);
+    const current = indexBytes();
+    const { posts } = JSON.parse(current) as { posts: PostIndexEntry[] };
+    fs.writeFileSync(indexFile(), JSON.stringify({ posts }));
     clearCache(dataDir);
 
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
-    expect(indexBytes()).toBe(body);
+    expect(indexBytes()).toBe(current);
   });
 
   it("keeps the index in memory over one a newer version wrote, leaving it byte-identical", () => {

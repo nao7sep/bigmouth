@@ -97,17 +97,22 @@ describe("records database format version", () => {
     expect(stored).toHaveBeenCalledOnce();
   });
 
-  it("reads a database with no format version as version 1", () => {
+  it("writes to the fallback file over a database with tables but no format version, leaving it byte-identical", () => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec("CREATE TABLE earlier (id INTEGER)");
     db.close();
-
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
-    const stored = vi.fn();
-    onRecordStored(stored);
-    line();
-    expect(stored).toHaveBeenCalledOnce();
+    const bytes = fs.readFileSync(file);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+      line();
+      closeRecords();
+    } finally {
+      consoleError.mockRestore();
+    }
+    expect(fs.readdirSync(path.join(root, "logs"))).toHaveLength(1);
+    expect(fs.readFileSync(file).equals(bytes)).toBe(true);
   });
 
   it("writes to the fallback file over a database a newer version wrote, leaving it byte-identical", () => {

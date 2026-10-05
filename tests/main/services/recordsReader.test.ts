@@ -92,7 +92,7 @@ describe("records reader format version", () => {
 
     closeRecordsReader();
     initRecordsReader(newer);
-    await expect(readRecords({ op: "sessions" })).rejects.toThrow(/newer version of BigMouth/);
+    await expect(readRecords({ op: "sessions" })).rejects.toThrow(/in format 2, which this build cannot read/);
     expect(fs.readFileSync(newer).equals(bytes)).toBe(true);
   });
 });

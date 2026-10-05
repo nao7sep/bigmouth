@@ -70,6 +70,7 @@ describe("an unreadable registry names itself", () => {
     const first = tempDir("identity-a");
     const second = tempDir("identity-b");
     const raw = JSON.stringify({
+      formatVersion: 1,
       workspaces: [
         { id: "same", name: "A", dataDirectory: first },
         { id: "same", name: "B", dataDirectory: second },
@@ -87,6 +88,7 @@ describe("an unreadable registry names itself", () => {
     const link = path.join(linkParent, "same-folder");
     fs.symlinkSync(real, link, DIRECTORY_LINK_TYPE);
     const raw = JSON.stringify({
+      formatVersion: 1,
       workspaces: [
         { id: "one", name: "A", dataDirectory: real },
         { id: "two", name: "B", dataDirectory: link },
@@ -274,7 +276,7 @@ describe("openWorkspace gating", () => {
     const dir = tempDir("sparse");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
-    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ timezone: "UTC" }));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ formatVersion: 1, timezone: "UTC" }));
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
   });
 
@@ -430,10 +432,11 @@ describe("workspace registry format version", () => {
     expect(initAppDir().workspaces).toEqual([ws]);
   });
 
-  it("reads a registry with no format version as version 1", () => {
-    const dir = tempDir("fmt");
-    fs.writeFileSync(registry(), JSON.stringify({ workspaces: [{ id: "a", name: "A", dataDirectory: dir }] }));
-    expect(initAppDir().workspaces).toEqual([{ id: "a", name: "A", dataDirectory: dir }]);
+  it("halts on a registry without its format version as unreadable, leaving it unchanged", () => {
+    const body = JSON.stringify({ workspaces: [{ id: "a", name: "A", dataDirectory: tempDir("fmt") }] });
+    fs.writeFileSync(registry(), body);
+    expect(() => initAppDir()).toThrow(/workspaces\.json: it has no formatVersion\. It was left unchanged/);
+    expect(fs.readFileSync(registry(), "utf8")).toBe(body);
   });
 
   it("halts on a registry a newer version wrote, naming it, and leaves it byte-identical", () => {

@@ -363,11 +363,20 @@ describe("backup store — format version", () => {
     expect(rows(file)).toHaveLength(1);
   });
 
-  it("reads a store with no format version as version 1", () => {
+  it("disables recording over a store with tables but no format version, leaving it byte-identical", () => {
     replaceStore("CREATE TABLE earlier (id INTEGER)");
-    const file = path.join(root, "sample.md");
-    backupStore.record(file, Buffer.from("x"));
-    expect(rows(file)).toHaveLength(1);
+    const bytes = fs.readFileSync(storeFile());
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      backupStore.record(path.join(root, "sample.md"), Buffer.from("x"));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toMatch(/could not open; recording disabled/);
+    } finally {
+      warnSpy.mockRestore();
+    }
+    backupStore.closeBackupStore();
+    expect(fs.readFileSync(storeFile()).equals(bytes)).toBe(true);
+    expect(userVersion()).toBe(0);
   });
 
   it("disables recording over a store a newer version wrote, leaving it byte-identical", () => {

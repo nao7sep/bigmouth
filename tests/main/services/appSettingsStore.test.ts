@@ -56,13 +56,13 @@ describe("appSettingsStore", () => {
   });
 
   it("reads a saved theme back without rewriting the file", () => {
-    fs.writeFileSync(configPath(), '{ "theme": "dark" }');
+    fs.writeFileSync(configPath(), '{ "formatVersion": 1, "theme": "dark" }');
     expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "system" });
-    expect(fs.readFileSync(configPath(), "utf-8")).toBe('{ "theme": "dark" }');
+    expect(fs.readFileSync(configPath(), "utf-8")).toBe('{ "formatVersion": 1, "theme": "dark" }');
   });
 
   it("follows the OS for an unrecognized theme name without treating it as corruption", () => {
-    fs.writeFileSync(configPath(), '{ "theme": "sepia" }');
+    fs.writeFileSync(configPath(), '{ "formatVersion": 1, "theme": "sepia" }');
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
     expect(quarantined()).toEqual([]);
   });
@@ -84,9 +84,9 @@ describe("appSettingsStore", () => {
   });
 
   it("reads a saved language back, and follows the computer for an unknown one", () => {
-    fs.writeFileSync(configPath(), '{ "theme": "dark", "language": "ko" }');
+    fs.writeFileSync(configPath(), '{ "formatVersion": 1, "theme": "dark", "language": "ko" }');
     expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "ko" });
-    fs.writeFileSync(configPath(), '{ "language": "tlh" }');
+    fs.writeFileSync(configPath(), '{ "formatVersion": 1, "language": "tlh" }');
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
     expect(quarantined()).toEqual([]);
   });
@@ -99,21 +99,21 @@ describe("appSettingsStore", () => {
 });
 
 it("ignores invalid set shapes without quarantining valid neighbours", () => {
-  fs.writeFileSync(configPath(), JSON.stringify({ theme: true, language: "ja" }));
+  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, theme: true, language: "ja" }));
   expect(initAppSettingsStore()).toEqual({ theme: "system", language: "ja" });
   expect(quarantined()).toEqual([]);
-  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ theme: true, language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: true, language: "ja" });
 });
 
 it("changing one set preserves another known copy and drops version metadata", () => {
-  fs.writeFileSync(configPath(), JSON.stringify({ schemaVersion: 1, theme: "dark" }));
+  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, schemaVersion: 1, theme: "dark" }));
   initAppSettingsStore();
   saveAppSettings({ theme: "dark", language: "ja" });
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: "dark", language: "ja" });
 });
 
 it("a save removes each set equal to its built-in and keeps the file", () => {
-  fs.writeFileSync(configPath(), JSON.stringify({ theme: "dark", language: "ja" }));
+  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, theme: "dark", language: "ja" }));
   initAppSettingsStore();
   saveAppSettings({ theme: "system", language: "ja" });
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, language: "ja" });
@@ -122,7 +122,7 @@ it("a save removes each set equal to its built-in and keeps the file", () => {
 });
 
 it("an invalid set loses its key at the next save", () => {
-  fs.writeFileSync(configPath(), JSON.stringify({ theme: true, language: "ja" }));
+  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, theme: true, language: "ja" }));
   initAppSettingsStore();
   saveAppSettings({ theme: "system", language: "ja" });
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, language: "ja" });
@@ -137,7 +137,7 @@ it("saving built-ins on a fresh install creates no file", () => {
 it("warns on each load of an invalid app set and names its key", () => {
   const warning = vi.spyOn(logger, "warn");
   try {
-    fs.writeFileSync(configPath(), JSON.stringify({ theme: "sepia" }));
+    fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, theme: "sepia" }));
     initAppSettingsStore();
     initAppSettingsStore();
     expect(warning).toHaveBeenCalledTimes(2);
@@ -146,10 +146,17 @@ it("warns on each load of an invalid app set and names its key", () => {
 });
 
 describe("appSettingsStore format version", () => {
-  it("reads a file with no format version as version 1", () => {
-    fs.writeFileSync(configPath(), '{ "theme": "dark" }');
-    expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "system" });
-    expect(getAppSettingsLoad().notice).toBeNull();
+  it("moves a file without its format version aside as unreadable, and reports where it went", () => {
+    const body = '{ "theme": "dark" }';
+    fs.writeFileSync(configPath(), body);
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
+
+    const moved = quarantined();
+    expect(moved).toHaveLength(1);
+    expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
+    expect(getAppSettingsLoad().notice).toEqual(
+      message("app.settingsRecovered", { path: path.join(getAppRoot(), moved[0]!) }),
+    );
   });
 
   it("writes this build's format version and reads it back", () => {
