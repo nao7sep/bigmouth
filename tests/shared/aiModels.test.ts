@@ -94,17 +94,28 @@ describe("the model tables", () => {
     expect(hasThinkingChoice(sonnet)).toBe(true);
   });
 
-  it("keeps the chosen thinking while a model edit resolves to the same row, else takes the new row's default", () => {
+  it("resets thinking on a model edit only when it reaches a different listed row than the last one the field held", () => {
     const sonnet = "claude-sonnet-5-5";
     for (const same of [`${sonnet} `, ` ${sonnet}`, "Claude-Sonnet-5-5", sonnet]) {
-      expect(thinkingAfterModelEdit(sonnet, same, "between_tools"), same).toBe("between_tools");
+      expect(thinkingAfterModelEdit(sonnet, same, "between_tools"), same).toEqual({ thinking: "between_tools", lastListedModel: same });
     }
-    expect(thinkingAfterModelEdit(sonnet, "claude-opus-5-5", "max")).toBe("adaptive");
-    expect(thinkingAfterModelEdit(sonnet, "claude-haiku-4-5", "max")).toBe("off");
-    // Between a row and no row: the new row's default, or the chosen value kept unsent.
-    expect(thinkingAfterModelEdit("claude-next-9", sonnet, "max")).toBe("adaptive");
-    expect(thinkingAfterModelEdit(sonnet, "claude-next-9", "max")).toBe("max");
-    expect(thinkingAfterModelEdit("claude-next-9", "claude-next-10", "max")).toBe("max");
+    expect(thinkingAfterModelEdit(sonnet, "claude-opus-5-5", "max")).toEqual({ thinking: "adaptive", lastListedModel: "claude-opus-5-5" });
+    expect(thinkingAfterModelEdit(sonnet, "claude-haiku-4-5", "max").thinking).toBe("off");
+    // An unlisted id keeps the value and the last listed id; a field that has held no row starts at the first row it reaches.
+    expect(thinkingAfterModelEdit(sonnet, "claude-next-9", "max")).toEqual({ thinking: "max", lastListedModel: sonnet });
+    expect(thinkingAfterModelEdit("claude-next-9", sonnet, "max").thinking).toBe("adaptive");
+  });
+
+  it("keeps the choice when a letter of the id is deleted and retyped, and resets it on reaching another row", () => {
+    let state = { thinking: "between_tools", lastListedModel: "claude-sonnet-5-5" };
+    for (const typed of ["claude-sonnet-5-", "claude-sonnet-", "claude-sonnet-5-", "claude-sonnet-5-5"]) {
+      state = thinkingAfterModelEdit(state.lastListedModel, typed, state.thinking);
+    }
+    expect(state).toEqual({ thinking: "between_tools", lastListedModel: "claude-sonnet-5-5" });
+    for (const typed of ["claude-", "claude-opus-5-5"]) {
+      state = thinkingAfterModelEdit(state.lastListedModel, typed, state.thinking);
+    }
+    expect(state).toEqual({ thinking: "adaptive", lastListedModel: "claude-opus-5-5" });
   });
 
   it("gives every role a model set and a thinking set, holding its defaults", () => {

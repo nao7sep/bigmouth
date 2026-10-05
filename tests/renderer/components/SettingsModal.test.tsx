@@ -271,13 +271,20 @@ describe("SettingsModal — AI tab model fields", () => {
     }
   });
 
-  it("resets a role's Thinking field when its model passes through an id with no row", async () => {
+  it("keeps a role's Thinking choice when its model passes through ids with no row, even across a tab switch", async () => {
     const { getByRole } = await renderModal(anthropic({ thinking: { analysis: "between_tools", metadata: "off", imagingPrompts: "adaptive" } }));
     openAiTab(getByRole);
     const model = () => within(getByRole("tabpanel")).getByLabelText("Analysis model");
-    fireEvent.change(model(), { target: { value: "claude-next-9" } });
+    const analysisThinking = () => (within(getByRole("tabpanel")).getAllByLabelText("Thinking")[0] as HTMLSelectElement).value;
+    fireEvent.change(model(), { target: { value: "claude-sonnet-5-" } });
+    fireEvent.click(getByRole("tab", { name: "General" }));
+    openAiTab(getByRole);
     fireEvent.change(model(), { target: { value: "claude-sonnet-5-5" } });
-    expect((within(getByRole("tabpanel")).getAllByLabelText("Thinking")[0] as HTMLSelectElement).value).toBe("adaptive");
+    expect(analysisThinking()).toBe("between_tools");
+    // Reaching a different listed row starts at that row's default.
+    fireEvent.change(model(), { target: { value: "claude-opus-5-" } });
+    fireEvent.change(model(), { target: { value: "claude-opus-5-5" } });
+    expect(analysisThinking()).toBe("adaptive");
   });
 
   it("takes the Thinking default from the chosen model's tier, not the role's, and lists that model's values", async () => {

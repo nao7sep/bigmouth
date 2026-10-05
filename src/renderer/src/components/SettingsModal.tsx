@@ -119,6 +119,9 @@ export function SettingsModal({
   const initialSettings = useRef<Settings | null>(null);
   const initialAppSettings = useRef<AppSettings | null>(null);
   const initialAnthropic = useRef<AnthropicDraft | null>(null);
+  // The last listed id each role's model field has held while the modal is open; it
+  // outlives the AI tab, which unmounts when another tab is shown.
+  const lastListedModels = useRef<Partial<Record<AiRole, string>>>({});
   const initialGenerationPrompts = useRef<GenerationPromptsData | null>(null);
   const initialTargets = useRef<EditableTarget[]>([]);
   const initialPrompts = useRef<AnalysisPrompt[]>([]);
@@ -329,6 +332,7 @@ export function SettingsModal({
               <AiTab
                 draft={anthropic}
                 onChange={setAnthropic}
+                lastListedModels={lastListedModels.current}
               />
             )}
             {tab === "targets" && (
@@ -799,13 +803,15 @@ const ROLE_HINTS: Record<AiRole, MessageKey> = {
 /**
  * One role's model field: free-typed, with a warning line when the id has no row
  * in SUPPORTED_MODELS, and beside it the role's Thinking field when the row lists
- * more than one value (ai-model-routing-conventions). An edit that resolves the
- * model to a different row resets the Thinking field to that row's default.
+ * more than one value (ai-model-routing-conventions). An edit that reaches a
+ * different listed row than the last one the field held resets the Thinking field
+ * to that row's default.
  */
-function ModelField({ role, model, thinking, onChange }: {
+function ModelField({ role, model, thinking, lastListedModels, onChange }: {
   role: AiRole;
   model: string;
   thinking: string;
+  lastListedModels: Partial<Record<AiRole, string>>;
   onChange: (model: string, thinking: string) => void;
 }) {
   const { t } = useI18n();
@@ -821,7 +827,11 @@ function ModelField({ role, model, thinking, onChange }: {
           className="form-input"
           spellCheck={false}
           value={model}
-          onChange={(e) => onChange(e.target.value, thinkingAfterModelEdit(model, e.target.value, thinking))}
+          onChange={(e) => {
+            const edit = thinkingAfterModelEdit(lastListedModels[role] ?? model, e.target.value, thinking);
+            lastListedModels[role] = edit.lastListedModel;
+            onChange(e.target.value, edit.thinking);
+          }}
         />
         <p className="settings-hint">{t(ROLE_HINTS[role])}</p>
         {!model.trim() ? (
@@ -852,9 +862,11 @@ function ModelField({ role, model, thinking, onChange }: {
 function AiTab({
   draft,
   onChange,
+  lastListedModels,
 }: {
   draft: AnthropicDraft;
   onChange: (d: AnthropicDraft) => void;
+  lastListedModels: Partial<Record<AiRole, string>>;
 }) {
   const { t } = useI18n();
   const setRole = (role: AiRole, model: string, thinking: string) =>
@@ -900,6 +912,7 @@ function AiTab({
           role={role}
           model={draft.models[role]}
           thinking={draft.thinking[role]}
+          lastListedModels={lastListedModels}
           onChange={(model, thinking) => setRole(role, model, thinking)}
         />
       ))}
