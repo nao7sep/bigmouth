@@ -1,5 +1,17 @@
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeAll, beforeEach } from "vitest";
+import { createElement } from "react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { ENGLISH } from "@shared/i18n/catalogues";
+
+// React DOM, Testing Library and jsdom each pay a one-time cost on their first
+// render, query and event in a file. Paid here, it stays out of the first
+// test's own time.
+beforeAll(() => {
+  if (typeof document === "undefined") return;
+  const { getByRole } = render(createElement("button", { type: "button" }, "warm"));
+  fireEvent.click(getByRole("button", { name: "warm" }));
+  cleanup();
+});
 
 // Every spec that renders the interface doubles as a check that no catalogue
 // key reaches the screen untranslated: a key rendered as text or given to an

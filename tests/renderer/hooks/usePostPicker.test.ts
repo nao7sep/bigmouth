@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
+import { renderHook, act, cleanup } from "@testing-library/react";
 
 // The hook's only dependency is listPosts; mock it so the tests drive the
 // load/pagination/error logic without real data.
@@ -42,6 +42,15 @@ function page(posts: Sections, totals: Partial<Record<PostStatus, number>> = {},
   ) as PostListResponse;
 }
 
+// The mocked listPosts settles within the current macrotask, so one macrotask
+// boundary inside act lets every resulting update land: a wait on that
+// condition, not on the clock.
+function settled(): Promise<void> {
+  return act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 beforeEach(() => {
   mockListPosts.mockReset();
 });
@@ -64,7 +73,8 @@ describe("usePostPicker", () => {
 
     const { result } = renderHook(() => usePostPicker(50));
 
-    await waitFor(() => expect(result.current.posts).toHaveLength(5));
+    await settled();
+    expect(result.current.posts).toHaveLength(5);
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["d1", "x1", "v1", "p1", "r1"]);
     expect(result.current.error).toBeNull();
     expect(result.current.hasMore).toBe(false);
@@ -74,13 +84,15 @@ describe("usePostPicker", () => {
     mockListPosts.mockResolvedValueOnce(page({ [status]: [summary("e1", { status })] }, { [status]: 2 }));
 
     const { result } = renderHook(() => usePostPicker(1));
-    await waitFor(() => expect(result.current.posts).toHaveLength(1));
+    await settled();
+    expect(result.current.posts).toHaveLength(1);
     expect(result.current.hasMore).toBe(true);
 
     mockListPosts.mockResolvedValueOnce(page({ [status]: [summary("e2", { status })] }, { [status]: 2 }, { [status]: 1 }));
 
     act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.posts).toHaveLength(2));
+    await settled();
+    expect(result.current.posts).toHaveLength(2);
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["e1", "e2"]);
     // The second fetch must request that section from its current offset.
     expect(mockListPosts).toHaveBeenLastCalledWith({ discarded: 0, published: 0, retired: 0, [status]: 1 }, 1);
@@ -94,7 +106,8 @@ describe("usePostPicker", () => {
 
     const { result } = renderHook(() => usePostPicker(50, "self"));
 
-    await waitFor(() => expect(result.current.posts).toHaveLength(1));
+    await settled();
+    expect(result.current.posts).toHaveLength(1);
     expect(result.current.posts[0].frontMatter.id).toBe("keep");
   });
 
@@ -109,7 +122,8 @@ describe("usePostPicker", () => {
     );
 
     const { result } = renderHook(() => usePostPicker(50));
-    await waitFor(() => expect(result.current.posts).toHaveLength(2));
+    await settled();
+    expect(result.current.posts).toHaveLength(2);
 
     act(() => result.current.setQuery("hello"));
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["a"]);
@@ -121,7 +135,8 @@ describe("usePostPicker", () => {
     );
 
     const { result } = renderHook(() => usePostPicker(1));
-    await waitFor(() => expect(result.current.posts).toHaveLength(1));
+    await settled();
+    expect(result.current.posts).toHaveLength(1);
     expect(result.current.hasMore).toBe(true);
 
     // Second page re-includes p1 (must be de-duped) and adds p2.
@@ -130,7 +145,8 @@ describe("usePostPicker", () => {
     );
 
     act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.posts).toHaveLength(2));
+    await settled();
+    expect(result.current.posts).toHaveLength(2);
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["p1", "p2"]);
   });
 
@@ -139,7 +155,8 @@ describe("usePostPicker", () => {
 
     const { result } = renderHook(() => usePostPicker(50));
 
-    await waitFor(() => expect(result.current.error).toEqual({ key: "picker.loadFailed" }));
+    await settled();
+    expect(result.current.error).toEqual({ key: "picker.loadFailed" });
     expect(result.current.posts).toHaveLength(0);
   });
 
@@ -149,12 +166,14 @@ describe("usePostPicker", () => {
     );
 
     const { result } = renderHook(() => usePostPicker(1));
-    await waitFor(() => expect(result.current.posts).toHaveLength(1));
+    await settled();
+    expect(result.current.posts).toHaveLength(1);
 
     mockListPosts.mockRejectedValueOnce(new Error("load more failed"));
     act(() => result.current.loadMore());
 
-    await waitFor(() => expect(result.current.error).toEqual({ key: "picker.moreFailed" }));
+    await settled();
+    expect(result.current.error).toEqual({ key: "picker.moreFailed" });
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["p1"]);
   });
 });

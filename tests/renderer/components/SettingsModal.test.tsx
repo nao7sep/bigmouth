@@ -32,6 +32,18 @@ vi.mock("@renderer/api", () => ({
   rebuildPostIndex: vi.fn(),
 }));
 
+// The platform's full IANA list is several hundred <option>s, which jsdom
+// re-walks on every render of a controlled <select>; the list itself is covered
+// by tests/shared/timeZone.test.ts, so these specs offer a few zones of it.
+vi.mock("@shared/timeZone", async (importActual) => {
+  const actual = await importActual<typeof import("@shared/timeZone")>();
+  const offered = new Set(["America/New_York", "Asia/Tokyo", "Europe/London", "UTC"]);
+  return {
+    ...actual,
+    timeZoneOptions: (saved: string) => actual.timeZoneOptions(saved).filter((zone) => offered.has(zone) || zone === saved),
+  };
+});
+
 import { SettingsModal } from "@renderer/components/SettingsModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import * as api from "@renderer/api";

@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeAll, describe, it, expect, vi } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
 import { createRef } from "react";
 import {
@@ -30,6 +30,13 @@ function renderEditor(
   );
   return { ...utils, ref, onContentChange };
 }
+
+// CodeMirror's first mount in a file installs its style sheets, which jsdom
+// parses; one mount here keeps that out of the first test's time.
+beforeAll(() => {
+  renderEditor();
+  cleanup();
+});
 
 describe("MarkdownEditor mounting", () => {
   it("mounts a CodeMirror editor into a .cm-container", () => {
