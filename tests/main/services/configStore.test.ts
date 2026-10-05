@@ -23,6 +23,8 @@ import {
   saveAnthropicSettings,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
+import { rowFor } from "@shared/aiModels";
+import { buildClaudeParams } from "@main/core/ai/claudeRequest.js";
 
 let dataDir: string;
 let homeDir: string;
@@ -299,6 +301,36 @@ describe("the Anthropic section", () => {
     fs.writeFileSync(file(), JSON.stringify({ "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
     expect(getRoleCall(ws, "analysis").thinking).toBe("adaptive");
     expect(getAnthropicSettingsForClient(ws).thinking.analysis).toBe("adaptive");
+  });
+
+  it("reads and sends a thinking the file does not hold as the selected model's own default after a relaunch", () => {
+    const defaults = defaultAnthropicSettings();
+    // Each role selects a model of another tier and leaves its thinking at that model's default.
+    const models = { analysis: "claude-haiku-4-5", metadata: "claude-sonnet-5-5", imagingPrompts: "claude-opus-5-5" };
+    const thinking = {
+      analysis: rowFor(models.analysis)!.defaultThinking,
+      metadata: rowFor(models.metadata)!.defaultThinking,
+      imagingPrompts: rowFor(models.imagingPrompts)!.defaultThinking,
+    };
+    expect(thinking.analysis).not.toBe(defaults.thinking.analysis);
+    expect(thinking.metadata).not.toBe(defaults.thinking.metadata);
+    saveAnthropicSettings(ws, input({ models, thinking }));
+    expect(saved()).toEqual({
+      "anthropic.analysis": "claude-haiku-4-5",
+      "anthropic.metadata": "claude-sonnet-5-5",
+      "anthropic.imagingPrompts": "claude-opus-5-5",
+    });
+
+    // Each read goes to the file, as a relaunch does.
+    expect(getAnthropicSettingsForClient(ws).thinking).toEqual(thinking);
+    const sent = (role: "analysis" | "metadata" | "imagingPrompts") => {
+      const call = getRoleCall(ws, role);
+      expect(call).toMatchObject({ model: models[role], thinking: thinking[role] });
+      return buildClaudeParams({ model: call.model, system: "", userContent: "draft" }, call.thinking).thinking;
+    };
+    expect(sent("analysis")).toEqual({ type: "disabled" });
+    expect(sent("metadata")).toEqual({ type: "adaptive", display: "summarized" });
+    expect(sent("imagingPrompts")).toEqual({ type: "adaptive", display: "summarized" });
   });
 
   it("keeps a thinking saved under a model with no row through a relaunch, unsent, until it returns to its built-in", () => {
