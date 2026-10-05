@@ -60,18 +60,17 @@ const insertAtCursor = vi.fn();
 vi.mock("@renderer/components/LeftPane", () => ({
   LeftPane: (p: AnyProps) => {
     props.left = p;
-    const drafts = (p.drafts as PostSummary[]) ?? [];
+    const lists = p.lists as Record<string, { posts: PostSummary[]; total: number }>;
+    const shown = (status: string) => lists[status].posts.map((d) => d.frontMatter.id).join(",");
     return (
       <div data-testid="left">
-        <span data-testid="left-drafts">{drafts.map((d) => d.frontMatter.id).join(",")}</span>
-        <span data-testid="left-ready">
-          {((p.ready as PostSummary[]) ?? []).map((d) => d.frontMatter.id).join(",")}
-        </span>
-        <span data-testid="left-published">
-          {((p.published as PostSummary[]) ?? []).map((d) => d.frontMatter.id).join(",")}
-        </span>
-        <span data-testid="left-published-total">{String(p.publishedTotal)}</span>
-        <span data-testid="left-expired-total">{String(p.expiredTotal)}</span>
+        <span data-testid="left-drafts">{shown("draft")}</span>
+        <span data-testid="left-discarded">{shown("discarded")}</span>
+        <span data-testid="left-verified">{shown("verified")}</span>
+        <span data-testid="left-published">{shown("published")}</span>
+        <span data-testid="left-retired">{shown("retired")}</span>
+        <span data-testid="left-published-total">{String(lists.published.total)}</span>
+        <span data-testid="left-retired-total">{String(lists.retired.total)}</span>
         <span data-testid="left-selected">{String(p.selectedPostId ?? "")}</span>
         <span data-testid="left-ws-name">{String(p.workspaceName)}</span>
         <span data-testid="left-timezone">{String(p.timezone)}</span>
@@ -84,11 +83,14 @@ vi.mock("@renderer/components/LeftPane", () => ({
         <button data-testid="left-newpost" onClick={() => (p.onNewPost as () => void)()}>
           new
         </button>
-        <button data-testid="left-more-pub" onClick={() => (p.onLoadMorePublished as () => void)()}>
+        <button data-testid="left-more-pub" onClick={() => (p.onLoadMore as (status: string) => void)("published")}>
           more-pub
         </button>
-        <button data-testid="left-more-exp" onClick={() => (p.onLoadMoreExpired as () => void)()}>
-          more-exp
+        <button data-testid="left-more-disc" onClick={() => (p.onLoadMore as (status: string) => void)("discarded")}>
+          more-disc
+        </button>
+        <button data-testid="left-more-ret" onClick={() => (p.onLoadMore as (status: string) => void)("retired")}>
+          more-ret
         </button>
         <button data-testid="left-settings" onClick={() => (p.onOpenSettings as () => void)()}>
           settings
@@ -131,7 +133,7 @@ vi.mock("@renderer/components/CenterPane", () => {
           </button>
           <button
             data-testid="center-updated"
-            onClick={() => (p.onPostUpdated as (r: PostMutationResult) => void)(MUTATION_A_READY)}
+            onClick={() => (p.onPostUpdated as (r: PostMutationResult) => void)(MUTATION_A_VERIFIED)}
           >
             updated
           </button>
@@ -278,20 +280,19 @@ const summary = (id: string, status: PostSummary["frontMatter"]["status"], extra
 });
 
 const LIST: PostListResponse = {
-  drafts: [summary("a", "draft"), summary("b", "draft")],
-  ready: [summary("c", "ready")],
-  published: [summary("p1", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" })],
-  publishedTotal: 3,
-  publishedOffset: 1,
-  expired: [summary("e1", "expired", { expiredAtUtc: "2026-03-01T00:00:00.000Z" })],
-  expiredTotal: 2,
-  expiredOffset: 1,
+  draft: { posts: [summary("a", "draft"), summary("b", "draft")], total: 2, offset: 0 },
+  discarded: { posts: [summary("x1", "discarded", { discardedAtUtc: "2026-02-15T00:00:00.000Z" })], total: 4, offset: 0 },
+  verified: { posts: [summary("c", "verified")], total: 1, offset: 0 },
+  published: { posts: [summary("p1", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" })], total: 3, offset: 0 },
+  retired: { posts: [summary("e1", "retired", { retiredAtUtc: "2026-03-01T00:00:00.000Z" })], total: 2, offset: 0 },
 };
+
+const FIRST = { discarded: 0, published: 0, retired: 0 };
 
 const SETTINGS: Settings = {
   timezone: "America/New_York",
   supportedLanguages: ["en", "ja"],
-  publishedPostsPerLoad: 25,
+  postsPerLoad: 25,
   maxUploadMb: 100,
   editorWatermark: "WATER",
   extraFieldWatermark: "EXTRA",
@@ -306,10 +307,10 @@ const POST_A: Post = {
   content: "post a body",
 };
 
-const MUTATION_A_READY: PostMutationResult = {
-  frontMatter: fm("a", "ready"),
+const MUTATION_A_VERIFIED: PostMutationResult = {
+  frontMatter: fm("a", "verified"),
   content: "post a body",
-  summary: fm("a", "ready"),
+  summary: fm("a", "verified"),
 };
 
 const MUTATION_A_PUB: PostMutationResult = {
@@ -373,7 +374,7 @@ describe("WorkspaceSession initial load", () => {
   it("loads posts and config and feeds the left pane", async () => {
     const { getByTestId } = await mountLoaded();
 
-    // The load effect re-runs once after settings lands a new publishedPostsPerLoad
+    // The load effect re-runs once after settings lands a new postsPerLoad
     // (loadPosts closes over pubBatchSize), so posts may load more than once; what
     // matters is that each loader ran and the panes received the data.
     expect(mockListPosts).toHaveBeenCalled();
@@ -381,10 +382,12 @@ describe("WorkspaceSession initial load", () => {
     expect(mockGetSettings).toHaveBeenCalled();
 
     expect(getByTestId("left-drafts").textContent).toBe("a,b");
-    expect(getByTestId("left-ready").textContent).toBe("c");
+    expect(getByTestId("left-discarded").textContent).toBe("x1");
+    expect(getByTestId("left-verified").textContent).toBe("c");
     expect(getByTestId("left-published").textContent).toBe("p1");
+    expect(getByTestId("left-retired").textContent).toBe("e1");
     expect(getByTestId("left-published-total").textContent).toBe("3");
-    expect(getByTestId("left-expired-total").textContent).toBe("2");
+    expect(getByTestId("left-retired-total").textContent).toBe("2");
     expect(getByTestId("left-ws-name").textContent).toBe("Alpha");
     // The settings timezone is valid, so it overrides the default.
     expect(getByTestId("left-timezone").textContent).toBe("America/New_York");
@@ -534,12 +537,12 @@ describe("WorkspaceSession post mutation", () => {
       await Promise.resolve();
     });
     act(() => {
-      fireEvent.click(getByTestId("center-updated")); // a: draft -> ready
+      fireEvent.click(getByTestId("center-updated")); // a: draft -> verified
     });
-    // "a" moved out of drafts into ready. "a" and "c" share a createdAtUtc, so the
+    // "a" moved out of drafts into verified. "a" and "c" share a createdAtUtc, so the
     // tie is stable and "a" appends after the existing "c".
     expect(getByTestId("left-drafts").textContent).toBe("b");
-    expect(getByTestId("left-ready").textContent).toBe("c,a");
+    expect(getByTestId("left-verified").textContent).toBe("c,a");
   });
 
   it("applies a status change to published", async () => {
@@ -766,26 +769,44 @@ describe("WorkspaceSession load more / log", () => {
     mockListPosts.mockClear();
     const page2: PostListResponse = {
       ...LIST,
-      published: [summary("p2", "published", { publishedAtUtc: "2026-01-15T00:00:00.000Z" })],
+      published: { posts: [summary("p2", "published", { publishedAtUtc: "2026-01-15T00:00:00.000Z" })], total: 3, offset: 1 },
+      discarded: { posts: [summary("x9", "discarded")], total: 4, offset: 0 },
     };
     mockListPosts.mockResolvedValue(page2);
     await act(async () => {
       fireEvent.click(getByTestId("left-more-pub"));
       await Promise.resolve();
     });
-    // Appended: original page plus the next.
+    // Appended: original page plus the next; the other paged sections untouched.
     expect(getByTestId("left-published").textContent).toBe("p1,p2");
-    expect(mockListPosts).toHaveBeenCalledWith(1, 25, 0);
+    expect(getByTestId("left-discarded").textContent).toBe("x1");
+    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, published: 1 }, 25);
+  });
+
+  it("loads the next discarded page from its own offset", async () => {
+    const { getByTestId } = await mountLoaded();
+    mockListPosts.mockClear();
+    mockListPosts.mockResolvedValue({
+      ...LIST,
+      discarded: { posts: [summary("x2", "discarded", { discardedAtUtc: "2026-01-01T00:00:00.000Z" })], total: 4, offset: 1 },
+    });
+    await act(async () => {
+      fireEvent.click(getByTestId("left-more-disc"));
+      await Promise.resolve();
+    });
+    expect(getByTestId("left-discarded").textContent).toBe("x1,x2");
+    expect(getByTestId("left-published").textContent).toBe("p1");
+    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, discarded: 1 }, 25);
   });
 
   it("surfaces a load-more failure", async () => {
     const { getByTestId, getByText } = await mountLoaded();
     mockListPosts.mockRejectedValue(new Error("more failed"));
     await act(async () => {
-      fireEvent.click(getByTestId("left-more-exp"));
+      fireEvent.click(getByTestId("left-more-ret"));
       await Promise.resolve();
     });
-    expect(getByText("More expired posts could not be loaded. The posts already shown are unchanged; try again.")).toBeTruthy();
+    expect(getByText("More retired posts could not be loaded. The posts already shown are unchanged; try again.")).toBeTruthy();
   });
 
   it("opens the records window and surfaces a failure", async () => {
@@ -809,7 +830,10 @@ describe("WorkspaceSession load more / log", () => {
 // window comes back to the front.
 describe("WorkspaceSession reread on activation", () => {
   const activate = () => activationListeners.forEach((listener) => listener());
-  const EDITED: PostListResponse = { ...LIST, drafts: [summary("b", "draft"), summary("x", "draft")] };
+  const EDITED: PostListResponse = {
+    ...LIST,
+    draft: { posts: [summary("b", "draft"), summary("x", "draft")], total: 2, offset: 0 },
+  };
 
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -840,7 +864,7 @@ describe("WorkspaceSession reread on activation", () => {
 
   it("keeps as many published posts loaded as were shown", async () => {
     const { getByTestId } = await mountLoaded();
-    mockListPosts.mockResolvedValueOnce({ ...LIST, published: [summary("p2", "published")] });
+    mockListPosts.mockResolvedValueOnce({ ...LIST, published: { posts: [summary("p2", "published")], total: 3, offset: 1 } });
     await act(async () => {
       fireEvent.click(getByTestId("left-more-pub"));
       await Promise.resolve();
@@ -850,8 +874,8 @@ describe("WorkspaceSession reread on activation", () => {
     act(() => activate());
     await settle(300);
 
-    // The batch size is 25, more than either archive shows, so a page of it is read.
-    expect(mockListPosts).toHaveBeenCalledExactlyOnceWith(0, 25, 0);
+    // The batch size is 25, more than any paged section shows, so a page of it is read.
+    expect(mockListPosts).toHaveBeenCalledExactlyOnceWith(FIRST, 25);
   });
 
   it("drops a reread the app's own list change overtook", async () => {
@@ -866,12 +890,12 @@ describe("WorkspaceSession reread on activation", () => {
     act(() => activate());
     await settle(300);
     act(() => {
-      fireEvent.click(getByTestId("center-updated")); // a: draft -> ready, while the read is out
+      fireEvent.click(getByTestId("center-updated")); // a: draft -> verified, while the read is out
     });
     await act(async () => answer(LIST));
 
     expect(getByTestId("left-drafts").textContent).toBe("b");
-    expect(getByTestId("left-ready").textContent).toBe("c,a");
+    expect(getByTestId("left-verified").textContent).toBe("c,a");
   });
 
   it("leaves the open post alone", async () => {

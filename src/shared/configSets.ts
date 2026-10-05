@@ -4,7 +4,7 @@ import { GENERATION_PROMPT_KEYS } from "./metadataFields.js";
 import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "./aiModels.js";
 
 export const SETTINGS_SET_KEYS = [
-  "timezone", "supportedLanguages", "publishedPostsPerLoad", "maxUploadMb",
+  "timezone", "supportedLanguages", "postsPerLoad", "maxUploadMb",
   "editorWatermark", "extraFieldWatermark", "uiFontFamily", "contentFont",
 ] as const satisfies readonly (keyof Settings)[];
 // The Anthropic section (ai-model-routing-conventions): its endpoint, one model
@@ -54,7 +54,7 @@ function shapeIssue(key: WorkspaceSetKey, value: unknown): string | null {
   switch (key) {
     case "supportedLanguages":
       return strings(value) ? null : "supportedLanguages must be an array of strings";
-    case "publishedPostsPerLoad":
+    case "postsPerLoad":
     case "maxUploadMb":
       return typeof value === "number" ? null : `${key} must be a number`;
     case "contentFont":

@@ -12,8 +12,7 @@ import {
 import { isImageAssetFilename, isReservedAssetName } from "@shared/assetNames";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getSettings } from "../core/services/configStore.js";
-import { getPost } from "../core/services/postStore.js";
-import { isEditLocked } from "../core/shared/postLifecycle.js";
+import { getPost, recordAssetChange } from "../core/services/postStore.js";
 import {
   listAssets,
   saveAssetFile,
@@ -128,23 +127,19 @@ export function registerAssetHandlers(): void {
 
     // The lock is read HERE, with nothing awaited between it and the write. It
     // used to be checked at the top of the handler, before the exifr parse above
-    // — and a publish landing inside that await then wrote an asset into a post
+    // — and a lock landing inside that await then wrote an asset into a post
     // the app had already locked. Do not hoist this back up for a faster refusal.
     const post = getPost(dir, pid);
     if (!post) throw new Error("Post not found");
-    if (isEditLocked(post.frontMatter.status)) {
-      return {
-        ok: false,
-        admission: {
-          code: "post-locked",
-          status: post.frontMatter.status === "published" ? "published" : "expired",
-        },
-      } satisfies AssetUploadResult;
+    if (post.frontMatter.locked === true) {
+      return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
     }
 
     let storedMeta: AssetMeta;
     try {
       storedMeta = saveAssetFile(dir, pid, filename, buffer, meta);
+      // An attached file is the post's content, so the post was edited.
+      recordAssetChange(dir, pid);
     } catch (err) {
       logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));
@@ -180,13 +175,13 @@ export function registerAssetHandlers(): void {
 
     const post = getPost(dir, pid);
     if (!post) throw new Error("Post not found");
-    if (isEditLocked(post.frontMatter.status)) {
-      const label = post.frontMatter.status === "published" ? "Published" : "Expired";
-      throw new Error(`${label} posts are locked. Move the post back to Ready or Draft to change its assets.`);
+    if (post.frontMatter.locked === true) {
+      throw new Error("This post is locked. Unlock it to change its assets.");
     }
 
     try {
       deleteAsset(dir, pid, fn);
+      recordAssetChange(dir, pid);
     } catch (err) {
       logError("asset metadata update failed", { workspace: wsId, postId: pid, filename: fn, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));

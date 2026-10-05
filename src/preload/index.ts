@@ -13,6 +13,7 @@ import {
   type AssetUploadResult,
   type BigMouthApi,
   type MetadataGenerationResults,
+  type PostListOffsets,
   type PostUpdate,
   type RendererLogEntry,
   type TargetRenameResult,
@@ -129,8 +130,8 @@ const api = {
   },
 
   // --- Posts ---
-  listPosts: (wsId: string, publishedOffset: number, limit: number, expiredOffset: number) =>
-    ipcRenderer.invoke(CHANNELS.listPosts, wsId, publishedOffset, limit, expiredOffset) as Promise<PostListResponse>,
+  listPosts: (wsId: string, offsets: PostListOffsets, limit: number) =>
+    ipcRenderer.invoke(CHANNELS.listPosts, wsId, offsets, limit) as Promise<PostListResponse>,
   getPost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.getPost, wsId, id) as Promise<Post>,
   createPost: (wsId: string, target: string, language: string, sourceId?: string) =>
     ipcRenderer.invoke(CHANNELS.createPost, wsId, target, language, sourceId) as Promise<Post>,
@@ -138,6 +139,8 @@ const api = {
     ipcRenderer.invoke(CHANNELS.updatePost, wsId, id, updates) as Promise<PostMutationResult>,
   changePostStatus: (wsId: string, id: string, status: PostStatus) =>
     ipcRenderer.invoke(CHANNELS.changePostStatus, wsId, id, status) as Promise<PostMutationResult>,
+  setPostLocked: (wsId: string, id: string, locked: boolean) =>
+    ipcRenderer.invoke(CHANNELS.setPostLocked, wsId, id, locked) as Promise<PostMutationResult>,
   deletePost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.deletePost, wsId, id) as Promise<void>,
   listReferrers: (wsId: string, id: string) =>
     ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,

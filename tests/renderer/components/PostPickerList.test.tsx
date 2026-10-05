@@ -50,8 +50,9 @@ describe("PostPickerList — render", () => {
     const posts = [
       summary({ id: "p1", title: "First", status: "published" }),
       summary({ id: "p2", title: "Second", target: "x", language: "ja", status: "draft" }),
-      summary({ id: "p3", title: "Third", status: "ready" }),
-      summary({ id: "p4", title: "Fourth", status: "expired" }),
+      summary({ id: "p3", title: "Third", status: "verified" }),
+      summary({ id: "p4", title: "Fourth", status: "retired" }),
+      summary({ id: "p5", title: "Fifth", status: "discarded" }),
     ];
     const { getByPlaceholderText, getByLabelText, getByText } = render(
       <PostPickerList {...state({ posts })} onSelect={vi.fn()} />,
@@ -64,8 +65,9 @@ describe("PostPickerList — render", () => {
     // The sub-line presents a display label without changing the wire status.
     expect(getByText("blog · en · Published")).toBeTruthy();
     expect(getByText("x · ja · Draft")).toBeTruthy();
-    expect(getByText("blog · en · Ready")).toBeTruthy();
-    expect(getByText("blog · en · Expired")).toBeTruthy();
+    expect(getByText("blog · en · Verified")).toBeTruthy();
+    expect(getByText("blog · en · Retired")).toBeTruthy();
+    expect(getByText("blog · en · Discarded")).toBeTruthy();
   });
 
   it("falls back through title → excerpt → id for the row label", () => {

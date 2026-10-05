@@ -533,6 +533,22 @@ body {
   background: var(--bm-accent-pressed);
 }
 
+/* A toggle button that is on (the post's Locked button) is the accent fill,
+   as a chosen segment is, so on and off read apart at a glance. */
+.btn-toolbar[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--bm-accent);
+  color: var(--bm-on-accent);
+}
+
+.btn-toolbar[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--bm-accent-hover);
+}
+
+.btn-toolbar[aria-pressed="true"]:active:not(:disabled) {
+  background: var(--bm-accent-pressed);
+}
+
 /* A disabled button is the resting button, faded: it keeps its own fill, outline,
    ink and footprint, so it stays recognisably the control that will come back and
    the roles stay told apart while they are off. One value for every button here.

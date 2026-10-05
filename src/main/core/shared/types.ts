@@ -67,10 +67,13 @@ export interface PostFrontMatter {
   metaDescriptionEn?: string; // English supplement (omitted when language is "en")
   extra?: string; // free-text KVP field
   createdAtUtc: string; // ISO 8601; never changes (encoded in the filename)
-  updatedAtUtc: string; // ISO 8601; bumped on every content/metadata edit
-  readyAtUtc?: string; // set when status reaches ready; cleared only on return to draft
-  publishedAtUtc?: string; // set on first publish; preserved on edit; cleared only on return to draft
-  expiredAtUtc?: string; // set when status reaches expired; cleared only on return to draft
+  updatedAtUtc: string; // ISO 8601; the last content edit (content-lifecycle-conventions' Modified)
+  // Status times, set and cleared by the transition table in postLifecycle.ts.
+  discardedAtUtc?: string;
+  verifiedAtUtc?: string;
+  publishedAtUtc?: string;
+  retiredAtUtc?: string;
+  locked?: boolean; // written only as true; absent means unlocked
   [key: string]: unknown;
 }
 

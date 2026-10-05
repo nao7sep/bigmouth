@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 async function renderTab(
-  props: Partial<{ maxUploadMb: number; readOnly: boolean; onInsertAtCursor: (t: string) => void }> = {}
+  props: Partial<{ maxUploadMb: number; locked: boolean; onInsertAtCursor: (t: string) => void }> = {}
 ) {
   const onInsertAtCursor = props.onInsertAtCursor ?? vi.fn();
   const utils = render(
@@ -63,7 +63,7 @@ async function renderTab(
         postId="p1"
         onInsertAtCursor={onInsertAtCursor}
         maxUploadMb={props.maxUploadMb ?? 5}
-        readOnly={props.readOnly ?? false}
+        locked={props.locked ?? false}
       />
     </ConfirmProvider>
   );
@@ -176,7 +176,7 @@ describe("AssetsTab upload via file input", () => {
 
   it("presents predictable upload admission rejection as a warning without error logging", async () => {
     mockListAssets.mockResolvedValue([]);
-    mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError({ key: "assets.admissionPublishedLocked" }));
+    mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError({ key: "assets.admissionLocked" }));
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -184,7 +184,7 @@ describe("AssetsTab upload via file input", () => {
       fireEvent.change(input, { target: { files: [makeFile("draft.png")] } });
     });
 
-    expect(getByText(/^draft\.png: Published posts are locked/)).toBeTruthy();
+    expect(getByText(/^draft\.png: This post is locked/)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockReportProblem).not.toHaveBeenCalled();
   });
@@ -531,23 +531,23 @@ describe("AssetsTab result", () => {
   });
 });
 
-describe("AssetsTab read-only", () => {
+describe("AssetsTab locked", () => {
   it("disables Add and card actions", async () => {
     mockListAssets.mockResolvedValue([asset({ filename: "ro.png" })]);
-    const { container, getByRole } = await renderTab({ readOnly: true });
+    const { container, getByRole } = await renderTab({ locked: true });
     expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
     const buttons = within(card).getAllByRole("button");
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it("explains a committed drop while read-only", async () => {
+  it("explains a committed drop while locked", async () => {
     mockListAssets.mockResolvedValue([]);
-    const { container, getByText } = await renderTab({ readOnly: true });
+    const { container, getByText } = await renderTab({ locked: true });
     await act(async () => {
       fireEvent.drop(assetCollection(container), { dataTransfer: { files: [makeFile("x.png")] } });
     });
-    expect(getByText("Assets are read-only.")).toBeTruthy();
+    expect(getByText("Assets are locked.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 });

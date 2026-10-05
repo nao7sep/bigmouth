@@ -4,7 +4,7 @@
  * The main process sorted from the index and the renderer re-sorted after an
  * optimistic mutation, and the two disagreed on every tie-breaker: main broke
  * ties on `id` descending, the renderer on `slug` descending, and the
- * renderer's draft/ready comparator had no tie-breaker at all. Since the
+ * renderer's draft comparator had no tie-breaker at all. Since the
  * renderer re-inserts a mutated post on every metadata save and every
  * background content save, two posts sharing a timestamp sat in one order until
  * the next `listPosts` and a different one after it — the list visibly
@@ -16,12 +16,28 @@
 
 import type { PostStatus } from "./types.js";
 
+/** A list section's own time: what it is sorted by and what each row shows. */
+export type ListTimeKey = "createdAtUtc" | "discardedAtUtc" | "publishedAtUtc" | "retiredAtUtc";
+
+/**
+ * Each section's time. Draft and verified posts are ordered by creation; a
+ * discarded, published or retired post by the time it entered that status.
+ */
+export const LIST_TIME_KEY: Readonly<Record<PostStatus, ListTimeKey>> = {
+  draft: "createdAtUtc",
+  discarded: "discardedAtUtc",
+  verified: "createdAtUtc",
+  published: "publishedAtUtc",
+  retired: "retiredAtUtc",
+};
+
 /** What ordering a post needs. Both `PostIndexEntry` and the boundary front matter satisfy it. */
 export interface OrderablePost {
   id: string;
   createdAtUtc: string;
+  discardedAtUtc?: string;
   publishedAtUtc?: string;
-  expiredAtUtc?: string;
+  retiredAtUtc?: string;
 }
 
 /**
@@ -47,7 +63,7 @@ function compareDesc(a: string, b: string): number {
 }
 
 /**
- * The tie-breaker for every bucket: post id, descending.
+ * The tie-breaker for every section: post id, descending.
  *
  * It has to be a field every post carries and no edit changes — `slug` is
  * optional and editable, so ordering by it moved posts around when a slug was
@@ -61,25 +77,20 @@ export function byCreatedDesc(a: OrderablePost, b: OrderablePost): number {
   return compareInstants(b.createdAtUtc, a.createdAtUtc) || byIdDesc(a, b);
 }
 
-export function byPublishedDesc(a: OrderablePost, b: OrderablePost): number {
-  return (
-    compareInstants(b.publishedAtUtc ?? "", a.publishedAtUtc ?? "") ||
-    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
-    byIdDesc(a, b)
-  );
+/** Newest first by `key`, then by creation time, then by id. */
+function byTimeDesc(key: Exclude<ListTimeKey, "createdAtUtc">) {
+  return (a: OrderablePost, b: OrderablePost): number =>
+    compareInstants(b[key] ?? "", a[key] ?? "") || byCreatedDesc(a, b);
 }
 
-export function byExpiredDesc(a: OrderablePost, b: OrderablePost): number {
-  return (
-    compareInstants(b.expiredAtUtc ?? "", a.expiredAtUtc ?? "") ||
-    compareInstants(b.createdAtUtc, a.createdAtUtc) ||
-    byIdDesc(a, b)
-  );
-}
+const COMPARATORS: Readonly<Record<ListTimeKey, (a: OrderablePost, b: OrderablePost) => number>> = {
+  createdAtUtc: byCreatedDesc,
+  discardedAtUtc: byTimeDesc("discardedAtUtc"),
+  publishedAtUtc: byTimeDesc("publishedAtUtc"),
+  retiredAtUtc: byTimeDesc("retiredAtUtc"),
+};
 
-/** The comparator a bucket is sorted by. */
+/** The comparator a status's section is sorted by. */
 export function comparatorFor(status: PostStatus): (a: OrderablePost, b: OrderablePost) => number {
-  if (status === "published") return byPublishedDesc;
-  if (status === "expired") return byExpiredDesc;
-  return byCreatedDesc;
+  return COMPARATORS[LIST_TIME_KEY[status]];
 }

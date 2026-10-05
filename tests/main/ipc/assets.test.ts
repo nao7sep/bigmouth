@@ -34,7 +34,7 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { saveTargets, saveSettings, getSettings } from "@main/core/services/configStore.js";
-import { changeStatus, clearCache } from "@main/core/services/postStore.js";
+import { changeStatus, clearCache, getPost, setLocked } from "@main/core/services/postStore.js";
 import { assetDir } from "@main/core/services/assetStore.js";
 import { registerAssetHandlers } from "@main/ipc/assets.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
@@ -234,24 +234,16 @@ describe("uploadAsset", () => {
     );
   });
 
-  it("refuses to upload to a published (locked) post", async () => {
-    const id = createDraft();
-    changeStatus(dataDir, id, "published");
-    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
-      { ok: false, admission: { code: "post-locked", status: "published" } },
-    );
-  });
-
-  it("refuses an upload when the post is published while the handler is awaiting metadata", async () => {
+  it("refuses an upload when the post is locked while the handler is awaiting metadata", async () => {
     // The lock used to be read at the top of the handler, before the exifr parse.
     // Calling the handler runs it synchronously up to that await and hands control
-    // back here, so publishing now lands inside the window - and an asset was
+    // back here, so locking now lands inside the window - and an asset was
     // written into a post the app had already locked.
     const id = createDraft();
     const pending = invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("late.png", PNG_1x1));
-    changeStatus(dataDir, id, "published");
+    setLocked(dataDir, id, true);
 
-    await expect(pending).resolves.toEqual({ ok: false, admission: { code: "post-locked", status: "published" } });
+    await expect(pending).resolves.toEqual({ ok: false, admission: { code: "post-locked" } });
     expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
   });
 
@@ -289,12 +281,47 @@ describe("uploadAsset", () => {
     );
   });
 
-  it("refuses to upload to an expired (locked) post", async () => {
+  it("refuses to upload to a locked post", async () => {
     const id = createDraft();
-    changeStatus(dataDir, id, "expired");
+    setLocked(dataDir, id, true);
     await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
-      { ok: false, admission: { code: "post-locked", status: "expired" } },
+      { ok: false, admission: { code: "post-locked" } },
     );
+  });
+
+  it("uploads to a published post that is not locked", async () => {
+    const id = createDraft();
+    changeStatus(dataDir, id, "published");
+    const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    expect(result.ok).toBe(true);
+  });
+
+  // An attached file is the post's content (content-lifecycle-conventions), so
+  // uploading or replacing one is an edit of the post.
+  it("moves the post's modified time to the moment of the upload", async () => {
+    const id = createDraft();
+    const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
+
+      vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-02T00:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(before).not.toBe("2030-01-01T00:00:00.000Z");
+  });
+
+  it("leaves the modified time alone when the upload is refused", async () => {
+    const id = createDraft();
+    setLocked(dataDir, id, true);
+    const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe(before);
   });
 });
 
@@ -332,17 +359,24 @@ describe("deleteAsset", () => {
     expect(() => invoke(CHANNELS.deleteAsset, wsId, orphanPost, "a.png")).toThrow(/Post not found/);
   });
 
-  it("refuses to delete an asset on a published (locked) post", async () => {
+  it("refuses to delete an asset on a locked post, whatever its status", async () => {
     const id = createDraft();
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-    changeStatus(dataDir, id, "published");
-    expect(() => invoke(CHANNELS.deleteAsset, wsId, id, "a.png")).toThrow(/Published posts are locked/);
+    setLocked(dataDir, id, true);
+    expect(() => invoke(CHANNELS.deleteAsset, wsId, id, "a.png")).toThrow(/This post is locked/);
+    expect(fs.existsSync(path.join(assetDir(dataDir, id), "a.png"))).toBe(true);
   });
 
-  it("refuses to delete an asset on an expired (locked) post", async () => {
+  it("moves the post's modified time to the moment of the delete", async () => {
     const id = createDraft();
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-    changeStatus(dataDir, id, "expired");
-    expect(() => invoke(CHANNELS.deleteAsset, wsId, id, "a.png")).toThrow(/Expired posts are locked/);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2030-02-01T00:00:00.000Z"));
+      invoke(CHANNELS.deleteAsset, wsId, id, "a.png");
+      expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-02-01T00:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

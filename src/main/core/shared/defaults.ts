@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // Follows the computer on every launch; a fixed zone is only ever the user's choice.
   timezone: SYSTEM_TIME_ZONE,
   supportedLanguages: ["ar", "de", "en", "es", "fr", "hi", "id", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh"],
-  publishedPostsPerLoad: 50,
+  postsPerLoad: 50,
   maxUploadMb: 500,
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",

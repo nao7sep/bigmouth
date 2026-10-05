@@ -111,7 +111,7 @@ export function getSettings(dataDir: string): Settings {
   return {
     timezone: c.timezone,
     supportedLanguages: c.supportedLanguages,
-    publishedPostsPerLoad: c.publishedPostsPerLoad,
+    postsPerLoad: c.postsPerLoad,
     maxUploadMb: c.maxUploadMb,
     editorWatermark: c.editorWatermark,
     extraFieldWatermark: c.extraFieldWatermark,

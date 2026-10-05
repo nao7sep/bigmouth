@@ -30,10 +30,12 @@ import {
   assetUrl as buildAssetUrl,
   type AiRequestHandle,
   type MetadataGenerationResults,
+  type PostListOffsets,
   type PostUpdate,
   type TargetRenameResult,
 } from "@shared/ipc";
 import { AssetUploadAdmissionError } from "./util/assetUpload";
+import { FIRST_PAGES } from "@shared/postStatus";
 import { message, type Message } from "@shared/i18n/translate";
 import { isImageAssetFilename } from "@shared/assetNames";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
@@ -128,8 +130,8 @@ export function saveAppSettings(settings: Partial<AppSettings>): Promise<AppSett
 
 // --- Posts ---
 
-export function listPosts(publishedOffset = 0, limit = 50, expiredOffset = 0): Promise<PostListResponse> {
-  return bridge().listPosts(requireWs(), publishedOffset, limit, expiredOffset);
+export function listPosts(offsets: PostListOffsets = FIRST_PAGES, limit = 50): Promise<PostListResponse> {
+  return bridge().listPosts(requireWs(), offsets, limit);
 }
 
 export function getPost(id: string, workspaceId?: string): Promise<Post> {
@@ -197,6 +199,14 @@ export function changePostStatus(
   workspaceId?: string,
 ): Promise<PostMutationResult> {
   return bridge().changePostStatus(requireWs(workspaceId), id, status);
+}
+
+export function setPostLocked(
+  id: string,
+  locked: boolean,
+  workspaceId?: string,
+): Promise<PostMutationResult> {
+  return bridge().setPostLocked(requireWs(workspaceId), id, locked);
 }
 
 export function deletePost(id: string, workspaceId?: string): Promise<void> {
@@ -339,7 +349,7 @@ function assetUploadAdmissionMessage(admission: AssetUploadAdmission): Message {
     case "reserved-name":
       return message("assets.admissionReserved", { name: admission.filename });
     case "post-locked":
-      return message(admission.status === "published" ? "assets.admissionPublishedLocked" : "assets.admissionExpiredLocked");
+      return message("assets.admissionLocked");
   }
 }
 

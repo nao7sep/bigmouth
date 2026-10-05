@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { LeftPane } from "@renderer/components/LeftPane";
-import type { PostSummary, PostFrontMatter } from "@shared/types";
+import type { PostStatus, PostSummary, PostFrontMatter } from "@shared/types";
+import { emptyPostLists } from "@renderer/util/postBuckets";
 
 afterEach(cleanup);
 
@@ -29,17 +30,10 @@ function summary(over: Partial<PostFrontMatter> & { id: string }): PostSummary {
 
 function baseProps() {
   return {
-    drafts: [] as PostSummary[],
-    ready: [] as PostSummary[],
-    published: [] as PostSummary[],
-    publishedTotal: 0,
-    expired: [] as PostSummary[],
-    expiredTotal: 0,
     selectedPostId: null as string | null,
     onSelectPost: vi.fn(),
     onNewPost: vi.fn(),
-    onLoadMorePublished: vi.fn(),
-    onLoadMoreExpired: vi.fn(),
+    onLoadMore: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenShortcuts: vi.fn(),
     onOpenAbout: vi.fn(),
@@ -50,81 +44,99 @@ function baseProps() {
   };
 }
 
-function renderPane(over: Partial<ReturnType<typeof baseProps>> = {}) {
-  const props = { ...baseProps(), ...over };
+type Over = Partial<ReturnType<typeof baseProps>> & {
+  /** Each section's loaded posts. */
+  sections?: Partial<Record<PostStatus, PostSummary[]>>;
+  /** A paged section's total, when more exist than are loaded. */
+  totals?: Partial<Record<PostStatus, number>>;
+};
+
+function renderPane({ sections = {}, totals = {}, ...over }: Over = {}) {
+  const lists = emptyPostLists();
+  for (const status of Object.keys(lists) as PostStatus[]) {
+    const posts = sections[status] ?? [];
+    lists[status] = { posts, total: totals[status] ?? posts.length };
+  }
+  const props = { ...baseProps(), ...over, lists };
   const utils = render(<LeftPane {...props} />);
   return { ...utils, props };
 }
 
+const findHeader = (container: HTMLElement, name: string) =>
+  Array.from(container.querySelectorAll(".section-header")).find((h) => h.textContent?.includes(name))!;
+
+const PAGED = [
+  ["discarded", "Discarded"],
+  ["published", "Published"],
+  ["retired", "Retired"],
+] as const;
+
 describe("LeftPane structure", () => {
-  it("renders the four sections, drafts/ready open and published/expired collapsed by default", () => {
+  it("renders a section per status in status order, drafts and verified open, the paged ones collapsed", () => {
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft One" })],
-      ready: [summary({ id: "r1", title: "Ready One" })],
-      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
-      publishedTotal: 1,
+      sections: {
+        draft: [summary({ id: "d1", title: "Draft One" })],
+        verified: [summary({ id: "v1", title: "Verified One", status: "verified" })],
+        published: [summary({ id: "p1", title: "Pub One", status: "published" })],
+      },
     });
     const headers = container.querySelectorAll(".section-header");
     expect(Array.from(headers).map((h) => h.querySelector("span")?.textContent?.trim())).toEqual([
       "Drafts",
-      "Ready",
+      "Discarded",
+      "Verified",
       "Published",
-      "Expired",
+      "Retired",
     ]);
     // Open versus collapsed is carried by which chevron renders, the icons being
     // aria-hidden and so invisible to a text assertion.
     expect(Array.from(headers).map((h) => h.querySelector("svg")?.dataset.icon)).toEqual([
       "chevron-down",
+      "chevron-right",
       "chevron-down",
       "chevron-right",
       "chevron-right",
     ]);
     // Open sections render their rows; collapsed ones do not.
     expect(screen.getByText("Draft One")).toBeTruthy();
-    expect(screen.getByText("Ready One")).toBeTruthy();
+    expect(screen.getByText("Verified One")).toBeTruthy();
     expect(screen.queryByText("Pub One")).toBeNull();
   });
 
-  it("shows a count for plain sections and a loaded/total count for paginated ones", () => {
+  it("shows a count for whole sections and a loaded/total count for paged ones", () => {
     const { container } = renderPane({
-      drafts: [summary({ id: "d1" }), summary({ id: "d2" })],
-      published: [summary({ id: "p1", status: "published" })],
-      publishedTotal: 5,
+      sections: {
+        draft: [summary({ id: "d1" }), summary({ id: "d2" })],
+        published: [summary({ id: "p1", status: "published" })],
+      },
+      totals: { published: 5, discarded: 3 },
     });
     const counts = Array.from(container.querySelectorAll(".section-count")).map((c) => c.textContent);
-    // Drafts: 2 (plain), Ready: 0, Published: 1/5 (paginated), Expired: 0/0.
-    expect(counts).toEqual(["2", "0", "1/5", "0/0"]);
+    expect(counts).toEqual(["2", "0/3", "0", "1/5", "0/0"]);
   });
 
   it("shows the empty placeholder text for an open but empty section", () => {
-    renderPane();
+    const { container } = renderPane();
     expect(screen.getByText("No drafts")).toBeTruthy();
-    expect(screen.getByText("No ready posts")).toBeTruthy();
+    expect(screen.getByText("No verified posts")).toBeTruthy();
+    fireEvent.click(findHeader(container, "Discarded"));
+    fireEvent.click(findHeader(container, "Retired"));
+    expect(screen.getByText("No discarded posts")).toBeTruthy();
+    expect(screen.getByText("No retired posts")).toBeTruthy();
   });
 });
 
 describe("LeftPane section toggling", () => {
-  it("expands a collapsed section on header click, revealing its rows", () => {
-    const { container } = renderPane({
-      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
-      publishedTotal: 1,
-    });
-    expect(screen.queryByText("Pub One")).toBeNull();
-    const publishedHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Published")
-    )!;
-    fireEvent.click(publishedHeader);
-    expect(screen.getByText("Pub One")).toBeTruthy();
+  it.each(PAGED)("expands the collapsed %s section on header click, revealing its rows", (status, label) => {
+    const { container } = renderPane({ sections: { [status]: [summary({ id: "x1", title: "Row One", status })] } });
+    expect(screen.queryByText("Row One")).toBeNull();
+    fireEvent.click(findHeader(container, label));
+    expect(screen.getByText("Row One")).toBeTruthy();
   });
 
   it("collapses an open section on header click, hiding its rows", () => {
-    const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft One" })],
-    });
-    const draftsHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Drafts")
-    )!;
-    fireEvent.click(draftsHeader);
+    const { container } = renderPane({ sections: { draft: [summary({ id: "d1", title: "Draft One" })] } });
+    fireEvent.click(findHeader(container, "Drafts"));
     expect(screen.queryByText("Draft One")).toBeNull();
   });
 });
@@ -132,10 +144,12 @@ describe("LeftPane section toggling", () => {
 describe("LeftPane post rows", () => {
   it("uses the title fallback chain and shows target plus a formatted timestamp", () => {
     const { container } = renderPane({
-      drafts: [
-        summary({ id: "d1", title: "", slug: "my-slug" }), // no title -> slug
-        summary({ id: "d2", title: "Has Title" }),
-      ],
+      sections: {
+        draft: [
+          summary({ id: "d1", title: "", slug: "my-slug" }), // no title -> slug
+          summary({ id: "d2", title: "Has Title" }),
+        ],
+      },
     });
     const titles = Array.from(container.querySelectorAll(".post-item-title")).map((t) => t.textContent);
     expect(titles).toContain("my-slug");
@@ -147,9 +161,21 @@ describe("LeftPane post rows", () => {
     expect(meta).toContain("Jan 1, 2024, 9:00 AM");
   });
 
+  it.each([
+    ["discarded", "Discarded", "discardedAtUtc"],
+    ["published", "Published", "publishedAtUtc"],
+    ["retired", "Retired", "retiredAtUtc"],
+  ] as const)("shows a %s post's own status time", (status, label, key) => {
+    const { container } = renderPane({
+      sections: { [status]: [summary({ id: "x1", status, [key]: "2024-06-01T03:00:00.000Z" })] },
+    });
+    fireEvent.click(findHeader(container, label));
+    expect(container.querySelector(".post-item-meta")?.textContent).toContain("Jun 1, 2024, 12:00 PM");
+  });
+
   it("marks the selected row with the selected class", () => {
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "One" }), summary({ id: "d2", title: "Two" })],
+      sections: { draft: [summary({ id: "d1", title: "One" }), summary({ id: "d2", title: "Two" })] },
       selectedPostId: "d2",
     });
     const rows = container.querySelectorAll(".post-item");
@@ -159,10 +185,7 @@ describe("LeftPane post rows", () => {
 
   it("commits a selection via onSelectPost when a row is clicked", () => {
     const onSelectPost = vi.fn();
-    const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "One" })],
-      onSelectPost,
-    });
+    const { container } = renderPane({ sections: { draft: [summary({ id: "d1", title: "One" })] }, onSelectPost });
     fireEvent.click(container.querySelector(".post-item")!);
     expect(onSelectPost).toHaveBeenCalledWith("d1");
   });
@@ -172,16 +195,19 @@ describe("LeftPane listbox keyboard navigation", () => {
   it("arrows the cursor across section boundaries and commits with Enter", () => {
     const onSelectPost = vi.fn();
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft One" })],
-      ready: [summary({ id: "r1", title: "Ready One" })],
+      sections: {
+        draft: [summary({ id: "d1", title: "Draft One" })],
+        verified: [summary({ id: "v1", title: "Verified One", status: "verified" })],
+      },
       onSelectPost,
     });
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
     // Each section's summary row is part of the sequence, so the rows here are
-    // [Drafts] d1 [Ready] r1 — one continuous list crossing group boundaries.
-    for (let i = 0; i < 4; i++) fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    // [Drafts] d1 [Discarded] [Verified] v1 — one continuous list crossing
+    // group boundaries.
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(listbox, { key: "ArrowDown" });
     fireEvent.keyDown(listbox, { key: "Enter" });
-    expect(onSelectPost).toHaveBeenCalledWith("r1");
+    expect(onSelectPost).toHaveBeenCalledWith("v1");
   });
 });
 
@@ -229,89 +255,92 @@ describe("LeftPane header actions", () => {
 });
 
 describe("LeftPane load-more affordance", () => {
-  it("renders a pointer-only Load more button when more published posts exist", () => {
+  it.each(PAGED)("renders a pointer-only Load more button when more %s posts exist", (status, label) => {
     const { container } = renderPane({
-      published: [summary({ id: "p1", status: "published" })],
-      publishedTotal: 3,
+      sections: { [status]: [summary({ id: "x1", status })] },
+      totals: { [status]: 3 },
     });
-    // Published starts collapsed; open it to reveal the load-more button.
-    const publishedHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Published")
-    )!;
-    fireEvent.click(publishedHeader);
+    // Paged sections start collapsed; open it to reveal the load-more button.
+    fireEvent.click(findHeader(container, label));
     const loadMore = screen.getByRole("button", { name: "Load more…" });
     expect(loadMore.getAttribute("tabindex")).toBe("-1");
   });
 
-  it("invokes onLoadMorePublished when the Load more button is clicked", () => {
-    const onLoadMorePublished = vi.fn();
+  it.each(PAGED)("asks for more %s posts when its Load more button is clicked", (status, label) => {
+    const onLoadMore = vi.fn();
     const { container } = renderPane({
-      published: [summary({ id: "p1", status: "published" })],
-      publishedTotal: 3,
-      onLoadMorePublished,
+      sections: { [status]: [summary({ id: "x1", status })] },
+      totals: { [status]: 3 },
+      onLoadMore,
     });
-    const publishedHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Published")
-    )!;
-    fireEvent.click(publishedHeader);
+    fireEvent.click(findHeader(container, label));
     fireEvent.click(screen.getByRole("button", { name: "Load more…" }));
-    expect(onLoadMorePublished).toHaveBeenCalledTimes(1);
+    expect(onLoadMore).toHaveBeenCalledExactlyOnceWith(status);
   });
 
   it("omits the Load more button once everything is loaded", () => {
-    const { container } = renderPane({
-      published: [summary({ id: "p1", status: "published" })],
-      publishedTotal: 1,
-    });
-    const publishedHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Published")
-    )!;
-    fireEvent.click(publishedHeader);
+    const { container } = renderPane({ sections: { published: [summary({ id: "p1", status: "published" })] } });
+    fireEvent.click(findHeader(container, "Published"));
     expect(screen.queryByRole("button", { name: "Load more…" })).toBeNull();
   });
 });
 
-describe("LeftPane auto-load on cursor reaching the archive end", () => {
+describe("LeftPane auto-load on cursor reaching a paged section's end", () => {
   it("auto-loads more published when the cursor lands on the last loaded published row", () => {
-    const onLoadMorePublished = vi.fn();
+    const onLoadMore = vi.fn();
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft" })],
-      published: [
-        summary({ id: "p1", title: "Pub 1", status: "published" }),
-        summary({ id: "p2", title: "Pub 2", status: "published" }),
-      ],
-      publishedTotal: 5, // more remain after p2
-      onLoadMorePublished,
+      sections: {
+        draft: [summary({ id: "d1", title: "Draft" })],
+        published: [
+          summary({ id: "p1", title: "Pub 1", status: "published" }),
+          summary({ id: "p2", title: "Pub 2", status: "published" }),
+        ],
+      },
+      totals: { published: 5 }, // more remain after p2
+      onLoadMore,
     });
-    // Expand Published so its rows are navigable.
-    const publishedHeader = Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes("Published")
-    )!;
-    fireEvent.click(publishedHeader);
+    fireEvent.click(findHeader(container, "Published"));
 
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
-    // End lands on the Expired summary row — the genuine end of the list — so
+    // End lands on the Retired summary row — the genuine end of the list — so
     // step up once onto p2, the last loaded published row, to trigger auto-load.
     fireEvent.keyDown(listbox, { key: "End" });
     fireEvent.keyDown(listbox, { key: "ArrowUp" });
-    expect(onLoadMorePublished).toHaveBeenCalled();
+    expect(onLoadMore).toHaveBeenCalledExactlyOnceWith("published");
   });
 
-  it("does not auto-load when the cursor is not on the last loaded row of a paginated archive", () => {
-    const onLoadMorePublished = vi.fn();
+  it("auto-loads more discarded when the cursor lands on the last loaded discarded row", () => {
+    const onLoadMore = vi.fn();
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft" })],
-      published: [
-        summary({ id: "p1", title: "Pub 1", status: "published" }),
-        summary({ id: "p2", title: "Pub 2", status: "published" }),
-      ],
-      publishedTotal: 5,
-      onLoadMorePublished,
+      sections: { discarded: [summary({ id: "x1", title: "Disc 1", status: "discarded" })] },
+      totals: { discarded: 4 },
+      onLoadMore,
+    });
+    fireEvent.click(findHeader(container, "Discarded"));
+
+    const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
+    // Rows: [Drafts] [Discarded] x1 — the third row.
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    expect(onLoadMore).toHaveBeenCalledExactlyOnceWith("discarded");
+  });
+
+  it("does not auto-load when the cursor is not on the last loaded row of a paged section", () => {
+    const onLoadMore = vi.fn();
+    const { container } = renderPane({
+      sections: {
+        draft: [summary({ id: "d1", title: "Draft" })],
+        published: [
+          summary({ id: "p1", title: "Pub 1", status: "published" }),
+          summary({ id: "p2", title: "Pub 2", status: "published" }),
+        ],
+      },
+      totals: { published: 5 },
+      onLoadMore,
     });
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
-    // Cursor enters on the first draft row; not a published archive tail.
+    // Cursor enters on the first draft row; not a paged section's tail.
     fireEvent.keyDown(listbox, { key: "ArrowDown" });
-    expect(onLoadMorePublished).not.toHaveBeenCalled();
+    expect(onLoadMore).not.toHaveBeenCalled();
   });
 });
 
@@ -319,16 +348,8 @@ describe("LeftPane collapsed sections are reachable by keyboard", () => {
   // A collapsed section renders none of its posts, so if its summary row could
   // not be reached and toggled from the keyboard, those posts would be
   // unreachable entirely — not merely unannounced.
-  const findHeader = (container: HTMLElement, name: string) =>
-    Array.from(container.querySelectorAll(".section-header")).find((h) =>
-      h.textContent?.includes(name),
-    )!;
-
   it("announces collapsed and expanded state on each summary row", () => {
-    const { container } = renderPane({
-      published: [summary({ id: "p1", status: "published" })],
-      publishedTotal: 1,
-    });
+    const { container } = renderPane({ sections: { published: [summary({ id: "p1", status: "published" })] } });
     expect(findHeader(container, "Drafts").getAttribute("aria-expanded")).toBe("true");
     expect(findHeader(container, "Published").getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(findHeader(container, "Published"));
@@ -337,13 +358,13 @@ describe("LeftPane collapsed sections are reachable by keyboard", () => {
 
   it("expands a collapsed section with Enter on its summary row", () => {
     const { container } = renderPane({
-      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
-      publishedTotal: 1,
+      sections: { published: [summary({ id: "p1", title: "Pub One", status: "published" })] },
     });
     expect(screen.queryByText("Pub One")).toBeNull();
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
-    // Rows: [Drafts] [Ready] [Published] [Expired] — all four sections empty or
-    // collapsed, so End lands on Expired and one step up is Published.
+    // Rows: [Drafts] [Discarded] [Verified] [Published] [Retired] — every
+    // section empty or collapsed, so End lands on Retired and one step up is
+    // Published.
     fireEvent.keyDown(listbox, { key: "End" });
     fireEvent.keyDown(listbox, { key: "ArrowUp" });
     fireEvent.keyDown(listbox, { key: "Enter" });
@@ -352,9 +373,10 @@ describe("LeftPane collapsed sections are reachable by keyboard", () => {
 
   it("expands with Right and collapses with Left, and leaves post rows alone", () => {
     const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft One" })],
-      published: [summary({ id: "p1", title: "Pub One", status: "published" })],
-      publishedTotal: 1,
+      sections: {
+        draft: [summary({ id: "d1", title: "Draft One" })],
+        published: [summary({ id: "p1", title: "Pub One", status: "published" })],
+      },
     });
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
     fireEvent.keyDown(listbox, { key: "End" });
@@ -373,10 +395,7 @@ describe("LeftPane collapsed sections are reachable by keyboard", () => {
 
   it("toggles rather than selecting when Enter lands on a summary row", () => {
     const onSelectPost = vi.fn();
-    const { container } = renderPane({
-      drafts: [summary({ id: "d1", title: "Draft One" })],
-      onSelectPost,
-    });
+    const { container } = renderPane({ sections: { draft: [summary({ id: "d1", title: "Draft One" })] }, onSelectPost });
     const listbox = container.querySelector('[role="listbox"]') as HTMLElement;
     fireEvent.keyDown(listbox, { key: "Home" });
     fireEvent.keyDown(listbox, { key: "Enter" });

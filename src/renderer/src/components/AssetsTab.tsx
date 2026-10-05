@@ -24,7 +24,7 @@ interface AssetsTabProps extends Pick<
   postId: string;
   onInsertAtCursor: (text: string) => void;
   maxUploadMb: number;
-  readOnly?: boolean;
+  locked?: boolean;
 }
 
 type DragState = "idle" | "delivery" | "accepting" | "rejecting";
@@ -91,7 +91,7 @@ export function AssetsTab({
   postId,
   onInsertAtCursor,
   maxUploadMb,
-  readOnly = false,
+  locked = false,
   ...containerProps
 }: AssetsTabProps) {
   const { t, text, list } = useI18n();
@@ -143,7 +143,7 @@ export function AssetsTab({
     rejected: Array<{ file: File; reason: Message }>,
     operationKeys: string[],
   ) => {
-    if (readOnly) return;
+    if (locked) return;
     const admissionFailures: Array<{ file: File; reason: Message }> = [];
     const operationalFailures: Array<{ file: File; reason: Message }> = [];
     for (const file of files) {
@@ -187,7 +187,7 @@ export function AssetsTab({
   };
 
   const checkAndUpload = async (files: FileList | File[]) => {
-    if (readOnly) return;
+    if (locked) return;
     const fileArray = Array.from(files);
     const limitBytes = maxUploadMb * 1024 * 1024;
 
@@ -273,10 +273,10 @@ export function AssetsTab({
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "none";
-    if (readOnly) {
+    if (locked) {
       setUploadNotice({
         severity: "warning",
-        lines: [{ message: message("assets.readOnly") }],
+        lines: [{ message: message("assets.locked") }],
         issueKeys: ["receiver:read-only"],
       });
       return;
@@ -301,7 +301,7 @@ export function AssetsTab({
   };
 
   const handleDelete = async (filename: string) => {
-    if (readOnly) return;
+    if (locked) return;
     const ok = await confirm({
       message: t("assets.deleteMessage", { name: filename }),
       confirmLabel: t("common.delete"),
@@ -326,7 +326,7 @@ export function AssetsTab({
   };
 
   const handleInsert = (filename: string) => {
-    if (readOnly) return;
+    if (locked) return;
     const label = markdownLabel(filename);
     const destination = markdownDestination(filename);
     const md = isImage(filename)
@@ -344,12 +344,12 @@ export function AssetsTab({
         `${dragState === "rejecting" ? " drag-rejected" : ""}` +
         `${containerProps.className ? ` ${containerProps.className}` : ""}`
       }
-      aria-disabled={readOnly || undefined}
+      aria-disabled={locked || undefined}
       onDragOver={(e) => {
         e.preventDefault();
         e.stopPropagation();
         const offer = inspectAssetDragOffer(e.dataTransfer, maxUploadMb * 1024 * 1024);
-        if (readOnly || offer === "rejected") {
+        if (locked || offer === "rejected") {
           e.dataTransfer.dropEffect = "none";
           setDragState("rejecting");
           return;
@@ -368,7 +368,7 @@ export function AssetsTab({
     >
       <div className="assets-toolbar">
         <div className="assets-note">
-          {readOnly ? t("assets.lockedNote") : t("assets.dropNote")}
+          {locked ? t("assets.lockedNote") : t("assets.dropNote")}
         </div>
         <input
           ref={fileInputRef}
@@ -380,7 +380,7 @@ export function AssetsTab({
         <button
           type="button"
           className="action-button"
-          disabled={readOnly || uploading}
+          disabled={locked || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
           {uploading ? t("assets.adding") : t("assets.add")}
@@ -424,7 +424,7 @@ export function AssetsTab({
                 asset={asset}
                 onInsert={() => handleInsert(asset.filename)}
                 onDelete={() => void handleDelete(asset.filename)}
-                readOnly={readOnly}
+                locked={locked}
               />
             ))}
         </div>
@@ -441,14 +441,14 @@ function AssetCard({
   asset,
   onInsert,
   onDelete,
-  readOnly,
+  locked,
 }: {
   workspaceId: string;
   postId: string;
   asset: AssetMeta;
   onInsert: () => void;
   onDelete: () => void;
-  readOnly: boolean;
+  locked: boolean;
 }) {
   const { t, locale } = useI18n();
   const src = assetUrl(postId, asset.filename, workspaceId);
@@ -478,10 +478,10 @@ function AssetCard({
         )}
       </div>
       <div className="asset-actions">
-        <button className="asset-btn" onClick={onInsert} title={t("assets.insertTitle")} disabled={readOnly}>
+        <button className="asset-btn" onClick={onInsert} title={t("assets.insertTitle")} disabled={locked}>
           {t("assets.insert")}
         </button>
-        <button className="asset-btn asset-btn-delete" onClick={onDelete} title={t("common.delete")} disabled={readOnly}>
+        <button className="asset-btn asset-btn-delete" onClick={onDelete} title={t("common.delete")} disabled={locked}>
           {t("common.delete")}
         </button>
       </div>

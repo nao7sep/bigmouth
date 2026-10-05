@@ -1,7 +1,5 @@
 import { ACCEPTED_SLUG, ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
-import type { PostStatus } from "@shared/types";
 
-import { isEditLocked } from "./postLifecycle.js";
 import type { EditablePostMetadata } from "./types.js";
 
 // Slug must be safe for export filenames and URLs: ASCII alphanumerics, hyphens,
@@ -27,9 +25,11 @@ const RESERVED_FRONT_MATTER_KEYS = new Set([
   "status",
   "createdAtUtc",
   "updatedAtUtc",
-  "readyAtUtc",
+  "discardedAtUtc",
+  "verifiedAtUtc",
   "publishedAtUtc",
-  "expiredAtUtc",
+  "retiredAtUtc",
+  "locked",
 ]);
 
 export function validateSlug(value: unknown): string | null {
@@ -60,25 +60,19 @@ export type PostUpdateValidation =
 
 /**
  * The pure validation behind the `updatePost` IPC handler: given the existing
- * post's identity/status and a request body, decide whether the edit is allowed
+ * post's identity and lock and a request body, decide whether the edit is allowed
  * and what editable front matter it carries. Pure — the filesystem checks the
  * handler still owns (the post lookup, and the `sourceId` existence probe) are
  * intentionally left out; only the self-source rule, which needs no I/O, is here.
  */
 export function validatePostUpdate(
-  existing: { id: string; status: PostStatus },
+  existing: { id: string; locked?: boolean },
   updates: { frontMatter?: unknown },
 ): PostUpdateValidation {
   const frontMatter: unknown = updates?.frontMatter;
 
-  // Published and expired posts are locked — editing happens only after moving
-  // back to Draft or Ready.
-  if (isEditLocked(existing.status)) {
-    return {
-      ok: false,
-      reason: `${existing.status}-locked`,
-      message: `${existing.status === "published" ? "Published" : "Expired"} posts are locked. Move the post back to Ready or Draft to edit it.`,
-    };
+  if (existing.locked === true) {
+    return { ok: false, reason: "locked", message: "This post is locked. Unlock it to edit it." };
   }
 
   if (frontMatter !== undefined && (!frontMatter || typeof frontMatter !== "object" || Array.isArray(frontMatter))) {
@@ -137,7 +131,7 @@ const METADATA_EDIT_KEYS: ReadonlySet<string> = new Set([
  * queued edit never changes a post's target, language or source.
  */
 export function validateMetadataEdit(
-  existing: { id: string; status: PostStatus },
+  existing: { id: string; locked?: boolean },
   edits: unknown,
 ): PostUpdateValidation {
   if (edits && typeof edits === "object" && !Array.isArray(edits)) {

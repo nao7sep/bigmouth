@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PostSummary } from "@shared/types";
+import type { PostStatus, PostSummary } from "@shared/types";
+import { PAGED_POST_STATUSES, POST_STATUSES, isPagedPostStatus, type PagedPostStatus } from "@shared/postStatus";
+import { LIST_TIME_KEY, type ListTimeKey } from "@shared/postOrder";
+import type { MessageKey } from "@shared/i18n/catalogues";
+import type { PostLists } from "../util/postBuckets";
 import { getPostTitle } from "../util/postTitle";
 import { formatLocalDateTime } from "../util/timestamps";
 import { ChevronDownIcon, ChevronRightIcon, MenuIcon, PlusIcon } from "./Icon";
@@ -17,18 +21,25 @@ function sectionRowId(key: string): string {
 
 const PAGE_SIZE = 10;
 
+/** Each section's heading and empty-state text. */
+const SECTION_TEXT: Readonly<Record<PostStatus, { label: MessageKey; empty: MessageKey }>> = {
+  draft: { label: "left.drafts", empty: "left.noDrafts" },
+  discarded: { label: "left.discarded", empty: "left.noDiscarded" },
+  verified: { label: "left.verified", empty: "left.noVerified" },
+  published: { label: "left.published", empty: "left.noPublished" },
+  retired: { label: "left.retired", empty: "left.noRetired" },
+};
+
+// Sections open at launch: the ones still being worked on. The paged ones,
+// which can be long, start collapsed.
+const INITIALLY_OPEN: ReadonlySet<PostStatus> = new Set(["draft", "verified"]);
+
 interface LeftPaneProps {
-  drafts: PostSummary[];
-  ready: PostSummary[];
-  published: PostSummary[];
-  publishedTotal: number;
-  expired: PostSummary[];
-  expiredTotal: number;
+  lists: PostLists;
   selectedPostId: string | null;
   onSelectPost: (id: string) => void;
   onNewPost: () => void;
-  onLoadMorePublished: () => void;
-  onLoadMoreExpired: () => void;
+  onLoadMore: (status: PagedPostStatus) => void;
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenAbout: () => void;
@@ -39,30 +50,23 @@ interface LeftPaneProps {
 }
 
 interface SectionDef {
-  key: string;
+  key: PostStatus;
   label: string;
   posts: PostSummary[];
   open: boolean;
-  toggle: () => void;
   emptyText: string;
-  timestampField: string;
+  timestampField: ListTimeKey;
   totalCount?: number;
   /** Pointer-only "load more" affordance for this section, if applicable. */
   onLoadMore?: () => void;
 }
 
 export function LeftPane({
-  drafts,
-  ready,
-  published,
-  publishedTotal,
-  expired,
-  expiredTotal,
+  lists,
   selectedPostId,
   onSelectPost,
   onNewPost,
-  onLoadMorePublished,
-  onLoadMoreExpired,
+  onLoadMore,
   onOpenSettings,
   onOpenShortcuts,
   onOpenAbout,
@@ -72,57 +76,37 @@ export function LeftPane({
   timezone,
 }: LeftPaneProps) {
   const { t } = useI18n();
-  const [draftsOpen, setDraftsOpen] = useState(true);
-  const [readyOpen, setReadyOpen] = useState(true);
-  const [publishedOpen, setPublishedOpen] = useState(false);
-  const [expiredOpen, setExpiredOpen] = useState(false);
+  const [openSections, setOpenSections] = useState<ReadonlySet<PostStatus>>(INITIALLY_OPEN);
   const { composingRef, handlers } = useComposing();
 
-  const sections: SectionDef[] = [
-    {
-      key: "drafts",
-      label: t("left.drafts"),
-      posts: drafts,
-      open: draftsOpen,
-      toggle: () => setDraftsOpen((v) => !v),
-      emptyText: t("left.noDrafts"),
-      timestampField: "createdAtUtc",
-    },
-    {
-      key: "ready",
-      label: t("left.ready"),
-      posts: ready,
-      open: readyOpen,
-      toggle: () => setReadyOpen((v) => !v),
-      emptyText: t("left.noReady"),
-      timestampField: "createdAtUtc",
-    },
-    {
-      key: "published",
-      label: t("left.published"),
-      posts: published,
-      open: publishedOpen,
-      toggle: () => setPublishedOpen((v) => !v),
-      emptyText: t("left.noPublished"),
-      timestampField: "publishedAtUtc",
-      totalCount: publishedTotal,
-      onLoadMore:
-        published.length < publishedTotal ? onLoadMorePublished : undefined,
-    },
-    {
-      key: "expired",
-      label: t("left.expired"),
-      posts: expired,
-      open: expiredOpen,
-      toggle: () => setExpiredOpen((v) => !v),
-      emptyText: t("left.noExpired"),
-      timestampField: "expiredAtUtc",
-      totalCount: expiredTotal,
-      onLoadMore: expired.length < expiredTotal ? onLoadMoreExpired : undefined,
-    },
-  ];
+  const toggleSection = (status: PostStatus) =>
+    setOpenSections((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
 
-  // The four sections are ONE listbox: arrow navigation flows continuously
+  const sections: SectionDef[] = POST_STATUSES.map((status) => {
+    const { posts, total } = lists[status];
+    const paged = isPagedPostStatus(status);
+    return {
+      key: status,
+      label: t(SECTION_TEXT[status].label),
+      posts,
+      open: openSections.has(status),
+      emptyText: t(SECTION_TEXT[status].empty),
+      timestampField: LIST_TIME_KEY[status],
+      ...(paged
+        ? {
+            totalCount: total,
+            onLoadMore: posts.length < total ? () => onLoadMore(status) : undefined,
+          }
+        : {}),
+    };
+  });
+
+  // The sections are ONE listbox: arrow navigation flows continuously
   // across them over exactly the currently-rendered rows. Each section's summary
   // row is part of that sequence — carrying `expanded`, toggled with Enter/Space
   // or Right/Left — which is the only keyboard route into a collapsed section. A
@@ -139,48 +123,46 @@ export function LeftPane({
           : []),
       ]),
     // sections is rebuilt each render from these inputs; depend on the inputs.
-    [drafts, ready, published, expired, draftsOpen, readyOpen, publishedOpen, expiredOpen, t],
+    [lists, openSections, t],
   );
 
-  const toggleByRowId = useMemo(
-    () => new Map(sections.map((s) => [sectionRowId(s.key), s.toggle])),
-    [draftsOpen, readyOpen, publishedOpen, expiredOpen],
+  const statusByRowId = useMemo(
+    () => new Map(POST_STATUSES.map((status) => [sectionRowId(status), status])),
+    [],
   );
 
   const { listboxProps, getRowProps, activeId } = usePostListbox({
     rows,
     selectedId: selectedPostId,
     onActivate: onSelectPost,
-    onToggleRow: (id) => toggleByRowId.get(id)?.(),
+    onToggleRow: (id) => {
+      const status = statusByRowId.get(id);
+      if (status) toggleSection(status);
+    },
     pageSize: PAGE_SIZE,
     composingRef,
   });
 
-  // Auto-load more of a paginated archive as the cursor reaches the end of that
-  // archive's loaded set — the conventions' "load more automatically at the end"
-  // for a control whose load-more affordance is not a tab stop. Published and
-  // Expired each trigger on their own last loaded row (Expired is no longer the
-  // global tail, so a single global-last check would never reach Published). The
-  // pointer-only buttons below remain for discoverability.
-  const lastLoadedId = (posts: PostSummary[], open: boolean) =>
-    open && posts.length > 0 ? posts[posts.length - 1].frontMatter.id : null;
-  const lastPublishedId = lastLoadedId(published, publishedOpen);
-  const lastExpiredId = lastLoadedId(expired, expiredOpen);
-  const canLoadMorePublished = published.length < publishedTotal;
-  const canLoadMoreExpired = expired.length < expiredTotal;
+  // Auto-load more of a paged section as the cursor reaches the end of that
+  // section's loaded set — the conventions' "load more automatically at the
+  // end" for a control whose load-more affordance is not a tab stop. Each paged
+  // section triggers on its own last loaded row, since none of them is the
+  // global tail. The pointer-only buttons below remain for discoverability.
+  const loadMoreStatus =
+    activeId === null
+      ? null
+      : (PAGED_POST_STATUSES.find((status) => {
+          const { posts, total } = lists[status];
+          return (
+            openSections.has(status) &&
+            posts.length > 0 &&
+            posts.length < total &&
+            posts[posts.length - 1].frontMatter.id === activeId
+          );
+        }) ?? null);
   useEffect(() => {
-    if (activeId == null) return;
-    if (canLoadMorePublished && activeId === lastPublishedId) onLoadMorePublished();
-    if (canLoadMoreExpired && activeId === lastExpiredId) onLoadMoreExpired();
-  }, [
-    activeId,
-    lastPublishedId,
-    lastExpiredId,
-    canLoadMorePublished,
-    canLoadMoreExpired,
-    onLoadMorePublished,
-    onLoadMoreExpired,
-  ]);
+    if (loadMoreStatus !== null) onLoadMore(loadMoreStatus);
+  }, [activeId, loadMoreStatus, onLoadMore]);
 
   return (
     <div className="pane-left">
@@ -323,13 +305,13 @@ function PostItem({
   active: boolean;
   rowProps: ReturnType<ReturnType<typeof usePostListbox>["getRowProps"]>;
   composing: ReturnType<typeof useComposing>["handlers"];
-  timestampField: string;
+  timestampField: ListTimeKey;
   timezone: string;
 }) {
   const { dateTime } = useI18n();
   const fm = post.frontMatter;
   const displayName = getPostTitle(fm);
-  const ts = (fm as Record<string, unknown>)[timestampField] as string | undefined;
+  const ts = fm[timestampField];
 
   return (
     <div

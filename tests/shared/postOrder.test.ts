@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  LIST_TIME_KEY,
   byCreatedDesc,
-  byExpiredDesc,
-  byPublishedDesc,
   comparatorFor,
   compareInstants,
   type OrderablePost,
 } from "@shared/postOrder";
+import { POST_STATUSES } from "@shared/postStatus";
 
 function post(over: Partial<OrderablePost> & { id: string }): OrderablePost {
   return { createdAtUtc: "2026-01-01T00:00:00.000Z", ...over };
@@ -39,17 +39,18 @@ describe("compareInstants", () => {
 
 // The two processes used to sort the same list with different tie-breakers:
 // main on id descending, the renderer on slug descending, and the renderer's
-// draft/ready comparator with none at all. The renderer re-inserts a mutated
+// draft comparator with none at all. The renderer re-inserts a mutated
 // post on every metadata save and every background content save, so two posts
 // sharing a timestamp sat in one order until the next listPosts and a different
 // one after it - the list reshuffling under the user with no edit.
 describe("post ordering", () => {
-  it("breaks a timestamp tie by id, in every bucket", () => {
+  it("breaks a timestamp tie by id, in every section", () => {
     const sameInstant = "2026-05-05T00:00:00.000Z";
-    const a = post({ id: "aaa", createdAtUtc: sameInstant, publishedAtUtc: sameInstant, expiredAtUtc: sameInstant });
-    const b = post({ id: "zzz", createdAtUtc: sameInstant, publishedAtUtc: sameInstant, expiredAtUtc: sameInstant });
+    const times = { createdAtUtc: sameInstant, discardedAtUtc: sameInstant, publishedAtUtc: sameInstant, retiredAtUtc: sameInstant };
+    const a = post({ id: "aaa", ...times });
+    const b = post({ id: "zzz", ...times });
 
-    for (const compare of [byCreatedDesc, byPublishedDesc, byExpiredDesc]) {
+    for (const compare of POST_STATUSES.map(comparatorFor)) {
       expect([a, b].sort(compare).map((p) => p.id)).toEqual(["zzz", "aaa"]);
       // And the reverse input gives the same answer, which is what "stable
       // between the two processes" actually requires.
@@ -62,13 +63,26 @@ describe("post ordering", () => {
     const newer = post({ id: "b", createdAtUtc: "2026-02-01T00:00:00.000Z", publishedAtUtc: "2026-04-01T00:00:00.000Z" });
     const unpublished = post({ id: "c", createdAtUtc: "2026-02-15T00:00:00.000Z" });
 
-    expect([older, unpublished, newer].sort(byPublishedDesc).map((p) => p.id)).toEqual(["b", "a", "c"]);
+    expect([older, unpublished, newer].sort(comparatorFor("published")).map((p) => p.id)).toEqual(["b", "a", "c"]);
   });
 
-  it("picks the comparator from the bucket", () => {
-    expect(comparatorFor("published")).toBe(byPublishedDesc);
-    expect(comparatorFor("expired")).toBe(byExpiredDesc);
+  it("orders discarded and retired by their own times, newest first", () => {
+    const first = post({ id: "a", discardedAtUtc: "2026-03-01T00:00:00.000Z", retiredAtUtc: "2026-04-01T00:00:00.000Z" });
+    const second = post({ id: "b", discardedAtUtc: "2026-03-02T00:00:00.000Z", retiredAtUtc: "2026-03-31T00:00:00.000Z" });
+
+    expect([first, second].sort(comparatorFor("discarded")).map((p) => p.id)).toEqual(["b", "a"]);
+    expect([second, first].sort(comparatorFor("retired")).map((p) => p.id)).toEqual(["a", "b"]);
+  });
+
+  it("gives each section its own time", () => {
+    expect(LIST_TIME_KEY).toEqual({
+      draft: "createdAtUtc",
+      discarded: "discardedAtUtc",
+      verified: "createdAtUtc",
+      published: "publishedAtUtc",
+      retired: "retiredAtUtc",
+    });
     expect(comparatorFor("draft")).toBe(byCreatedDesc);
-    expect(comparatorFor("ready")).toBe(byCreatedDesc);
+    expect(comparatorFor("verified")).toBe(byCreatedDesc);
   });
 });

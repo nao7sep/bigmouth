@@ -6,19 +6,16 @@ import {
   type PostContentSaveFailedEvent,
   type PostUpdate,
 } from "@shared/ipc";
-import type { PostStatus } from "@shared/types";
+import type { PostListResponse, PostStatus } from "@shared/types";
 import {
   refreshIndex,
-  listDrafts,
-  listReady,
-  listPublished,
-  countPublished,
-  listExpired,
-  countExpired,
+  listByStatus,
+  countByStatus,
   getPost,
   createPost,
   updatePost,
   changeStatus,
+  setLocked,
   deletePost,
   rebuildIndex,
   postExists,
@@ -31,7 +28,8 @@ import {
 import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../core/services/configStore.js";
 import { validateMetadataEdit, validatePostUpdate } from "../core/shared/postUpdate.js";
-import { isPostStatus } from "../core/shared/postLifecycle.js";
+import { POST_STATUSES, isPostStatus } from "../core/shared/postLifecycle.js";
+import { isPagedPostStatus } from "@shared/postStatus";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 import { message, type Message } from "@shared/i18n/translate";
@@ -44,8 +42,7 @@ import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 // is why the save is impossible, not a retry that will never happen.
 const POST_MISSING_DETAIL = "This post's file is missing.";
 const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
-const lockedDetail = (status: PostStatus): string =>
-  `This post is ${status}, so it is locked against edits.`;
+const LOCKED_DETAIL = "This post is locked against edits.";
 
 /**
  * What the Metadata tab says when it refuses an edit, in the reader's language.
@@ -54,10 +51,8 @@ const lockedDetail = (status: PostStatus): string =>
  */
 function metadataRefusal(reason: string): Message {
   switch (reason) {
-    case "published-locked":
-      return message("metadata.refusedPublishedLocked");
-    case "expired-locked":
-      return message("metadata.refusedExpiredLocked");
+    case "locked":
+      return message("metadata.refusedLocked");
     case "invalid-slug":
       return message("metadata.refusedInvalidSlug", { max: ACCEPTED_SLUG_MAX_LENGTH });
     default:
@@ -88,7 +83,7 @@ export function registerPostHandlers(): void {
       event.kind === "post-missing"
         ? { postId: event.id, kind: "unsaveable", message: POST_MISSING_DETAIL }
         : event.kind === "locked"
-          ? { postId: event.id, kind: "unsaveable", message: lockedDetail(event.status) }
+          ? { postId: event.id, kind: "unsaveable", message: LOCKED_DETAIL }
           : { postId: event.id, kind: "retrying", message: event.message };
     logError("post content save failed", {
       postId: failure.postId,
@@ -141,42 +136,37 @@ export function registerPostHandlers(): void {
     return queueMetadata(dir, id, validation.edits);
   });
 
-  ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, publishedOffset: number, limit: number, expiredOffset: number) => {
+  ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, offsets: unknown, limit: number) => {
     const dir = resolveWorkspace(wsId).dataDirectory;
-    // Clamp to >= 0: a negative offset would slice from the end of the list.
-    const pOff = Math.max(0, publishedOffset || 0);
-    const eOff = Math.max(0, expiredOffset || 0);
-    const lim = limit || getSettings(dir).publishedPostsPerLoad;
+    const lim = limit || getSettings(dir).postsPerLoad;
 
     refreshIndex(dir);
-    const drafts = listDrafts(dir);
-    const ready = listReady(dir);
-    const published = listPublished(dir, pOff, lim);
-    const publishedTotal = countPublished(dir);
-    const expired = listExpired(dir, eOff, lim);
-    const expiredTotal = countExpired(dir);
+    const response = {} as PostListResponse;
+    for (const status of POST_STATUSES) {
+      if (!isPagedPostStatus(status)) {
+        const posts = listByStatus(dir, status);
+        response[status] = { posts, total: posts.length, offset: 0 };
+        continue;
+      }
+      // Clamp to >= 0: a negative offset would slice from the end of the list.
+      const requested = (offsets as Partial<Record<string, unknown>> | null)?.[status];
+      const offset = typeof requested === "number" ? Math.max(0, requested) : 0;
+      response[status] = {
+        posts: listByStatus(dir, status, { offset, limit: lim }),
+        total: countByStatus(dir, status),
+        offset,
+      };
+    }
 
     info("posts listed", {
       workspace: wsId,
-      drafts: drafts.length,
-      ready: ready.length,
-      publishedReturned: published.length,
-      publishedTotal,
-      expiredReturned: expired.length,
-      expiredTotal,
       limit: lim,
+      ...Object.fromEntries(
+        POST_STATUSES.map((status) => [status, { returned: response[status].posts.length, total: response[status].total }]),
+      ),
     });
 
-    return {
-      drafts,
-      ready,
-      published,
-      publishedTotal,
-      publishedOffset: pOff,
-      expired,
-      expiredTotal,
-      expiredOffset: eOff,
-    };
+    return response;
   });
 
   ipcMain.handle(CHANNELS.rebuildPostIndex, (_event, wsId: string) => {
@@ -364,6 +354,26 @@ export function registerPostHandlers(): void {
       });
       throw err instanceof Error ? err : new Error("Unknown error");
     }
+  });
+
+  // Locking is not an edit: it changes no time, and it is allowed whatever the
+  // post's status. Locking writes the post's buffered edits first.
+  ipcMain.handle(CHANNELS.setPostLocked, (_event, wsId: string, id: string, locked: unknown) => {
+    const dir = resolveWorkspace(wsId).dataDirectory;
+    if (typeof locked !== "boolean") {
+      throw new Error("locked must be a boolean");
+    }
+    const post = setLocked(dir, id, locked);
+    if (!post) {
+      warn("post lock change failed", { workspace: wsId, postId: id, locked, reason: "not-found" });
+      throw new Error("Post not found");
+    }
+    info("post lock changed", { workspace: wsId, postId: id, locked });
+    return {
+      frontMatter: post.frontMatter,
+      content: post.content,
+      summary: getPostSummary(dir, post.frontMatter.id),
+    };
   });
 
   ipcMain.handle(CHANNELS.deletePost, (_event, wsId: string, id: string) => {

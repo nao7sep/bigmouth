@@ -44,13 +44,28 @@ import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
 import { hasMod, isEditableTarget, shadowsMacTextBinding } from "./util/shortcuts";
 import { pickAdjacentPostId } from "./util/selection";
-import { applyPostMutationToBuckets } from "./util/postBuckets";
+import {
+  applyPostMutationToLists,
+  emptyPostLists,
+  listsFromResponse,
+  removePostFromLists,
+  type PostLists,
+} from "./util/postBuckets";
+import { FIRST_PAGES, PAGED_POST_STATUSES, type PagedPostStatus } from "@shared/postStatus";
+import type { MessageKey } from "@shared/i18n/catalogues";
 import { effectiveTimeZone, systemTimeZone } from "@shared/timeZone";
 import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 
 // Activations closer together than this read the list once.
 const ACTIVATION_COALESCE_MS = 300;
+
+// What a failed "load more" of each paged section says.
+const MORE_FAILED: Readonly<Record<PagedPostStatus, MessageKey>> = {
+  discarded: "session.moreDiscardedFailed",
+  published: "session.morePublishedFailed",
+  retired: "session.moreRetiredFailed",
+};
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -85,14 +100,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     ref
   ) {
     const anyModalOpen = useAnyModalOpen();
-    const [drafts, setDrafts] = useState<PostSummary[]>([]);
-    const [ready, setReady] = useState<PostSummary[]>([]);
-    const [published, setPublished] = useState<PostSummary[]>([]);
-    const [publishedTotal, setPublishedTotal] = useState(0);
-    const [publishedOffset, setPublishedOffset] = useState(0);
-    const [expired, setExpired] = useState<PostSummary[]>([]);
-    const [expiredTotal, setExpiredTotal] = useState(0);
-    const [expiredOffset, setExpiredOffset] = useState(0);
+    const [lists, setLists] = useState<PostLists>(emptyPostLists);
     const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
     const [navHistory, setNavHistory] = useState<string[]>([]);
     const [targets, setTargets] = useState<Target[]>([]);
@@ -127,9 +135,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      *
      *   - read only LATER (selectedPostId, currentPost, metadataTab): assigned
      *     during render, below. Always current by the time any event fires.
-     *   - read back in the SAME tick as their setter (the list refs, which an
-     *     append or an optimistic bucket update reads before React re-renders):
-     *     assigned at each mutation site, eagerly.
+     *   - read back in the SAME tick as their setter (the lists, which an
+     *     append or an optimistic list update reads before React re-renders):
+     *     assigned by commitLists, eagerly.
      *
      * Every one of them used to carry BOTH — a post-render effect that copied
      * state into the ref, plus a hand assignment at each mutation site because
@@ -140,15 +148,16 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const selectedPostIdRef = useRef<string | null>(null);
     const metadataTabRef = useRef(false);
     const currentPostRef = useRef<Post | null>(null);
-    const draftsRef = useRef<PostSummary[]>([]);
-    const readyRef = useRef<PostSummary[]>([]);
-    const publishedRef = useRef<PostSummary[]>([]);
-    const publishedTotalRef = useRef(0);
-    const expiredRef = useRef<PostSummary[]>([]);
-    const expiredTotalRef = useRef(0);
+    const listsRef = useRef<PostLists>(lists);
     // Counts the app's own writes to the lists, so a background reread that was
     // out while one happened knows it is older and is dropped.
     const listVersionRef = useRef(0);
+
+    // Eagerly, because the next mutation may land before React re-renders.
+    const commitLists = useCallback((next: PostLists) => {
+      listsRef.current = next;
+      setLists(next);
+    }, []);
 
     const flushRightPaneChanges = useCallback(
       async () => (await rightPaneRef.current?.flushPendingChanges()) ?? true,
@@ -185,85 +194,53 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       [flushPendingChanges]
     );
 
-    // Published and Expired are independently paginated archives. One fetch
-    // returns a page of each, so `append` names which archive is growing: on a
-    // "load more" we append that archive's page and leave the other archive's
-    // pagination untouched (its first page in the same response is ignored).
-    // Drafts and ready are fully loaded, so they are always replaced.
+    // Each paged section is paginated on its own. One fetch returns a page of
+    // each, so `append` names which section is growing: its page is appended
+    // and the other paged sections are left as they are (their first pages in
+    // the same response are ignored). Sections that load whole are always
+    // replaced.
     const loadPosts = useCallback(
-      async (opts?: {
-        publishedOffset?: number;
-        expiredOffset?: number;
-        append?: "published" | "expired";
-      }) => {
-        const pubOffset = opts?.publishedOffset ?? 0;
-        const expOffset = opts?.expiredOffset ?? 0;
-        const data = await listPosts(pubOffset, pubBatchSize, expOffset);
+      async (append?: PagedPostStatus) => {
+        const offsets = append
+          ? { ...FIRST_PAGES, [append]: listsRef.current[append].posts.length }
+          : FIRST_PAGES;
+        const data = await listPosts(offsets, pubBatchSize);
 
         listVersionRef.current += 1;
-        draftsRef.current = data.drafts;
-        readyRef.current = data.ready;
-        setDrafts(data.drafts);
-        setReady(data.ready);
-
-        if (opts?.append !== "expired") {
-          const nextPublished =
-            opts?.append === "published"
-              ? [...publishedRef.current, ...data.published]
-              : data.published;
-          publishedRef.current = nextPublished;
-          setPublished(nextPublished);
-          publishedTotalRef.current = data.publishedTotal;
-          setPublishedTotal(data.publishedTotal);
-          setPublishedOffset(pubOffset + data.published.length);
+        const fresh = listsFromResponse(data);
+        if (append) {
+          const current = listsRef.current;
+          for (const status of PAGED_POST_STATUSES) {
+            fresh[status] =
+              status === append
+                ? { posts: [...current[status].posts, ...data[status].posts], total: data[status].total }
+                : current[status];
+          }
         }
-
-        if (opts?.append !== "published") {
-          const nextExpired =
-            opts?.append === "expired"
-              ? [...expiredRef.current, ...data.expired]
-              : data.expired;
-          expiredRef.current = nextExpired;
-          setExpired(nextExpired);
-          expiredTotalRef.current = data.expiredTotal;
-          setExpiredTotal(data.expiredTotal);
-          setExpiredOffset(expOffset + data.expired.length);
-        }
+        commitLists(fresh);
       },
-      [pubBatchSize]
+      [pubBatchSize, commitLists]
     );
 
     /**
-     * Reads the lists again as they are on disk, keeping as many published and
-     * expired posts loaded as are shown now. Post files can change outside the
+     * Reads the lists again as they are on disk, keeping as many posts of each
+     * paged section loaded as are shown now. Post files can change outside the
      * app (git, another editor) and nothing watches them. The open post is left
      * as it is, unsaved edits and all; only the lists are reread.
      */
     const refreshPosts = useCallback(async () => {
       const version = listVersionRef.current;
-      const publishedShown = Math.max(pubBatchSize, publishedRef.current.length);
-      const expiredShown = Math.max(pubBatchSize, expiredRef.current.length);
-      const data = await listPosts(0, Math.max(publishedShown, expiredShown), 0);
+      const shown = (status: PagedPostStatus) => Math.max(pubBatchSize, listsRef.current[status].posts.length);
+      const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)));
       // The app changed the lists while this read was out: they are newer.
       if (listVersionRef.current !== version) return;
 
-      const nextPublished = data.published.slice(0, publishedShown);
-      const nextExpired = data.expired.slice(0, expiredShown);
-      draftsRef.current = data.drafts;
-      readyRef.current = data.ready;
-      publishedRef.current = nextPublished;
-      publishedTotalRef.current = data.publishedTotal;
-      expiredRef.current = nextExpired;
-      expiredTotalRef.current = data.expiredTotal;
-      setDrafts(data.drafts);
-      setReady(data.ready);
-      setPublished(nextPublished);
-      setPublishedTotal(data.publishedTotal);
-      setPublishedOffset(nextPublished.length);
-      setExpired(nextExpired);
-      setExpiredTotal(data.expiredTotal);
-      setExpiredOffset(nextExpired.length);
-    }, [pubBatchSize]);
+      const fresh = listsFromResponse(data);
+      for (const status of PAGED_POST_STATUSES) {
+        fresh[status] = { ...fresh[status], posts: fresh[status].posts.slice(0, shown(status)) };
+      }
+      commitLists(fresh);
+    }, [pubBatchSize, commitLists]);
 
     // The window coming back to the front is when edits made elsewhere matter.
     useEffect(() => {
@@ -287,7 +264,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [refreshPosts]);
 
     const applySettings = useCallback((settings: Settings) => {
-      if (settings.publishedPostsPerLoad) setPubBatchSize(settings.publishedPostsPerLoad);
+      if (settings.postsPerLoad) setPubBatchSize(settings.postsPerLoad);
       setMaxUploadMb(settings.maxUploadMb);
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
@@ -476,51 +453,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // anymore), keeping the rest so Back still works through the other posts.
       setNavHistory((history) => history.filter((id) => id !== deletedId));
 
-      // Delete always targets the open post, so it lives in exactly one loaded
+      // Delete always targets the open post, so it lives in at most one loaded
       // section. Drop it from that section and move the selection to its
-      // neighbour, keeping the user in place. (Drafts and ready are fully
-      // loaded; only a published post reached via a source link could be
-      // missing from the loaded page — fall back to a reload then.)
-      const removeFrom = (list: PostSummary[]) =>
-        list.filter((entry) => entry.frontMatter.id !== deletedId);
-
-      if (deletedId && draftsRef.current.some((p) => p.frontMatter.id === deletedId)) {
-        const nextId = pickAdjacentPostId(draftsRef.current, deletedId);
-        const next = removeFrom(draftsRef.current);
-        draftsRef.current = next;
-        setDrafts(next);
-        void selectPost(nextId, { skipFlush: true });
-        return;
-      }
-      if (deletedId && readyRef.current.some((p) => p.frontMatter.id === deletedId)) {
-        const nextId = pickAdjacentPostId(readyRef.current, deletedId);
-        const next = removeFrom(readyRef.current);
-        readyRef.current = next;
-        setReady(next);
-        void selectPost(nextId, { skipFlush: true });
-        return;
-      }
-      if (deletedId && publishedRef.current.some((p) => p.frontMatter.id === deletedId)) {
-        const nextId = pickAdjacentPostId(publishedRef.current, deletedId);
-        const next = removeFrom(publishedRef.current);
-        publishedRef.current = next;
-        setPublished(next);
-        const nextTotal = Math.max(0, publishedTotalRef.current - 1);
-        publishedTotalRef.current = nextTotal;
-        setPublishedTotal(nextTotal);
-        setPublishedOffset(next.length);
-        void selectPost(nextId, { skipFlush: true });
-        return;
-      }
-      if (deletedId && expiredRef.current.some((p) => p.frontMatter.id === deletedId)) {
-        const nextId = pickAdjacentPostId(expiredRef.current, deletedId);
-        const next = removeFrom(expiredRef.current);
-        expiredRef.current = next;
-        setExpired(next);
-        const nextTotal = Math.max(0, expiredTotalRef.current - 1);
-        expiredTotalRef.current = nextTotal;
-        setExpiredTotal(nextTotal);
-        setExpiredOffset(next.length);
+      // neighbour, keeping the user in place. Only a post reached via a source
+      // link can be missing from every loaded page — fall back to a reload then.
+      const removed = deletedId ? removePostFromLists(listsRef.current, deletedId) : null;
+      if (deletedId && removed) {
+        const nextId = pickAdjacentPostId(listsRef.current[removed.status].posts, deletedId);
+        commitLists(removed.lists);
         void selectPost(nextId, { skipFlush: true });
         return;
       }
@@ -534,58 +474,25 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           err,
         ));
       });
-    }, [loadPosts, selectPost]);
+    }, [loadPosts, selectPost, commitLists]);
 
     /**
-     * Re-buckets the lists after one post changed, and publishes the result to
-     * both the refs and the state.
-     *
-     * The two callers — a full post mutation and a background content save —
-     * had a copy of this each: the same bucket call plus six ref writes and
-     * eight setters, twenty-odd lines apiece. They had already begun to differ.
+     * Re-sections the lists after one post changed, for a full post mutation
+     * and a background content save alike.
      */
     const applyMutatedPost = useCallback(
       (summary: PostSummary, status: PostStatus, postId: string) => {
         // The open post is the only fallback for a post that is in no loaded
-        // list (it was reached via a source link, so its bucket is off the page).
+        // list (it was reached via a source link, so its section is off the page).
         const openPostStatus =
           currentPostRef.current?.frontMatter.id === postId
             ? currentPostRef.current.frontMatter.status
             : null;
 
-        const next = applyPostMutationToBuckets(
-          {
-            drafts: draftsRef.current,
-            ready: readyRef.current,
-            published: publishedRef.current,
-            publishedTotal: publishedTotalRef.current,
-            expired: expiredRef.current,
-            expiredTotal: expiredTotalRef.current,
-          },
-          summary,
-          status,
-          openPostStatus,
-        );
-
-        // Eagerly, because the next mutation may land before React re-renders.
         listVersionRef.current += 1;
-        draftsRef.current = next.drafts;
-        readyRef.current = next.ready;
-        publishedRef.current = next.published;
-        publishedTotalRef.current = next.publishedTotal;
-        expiredRef.current = next.expired;
-        expiredTotalRef.current = next.expiredTotal;
-
-        setDrafts(next.drafts);
-        setReady(next.ready);
-        setPublished(next.published);
-        setPublishedTotal(next.publishedTotal);
-        setPublishedOffset(next.published.length);
-        setExpired(next.expired);
-        setExpiredTotal(next.expiredTotal);
-        setExpiredOffset(next.expired.length);
+        commitLists(applyPostMutationToLists(listsRef.current, summary, status, openPostStatus));
       },
-      [],
+      [commitLists],
     );
 
     const handlePostUpdated = useCallback((result: PostMutationResult) => {
@@ -648,27 +555,16 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       }
     }, [navHistory, selectPost]);
 
-    const handleLoadMorePublished = useCallback(() => {
+    const handleLoadMore = useCallback((status: PagedPostStatus) => {
       setLoadError(null);
-      loadPosts({ publishedOffset, append: "published" }).catch((err) => {
+      loadPosts(status).catch((err) => {
         setLoadError(presentFailure(
-          message("session.morePublishedFailed"),
-          "renderer: published post pagination failed",
+          message(MORE_FAILED[status]),
+          `renderer: ${status} post pagination failed`,
           err,
         ));
       });
-    }, [loadPosts, publishedOffset]);
-
-    const handleLoadMoreExpired = useCallback(() => {
-      setLoadError(null);
-      loadPosts({ expiredOffset, append: "expired" }).catch((err) => {
-        setLoadError(presentFailure(
-          message("session.moreExpiredFailed"),
-          "renderer: expired post pagination failed",
-          err,
-        ));
-      });
-    }, [loadPosts, expiredOffset]);
+    }, [loadPosts]);
 
     const handleOpenRecords = useCallback(async () => {
       try {
@@ -713,12 +609,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           style={{ "--bm-left": `${leftWidth}px`, "--bm-right": `${rightWidth}px` } as CSSProperties}
         >
           <LeftPane
-            drafts={drafts}
-            ready={ready}
-            published={published}
-            publishedTotal={publishedTotal}
-            expired={expired}
-            expiredTotal={expiredTotal}
+            lists={lists}
             selectedPostId={selectedPostId}
             onSelectPost={(id) => {
               void (async () => {
@@ -727,8 +618,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
               })();
             }}
             onNewPost={() => setNewPostOpen(true)}
-            onLoadMorePublished={handleLoadMorePublished}
-            onLoadMoreExpired={handleLoadMoreExpired}
+            onLoadMore={handleLoadMore}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenAbout={() => setAboutOpen(true)}

@@ -167,7 +167,7 @@ describe("settings", () => {
         schemaVersion: 1,
         timezone: "UTC",
         supportedLanguages: ["en"],
-        publishedPostsPerLoad: 50,
+        postsPerLoad: 50,
         maxUploadMb: 500,
         editorWatermark: "",
         extraFieldWatermark: "",
@@ -465,7 +465,7 @@ it("warns on each read of an invalid workspace set and names its key", () => {
 });
 
 it.each([
-  ["a value outside the app's own range", { publishedPostsPerLoad: 0 }, "publishedPostsPerLoad"],
+  ["a value outside the app's own range", { postsPerLoad: 0 }, "postsPerLoad"],
   ["a target with a blank name", { targets: [{ name: " ", defaultLanguage: "en", requiresMetadata: false }] }, "targets"],
   ["an analysis prompt with a blank name", { analysisPrompts: [{ name: "", text: "t" }] }, "analysisPrompts"],
 ])("reads %s as its built-in, by the validator Save uses", (_case, stored, key) => {

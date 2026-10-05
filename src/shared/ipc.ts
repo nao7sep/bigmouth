@@ -29,6 +29,7 @@ import type {
   UiState,
   Workspace,
 } from "./types";
+import type { PagedPostStatus } from "./postStatus";
 import type { InterfaceLanguage } from "./i18n/languages";
 import type { Message } from "./i18n/translate";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "./records";
@@ -98,6 +99,7 @@ export const CHANNELS = {
   createPost: "post:create",
   updatePost: "post:update",
   changePostStatus: "post:status",
+  setPostLocked: "post:locked",
   deletePost: "post:delete",
   listReferrers: "post:referrers",
   rebuildPostIndex: "post:rebuildIndex",
@@ -205,11 +207,14 @@ export interface AssetUploadInput {
   height?: number;
 }
 
+/** Where each paged list section's requested page starts. */
+export type PostListOffsets = Readonly<Record<PagedPostStatus, number>>;
+
 /** Predictable upload admissions cross IPC as data, never serialized exceptions. */
 export type AssetUploadAdmission =
   | { code: "file-too-large"; limitMb: number }
   | { code: "reserved-name"; filename: string }
-  | { code: "post-locked"; status: "published" | "expired" };
+  | { code: "post-locked" };
 
 export type AssetUploadResult =
   | { ok: true; asset: AssetMeta }
@@ -310,7 +315,9 @@ export interface BigMouthApi {
   onInterfaceLanguageChanged(listener: (language: InterfaceLanguage) => void): () => void;
 
   // Posts
-  listPosts(wsId: string, publishedOffset: number, limit: number, expiredOffset: number): Promise<PostListResponse>;
+  /** Every section: the whole of each unpaged one, and a page of `limit` posts
+   *  from each paged one's offset. */
+  listPosts(wsId: string, offsets: PostListOffsets, limit: number): Promise<PostListResponse>;
   getPost(wsId: string, id: string): Promise<Post>;
   createPost(wsId: string, target: string, language: string, sourceId?: string): Promise<Post>;
   updatePost(wsId: string, id: string, updates: PostUpdate): Promise<PostMutationResult>;
@@ -325,6 +332,7 @@ export interface BigMouthApi {
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
   onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
+  setPostLocked(wsId: string, id: string, locked: boolean): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<void>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
   /**

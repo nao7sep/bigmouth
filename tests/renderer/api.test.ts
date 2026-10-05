@@ -13,6 +13,7 @@ import {
   createPost,
   updatePost,
   changePostStatus,
+  setPostLocked,
   deletePost,
   listReferrers,
   rebuildPostIndex,
@@ -63,8 +64,8 @@ describe("api bridge adapter", () => {
     const listPostsBridge = vi.fn().mockResolvedValue({});
     installBridge({ listPosts: listPostsBridge });
     setActiveWorkspace("w1");
-    void listPosts(0, 50, 0);
-    expect(listPostsBridge).toHaveBeenCalledWith("w1", 0, 50, 0);
+    void listPosts({ discarded: 0, published: 2, retired: 0 }, 50);
+    expect(listPostsBridge).toHaveBeenCalledWith("w1", { discarded: 0, published: 2, retired: 0 }, 50);
   });
 
   it("forwards non-scoped calls without a workspace id", () => {
@@ -208,8 +209,15 @@ describe("api wrappers — call-through and argument shape", () => {
     it("changePostStatus forwards ws/id/status", () => {
       const b = bridge();
       installBridge(b);
-      void changePostStatus("p1", "ready", "other");
-      expect(b.changePostStatus).toHaveBeenCalledWith("other", "p1", "ready");
+      void changePostStatus("p1", "verified", "other");
+      expect(b.changePostStatus).toHaveBeenCalledWith("other", "p1", "verified");
+    });
+
+    it("setPostLocked forwards ws/id/locked", () => {
+      const b = bridge();
+      installBridge(b);
+      void setPostLocked("p1", true);
+      expect(b.setPostLocked).toHaveBeenCalledWith("w1", "p1", true);
     });
 
     it("deletePost forwards ws/id", () => {
@@ -276,7 +284,7 @@ describe("api wrappers — call-through and argument shape", () => {
       const settings = {
         timezone: "UTC",
         supportedLanguages: ["en"],
-        publishedPostsPerLoad: 50,
+        postsPerLoad: 50,
         maxUploadMb: 500,
         editorWatermark: "",
         extraFieldWatermark: "",
@@ -485,7 +493,7 @@ describe("api wrappers — call-through and argument shape", () => {
 
     it("maps a structured main-process admission without parsing Electron rejection prose", async () => {
       const b = bridge();
-      b.uploadAsset.mockResolvedValue({ ok: false, admission: { code: "post-locked", status: "published" } });
+      b.uploadAsset.mockResolvedValue({ ok: false, admission: { code: "post-locked" } });
       installBridge(b);
       const file = {
         name: "photo.png",
@@ -494,7 +502,7 @@ describe("api wrappers — call-through and argument shape", () => {
 
       const refusal = await uploadAsset("p1", file).catch((error: unknown) => error);
       expect(refusal).toBeInstanceOf(AssetUploadAdmissionError);
-      expect((refusal as AssetUploadAdmissionError).reason).toEqual({ key: "assets.admissionPublishedLocked" });
+      expect((refusal as AssetUploadAdmissionError).reason).toEqual({ key: "assets.admissionLocked" });
     });
 
     it("does not project an arbitrary Electron rejection into admission copy", async () => {

@@ -14,13 +14,11 @@ import {
   type ContentSaveEvent,
   updatePost,
   changeStatus,
+  setLocked,
+  recordAssetChange,
   deletePost,
-  listDrafts,
-  listReady,
-  listPublished,
-  countPublished,
-  listExpired,
-  countExpired,
+  listByStatus,
+  countByStatus,
   clearCache,
   rebuildIndex,
   renameTarget,
@@ -51,7 +49,7 @@ describe("createPost", () => {
     expect(fs.existsSync(post.filePath)).toBe(true);
     expect(path.dirname(post.filePath)).toBe(path.join(dataDir, "posts"));
 
-    const drafts = listDrafts(dataDir);
+    const drafts = listByStatus(dataDir, "draft");
     expect(drafts.map((d) => d.frontMatter.id)).toContain(post.frontMatter.id);
   });
 
@@ -183,92 +181,270 @@ describe("updatePost", () => {
   });
 });
 
+const ids = (status: Parameters<typeof listByStatus>[1]) =>
+  listByStatus(dataDir, status).map((p) => p.frontMatter.id);
+
+// The time rules themselves are pinned row by row in postLifecycle.test.ts;
+// these pin that the store applies them and files the post where they say.
 describe("changeStatus", () => {
-  it("advances draft -> ready without requiring a slug", () => {
+  it("advances draft -> verified without requiring a slug", () => {
     const created = createPost(dataDir, "blogger", "en");
-    const ready = changeStatus(dataDir, created.frontMatter.id, "ready");
-    expect(ready?.frontMatter.status).toBe("ready");
-    expect(ready?.frontMatter.readyAtUtc).toBeTruthy();
-    expect(ready?.frontMatter.slug).toBeUndefined();
+    const verified = changeStatus(dataDir, created.frontMatter.id, "verified");
+    expect(verified?.frontMatter.status).toBe("verified");
+    expect(verified?.frontMatter.verifiedAtUtc).toBeTruthy();
+    expect(verified?.frontMatter.slug).toBeUndefined();
   });
 
-  it("advances draft -> ready -> published without moving the file, stamping timestamps", () => {
+  it("walks every status without moving the file, listing the post under each", () => {
     const id = publishableDraft();
     const filePath = getPost(dataDir, id)!.filePath;
 
-    const ready = changeStatus(dataDir, id, "ready");
-    expect(ready?.frontMatter.status).toBe("ready");
-    expect(ready?.frontMatter.readyAtUtc).toBeTruthy();
-    expect(ready?.filePath).toBe(filePath);
-    expect(listReady(dataDir).map((p) => p.frontMatter.id)).toContain(id);
-    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).not.toContain(id);
-
-    const published = changeStatus(dataDir, id, "published");
-    expect(published?.frontMatter.status).toBe("published");
-    expect(published?.frontMatter.publishedAtUtc).toBeTruthy();
-    expect(published?.filePath).toBe(filePath);
-    expect(countPublished(dataDir)).toBe(1);
-    expect(listPublished(dataDir, 0, 50).map((p) => p.frontMatter.id)).toContain(id);
+    for (const status of ["discarded", "verified", "published", "retired", "draft"] as const) {
+      const moved = changeStatus(dataDir, id, status);
+      expect(moved?.frontMatter.status).toBe(status);
+      expect(moved?.filePath).toBe(filePath);
+      expect(getPost(dataDir, id)?.frontMatter.status).toBe(status);
+      expect(ids(status)).toEqual([id]);
+      expect(countByStatus(dataDir, status)).toBe(1);
+    }
   });
 
-  it("clears ready/published timestamps when reverting to draft", () => {
+  it("writes the status times to the file and the index, and drops the ones it clears", () => {
     const id = publishableDraft();
-    changeStatus(dataDir, id, "published");
+    changeStatus(dataDir, id, "retired");
+    const retired = getPost(dataDir, id)!;
+    expect(retired.frontMatter.verifiedAtUtc).toBeTruthy();
+    expect(retired.frontMatter.publishedAtUtc).toBeTruthy();
+    expect(retired.frontMatter.retiredAtUtc).toBeTruthy();
+    expect(listByStatus(dataDir, "retired")[0].frontMatter).toMatchObject({
+      verifiedAtUtc: retired.frontMatter.verifiedAtUtc,
+      publishedAtUtc: retired.frontMatter.publishedAtUtc,
+      retiredAtUtc: retired.frontMatter.retiredAtUtc,
+    });
 
-    const reverted = changeStatus(dataDir, id, "draft");
-    expect(reverted?.frontMatter.status).toBe("draft");
-    expect(reverted?.frontMatter.readyAtUtc).toBeUndefined();
-    expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
+    changeStatus(dataDir, id, "discarded");
+    const disk = fs.readFileSync(retired.filePath, "utf-8");
+    expect(disk).toMatch(/discardedAtUtc:/);
+    expect(disk).not.toMatch(/verifiedAtUtc|publishedAtUtc|retiredAtUtc/);
   });
 
-  it("keeps both timestamps when moving published -> ready", () => {
-    const id = publishableDraft();
-    const published = changeStatus(dataDir, id, "published");
-    const publishedAt = published!.frontMatter.publishedAtUtc;
-    const readyAt = published!.frontMatter.readyAtUtc;
-
-    const ready = changeStatus(dataDir, id, "ready");
-    expect(ready?.frontMatter.status).toBe("ready");
-    expect(ready?.frontMatter.publishedAtUtc).toBe(publishedAt);
-    expect(ready?.frontMatter.readyAtUtc).toBe(readyAt);
-  });
-
-  it("preserves publishedAt across the published -> ready -> published typo round trip", () => {
+  it("brings back the original publication time on retired -> published", () => {
     const id = publishableDraft();
     const publishedAt = changeStatus(dataDir, id, "published")!.frontMatter.publishedAtUtc;
-
-    changeStatus(dataDir, id, "ready");
-    const republished = changeStatus(dataDir, id, "published");
-    expect(republished?.frontMatter.publishedAtUtc).toBe(publishedAt);
+    changeStatus(dataDir, id, "retired");
+    expect(changeStatus(dataDir, id, "published")?.frontMatter.publishedAtUtc).toBe(publishedAt);
   });
 
-  it("moves published -> expired, keeping prior timestamps and stamping expiredAt", () => {
+  it("writes nothing when the status is already the one selected", () => {
     const id = publishableDraft();
-    const published = changeStatus(dataDir, id, "published");
-    const publishedAt = published!.frontMatter.publishedAtUtc;
-    const readyAt = published!.frontMatter.readyAtUtc;
+    const filePath = getPost(dataDir, id)!.filePath;
+    const before = fs.readFileSync(filePath, "utf-8");
+    fs.utimesSync(filePath, new Date(0), new Date(0));
 
-    const expired = changeStatus(dataDir, id, "expired");
-    expect(expired?.frontMatter.status).toBe("expired");
-    expect(expired?.frontMatter.expiredAtUtc).toBeTruthy();
-    expect(expired?.frontMatter.publishedAtUtc).toBe(publishedAt);
-    expect(expired?.frontMatter.readyAtUtc).toBe(readyAt);
+    changeStatus(dataDir, id, "draft");
 
-    expect(countExpired(dataDir)).toBe(1);
-    expect(countPublished(dataDir)).toBe(0);
-    expect(listExpired(dataDir, 0, 50).map((p) => p.frontMatter.id)).toContain(id);
-    expect(listPublished(dataDir, 0, 50).map((p) => p.frontMatter.id)).not.toContain(id);
+    expect(fs.readFileSync(filePath, "utf-8")).toBe(before);
+    expect(fs.statSync(filePath).mtimeMs).toBe(0);
+  });
+});
+
+// content-lifecycle-conventions' Modified: the time moves on every real
+// content edit, judged against the file, records when that edit happened, and
+// moves on nothing else.
+describe("updatedAtUtc", () => {
+  const T0 = new Date("2026-03-01T09:00:00.000Z");
+  const T1 = new Date("2026-03-02T10:00:00.000Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
   });
 
-  it("clears all three timestamps when reverting expired -> draft", () => {
-    const id = publishableDraft();
-    changeStatus(dataDir, id, "expired");
+  afterEach(() => {
+    setContentSaveListener(null);
+    flushAllPendingEdits();
+    vi.useRealTimers();
+  });
 
-    const reverted = changeStatus(dataDir, id, "draft");
-    expect(reverted?.frontMatter.status).toBe("draft");
-    expect(reverted?.frontMatter.readyAtUtc).toBeUndefined();
-    expect(reverted?.frontMatter.publishedAtUtc).toBeUndefined();
-    expect(reverted?.frontMatter.expiredAtUtc).toBeUndefined();
+  const modified = (id: string) => getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+
+  function created(): { id: string; filePath: string } {
+    const post = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, post.frontMatter.id, {
+      content: "Body.",
+      frontMatter: { title: "Title", sourceId: "src-1" },
+    });
+    vi.setSystemTime(T1);
+    return { id: post.frontMatter.id, filePath: post.filePath };
+  }
+
+  it("starts at the creation time", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    expect(post.frontMatter.updatedAtUtc).toBe(post.frontMatter.createdAtUtc);
+  });
+
+  it("records the time of a body edit", () => {
+    const { id } = created();
+    updatePost(dataDir, id, { content: "Body, edited." });
+    expect(modified(id)).toBe(T1.toISOString());
+  });
+
+  it("records the time of a metadata edit", () => {
+    const { id } = created();
+    updatePost(dataDir, id, { frontMatter: { title: "Another title" } });
+    expect(modified(id)).toBe(T1.toISOString());
+  });
+
+  it("records the time a buffered edit was typed, not the time it is written", () => {
+    const { id } = created();
+    queueContent(dataDir, id, "Typed.");
+    vi.setSystemTime(new Date("2026-03-02T10:00:05.000Z"));
+    queueMetadata(dataDir, id, { title: "Retitled" });
+    vi.setSystemTime(new Date("2026-03-02T10:05:00.000Z"));
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(modified(id)).toBe("2026-03-02T10:00:05.000Z");
+  });
+
+  it("records the time of an explicit edit made on top of buffered ones", () => {
+    const { id } = created();
+    queueContent(dataDir, id, "Typed.");
+    const T2 = new Date("2026-03-02T11:00:00.000Z");
+    vi.setSystemTime(T2);
+    updatePost(dataDir, id, { frontMatter: { title: "Explicit" } });
+    expect(modified(id)).toBe(T2.toISOString());
+  });
+
+  it("does not move, nor rewrite the file, when the saved content equals the file", () => {
+    const { id, filePath } = created();
+    const before = fs.readFileSync(filePath, "utf-8");
+    fs.utimesSync(filePath, new Date(0), new Date(0));
+
+    // Typed and undone inside the debounce window; the same title; the same
+    // source linked again.
+    queueContent(dataDir, id, "Body.");
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    updatePost(dataDir, id, { content: "Body.", frontMatter: { title: "Title", sourceId: "src-1" } });
+
+    expect(modified(id)).toBe(T0.toISOString());
+    expect(fs.readFileSync(filePath, "utf-8")).toBe(before);
+    expect(fs.statSync(filePath).mtimeMs).toBe(0);
+  });
+
+  it("does not move for a change the save's own cleanup removes", () => {
+    const { id } = created();
+    updatePost(dataDir, id, { content: "\n\nBody.\n\n\n", frontMatter: { titleEn: "Dropped for English" } });
+    expect(modified(id)).toBe(T0.toISOString());
+  });
+
+  it("does not move on a status change", () => {
+    const { id } = created();
+    for (const status of ["discarded", "verified", "published", "retired", "draft"] as const) {
+      changeStatus(dataDir, id, status);
+      expect(modified(id), status).toBe(T0.toISOString());
+    }
+  });
+
+  it("moves with a status change only for the buffered edit it writes, to when it was typed", () => {
+    const { id } = created();
+    queueMetadata(dataDir, id, { title: "Retitled" });
+    vi.setSystemTime(new Date("2026-03-05T00:00:00.000Z"));
+    changeStatus(dataDir, id, "verified");
+    expect(modified(id)).toBe(T1.toISOString());
+  });
+
+  it("does not move for buffered edits undone before they are written", () => {
+    const { id } = created();
+    queueContent(dataDir, id, "Body, briefly.");
+    queueContent(dataDir, id, "Body.");
+    queueMetadata(dataDir, id, { title: "Title" });
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(modified(id)).toBe(T0.toISOString());
+  });
+
+  it("does not move on locking or unlocking", () => {
+    const { id } = created();
+    setLocked(dataDir, id, true);
+    expect(modified(id)).toBe(T0.toISOString());
+    setLocked(dataDir, id, false);
+    expect(modified(id)).toBe(T0.toISOString());
+  });
+
+  it("records the time of an asset change", () => {
+    const { id } = created();
+    recordAssetChange(dataDir, id);
+    expect(modified(id)).toBe(T1.toISOString());
+  });
+
+  it("does not move when the app rewrites a post on its own", () => {
+    const { id } = created();
+    const source = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, id, { frontMatter: { sourceId: source.frontMatter.id } });
+    vi.setSystemTime(new Date("2026-03-03T11:00:00.000Z"));
+
+    renameTarget(dataDir, "blogger", "blog");
+    deletePost(dataDir, source.frontMatter.id);
+
+    const post = getPost(dataDir, id)!;
+    expect(post.frontMatter.target).toBe("blog");
+    expect(post.frontMatter.sourceId).toBeUndefined();
+    expect(post.frontMatter.updatedAtUtc).toBe(T1.toISOString());
+  });
+});
+
+describe("setLocked", () => {
+  it("writes the flag to the file and the index, and unlocking removes it", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+
+    expect(setLocked(dataDir, id, true)?.frontMatter.locked).toBe(true);
+    expect(fs.readFileSync(post.filePath, "utf-8")).toMatch(/^locked: true$/m);
+    expect(listByStatus(dataDir, "draft")[0].frontMatter.locked).toBe(true);
+
+    expect(setLocked(dataDir, id, false)?.frontMatter.locked).toBeUndefined();
+    expect(fs.readFileSync(post.filePath, "utf-8")).not.toMatch(/locked/);
+    expect(listByStatus(dataDir, "draft")[0].frontMatter.locked).toBeUndefined();
+  });
+
+  it("changes no status time and no status", () => {
+    const id = publishableDraft();
+    const published = changeStatus(dataDir, id, "published")!.frontMatter;
+
+    const locked = setLocked(dataDir, id, true)!.frontMatter;
+    expect(locked.status).toBe("published");
+    expect(locked.verifiedAtUtc).toBe(published.verifiedAtUtc);
+    expect(locked.publishedAtUtc).toBe(published.publishedAtUtc);
+    expect(locked.updatedAtUtc).toBe(published.updatedAtUtc);
+  });
+
+  it("leaves the lifecycle free: a locked post changes status and can be deleted", () => {
+    const id = publishableDraft();
+    setLocked(dataDir, id, true);
+
+    for (const status of ["discarded", "verified", "published", "retired", "draft"] as const) {
+      const moved = changeStatus(dataDir, id, status);
+      expect(moved?.frontMatter.status).toBe(status);
+      expect(moved?.frontMatter.locked).toBe(true);
+    }
+    expect(deletePost(dataDir, id)).toBe(true);
+    expect(getPost(dataDir, id)).toBeNull();
+  });
+
+  it("writes the buffered edits with the lock", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "typed before locking");
+    queueMetadata(dataDir, post.frontMatter.id, { title: "Titled before locking" });
+
+    setLocked(dataDir, post.frontMatter.id, true);
+
+    const disk = fs.readFileSync(post.filePath, "utf-8");
+    expect(disk).toContain("typed before locking");
+    expect(disk).toContain("Titled before locking");
+    expect(disk).toMatch(/^locked: true$/m);
+    expect(flushAllPendingEdits().filter((failure) => failure.id === post.frontMatter.id)).toEqual([]);
+  });
+
+  it("returns null for an unknown post", () => {
+    expect(setLocked(dataDir, "nope", true)).toBeNull();
   });
 });
 
@@ -280,7 +456,7 @@ describe("deletePost", () => {
     expect(deletePost(dataDir, id)).toBe(true);
     expect(fs.existsSync(created.filePath)).toBe(false);
     expect(getPost(dataDir, id)).toBeNull();
-    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).not.toContain(id);
+    expect(ids("draft")).not.toContain(id);
   });
 
   it("returns false for an unknown id", () => {
@@ -314,30 +490,16 @@ describe("deletePost", () => {
   });
 });
 
-describe("listPublished", () => {
-  it("paginates by offset and limit", () => {
-    const ids: string[] = [];
+describe("listByStatus", () => {
+  it.each(["discarded", "published", "retired"] as const)("pages %s by offset and limit", (status) => {
     for (let i = 0; i < 3; i++) {
       const created = createPost(dataDir, "blogger", "en");
-      updatePost(dataDir, created.frontMatter.id, { frontMatter: { slug: `slug-${i}` } });
-      changeStatus(dataDir, created.frontMatter.id, "published");
-      ids.push(created.frontMatter.id);
+      changeStatus(dataDir, created.frontMatter.id, status);
     }
-    expect(countPublished(dataDir)).toBe(3);
-    expect(listPublished(dataDir, 0, 2)).toHaveLength(2);
-    expect(listPublished(dataDir, 2, 2)).toHaveLength(1);
-  });
-});
-
-describe("listExpired", () => {
-  it("paginates by offset and limit", () => {
-    for (let i = 0; i < 3; i++) {
-      const created = createPost(dataDir, "blogger", "en");
-      changeStatus(dataDir, created.frontMatter.id, "expired");
-    }
-    expect(countExpired(dataDir)).toBe(3);
-    expect(listExpired(dataDir, 0, 2)).toHaveLength(2);
-    expect(listExpired(dataDir, 2, 2)).toHaveLength(1);
+    expect(countByStatus(dataDir, status)).toBe(3);
+    expect(listByStatus(dataDir, status, { offset: 0, limit: 2 })).toHaveLength(2);
+    expect(listByStatus(dataDir, status, { offset: 2, limit: 2 })).toHaveLength(1);
+    expect(listByStatus(dataDir, status)).toHaveLength(3);
   });
 });
 
@@ -384,7 +546,7 @@ describe("renameTarget", () => {
     } finally {
       renames.mockRestore();
     }
-    expect(listDrafts(dataDir).every((d) => d.frontMatter.target === "journal")).toBe(true);
+    expect(listByStatus(dataDir, "draft").every((d) => d.frontMatter.target === "journal")).toBe(true);
   });
 
   it("skips and reports a post file that cannot be read, and renames the rest", () => {
@@ -452,7 +614,7 @@ describe("pending content (write-behind buffer)", () => {
   it("a status change persists the buffered content as a side effect", () => {
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "published text");
-    changeStatus(dataDir, post.frontMatter.id, "ready");
+    changeStatus(dataDir, post.frontMatter.id, "verified");
     expect(diskContent(post.filePath)).toContain("published text");
   });
 
@@ -491,7 +653,7 @@ describe("pending content (write-behind buffer)", () => {
     queueContent(dataDir, post.frontMatter.id, "body text");
     queueMetadata(dataDir, post.frontMatter.id, { slug: "my-slug" });
 
-    changeStatus(dataDir, post.frontMatter.id, "ready");
+    changeStatus(dataDir, post.frontMatter.id, "verified");
 
     const disk = diskContent(post.filePath);
     expect(disk).toContain("body text");
@@ -528,23 +690,21 @@ describe("pending content (write-behind buffer)", () => {
     expect(diskContent(b.filePath)).toContain("post b text");
   });
 
-  // The lock boundary, enforced where the write happens. Editing a published or
-  // expired post must be a deliberate act, never an autosave accident — and the
-  // renderer's readOnly cannot be that boundary, because it is derived from post
-  // state that refreshes only after a status change has already resolved.
+  // The lock boundary, enforced where the write happens. Editing a locked post
+  // must be a deliberate act, never an autosave accident — and the renderer's
+  // locked editor cannot be that boundary, because it is derived from post
+  // state that refreshes only after the lock change has already resolved.
   describe("a locked post is not written by the content stream", () => {
     it("refuses a queued edit and reports it as unsaveable, keeping the text", () => {
       const events: ContentSaveEvent[] = [];
       const post = createPost(dataDir, "blogger", "en");
-      changeStatus(dataDir, post.frontMatter.id, "published");
+      setLocked(dataDir, post.frontMatter.id, true);
       const before = diskContent(post.filePath);
 
       setContentSaveListener((e) => events.push(e));
       queueContent(dataDir, post.frontMatter.id, "TAMPERED VIA THE CONTENT STREAM");
 
-      expect(events).toEqual([
-        { kind: "locked", dataDir, id: post.frontMatter.id, status: "published" },
-      ]);
+      expect(events).toEqual([{ kind: "locked", dataDir, id: post.frontMatter.id }]);
       expect(diskContent(post.filePath)).toBe(before);
       // The text is the user's work: kept and readable, just never written.
       expect(getPost(dataDir, post.frontMatter.id)?.content).toBe(
@@ -552,51 +712,62 @@ describe("pending content (write-behind buffer)", () => {
       );
     });
 
-    it("refuses at flush time a post that was published after the edit was queued", () => {
-      // The real window: the debounce is long enough for a publish to land
+    it("refuses at flush time a post that was locked after the edit was queued", () => {
+      // The real window: the debounce is long enough for a lock to land
       // between a keystroke and its write, so a queue-time check alone would
-      // still rewrite published history.
+      // still rewrite locked content.
       const events: ContentSaveEvent[] = [];
       const post = createPost(dataDir, "blogger", "en");
-      queueContent(dataDir, post.frontMatter.id, "typed just before publishing");
-      changeStatus(dataDir, post.frontMatter.id, "published");
+      queueContent(dataDir, post.frontMatter.id, "typed just before locking");
+      setLocked(dataDir, post.frontMatter.id, true);
 
-      // The status change persisted what was buffered, as it should — that text
-      // was typed while the post was still editable. What must not land is what
+      // Locking wrote what was buffered first, as it should — that text was
+      // typed while the post was still editable. What must not land is what
       // comes after.
-      expect(diskContent(post.filePath)).toContain("typed just before publishing");
-      const published = diskContent(post.filePath);
+      expect(diskContent(post.filePath)).toContain("typed just before locking");
+      const locked = diskContent(post.filePath);
 
       setContentSaveListener((e) => events.push(e));
       queueContent(dataDir, post.frontMatter.id, "typed one keystroke too late");
       expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
 
-      expect(diskContent(post.filePath)).toBe(published);
+      expect(diskContent(post.filePath)).toBe(locked);
       expect(events.map((e) => e.kind)).toEqual(["locked"]);
+    });
+
+    it("does not write a locked post's buffered edits with a status change", () => {
+      const post = createPost(dataDir, "blogger", "en");
+      setLocked(dataDir, post.frontMatter.id, true);
+      queueContent(dataDir, post.frontMatter.id, "refused text");
+
+      changeStatus(dataDir, post.frontMatter.id, "published");
+
+      const disk = diskContent(post.filePath);
+      expect(disk).toContain("status: published");
+      expect(disk).not.toContain("refused text");
     });
 
     it("reports the locked post at quit rather than writing it", () => {
       const post = createPost(dataDir, "blogger", "en");
-      changeStatus(dataDir, post.frontMatter.id, "expired");
+      setLocked(dataDir, post.frontMatter.id, true);
       const before = diskContent(post.filePath);
       queueContent(dataDir, post.frontMatter.id, "late night second thoughts");
 
       expect(quitFailures(post.frontMatter.id)).toEqual([
-        { id: post.frontMatter.id, message: "post is expired and locked" },
+        { id: post.frontMatter.id, message: "post is locked" },
       ]);
       expect(diskContent(post.filePath)).toBe(before);
     });
 
-    it("saves again once the post is moved back to an editable status", () => {
+    it("saves the kept text once the post is unlocked", () => {
       const post = createPost(dataDir, "blogger", "en");
-      changeStatus(dataDir, post.frontMatter.id, "published");
-      queueContent(dataDir, post.frontMatter.id, "refused while published");
+      setLocked(dataDir, post.frontMatter.id, true);
+      queueContent(dataDir, post.frontMatter.id, "kept while locked");
       expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
 
-      changeStatus(dataDir, post.frontMatter.id, "draft");
-      queueContent(dataDir, post.frontMatter.id, "allowed once back in draft");
+      setLocked(dataDir, post.frontMatter.id, false);
       expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
-      expect(diskContent(post.filePath)).toContain("allowed once back in draft");
+      expect(diskContent(post.filePath)).toContain("kept while locked");
     });
   });
 

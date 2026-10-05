@@ -49,7 +49,7 @@ interface MetadataTabProps {
   /** Edits the main process has buffered, for views that show them (the export's slug). */
   onMetadataEdited: (postId: string, edits: EditablePostMetadata) => void;
   isActive?: boolean;
-  readOnly?: boolean;
+  locked?: boolean;
 }
 
 export interface MetadataTabHandle {
@@ -71,7 +71,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       extraFieldWatermark,
       onMetadataEdited,
       isActive = false,
-      readOnly = false,
+      locked = false,
     },
     ref
   ) {
@@ -232,7 +232,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     useEffect(() => stopGeneration, [stopGeneration]);
 
     const updateField = (key: string, value: string) => {
-      if (readOnly) return;
+      if (locked) return;
       setFieldValues({ [key]: value });
       void queueField(key, value);
     };
@@ -240,7 +240,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // Blur is where a refused value is reported: while typing, a slug passes
     // through values another post uses, and flagging each would only flicker.
     const flushField = (key: string) => {
-      if (readOnly) return;
+      if (locked) return;
       void (async () => {
         await queuedRef.current[key];
         showFirstRefusal([key]);
@@ -285,7 +285,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     };
 
     const generate = async (key: string) => {
-      if (readOnly || !content.trim() || generationLockRef.current) return;
+      if (locked || !content.trim() || generationLockRef.current) return;
       clearGenError();
       await runGeneration(key);
     };
@@ -303,7 +303,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     allFieldKeys.push("metaDescription");
 
     const generateAll = async () => {
-      if (readOnly || !content.trim() || generationLockRef.current) return;
+      if (locked || !content.trim() || generationLockRef.current) return;
       generationLockRef.current = true;
       clearGenError();
       const controller = new AbortController();
@@ -363,8 +363,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
               : text(genError.message)}
           </OperationalResult>
         )}
-        {readOnly && (
-          <p className="meta-field-hint">{t("metadata.readOnly")}</p>
+        {locked && (
+          <p className="meta-field-hint">{t("metadata.locked")}</p>
         )}
         <div className="metadata-generate-all-row">
           {/* While it runs, Generate All becomes its own Stop: the paid call is
@@ -372,7 +372,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           <button
             className="btn-generate-all"
             onClick={generatingAll ? stopGeneration : generateAll}
-            disabled={!generatingAll && (readOnly || generationLocked || noContent)}
+            disabled={!generatingAll && (locked || generationLocked || noContent)}
           >
             {generatingAll ? t("metadata.stopGenerating") : t("metadata.generateAll")}
           </button>
@@ -389,8 +389,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onGenerate={() => generate("title")}
           generating={isGenerating("title")}
           onStop={stopGeneration}
-          generateDisabled={readOnly || generationLocked || noContent}
-          readOnly={readOnly}
+          generateDisabled={locked || generationLocked || noContent}
+          locked={locked}
           isActive={isActive}
         />
         {isNonEnglish && (
@@ -406,8 +406,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onGenerate={() => generate("titleEn")}
             generating={isGenerating("titleEn")}
             onStop={stopGeneration}
-            generateDisabled={readOnly || generationLocked || noContent}
-            readOnly={readOnly}
+            generateDisabled={locked || generationLocked || noContent}
+            locked={locked}
             isActive={isActive}
           />
         )}
@@ -423,8 +423,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onGenerate={() => generate("slug")}
           generating={isGenerating("slug")}
           onStop={stopGeneration}
-          generateDisabled={readOnly || generationLocked || noContent}
-          readOnly={readOnly}
+          generateDisabled={locked || generationLocked || noContent}
+          locked={locked}
           isActive={isActive}
         />
         <MetaField
@@ -439,9 +439,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onGenerate={() => generate("tags")}
           generating={isGenerating("tags")}
           onStop={stopGeneration}
-          generateDisabled={readOnly || generationLocked || noContent}
+          generateDisabled={locked || generationLocked || noContent}
           placeholder={t("metadata.tagsPlaceholder")}
-          readOnly={readOnly}
+          locked={locked}
           isActive={isActive}
         />
         {isNonEnglish && (
@@ -457,9 +457,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onGenerate={() => generate("tagsEn")}
             generating={isGenerating("tagsEn")}
             onStop={stopGeneration}
-            generateDisabled={readOnly || generationLocked || noContent}
+            generateDisabled={locked || generationLocked || noContent}
             placeholder={t("metadata.tagsPlaceholder")}
-            readOnly={readOnly}
+            locked={locked}
             isActive={isActive}
           />
         )}
@@ -475,8 +475,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           onGenerate={() => generate("metaDescription")}
           generating={isGenerating("metaDescription")}
           onStop={stopGeneration}
-          generateDisabled={readOnly || generationLocked || noContent}
-          readOnly={readOnly}
+          generateDisabled={locked || generationLocked || noContent}
+          locked={locked}
           isActive={isActive}
         />
         {isNonEnglish && (
@@ -492,8 +492,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             onGenerate={() => generate("metaDescriptionEn")}
             generating={isGenerating("metaDescriptionEn")}
             onStop={stopGeneration}
-            generateDisabled={readOnly || generationLocked || noContent}
-            readOnly={readOnly}
+            generateDisabled={locked || generationLocked || noContent}
+            locked={locked}
             isActive={isActive}
           />
         )}
@@ -507,7 +507,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
           copyError={copyErrors.extra}
           onDismissCopyError={() => dismissCopyError("extra")}
           placeholder={extraFieldWatermark}
-          readOnly={readOnly}
+          locked={locked}
           isActive={isActive}
         />
       </div>
@@ -529,7 +529,7 @@ function MetaField({
   generating,
   generateDisabled,
   placeholder,
-  readOnly,
+  locked,
   isActive,
 }: {
   label: string;
@@ -545,7 +545,7 @@ function MetaField({
   generating?: boolean;
   generateDisabled?: boolean;
   placeholder?: string;
-  readOnly?: boolean;
+  locked?: boolean;
   isActive?: boolean;
 }) {
   const { t, text } = useI18n();
@@ -590,7 +590,7 @@ function MetaField({
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
-        readOnly={readOnly}
+        readOnly={locked}
         isActive={isActive}
       />
     </div>

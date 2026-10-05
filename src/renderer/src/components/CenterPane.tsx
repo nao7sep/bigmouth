@@ -4,6 +4,7 @@ import {
   getPost,
   updatePost,
   changePostStatus,
+  setPostLocked,
   deletePost,
   listReferrers,
   queuePostContent,
@@ -12,7 +13,7 @@ import {
   reportProblem,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
-import { POST_STATUSES, POST_STATUS_LABELS, isEditLocked } from "@shared/postStatus";
+import { POST_STATUSES, POST_STATUS_LABELS, holdsPublicationTime } from "@shared/postStatus";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
@@ -43,8 +44,9 @@ interface CenterPaneProps {
 
 const STATUS_VALUES: PostStatus[] = [...POST_STATUSES];
 
-// Published and expired posts are read-only; the editor locks until the post is
-// moved back to Draft or Ready.
+// A locked post's content is locked (content-lifecycle-conventions): the
+// editor, the source link, the metadata and the assets. Its status radios, the
+// lock itself and delete stay live.
 
 export function CenterPane({
   workspaceId,
@@ -62,7 +64,7 @@ export function CenterPane({
   contentFont,
   editorRef,
 }: CenterPaneProps) {
-  const { t, text, rich } = useI18n();
+  const { t, text } = useI18n();
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [statusError, setStatusError] = useState<Message | null>(null);
@@ -142,9 +144,9 @@ export function CenterPane({
   }, [postId]);
 
   const handleContentChange = (value: string) => {
-    // Published and expired posts are locked; the editor is read-only, but guard
-    // the save path too so a stray change can never autosave into a locked post.
-    if (post && isEditLocked(post.frontMatter.status)) return;
+    // A locked post's editor takes no input, but guard the save path too so a
+    // stray change can never autosave into a locked post.
+    if (post?.frontMatter.locked === true) return;
     setContent(value);
     notifyContentChange(value);
     setStatusError(null);
@@ -178,24 +180,45 @@ export function CenterPane({
 
   const handleStatusChange = (newStatus: PostStatus) => {
     if (!post || post.frontMatter.status === newStatus) return;
-    // Moving to draft clears the ready, publication, and expiry timestamps.
-    // Warn whenever a publication or expiry time would actually be lost — this
-    // also covers the published → ready → draft path, where the status is
-    // already "ready" but publishedAtUtc is still set. published → ready
-    // itself is non-destructive (timestamps are kept) and needs no prompt.
-    if (newStatus === "draft" && (post.frontMatter.publishedAtUtc || post.frontMatter.expiredAtUtc)) {
+    // Only published and retired hold a publication time, so moving a post
+    // that has one to any other status clears it, and a later publication is
+    // a new one. Warn before it is lost.
+    if (post.frontMatter.publishedAtUtc && !holdsPublicationTime(newStatus)) {
+      const status = message(POST_STATUS_LABELS[newStatus]);
       void (async () => {
         const ok = await confirm({
-          title: t("center.revertTitle"),
-          message: t("center.revertMessage"),
-          confirmLabel: t("center.revertConfirm"),
+          title: t("center.clearPublicationTitle"),
+          message: t("center.clearPublicationMessage", { status }),
+          confirmLabel: t("center.clearPublicationConfirm", { status }),
           danger: true,
         });
-        if (ok) void applyStatusChange("draft");
+        if (ok) void applyStatusChange(newStatus);
       })();
       return;
     }
     void applyStatusChange(newStatus);
+  };
+
+  const handleLockChange = async (locked: boolean) => {
+    try {
+      setStatusError(null);
+      // A Metadata tab value the store refused would be left out of the
+      // content being locked, so it is resolved first, as for a status change.
+      if (locked && !((await onBeforeStatusChange?.()) ?? true)) {
+        setStatusError(message("center.metadataUnsavedLock"));
+        return;
+      }
+      const updated = await setPostLocked(postId, locked, workspaceId);
+      setPost(updated);
+      onPostUpdated(updated);
+    } catch (err) {
+      setStatusError(presentFailure(
+        message(locked ? "center.lockFailed" : "center.unlockFailed"),
+        "renderer: post lock change failed",
+        err,
+        { postId, locked },
+      ));
+    }
   };
 
   // Status switcher: a manual-activation radiogroup, so arrowing only moves the
@@ -323,7 +346,7 @@ export function CenterPane({
   }
 
   const fm = post.frontMatter;
-  const locked = isEditLocked(fm.status);
+  const locked = fm.locked === true;
   const toolbarError = statusError ?? saveError;
 
   return (
@@ -350,6 +373,15 @@ export function CenterPane({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className="btn-toolbar btn-lock"
+          aria-pressed={locked}
+          title={t("center.lockHint")}
+          onClick={() => void handleLockChange(!locked)}
+        >
+          {t("center.locked")}
+        </button>
         <span className="toolbar-sep" aria-hidden="true" />
         {fm.sourceId ? (
           <>
@@ -415,14 +447,7 @@ export function CenterPane({
           {text(toolbarError)}
         </OperationalResult>
       )}
-      {locked && (
-        <div className="toolbar-notice">
-          {rich(fm.status === "published" ? "center.publishedLocked" : "center.expiredLocked", {
-            ready: <strong>{t("status.ready")}</strong>,
-            draft: <strong>{t("status.draft")}</strong>,
-          })}
-        </div>
-      )}
+      {locked && <div className="toolbar-notice">{t("center.lockedNotice")}</div>}
       <div className="center-editor">
         <MarkdownEditor
           ref={editorRef}

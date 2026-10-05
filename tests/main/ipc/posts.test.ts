@@ -89,7 +89,7 @@ afterEach(() => {
 
 describe("post IPC handlers — workspace resolution", () => {
   it("rejects an unknown workspace id on any channel", () => {
-    expect(() => invoke(CHANNELS.listPosts, "nope", 0, 0, 0)).toThrow(/workspace not found/i);
+    expect(() => invoke(CHANNELS.listPosts, "nope", { discarded: 0, published: 0, retired: 0 }, 0)).toThrow(/workspace not found/i);
     expect(() => invoke(CHANNELS.createPost, "nope", "blogger", "en")).toThrow(/workspace not found/i);
   });
 });
@@ -153,48 +153,48 @@ describe("getPost", () => {
   });
 });
 
+const FIRST_PAGES = { discarded: 0, published: 0, retired: 0 };
+
+const listIds = (res: PostListResponse, status: PostStatus) => res[status].posts.map((d) => d.frontMatter.id);
+
 describe("listPosts", () => {
-  it("returns the post buckets and the published/expired totals", () => {
-    const draftId = createDraft();
+  it("returns a section for every status, with totals and offsets", () => {
+    const byStatus = {} as Record<PostStatus, string>;
+    for (const status of ["draft", "discarded", "verified", "published", "retired"] as const) {
+      byStatus[status] = createDraft();
+      if (status !== "draft") invoke(CHANNELS.changePostStatus, wsId, byStatus[status], status);
+    }
 
-    const readyId = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, readyId, "ready");
-
-    const publishedId = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, publishedId, "published");
-
-    const expiredId = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, expiredId, "expired");
-
-    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0);
-    expect(res.drafts.map((d) => d.frontMatter.id)).toContain(draftId);
-    expect(res.ready.map((d) => d.frontMatter.id)).toContain(readyId);
-    expect(res.published.map((d) => d.frontMatter.id)).toContain(publishedId);
-    expect(res.expired.map((d) => d.frontMatter.id)).toContain(expiredId);
-    expect(res.publishedTotal).toBe(1);
-    expect(res.expiredTotal).toBe(1);
-    expect(res.publishedOffset).toBe(0);
-    expect(res.expiredOffset).toBe(0);
+    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0);
+    for (const status of ["draft", "discarded", "verified", "published", "retired"] as const) {
+      expect(listIds(res, status), status).toEqual([byStatus[status]]);
+      expect(res[status].total, status).toBe(1);
+      expect(res[status].offset, status).toBe(0);
+    }
   });
 
   it("clamps negative offsets to 0 and falls back to the settings limit when limit is 0", () => {
-    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, -5, 0, -3);
-    expect(res.publishedOffset).toBe(0);
-    expect(res.expiredOffset).toBe(0);
+    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, { discarded: -1, published: -5, retired: -3 }, 0);
+    expect(res.discarded.offset).toBe(0);
+    expect(res.published.offset).toBe(0);
+    expect(res.retired.offset).toBe(0);
   });
 
-  it("paginates published posts by offset and limit", () => {
-    const ids: string[] = [];
+  it.each(["discarded", "published", "retired"] as const)("pages %s posts by its own offset and the limit", (status) => {
     for (let i = 0; i < 3; i++) {
-      const id = createDraft();
-      invoke(CHANNELS.changePostStatus, wsId, id, "published");
-      ids.push(id);
+      invoke(CHANNELS.changePostStatus, wsId, createDraft(), status);
     }
-    const firstPage = invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 2, 0);
-    expect(firstPage.published).toHaveLength(2);
-    expect(firstPage.publishedTotal).toBe(3);
-    const secondPage = invoke<PostListResponse>(CHANNELS.listPosts, wsId, 2, 2, 0);
-    expect(secondPage.published).toHaveLength(1);
+    const firstPage = invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 2);
+    expect(firstPage[status].posts).toHaveLength(2);
+    expect(firstPage[status].total).toBe(3);
+    const secondPage = invoke<PostListResponse>(CHANNELS.listPosts, wsId, { ...FIRST_PAGES, [status]: 2 }, 2);
+    expect(secondPage[status].posts).toHaveLength(1);
+    expect(secondPage[status].offset).toBe(2);
+  });
+
+  it("loads draft and verified posts whole, whatever the limit", () => {
+    for (let i = 0; i < 3; i++) createDraft();
+    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 1).draft.posts).toHaveLength(3);
   });
 });
 
@@ -209,24 +209,24 @@ describe("listPosts after an edit on disk", () => {
 
   it("shows a status and title changed in the file since the last read", () => {
     const id = createDraft();
-    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0).drafts.map((d) => d.frontMatter.id)).toContain(id);
+    expect(listIds(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0), "draft")).toContain(id);
 
     const file = postFile(id);
-    const edited = fs.readFileSync(file, "utf8").replace("status: draft", "status: ready").replace(/^---\n/, "---\ntitle: Edited in git\n");
+    const edited = fs.readFileSync(file, "utf8").replace("status: draft", "status: verified").replace(/^---\n/, "---\ntitle: Edited in git\n");
     fs.writeFileSync(file, edited);
     const later = new Date(Date.now() + 10_000);
     fs.utimesSync(file, later, later);
 
-    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0);
-    expect(res.drafts.map((d) => d.frontMatter.id)).not.toContain(id);
-    expect(res.ready.find((d) => d.frontMatter.id === id)?.frontMatter.title).toBe("Edited in git");
+    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0);
+    expect(listIds(res, "draft")).not.toContain(id);
+    expect(res.verified.posts.find((d) => d.frontMatter.id === id)?.frontMatter.title).toBe("Edited in git");
   });
 
   it("drops a post whose file was removed since the last read", () => {
     const id = createDraft();
-    invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0);
+    invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0);
     fs.rmSync(postFile(id));
-    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, 0, 0, 0).drafts.map((d) => d.frontMatter.id)).not.toContain(id);
+    expect(listIds(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0), "draft")).not.toContain(id);
   });
 });
 
@@ -299,27 +299,30 @@ describe("updatePost", () => {
     ).toThrow(/Source post not found/);
   });
 
-  it("refuses to edit a published (locked) post", () => {
+  it("refuses to edit a locked post, whatever its status", () => {
     const id = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, id, "published");
-    expect(() => invoke(CHANNELS.updatePost, wsId, id, { content: "x" })).toThrow(/Published posts are locked/);
+    invoke(CHANNELS.setPostLocked, wsId, id, true);
+    expect(() => invoke(CHANNELS.updatePost, wsId, id, { content: "x" })).toThrow(/This post is locked/);
+    expect(() => invoke(CHANNELS.updatePost, wsId, id, { frontMatter: { sourceId: null } })).toThrow(/This post is locked/);
   });
 
-  it("refuses to edit an expired (locked) post", () => {
+  it("edits a published post that is not locked", () => {
     const id = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, id, "expired");
-    expect(() => invoke(CHANNELS.updatePost, wsId, id, { content: "x" })).toThrow(/Expired posts are locked/);
+    invoke(CHANNELS.changePostStatus, wsId, id, "published");
+    const updated = invoke<PostMutationResult>(CHANNELS.updatePost, wsId, id, { content: "Fixed a typo." });
+    expect(updated.content).toBe("Fixed a typo.");
+    expect(updated.frontMatter.status).toBe("published");
   });
 });
 
 describe("changePostStatus", () => {
-  it("advances draft -> ready -> published, stamping the lifecycle timestamps", () => {
+  it("advances draft -> verified -> published, stamping the status times", () => {
     const id = createDraft();
 
-    const ready = invoke<PostMutationResult>(CHANNELS.changePostStatus, wsId, id, "ready");
-    expect(ready.frontMatter.status).toBe("ready");
-    expect(ready.frontMatter.readyAtUtc).toBeTruthy();
-    expect(ready.summary?.id).toBe(id);
+    const verified = invoke<PostMutationResult>(CHANNELS.changePostStatus, wsId, id, "verified");
+    expect(verified.frontMatter.status).toBe("verified");
+    expect(verified.frontMatter.verifiedAtUtc).toBeTruthy();
+    expect(verified.summary?.id).toBe(id);
 
     const published = invoke<PostMutationResult>(CHANNELS.changePostStatus, wsId, id, "published");
     expect(published.frontMatter.status).toBe("published");
@@ -332,7 +335,50 @@ describe("changePostStatus", () => {
   });
 
   it("throws 'Post not found' for an unknown id", () => {
-    expect(() => invoke(CHANNELS.changePostStatus, wsId, "missing", "ready")).toThrow(/Post not found/);
+    expect(() => invoke(CHANNELS.changePostStatus, wsId, "missing", "verified")).toThrow(/Post not found/);
+  });
+
+  it("changes the status of a locked post", () => {
+    const id = createDraft();
+    invoke(CHANNELS.setPostLocked, wsId, id, true);
+    const retired = invoke<PostMutationResult>(CHANNELS.changePostStatus, wsId, id, "retired");
+    expect(retired.frontMatter.status).toBe("retired");
+    expect(retired.frontMatter.locked).toBe(true);
+  });
+});
+
+describe("setPostLocked", () => {
+  it("locks and unlocks, returning the post and its summary", () => {
+    const id = createDraft();
+    const locked = invoke<PostMutationResult>(CHANNELS.setPostLocked, wsId, id, true);
+    expect(locked.frontMatter.locked).toBe(true);
+    expect(locked.summary?.locked).toBe(true);
+
+    const unlocked = invoke<PostMutationResult>(CHANNELS.setPostLocked, wsId, id, false);
+    expect(unlocked.frontMatter.locked).toBeUndefined();
+    expect(unlocked.summary?.locked).toBeUndefined();
+  });
+
+  it("changes no time", () => {
+    const id = createDraft();
+    const before = invoke<PostMutationResult>(CHANNELS.changePostStatus, wsId, id, "published").frontMatter;
+    const after = invoke<PostMutationResult>(CHANNELS.setPostLocked, wsId, id, true).frontMatter;
+    expect(after.updatedAtUtc).toBe(before.updatedAtUtc);
+    expect(after.verifiedAtUtc).toBe(before.verifiedAtUtc);
+    expect(after.publishedAtUtc).toBe(before.publishedAtUtc);
+  });
+
+  it("rejects a value that is not a boolean, and an unknown post", () => {
+    const id = createDraft();
+    expect(() => invoke(CHANNELS.setPostLocked, wsId, id, "yes")).toThrow(/must be a boolean/);
+    expect(() => invoke(CHANNELS.setPostLocked, wsId, "missing", true)).toThrow(/Post not found/);
+  });
+
+  it("deletes a locked post", () => {
+    const id = createDraft();
+    invoke(CHANNELS.setPostLocked, wsId, id, true);
+    invoke(CHANNELS.deletePost, wsId, id);
+    expect(() => invoke(CHANNELS.getPost, wsId, id)).toThrow(/Post not found/);
   });
 });
 
@@ -479,10 +525,9 @@ describe("queuePostMetadata (the metadata stream)", () => {
 
   it("refuses edits to a locked post and to one that is not there", () => {
     const id = createDraft();
-    invoke(CHANNELS.changePostStatus, wsId, id, "ready");
-    invoke(CHANNELS.changePostStatus, wsId, id, "published");
+    invoke(CHANNELS.setPostLocked, wsId, id, true);
 
-    expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Late" })).toMatchObject({ key: expect.stringMatching(/Locked$/) });
+    expect(invoke(CHANNELS.queuePostMetadata, wsId, id, { title: "Late" })).toEqual({ key: "metadata.refusedLocked" });
     expect(invoke(CHANNELS.queuePostMetadata, wsId, "missing", { title: "X" })).toEqual({ key: "metadata.refusedNotFound" });
   });
 });

@@ -45,7 +45,7 @@ function renderTab(
   overrides: Partial<{
     frontMatter: PostFrontMatter;
     content: string;
-    readOnly: boolean;
+    locked: boolean;
     extraFieldWatermark: string;
   }> = {}
 ) {
@@ -60,7 +60,7 @@ function renderTab(
       content={overrides.content ?? "some body text"}
       extraFieldWatermark={overrides.extraFieldWatermark ?? ""}
       onMetadataEdited={onMetadataEdited}
-      readOnly={overrides.readOnly}
+      locked={overrides.locked}
     />
   );
   // The Title field is the first textarea rendered.
@@ -450,10 +450,10 @@ describe("MetadataTab non-English fields", () => {
 
 });
 
-describe("MetadataTab read-only", () => {
-  it("shows the read-only hint and ignores edits", async () => {
-    const { container, titleInput, getByText } = renderReadOnly();
-    expect(getByText("Metadata is read-only.")).toBeTruthy();
+describe("MetadataTab locked", () => {
+  it("shows the locked hint and ignores edits", async () => {
+    const { container, titleInput, getByText } = renderLocked();
+    expect(getByText("Metadata is locked.")).toBeTruthy();
 
     await act(async () => {
       fireEvent.change(titleInput, { target: { value: "nope" } });
@@ -464,8 +464,8 @@ describe("MetadataTab read-only", () => {
     expect(titleGenerate(container).disabled).toBe(true);
   });
 
-  function renderReadOnly() {
-    const utils = renderTab({ readOnly: true });
+  function renderLocked() {
+    const utils = renderTab({ locked: true });
     const getByText = (text: string) => {
       const el = Array.from(utils.container.querySelectorAll("*")).find(
         (n) => n.textContent === text

@@ -37,15 +37,13 @@ function summary(id: string, title: string): PostSummary {
 }
 
 function page(posts: PostSummary[]): PostListResponse {
+  const none = { posts: [], total: 0, offset: 0 };
   return {
-    drafts: [],
-    ready: [],
-    published: posts,
-    publishedTotal: posts.length,
-    publishedOffset: 0,
-    expired: [],
-    expiredTotal: 0,
-    expiredOffset: 0,
+    draft: none,
+    discarded: none,
+    verified: none,
+    published: { posts, total: posts.length, offset: 0 },
+    retired: none,
   };
 }
 

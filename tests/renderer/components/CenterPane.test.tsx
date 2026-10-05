@@ -15,6 +15,7 @@ vi.mock("@renderer/api", () => ({
   getPost: vi.fn(),
   updatePost: vi.fn(),
   changePostStatus: vi.fn(),
+  setPostLocked: vi.fn(),
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
   queuePostContent: vi.fn(),
@@ -62,6 +63,7 @@ import {
   getPost,
   updatePost,
   changePostStatus,
+  setPostLocked,
   deletePost,
   listReferrers,
   queuePostContent,
@@ -70,6 +72,7 @@ import {
 const mockGetPost = vi.mocked(getPost);
 const mockUpdatePost = vi.mocked(updatePost);
 const mockChangeStatus = vi.mocked(changePostStatus);
+const mockSetLocked = vi.mocked(setPostLocked);
 const mockDeletePost = vi.mocked(deletePost);
 const mockListReferrers = vi.mocked(listReferrers);
 const mockQueueContent = vi.mocked(queuePostContent);
@@ -154,6 +157,7 @@ beforeEach(() => {
   mockGetPost.mockReset();
   mockUpdatePost.mockReset();
   mockChangeStatus.mockReset();
+  mockSetLocked.mockReset();
   mockDeletePost.mockReset();
   mockListReferrers.mockReset();
   mockQueueContent.mockReset();
@@ -213,25 +217,26 @@ describe("CenterPane loading", () => {
 });
 
 describe("CenterPane toolbar metadata", () => {
-  it("renders target, language, and the four status radios", async () => {
+  it("renders target, language, and the five status radios in status order", async () => {
     await renderPane();
     const labels = screen.getAllByText((_, el) => el?.className === "toolbar-label").map((e) => e.textContent);
     expect(labels).toContain("blog");
     expect(labels).toContain("en");
     expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual([
       "Draft",
-      "Ready",
+      "Discarded",
+      "Verified",
       "Published",
-      "Expired",
+      "Retired",
     ]);
   });
 
   it("marks the current status radio as checked/active", async () => {
-    mockGetPost.mockResolvedValue(post({ status: "ready" }));
+    mockGetPost.mockResolvedValue(post({ status: "verified" }));
     await renderPane();
-    const ready = screen.getByRole("radio", { name: "Ready" });
-    expect(ready.getAttribute("aria-checked")).toBe("true");
-    expect(ready.className).toContain("active");
+    const verified = screen.getByRole("radio", { name: "Verified" });
+    expect(verified.getAttribute("aria-checked")).toBe("true");
+    expect(verified.className).toContain("active");
   });
 });
 
@@ -304,13 +309,13 @@ describe("CenterPane content saves (streamed to the main process)", () => {
 });
 
 describe("CenterPane status changes", () => {
-  it("commits a non-destructive status change and notifies the parent", async () => {
+  it("commits a status change and notifies the parent", async () => {
     const onPostUpdated = vi.fn();
     mockGetPost.mockResolvedValue(post({ status: "draft" }));
-    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: "ready" })));
+    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: "verified" })));
     await renderPane({ onPostUpdated });
-    fireEvent.click(screen.getByRole("radio", { name: "Ready" }));
-    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", "ready", "w1"));
+    fireEvent.click(screen.getByRole("radio", { name: "Verified" }));
+    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", "verified", "w1"));
     await waitFor(() => expect(onPostUpdated).toHaveBeenCalled());
   });
 
@@ -321,26 +326,48 @@ describe("CenterPane status changes", () => {
     expect(mockChangeStatus).not.toHaveBeenCalled();
   });
 
-  it("prompts before reverting a published post to draft, then applies on confirm", async () => {
-    const onPostUpdated = vi.fn();
-    mockGetPost.mockResolvedValue(post({ status: "published", publishedAtUtc: "2024-02-02T00:00:00.000Z" }));
-    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: "draft" })));
-    await renderPane({ onPostUpdated });
-    fireEvent.click(screen.getByRole("radio", { name: "Draft" }));
+  // Only published and retired hold a publication time, so moving a post that
+  // has one anywhere else loses it for good.
+  it.each([
+    ["published", "Draft", "draft"],
+    ["published", "Discarded", "discarded"],
+    ["published", "Verified", "verified"],
+    ["retired", "Draft", "draft"],
+    ["retired", "Verified", "verified"],
+  ] as const)("prompts before a %s post moves to %s, then applies on confirm", async (from, label, to) => {
+    mockGetPost.mockResolvedValue(post({ status: from, publishedAtUtc: "2024-02-02T00:00:00.000Z" }));
+    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: to })));
+    await renderPane();
+    fireEvent.click(screen.getByRole("radio", { name: label }));
     // A confirm dialog appears before any status change.
-    await screen.findByText("Revert to draft?");
+    await screen.findByText("Clear the publication time?");
+    expect(
+      screen.getByText(`Moving this post to ${label} clears its publication time, and it will be treated as never published. Publishing it again gives it a new publication time.`),
+    ).toBeTruthy();
     expect(mockChangeStatus).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Revert to Draft" }));
-    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", "draft", "w1"));
+    fireEvent.click(screen.getByRole("button", { name: `Move to ${label}` }));
+    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", to, "w1"));
   });
 
-  it("does not change status if the revert-to-draft prompt is cancelled", async () => {
+  it.each([
+    ["published", "Retired", "retired"],
+    ["retired", "Published", "published"],
+  ] as const)("moves a %s post to %s without a prompt: the publication time is kept", async (from, label, to) => {
+    mockGetPost.mockResolvedValue(post({ status: from, publishedAtUtc: "2024-02-02T00:00:00.000Z" }));
+    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: to })));
+    await renderPane();
+    fireEvent.click(screen.getByRole("radio", { name: label }));
+    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", to, "w1"));
+    expect(screen.queryByText("Clear the publication time?")).toBeNull();
+  });
+
+  it("does not change status if the prompt is cancelled", async () => {
     mockGetPost.mockResolvedValue(post({ status: "published", publishedAtUtc: "2024-02-02T00:00:00.000Z" }));
     await renderPane();
     fireEvent.click(screen.getByRole("radio", { name: "Draft" }));
-    await screen.findByText("Revert to draft?");
+    await screen.findByText("Clear the publication time?");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByText("Revert to draft?")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Clear the publication time?")).toBeNull());
     expect(mockChangeStatus).not.toHaveBeenCalled();
   });
 
@@ -348,28 +375,97 @@ describe("CenterPane status changes", () => {
     mockGetPost.mockResolvedValue(post({ status: "draft" }));
     mockChangeStatus.mockRejectedValue(new Error("status nope"));
     const { container } = await renderPane();
-    fireEvent.click(screen.getByRole("radio", { name: "Ready" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Verified" }));
     await waitFor(() => expect(container.querySelector(".toolbar-error")?.textContent)
       .toContain("The post status could not be changed. The previous status is still in effect; try again."));
   });
 });
 
-describe("CenterPane locked posts", () => {
-  it("shows the published lock notice and makes the editor read-only", async () => {
-    mockGetPost.mockResolvedValue(post({ status: "published" }));
-    const { container } = await renderPane();
-    expect(container.querySelector(".toolbar-notice")?.textContent).toContain("Published posts are locked");
-    expect(screen.getByTestId("editor").getAttribute("data-readonly")).toBe("true");
+describe("CenterPane lock", () => {
+  const lockButton = () => screen.getByRole("button", { name: "Locked" });
+
+  it("is a toggle button beside the status radios, off for an unlocked post", async () => {
+    await renderPane();
+    expect(lockButton().getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("shows the expired lock notice for an expired post", async () => {
-    mockGetPost.mockResolvedValue(post({ status: "expired" }));
+  it("locks the post, flushing the Metadata tab first, and notifies the parent", async () => {
+    const onPostUpdated = vi.fn();
+    const onBeforeStatusChange = vi.fn().mockResolvedValue(true);
+    mockSetLocked.mockResolvedValue(mutationResult(post({ locked: true })));
+    await renderPane({ onPostUpdated, onBeforeStatusChange });
+
+    fireEvent.click(lockButton());
+
+    await waitFor(() => expect(mockSetLocked).toHaveBeenCalledWith("p1", true, "w1"));
+    expect(onBeforeStatusChange).toHaveBeenCalled();
+    await waitFor(() => expect(lockButton().getAttribute("aria-pressed")).toBe("true"));
+    expect(onPostUpdated).toHaveBeenCalled();
+  });
+
+  it("does not lock while a Metadata value the store refused is unresolved", async () => {
+    const { container } = await renderPane({ onBeforeStatusChange: vi.fn().mockResolvedValue(false) });
+    fireEvent.click(lockButton());
+    await waitFor(() => expect(container.querySelector(".toolbar-error")?.textContent)
+      .toContain("Metadata changes could not be saved. Fix them before locking the post."));
+    expect(mockSetLocked).not.toHaveBeenCalled();
+  });
+
+  it("unlocks a locked post", async () => {
+    mockGetPost.mockResolvedValue(post({ locked: true }));
+    mockSetLocked.mockResolvedValue(mutationResult(post()));
+    await renderPane();
+    expect(lockButton().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(lockButton());
+    await waitFor(() => expect(mockSetLocked).toHaveBeenCalledWith("p1", false, "w1"));
+    await waitFor(() => expect(lockButton().getAttribute("aria-pressed")).toBe("false"));
+  });
+
+  it("says when the lock could not be changed", async () => {
+    mockSetLocked.mockRejectedValue(new Error("disk full"));
     const { container } = await renderPane();
-    expect(container.querySelector(".toolbar-notice")?.textContent).toContain("Expired posts are locked");
+    fireEvent.click(lockButton());
+    await waitFor(() => expect(container.querySelector(".toolbar-error")?.textContent)
+      .toContain("The post could not be locked. It is still unlocked; try again."));
+  });
+});
+
+describe("CenterPane locked posts", () => {
+  it("shows the one locked notice and locks the editor, whatever the status", async () => {
+    for (const status of ["draft", "published"] as const) {
+      cleanup();
+      mockGetPost.mockResolvedValue(post({ status, locked: true }));
+      const { container } = await renderPane();
+      expect(container.querySelector(".toolbar-notice")?.textContent).toBe(
+        "This post is locked. Unlock it to edit its text, metadata, assets or source link.",
+      );
+      expect(screen.getByTestId("editor").getAttribute("data-readonly")).toBe("true");
+    }
+  });
+
+  it("leaves an unlocked published post editable", async () => {
+    mockGetPost.mockResolvedValue(post({ status: "published", publishedAtUtc: "2024-02-02T00:00:00.000Z" }));
+    const { container } = await renderPane();
+    expect(container.querySelector(".toolbar-notice")).toBeNull();
+    expect(screen.getByTestId("editor").getAttribute("data-readonly")).toBe("false");
+  });
+
+  it("keeps the status radios, the lock and delete live, and the source link locked", async () => {
+    mockGetPost.mockResolvedValue(post({ locked: true, sourceId: "src-9" }));
+    mockChangeStatus.mockResolvedValue(mutationResult(post({ status: "verified", locked: true })));
+    await renderPane();
+    expect(screen.getAllByRole("radio").every((radio) => !(radio as HTMLButtonElement).disabled)).toBe(true);
+    expect((screen.getByRole("button", { name: "Locked" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Change" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Unlink" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Verified" }));
+    await waitFor(() => expect(mockChangeStatus).toHaveBeenCalledWith("p1", "verified", "w1"));
   });
 
   it("does not stream edits attempted on a locked post", async () => {
-    mockGetPost.mockResolvedValue(post({ status: "published" }));
+    mockGetPost.mockResolvedValue(post({ locked: true }));
     render(
       <ConfirmProvider>
         <CenterPane {...baseProps()} />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listPosts } from "../api";
+import { FIRST_PAGES, PAGED_POST_STATUSES, POST_STATUSES, type PagedPostStatus } from "@shared/postStatus";
 import { presentFailure } from "../util/presentFailure";
 import type { PostSummary } from "@shared/types";
 import { message, type Message } from "@shared/i18n/translate";
@@ -19,27 +20,26 @@ export function usePostPicker(
   excludeId?: string
 ): PostPickerState {
   const [allPosts, setAllPosts] = useState<PostSummary[]>([]);
-  const [pubOffset, setPubOffset] = useState(0);
-  const [pubTotal, setPubTotal] = useState(0);
-  const [expOffset, setExpOffset] = useState(0);
-  const [expTotal, setExpTotal] = useState(0);
+  // How far each paged section has been read, and how many posts it holds.
+  const [offsets, setOffsets] = useState<PagedCounts>(FIRST_PAGES);
+  const [totals, setTotals] = useState<PagedCounts>(FIRST_PAGES);
   const [query, setQuery] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Message | null>(null);
   const loadingMoreRef = useRef(false);
 
+  const keep = (posts: PostSummary[]) =>
+    excludeId ? posts.filter((p) => p.frontMatter.id !== excludeId) : posts;
+
   useEffect(() => {
     loadingMoreRef.current = false;
     setLoadingMore(false);
     setError(null);
-    listPosts(0, batchSize, 0)
+    listPosts(FIRST_PAGES, batchSize)
       .then((data) => {
-        const all = [...data.drafts, ...data.ready, ...data.published, ...data.expired];
-        setAllPosts(excludeId ? all.filter((p) => p.frontMatter.id !== excludeId) : all);
-        setPubOffset(data.published.length);
-        setPubTotal(data.publishedTotal);
-        setExpOffset(data.expired.length);
-        setExpTotal(data.expiredTotal);
+        setAllPosts(keep(POST_STATUSES.flatMap((status) => data[status].posts)));
+        setOffsets(pagedValues((status) => data[status].posts.length));
+        setTotals(pagedValues((status) => data[status].total));
       })
       .catch((err) => setError(presentFailure(
         message("picker.loadFailed"),
@@ -48,31 +48,30 @@ export function usePostPicker(
       )));
   }, [batchSize, excludeId]);
 
+  const canLoadMore = PAGED_POST_STATUSES.some((status) => offsets[status] < totals[status]);
+
   const loadMore = () => {
-    if (loadingMoreRef.current || query.trim() || (pubOffset >= pubTotal && expOffset >= expTotal)) {
+    if (loadingMoreRef.current || query.trim() || !canLoadMore) {
       return;
     }
 
     loadingMoreRef.current = true;
     setLoadingMore(true);
     setError(null);
-    // One fetch advances both archives — published from pubOffset, expired from
-    // expOffset — so the combined picker list keeps growing past the first page.
-    const requestPubOffset = pubOffset;
-    const requestExpOffset = expOffset;
+    // One fetch advances every paged section from its own offset, so the
+    // combined picker list keeps growing past the first page.
+    const requested = offsets;
 
-    listPosts(requestPubOffset, batchSize, requestExpOffset)
+    listPosts(requested, batchSize)
       .then((data) => {
-        const incoming = [...data.published, ...data.expired];
-        const next = excludeId
-          ? incoming.filter((p) => p.frontMatter.id !== excludeId)
-          : incoming;
+        const incoming = keep(PAGED_POST_STATUSES.flatMap((status) => data[status].posts));
         setAllPosts((prev) => {
           const seen = new Set(prev.map((p) => p.frontMatter.id));
-          return [...prev, ...next.filter((p) => !seen.has(p.frontMatter.id))];
+          return [...prev, ...incoming.filter((p) => !seen.has(p.frontMatter.id))];
         });
-        setPubOffset((o) => Math.max(o, requestPubOffset + data.published.length));
-        setExpOffset((o) => Math.max(o, requestExpOffset + data.expired.length));
+        setOffsets((current) =>
+          pagedValues((status) => Math.max(current[status], requested[status] + data[status].posts.length)),
+        );
       })
       .catch((err) => setError(presentFailure(
         message("picker.moreFailed"),
@@ -96,7 +95,13 @@ export function usePostPicker(
       })
     : allPosts;
 
-  const hasMore = !lowerQuery && (pubOffset < pubTotal || expOffset < expTotal);
+  const hasMore = !lowerQuery && canLoadMore;
 
   return { posts, hasMore, loadingMore, loadMore, query, setQuery, error };
+}
+
+type PagedCounts = Readonly<Record<PagedPostStatus, number>>;
+
+function pagedValues(value: (status: PagedPostStatus) => number): PagedCounts {
+  return Object.fromEntries(PAGED_POST_STATUSES.map((status) => [status, value(status)])) as PagedCounts;
 }

@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { applyPostMutationToBuckets, type PostBuckets } from "@renderer/util/postBuckets";
-import type { PostStatus, PostSummary } from "@shared/types";
+import {
+  applyPostMutationToLists,
+  emptyPostLists,
+  listsFromResponse,
+  removePostFromLists,
+  type PostLists,
+} from "@renderer/util/postBuckets";
+import type { PostListResponse, PostStatus, PostSummary } from "@shared/types";
+import { LIST_TIME_KEY } from "@shared/postOrder";
 
 function summary(
   id: string,
@@ -19,244 +26,149 @@ function summary(
   };
 }
 
-function buckets(overrides: Partial<PostBuckets> = {}): PostBuckets {
-  return {
-    drafts: [],
-    ready: [],
-    published: [],
-    publishedTotal: 0,
-    expired: [],
-    expiredTotal: 0,
-    ...overrides,
-  };
+/** A post in `status`, with that section's own time set to `at`. */
+function inSection(id: string, status: PostStatus, at = "2026-02-01T00:00:00.000Z", extra = {}): PostSummary {
+  return summary(id, status, { [LIST_TIME_KEY[status]]: at, ...extra });
+}
+
+function lists(sections: Partial<Record<PostStatus, { posts: PostSummary[]; total?: number }>> = {}): PostLists {
+  const next = emptyPostLists();
+  for (const [status, section] of Object.entries(sections) as [PostStatus, { posts: PostSummary[]; total?: number }][]) {
+    next[status] = { posts: section.posts, total: section.total ?? section.posts.length };
+  }
+  return next;
 }
 
 const ids = (list: PostSummary[]) => list.map((p) => p.frontMatter.id);
+const totals = (next: PostLists) =>
+  Object.fromEntries(Object.entries(next).map(([status, section]) => [status, section.total]));
 
-describe("applyPostMutationToBuckets", () => {
-  it("moves a post draft -> ready without touching totals", () => {
-    const prev = buckets({ drafts: [summary("a", "draft")] });
-    const next = applyPostMutationToBuckets(prev, summary("a", "ready"), "ready", null);
-    expect(ids(next.drafts)).toEqual([]);
-    expect(ids(next.ready)).toEqual(["a"]);
-    expect(next.publishedTotal).toBe(0);
-    expect(next.expiredTotal).toBe(0);
+const PAGED = ["discarded", "published", "retired"] as const;
+
+describe("applyPostMutationToLists", () => {
+  it("moves a post draft -> verified, keeping each whole section's total its length", () => {
+    const prev = lists({ draft: { posts: [summary("a", "draft")] } });
+    const next = applyPostMutationToLists(prev, summary("a", "verified"), "verified", null);
+    expect(ids(next.draft.posts)).toEqual([]);
+    expect(ids(next.verified.posts)).toEqual(["a"]);
+    expect(totals(next)).toEqual({ draft: 0, discarded: 0, verified: 1, published: 0, retired: 0 });
   });
 
-  it("moves ready -> published and increments publishedTotal", () => {
-    const prev = buckets({ ready: [summary("a", "ready")] });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" }),
-      "published",
-      null
-    );
-    expect(ids(next.ready)).toEqual([]);
-    expect(ids(next.published)).toEqual(["a"]);
-    expect(next.publishedTotal).toBe(1);
-    expect(next.expiredTotal).toBe(0);
+  it.each(PAGED)("moves verified -> %s and counts it into that section's total", (status) => {
+    const prev = lists({ verified: { posts: [summary("a", "verified")] } });
+    const next = applyPostMutationToLists(prev, inSection("a", status), status, null);
+    expect(ids(next.verified.posts)).toEqual([]);
+    expect(ids(next[status].posts)).toEqual(["a"]);
+    expect(next[status].total).toBe(1);
   });
 
-  it("moves published -> expired, shifting one off publishedTotal onto expiredTotal", () => {
-    const prev = buckets({
-      published: [summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" })],
-      publishedTotal: 1,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("a", "expired", {
-        publishedAtUtc: "2026-02-01T00:00:00.000Z",
-        expiredAtUtc: "2026-03-01T00:00:00.000Z",
-      }),
-      "expired",
-      null
-    );
-    expect(ids(next.published)).toEqual([]);
-    expect(ids(next.expired)).toEqual(["a"]);
-    expect(next.publishedTotal).toBe(0);
-    expect(next.expiredTotal).toBe(1);
+  it.each(PAGED.flatMap((from) => PAGED.filter((to) => to !== from).map((to) => [from, to] as const)))(
+    "moves %s -> %s, shifting one total onto the other",
+    (from, to) => {
+      const prev = lists({ [from]: { posts: [inSection("a", from)], total: 4 }, [to]: { posts: [], total: 2 } });
+      const next = applyPostMutationToLists(prev, inSection("a", to), to, null);
+      expect(ids(next[from].posts)).toEqual([]);
+      expect(ids(next[to].posts)).toEqual(["a"]);
+      expect(next[from].total).toBe(3);
+      expect(next[to].total).toBe(3);
+    },
+  );
+
+  it.each(PAGED)("updates a %s post in place without duplicating it or changing the total", (status) => {
+    const prev = lists({ [status]: { posts: [inSection("a", status)], total: 1 } });
+    const next = applyPostMutationToLists(prev, inSection("a", status, undefined, { title: "edited" }), status, null);
+    expect(ids(next[status].posts)).toEqual(["a"]);
+    expect(next[status].posts[0].frontMatter.title).toBe("edited");
+    expect(next[status].total).toBe(1);
   });
 
-  it("moves expired -> published, shifting one off expiredTotal onto publishedTotal", () => {
-    const prev = buckets({
-      expired: [summary("a", "expired", { expiredAtUtc: "2026-03-01T00:00:00.000Z" })],
-      expiredTotal: 1,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" }),
-      "published",
-      null
-    );
-    expect(ids(next.expired)).toEqual([]);
-    expect(ids(next.published)).toEqual(["a"]);
-    expect(next.expiredTotal).toBe(0);
-    expect(next.publishedTotal).toBe(1);
+  it.each(PAGED)("does not fold a re-saved %s post that is off the loaded page back onto the page", (status) => {
+    // The previous status comes from the open post; the post is not on the
+    // loaded page, so it must not be hoisted onto it, and the total stays put.
+    const prev = lists({ [status]: { posts: [inSection("onpage", status, "2026-09-01T00:00:00.000Z")], total: 5 } });
+    const next = applyPostMutationToLists(prev, inSection("deep", status, "2026-01-01T00:00:00.000Z"), status, status);
+    expect(ids(next[status].posts)).toEqual(["onpage"]);
+    expect(next[status].total).toBe(5);
   });
 
-  it("moves expired -> draft and decrements only expiredTotal", () => {
-    const prev = buckets({
-      expired: [summary("a", "expired", { expiredAtUtc: "2026-03-01T00:00:00.000Z" })],
-      expiredTotal: 1,
-    });
-    const next = applyPostMutationToBuckets(prev, summary("a", "draft"), "draft", null);
-    expect(ids(next.drafts)).toEqual(["a"]);
-    expect(ids(next.expired)).toEqual([]);
-    expect(next.expiredTotal).toBe(0);
-    expect(next.publishedTotal).toBe(0);
-  });
-
-  it("updates a published post in place without duplicating it or changing the total", () => {
-    const prev = buckets({
-      published: [summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" })],
-      publishedTotal: 1,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z", title: "edited" }),
-      "published",
-      null
-    );
-    expect(ids(next.published)).toEqual(["a"]);
-    expect(next.published[0].frontMatter.title).toBe("edited");
-    expect(next.publishedTotal).toBe(1);
-  });
-
-  it("does not fold a re-saved published post that is off the loaded page back onto the page", () => {
-    // previousStatus comes from openPostStatus="published"; the post is not in
-    // the loaded published list, so it must not be hoisted onto the page, and the
-    // total must stay put (it was already published, still published).
-    const prev = buckets({
-      published: [summary("onpage", "published", { publishedAtUtc: "2026-09-01T00:00:00.000Z" })],
-      publishedTotal: 5,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("deep", "published", { publishedAtUtc: "2026-01-01T00:00:00.000Z", title: "edited" }),
-      "published",
-      "published"
-    );
-    expect(ids(next.published)).toEqual(["onpage"]);
-    expect(next.publishedTotal).toBe(5);
-  });
-
-  it("does not fold a re-saved expired post that is off the loaded page back onto the page", () => {
-    const prev = buckets({
-      expired: [summary("onpage", "expired", { expiredAtUtc: "2026-09-01T00:00:00.000Z" })],
-      expiredTotal: 5,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("deep", "expired", { expiredAtUtc: "2026-01-01T00:00:00.000Z" }),
-      "expired",
-      "expired"
-    );
-    expect(ids(next.expired)).toEqual(["onpage"]);
-    expect(next.expiredTotal).toBe(5);
-  });
-
-  it("decrements the archive total for an off-page post leaving that archive", () => {
-    // A published post reached via a source link (not on the loaded page) moved
-    // back to ready: the total must still drop by one even though no visible
-    // row is removed.
-    const prev = buckets({ publishedTotal: 3 });
-    const next = applyPostMutationToBuckets(prev, summary("deep", "ready"), "ready", "published");
-    expect(ids(next.ready)).toEqual(["deep"]);
-    expect(next.publishedTotal).toBe(2);
+  it.each(PAGED)("decrements the %s total for an off-page post leaving it", (status) => {
+    // Reached via a source link (not on the loaded page) and moved to draft:
+    // the total still drops by one though no visible row is removed.
+    const prev = lists({ [status]: { posts: [], total: 3 } });
+    const next = applyPostMutationToLists(prev, summary("deep", "draft"), "draft", status);
+    expect(ids(next.draft.posts)).toEqual(["deep"]);
+    expect(next[status].total).toBe(2);
   });
 
   it("never drives a total below zero", () => {
-    const prev = buckets({
-      published: [summary("a", "published", { publishedAtUtc: "2026-02-01T00:00:00.000Z" })],
-      publishedTotal: 0,
+    const prev = lists({ published: { posts: [inSection("a", "published")], total: 0 } });
+    const next = applyPostMutationToLists(prev, summary("a", "draft"), "draft", null);
+    expect(next.published.total).toBe(0);
+  });
+
+  it.each(PAGED)("inserts into %s newest first by its own time, ties broken by id", (status) => {
+    const prev = lists({
+      draft: { posts: [summary("new", "draft"), summary("zz", "draft")] },
+      [status]: { posts: [inSection("old", status, "2026-01-01T00:00:00.000Z"), inSection("aa", status, "2026-05-01T00:00:00.000Z")], total: 2 },
     });
-    const next = applyPostMutationToBuckets(prev, summary("a", "draft"), "draft", null);
-    expect(next.publishedTotal).toBe(0);
-  });
+    const withNew = applyPostMutationToLists(prev, inSection("new", status, "2026-03-01T00:00:00.000Z"), status, null);
+    expect(ids(withNew[status].posts)).toEqual(["aa", "new", "old"]);
+    expect(withNew[status].total).toBe(3);
 
-  it("breaks a published-time tie by slug, descending", () => {
-    // Same publishedAtUtc, so the slug localeCompare tiebreaker decides order. The
-    // sort is descending, so "zeta" precedes "alpha".
-    const sameTime = "2026-02-01T00:00:00.000Z";
-    const prev = buckets({
-      published: [summary("a", "published", { publishedAtUtc: sameTime, slug: "alpha" })],
-      publishedTotal: 1,
-      ready: [summary("z", "ready")],
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("z", "published", { publishedAtUtc: sameTime, slug: "zeta" }),
-      "published",
-      null
-    );
-    expect(ids(next.published)).toEqual(["z", "a"]);
-  });
-
-  it("breaks an expired-time tie by slug, descending", () => {
-    const sameTime = "2026-03-01T00:00:00.000Z";
-    const prev = buckets({
-      expired: [summary("a", "expired", { expiredAtUtc: sameTime, slug: "alpha" })],
-      expiredTotal: 1,
-      ready: [summary("z", "ready")],
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("z", "expired", { expiredAtUtc: sameTime, slug: "zeta" }),
-      "expired",
-      null
-    );
-    expect(ids(next.expired)).toEqual(["z", "a"]);
-  });
-
-  it("tolerates published posts with no publishedAtUtc or slug when sorting", () => {
-    // Both the time and the slug are absent on both rows, so every coalescing
-    // fallback fires; the comparator must still return a stable (equal) ordering
-    // rather than throwing.
-    const noTime = (id: string) =>
-      summary(id, "published", { publishedAtUtc: undefined, slug: undefined });
-    const prev = buckets({ published: [noTime("a")], publishedTotal: 1, ready: [noTime("b")] });
-    const next = applyPostMutationToBuckets(prev, noTime("b"), "published", null);
-    expect(ids(next.published).sort()).toEqual(["a", "b"]);
-  });
-
-  it("tolerates expired posts with no expiredAtUtc or slug when sorting", () => {
-    const noTime = (id: string) =>
-      summary(id, "expired", { expiredAtUtc: undefined, slug: undefined });
-    const prev = buckets({ expired: [noTime("a")], expiredTotal: 1, ready: [noTime("b")] });
-    const next = applyPostMutationToBuckets(prev, noTime("b"), "expired", null);
-    expect(ids(next.expired).sort()).toEqual(["a", "b"]);
+    const withTie = applyPostMutationToLists(withNew, inSection("zz", status, "2026-05-01T00:00:00.000Z"), status, null);
+    expect(ids(withTie[status].posts)).toEqual(["zz", "aa", "new", "old"]);
   });
 
   it("orders drafts newest-created first when inserting into a populated list", () => {
-    // The default (drafts/ready) comparator keys on createdAtUtc; inserting a
-    // newer-created post must land it ahead of an older existing one.
-    const prev = buckets({
-      drafts: [summary("old", "draft", { createdAtUtc: "2026-01-01T00:00:00.000Z" })],
-      ready: [summary("z", "ready")],
+    const prev = lists({
+      draft: { posts: [summary("old", "draft", { createdAtUtc: "2026-01-01T00:00:00.000Z" })] },
+      verified: { posts: [summary("z", "verified")] },
     });
-    const next = applyPostMutationToBuckets(
+    const next = applyPostMutationToLists(
       prev,
       summary("z", "draft", { createdAtUtc: "2026-05-01T00:00:00.000Z" }),
       "draft",
       null
     );
-    expect(ids(next.drafts)).toEqual(["z", "old"]);
+    expect(ids(next.draft.posts)).toEqual(["z", "old"]);
   });
 
-  it("inserts into the expired archive in newest-expired-first order", () => {
-    const prev = buckets({
-      drafts: [summary("new", "draft")],
-      expired: [summary("old", "expired", { expiredAtUtc: "2026-01-01T00:00:00.000Z" })],
-      expiredTotal: 1,
-    });
-    const next = applyPostMutationToBuckets(
-      prev,
-      summary("new", "expired", { expiredAtUtc: "2026-05-01T00:00:00.000Z" }),
-      "expired",
-      null
-    );
-    expect(ids(next.drafts)).toEqual([]);
-    expect(ids(next.expired)).toEqual(["new", "old"]);
-    expect(next.expiredTotal).toBe(2);
+  it("tolerates posts with no section time when sorting", () => {
+    const prev = lists({ retired: { posts: [summary("a", "retired")], total: 1 }, verified: { posts: [summary("b", "verified")] } });
+    const next = applyPostMutationToLists(prev, summary("b", "retired"), "retired", null);
+    expect(ids(next.retired.posts).sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("removePostFromLists", () => {
+  it.each(PAGED)("drops a deleted %s post and one from its total", (status) => {
+    const prev = lists({ [status]: { posts: [inSection("a", status), inSection("b", status)], total: 7 } });
+    const removed = removePostFromLists(prev, "a");
+    expect(removed?.status).toBe(status);
+    expect(ids(removed!.lists[status].posts)).toEqual(["b"]);
+    expect(removed!.lists[status].total).toBe(6);
+  });
+
+  it("keeps a whole section's total its length", () => {
+    const removed = removePostFromLists(lists({ draft: { posts: [summary("a", "draft")] } }), "a");
+    expect(removed?.lists.draft).toEqual({ posts: [], total: 0 });
+  });
+
+  it("returns null for a post no loaded section holds", () => {
+    expect(removePostFromLists(lists(), "ghost")).toBeNull();
+  });
+});
+
+describe("listsFromResponse", () => {
+  it("takes every section's posts and total", () => {
+    const response = Object.fromEntries(
+      (["draft", "discarded", "verified", "published", "retired"] as const).map((status, i) => [
+        status,
+        { posts: [summary(status, status)], total: i + 1, offset: 0 },
+      ]),
+    ) as PostListResponse;
+    const next = listsFromResponse(response);
+    expect(ids(next.retired.posts)).toEqual(["retired"]);
+    expect(totals(next)).toEqual({ draft: 1, discarded: 2, verified: 3, published: 4, retired: 5 });
   });
 });

@@ -43,7 +43,7 @@ function validSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     timezone: "America/New_York",
     supportedLanguages: ["en", "ja"],
-    publishedPostsPerLoad: 25,
+    postsPerLoad: 25,
     maxUploadMb: 100,
     editorWatermark: "write here",
     extraFieldWatermark: "extra",
@@ -73,7 +73,7 @@ describe("settings IPC handlers", () => {
     const settings = invoke(CHANNELS.getSettings, wsId);
     expect(settings.timezone).toBe("system");
     expect(Array.isArray(settings.supportedLanguages)).toBe(true);
-    expect(settings.publishedPostsPerLoad).toBe(50);
+    expect(settings.postsPerLoad).toBe(50);
   });
 
   it("saves settings through the store and round-trips them", () => {
@@ -94,11 +94,11 @@ describe("settings IPC handlers", () => {
     expect(() =>
       invoke(CHANNELS.saveSettings, wsId, validSettings({ supportedLanguages: [1] as unknown as string[] })),
     ).toThrow(/supportedLanguages/);
-    expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ publishedPostsPerLoad: 0 }))).toThrow(
-      /publishedPostsPerLoad/,
+    expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ postsPerLoad: 0 }))).toThrow(
+      /postsPerLoad/,
     );
-    expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ publishedPostsPerLoad: 2.5 }))).toThrow(
-      /publishedPostsPerLoad/,
+    expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ postsPerLoad: 2.5 }))).toThrow(
+      /postsPerLoad/,
     );
     expect(() => invoke(CHANNELS.saveSettings, wsId, validSettings({ maxUploadMb: 0 }))).toThrow(/maxUploadMb/);
     expect(() =>

@@ -474,8 +474,8 @@ function GeneralTab({
     (draft) => parseLanguages(draft).join(", ") === persistedLanguages,
   );
   const [perLoadText, setPerLoadText] = useFieldDraft(
-    String(settings.publishedPostsPerLoad),
-    (draft) => Number(draft) === settings.publishedPostsPerLoad,
+    String(settings.postsPerLoad),
+    (draft) => Number(draft) === settings.postsPerLoad,
   );
   const [maxUploadText, setMaxUploadText] = useFieldDraft(
     String(settings.maxUploadMb),
@@ -527,10 +527,10 @@ function GeneralTab({
             // Save gate refuses. It used to become 50 — a magic number the user
             // never chose, applied under the caret — and a typed 0 became 50 too,
             // because `parseInt(...) || 50` cannot tell zero from nothing.
-            update({ publishedPostsPerLoad: Number.parseInt(e.target.value, 10) });
+            update({ postsPerLoad: Number.parseInt(e.target.value, 10) });
           }}
         />
-        {errors.publishedPostsPerLoad && <FieldError msg={errors.publishedPostsPerLoad} />}
+        {errors.postsPerLoad && <FieldError msg={errors.postsPerLoad} />}
       </div>
       <div className="form-field">
         <label className="form-label">{t("settings.maxAssetSize")}</label>

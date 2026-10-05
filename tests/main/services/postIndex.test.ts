@@ -7,9 +7,9 @@ import {
   createPost,
   updatePost,
   getPost,
-  listDrafts,
-  listPublished,
+  listByStatus,
   changeStatus,
+  setLocked,
   clearCache,
   rebuildIndex,
   deletePost,
@@ -63,22 +63,28 @@ describe("canonicalIndexJson", () => {
     const json = canonicalIndexJson([entry({ id: "a" })]);
     expect(json.endsWith("\n")).toBe(true);
     expect(json).not.toContain("publishedAtUtc");
-    expect(json).not.toContain("expiredAtUtc");
+    expect(json).not.toContain("retiredAtUtc");
+    expect(json).not.toContain("locked");
     expect(json).not.toContain("slug");
   });
 
-  it("emits expiredAtUtc after publishedAtUtc when present", () => {
+  it("emits the status times in lifecycle order, then the lock", () => {
     const json = canonicalIndexJson([
       entry({
         id: "a",
-        status: "expired",
-        readyAtUtc: "2026-01-02T00:00:00Z",
+        status: "retired",
+        discardedAtUtc: "2026-01-01T12:00:00Z",
+        verifiedAtUtc: "2026-01-02T00:00:00Z",
         publishedAtUtc: "2026-01-03T00:00:00Z",
-        expiredAtUtc: "2026-01-04T00:00:00Z",
+        retiredAtUtc: "2026-01-04T00:00:00Z",
+        locked: true,
       }),
     ]);
-    expect(json).toContain("expiredAtUtc");
-    expect(json.indexOf("publishedAtUtc")).toBeLessThan(json.indexOf("expiredAtUtc"));
+    const order = ["discardedAtUtc", "verifiedAtUtc", "publishedAtUtc", "retiredAtUtc", '"locked": true'].map((key) =>
+      json.indexOf(key),
+    );
+    expect(order.every((at) => at > 0)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
   });
 });
 
@@ -152,12 +158,29 @@ describe("excerpt", () => {
   });
 });
 
-describe("expired projection", () => {
-  it("writes expiredAtUtc into the index when a post is expired", () => {
+describe("lifecycle projection", () => {
+  it("writes retiredAtUtc into the index when a post is retired", () => {
     const created = createPost(dataDir, "blogger", "en");
-    changeStatus(dataDir, created.frontMatter.id, "expired");
-    expect(indexBytes()).toContain('"status": "expired"');
-    expect(indexBytes()).toContain("expiredAtUtc");
+    changeStatus(dataDir, created.frontMatter.id, "retired");
+    expect(indexBytes()).toContain('"status": "retired"');
+    expect(indexBytes()).toContain("retiredAtUtc");
+  });
+
+  it("writes discardedAtUtc into the index when a post is discarded", () => {
+    const created = createPost(dataDir, "blogger", "en");
+    changeStatus(dataDir, created.frontMatter.id, "discarded");
+    expect(indexBytes()).toContain('"status": "discarded"');
+    expect(indexBytes()).toContain("discardedAtUtc");
+  });
+
+  it("carries the lock, and a rebuild reads it back from the file", () => {
+    const created = createPost(dataDir, "blogger", "en");
+    setLocked(dataDir, created.frontMatter.id, true);
+    expect(indexBytes()).toContain('"locked": true');
+
+    clearCache(dataDir);
+    rebuildIndex(dataDir);
+    expect(listByStatus(dataDir, "draft")[0].frontMatter.locked).toBe(true);
   });
 });
 
@@ -177,7 +200,7 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
     clearCache(dataDir);
 
     // The good post is still listed and readable; the bad files are skipped.
-    const ids = listDrafts(dataDir).map((p) => p.frontMatter.id);
+    const ids = listByStatus(dataDir, "draft").map((p) => p.frontMatter.id);
     expect(ids).toContain(good.frontMatter.id);
     expect(getPost(dataDir, good.frontMatter.id)).not.toBeNull();
   });
@@ -192,13 +215,13 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
     clearCache(dataDir);
 
     // Incremental load: the duplicate is skipped, not silently overwritten away.
-    const drafts = listDrafts(dataDir).filter((p) => p.frontMatter.id === original.frontMatter.id);
+    const drafts = listByStatus(dataDir, "draft").filter((p) => p.frontMatter.id === original.frontMatter.id);
     expect(drafts).toHaveLength(1);
     expect(getPost(dataDir, original.frontMatter.id)).not.toBeNull();
 
     // Explicit rebuild behaves identically (no throw, still exactly one entry).
     expect(() => rebuildIndex(dataDir)).not.toThrow();
-    const afterRebuild = listDrafts(dataDir).filter((p) => p.frontMatter.id === original.frontMatter.id);
+    const afterRebuild = listByStatus(dataDir, "draft").filter((p) => p.frontMatter.id === original.frontMatter.id);
     expect(afterRebuild).toHaveLength(1);
     expect(getPost(dataDir, original.frontMatter.id)).not.toBeNull();
   });
@@ -221,7 +244,7 @@ describe("a hand-edited post id outside the nanoid grammar", () => {
     setFileId(edited.filePath, bad);
     clearCache(dataDir);
 
-    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toEqual([keeper.frontMatter.id]);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([keeper.frontMatter.id]);
     expect(deletePost(dataDir, bad)).toBe(false);
     expect(fs.existsSync(keeper.filePath)).toBe(true);
     expect(fs.existsSync(path.join(dataDir, "assets", keeper.frontMatter.id, "a.png"))).toBe(true);
@@ -245,7 +268,7 @@ describe("a hand-edited post id outside the nanoid grammar", () => {
 
     expect(deletePost(dataDir, "..")).toBe(false);
     expect(fs.existsSync(post.filePath)).toBe(true);
-    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
   });
 });
 
@@ -388,7 +411,7 @@ describe("reconcile", () => {
     // while the editor showed Draft, until the user found Settings → Rebuild.
     const post = createPost(dataDir, "blogger", "en");
     changeStatus(dataDir, post.frontMatter.id, "published");
-    expect(listPublished(dataDir, 0, 10).map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
+    expect(listByStatus(dataDir, "published").map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
 
     // Edit the file underneath the app, and make it plainly newer than the index.
     const raw = fs.readFileSync(post.filePath, "utf-8").replace("status: published", "status: draft");
@@ -397,8 +420,8 @@ describe("reconcile", () => {
     fs.utimesSync(post.filePath, later, later);
     clearCache(dataDir);
 
-    expect(listDrafts(dataDir).map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
-    expect(listPublished(dataDir, 0, 10).map((p) => p.frontMatter.id)).not.toContain(
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toContain(post.frontMatter.id);
+    expect(listByStatus(dataDir, "published").map((p) => p.frontMatter.id)).not.toContain(
       post.frontMatter.id,
     );
   });
@@ -408,7 +431,7 @@ describe("reconcile", () => {
     updatePost(dataDir, a.frontMatter.id, { frontMatter: { title: "Kept" } });
     clearCache(dataDir);
 
-    const listed = listDrafts(dataDir).find((p) => p.frontMatter.id === a.frontMatter.id);
+    const listed = listByStatus(dataDir, "draft").find((p) => p.frontMatter.id === a.frontMatter.id);
     expect(listed?.frontMatter.title).toBe("Kept");
   });
 
@@ -420,7 +443,7 @@ describe("reconcile", () => {
     fs.utimesSync(broken.filePath, later, later);
     clearCache(dataDir);
 
-    const draftIds = listDrafts(dataDir).map((post) => post.frontMatter.id);
+    const draftIds = listByStatus(dataDir, "draft").map((post) => post.frontMatter.id);
     expect(draftIds).toContain(keep.frontMatter.id);
     expect(draftIds).not.toContain(broken.frontMatter.id);
     expect(indexBytes()).not.toContain(broken.frontMatter.id);
@@ -438,7 +461,7 @@ describe("reconcile", () => {
     fs.utimesSync(changed.filePath, later, later);
     clearCache(dataDir);
 
-    const matching = listDrafts(dataDir).filter(
+    const matching = listByStatus(dataDir, "draft").filter(
       (post) => post.frontMatter.id === original.frontMatter.id,
     );
     expect(matching).toHaveLength(1);
@@ -455,7 +478,7 @@ describe("reconcile", () => {
     fs.unlinkSync(gone.filePath);
 
     // First access reloads the index and reconciles against disk.
-    const draftIds = listDrafts(dataDir).map((p) => p.frontMatter.id);
+    const draftIds = listByStatus(dataDir, "draft").map((p) => p.frontMatter.id);
     expect(draftIds).toContain(keep.frontMatter.id);
     expect(draftIds).not.toContain(gone.frontMatter.id);
     expect(getPost(dataDir, gone.frontMatter.id)).toBeNull();

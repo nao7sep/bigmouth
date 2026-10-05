@@ -137,4 +137,14 @@ describe("catalogues", () => {
     const native = (catalogue["nativeMenu.about"] as string).replace("{app}", "BigMouth");
     expect(catalogue["left.about"]).toBe(native);
   });
+
+  // A post's Discarded status sits in the same window as the Discard buttons
+  // that throw away unsaved edits, so the two must never read alike.
+  it.each(LANGUAGES)("%s: the Discarded status reads differently from the Discard button", (language) => {
+    const catalogue = catalogues[language];
+    const button = (catalogue["common.discard"] as string).toLocaleLowerCase(language);
+    for (const key of ["status.discarded", "left.discarded"]) {
+      expect((catalogue[key] as string).toLocaleLowerCase(language), key).not.toBe(button);
+    }
+  });
 });

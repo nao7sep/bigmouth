@@ -88,7 +88,7 @@ export interface AppSettingsLoad {
 
 // --- Post ---
 
-export type PostStatus = "draft" | "ready" | "published" | "expired";
+export type PostStatus = "draft" | "discarded" | "verified" | "published" | "retired";
 
 export interface PostFrontMatter {
   id: string;
@@ -107,9 +107,11 @@ export interface PostFrontMatter {
   extra?: string;
   createdAtUtc: string;
   updatedAtUtc?: string; // present on full posts; omitted from list summaries
-  readyAtUtc?: string;
+  discardedAtUtc?: string;
+  verifiedAtUtc?: string;
   publishedAtUtc?: string;
-  expiredAtUtc?: string;
+  retiredAtUtc?: string;
+  locked?: boolean; // content-lifecycle-conventions' locked flag; absent means unlocked
   [key: string]: unknown;
 }
 
@@ -134,9 +136,11 @@ export type PostIndexEntry = {
   tags?: string[];
   sourceId?: string;
   createdAtUtc: string;
-  readyAtUtc?: string;
+  discardedAtUtc?: string;
+  verifiedAtUtc?: string;
   publishedAtUtc?: string;
-  expiredAtUtc?: string;
+  retiredAtUtc?: string;
+  locked?: true;
 };
 
 export interface PostSummary {
@@ -157,22 +161,25 @@ export interface PostMutationResult extends Post {
   summary: PostFrontMatter;
 }
 
-export interface PostListResponse {
-  drafts: PostSummary[];
-  ready: PostSummary[];
-  published: PostSummary[];
-  publishedTotal: number;
-  publishedOffset: number;
-  expired: PostSummary[];
-  expiredTotal: number;
-  expiredOffset: number;
+/**
+ * One status's list section: the posts loaded, how many the status holds, and
+ * where the loaded page starts. A section that loads whole has `total` equal to
+ * its length and `offset` 0.
+ */
+export interface PostListSection {
+  posts: PostSummary[];
+  total: number;
+  offset: number;
 }
+
+/** The Posts list: one section per status. */
+export type PostListResponse = Record<PostStatus, PostListSection>;
 
 /**
  * The subset of front matter a client may edit. Identity (id) and lifecycle
- * fields (status, *AtUtc) are intentionally absent — identity never changes and
- * lifecycle moves only through the dedicated status-change operation. A null value
- * clears the field.
+ * fields (status, *AtUtc, locked) are intentionally absent — identity never
+ * changes, and the lifecycle moves only through the dedicated status and lock
+ * operations. A null value clears the field.
  */
 export interface EditablePostMetadata {
   target?: string | null;
@@ -309,7 +316,7 @@ export interface Settings {
   // every launch, or an IANA zone chosen from the Settings list.
   timezone: string;
   supportedLanguages: string[];
-  publishedPostsPerLoad: number;
+  postsPerLoad: number; // posts per page of each paged list section
   maxUploadMb: number;
   editorWatermark: string;
   extraFieldWatermark: string;

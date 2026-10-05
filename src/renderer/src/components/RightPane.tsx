@@ -6,7 +6,6 @@ import { PreviewTab } from "./PreviewTab";
 import { MetadataTab, type MetadataTabHandle } from "./MetadataTab";
 import { useTablist } from "../hooks/useTablist";
 import type { ContentFont, EditablePostMetadata, PostFrontMatter, Target } from "@shared/types";
-import { isEditLocked } from "@shared/postStatus";
 import { useI18n } from "../i18n/I18nContext";
 import type { MessageKey } from "@shared/i18n/catalogues";
 
@@ -66,7 +65,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
 ) {
   const { t } = useI18n();
   const metadataRef = useRef<MetadataTabHandle>(null);
-  const locked = frontMatter ? isEditLocked(frontMatter.status) : false;
+  const locked = frontMatter?.locked === true;
 
   // The Metadata tab is only meaningful for targets that require metadata.
   const showMetadata = target?.requiresMetadata ?? false;
@@ -170,7 +169,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
                 extraFieldWatermark={extraFieldWatermark}
                 onMetadataEdited={onMetadataEdited}
                 isActive={effectiveTab === "Metadata"}
-                readOnly={locked}
+                locked={locked}
               />
             )}
           </div>
@@ -191,7 +190,7 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             postId={postId}
             onInsertAtCursor={onInsertAtCursor}
             maxUploadMb={maxUploadMb}
-            readOnly={locked}
+            locked={locked}
           />
         )}
       </div>

@@ -12,8 +12,8 @@
  * canonical JSON file.
  *
  * `upsertEntry` is write-gated: an entry equal to the stored one is a no-op, so
- * a content-only autosave (which changes only updatedAtUtc, not the projection)
- * never rewrites the file.
+ * a body-only autosave (which changes updatedAtUtc, not the projection) never
+ * rewrites the file.
  */
 
 import fs from "node:fs";
@@ -287,7 +287,7 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
 
 /**
  * Reads one post file into an index entry, or says why it cannot contribute one
- * — unreadable, malformed front matter, no id, or a status outside the four. A
+ * — unreadable, malformed front matter, no id, or a status outside the five. A
  * bad source file is skipped and logged, never thrown: the index is a derived
  * cache and must tolerate a corrupt or half-written `.md` the same way
  * `readIndexFile` tolerates a corrupt `index.json`, rather than letting one bad
@@ -312,7 +312,7 @@ function tryEntryFromFile(
       logWarn("post file skipped", { fileName, reason });
       return { reason };
     }
-    // A status outside the four reaches no bucket, so an entry built from it
+    // A status outside the five reaches no list section, so an entry built from it
     // would sit in the index describing a post no list can show — indexed by
     // the count, invisible in the app.
     if (!isPostStatus(post.frontMatter.status)) {
@@ -415,9 +415,11 @@ function canonicalEntryObject(entry: PostIndexEntry): Record<string, unknown> {
   if (entry.tags !== undefined) out.tags = entry.tags;
   if (entry.sourceId !== undefined) out.sourceId = entry.sourceId;
   out.createdAtUtc = entry.createdAtUtc;
-  if (entry.readyAtUtc !== undefined) out.readyAtUtc = entry.readyAtUtc;
+  if (entry.discardedAtUtc !== undefined) out.discardedAtUtc = entry.discardedAtUtc;
+  if (entry.verifiedAtUtc !== undefined) out.verifiedAtUtc = entry.verifiedAtUtc;
   if (entry.publishedAtUtc !== undefined) out.publishedAtUtc = entry.publishedAtUtc;
-  if (entry.expiredAtUtc !== undefined) out.expiredAtUtc = entry.expiredAtUtc;
+  if (entry.retiredAtUtc !== undefined) out.retiredAtUtc = entry.retiredAtUtc;
+  if (entry.locked === true) out.locked = true;
   return out;
 }
 

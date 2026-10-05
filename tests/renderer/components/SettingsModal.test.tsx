@@ -58,7 +58,7 @@ function settings(): Settings {
   return {
     timezone: "UTC",
     supportedLanguages: ["en", "ja"],
-    publishedPostsPerLoad: 50,
+    postsPerLoad: 50,
     maxUploadMb: 500,
     editorWatermark: "",
     extraFieldWatermark: "",

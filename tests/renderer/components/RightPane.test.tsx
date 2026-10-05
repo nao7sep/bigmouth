@@ -7,7 +7,7 @@ import type { PostFrontMatter, Target } from "@shared/types";
 // RightPane composes five heavy child tabs that each talk to the backend. We
 // replace them with trivial stand-ins so the test focuses on RightPane's own
 // logic: which tabs are visible, the effective-tab fallback, loading
-// placeholders, the locked/readOnly flag, and flushPendingChanges delegation.
+// placeholders, the locked flag, and flushPendingChanges delegation.
 //
 // MetadataTab needs a forwardRef stand-in so RightPane's imperative handle can
 // reach its flushPendingChanges; the spy is captured per-test below.
@@ -29,7 +29,7 @@ vi.mock("@renderer/components/AssetsTab", () => ({
       aria-labelledby={String(props["aria-labelledby"])}
       className={String(props.className ?? "")}
       data-testid="assets-tab"
-      data-readonly={String(props.readOnly)}
+      data-locked={String(props.locked)}
       id={String(props.id)}
       role={String(props.role)}
     >
@@ -49,7 +49,7 @@ vi.mock("@renderer/components/MetadataTab", () => ({
   ) {
     useImperativeHandle(ref, () => ({ flushPendingChanges: metadataFlush }), []);
     return (
-      <div data-testid="metadata-tab" data-readonly={String(props.readOnly)}>
+      <div data-testid="metadata-tab" data-locked={String(props.locked)}>
         metadata
       </div>
     );
@@ -190,20 +190,19 @@ describe("RightPane loading placeholders", () => {
 });
 
 describe("RightPane locked state", () => {
-  it("passes readOnly=true to Assets and Metadata for a published post", () => {
-    renderPane({ frontMatter: fm({ status: "published" }) });
-    expect(screen.getByTestId("assets-tab").getAttribute("data-readonly")).toBe("true");
-    expect(screen.getByTestId("metadata-tab").getAttribute("data-readonly")).toBe("true");
+  it("passes locked=true to Assets and Metadata for a locked post, whatever its status", () => {
+    renderPane({ frontMatter: fm({ status: "draft", locked: true }) });
+    expect(screen.getByTestId("assets-tab").getAttribute("data-locked")).toBe("true");
+    expect(screen.getByTestId("metadata-tab").getAttribute("data-locked")).toBe("true");
   });
 
-  it("passes readOnly=true for an expired post", () => {
-    renderPane({ frontMatter: fm({ status: "expired" }) });
-    expect(screen.getByTestId("assets-tab").getAttribute("data-readonly")).toBe("true");
-  });
-
-  it("passes readOnly=false for a draft post", () => {
-    renderPane({ frontMatter: fm({ status: "draft" }) });
-    expect(screen.getByTestId("assets-tab").getAttribute("data-readonly")).toBe("false");
+  it("passes locked=false for an unlocked post, whatever its status", () => {
+    for (const status of ["published", "retired"] as const) {
+      cleanup();
+      renderPane({ frontMatter: fm({ status }) });
+      expect(screen.getByTestId("assets-tab").getAttribute("data-locked")).toBe("false");
+      expect(screen.getByTestId("metadata-tab").getAttribute("data-locked")).toBe("false");
+    }
   });
 });
 

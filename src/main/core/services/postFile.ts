@@ -43,10 +43,29 @@ const CANONICAL_KEYS = [
   "extra",
   "createdAtUtc",
   "updatedAtUtc",
-  "readyAtUtc",
+  "discardedAtUtc",
+  "verifiedAtUtc",
   "publishedAtUtc",
-  "expiredAtUtc",
+  "retiredAtUtc",
+  "locked",
 ] as const;
+
+/**
+ * The keys that are not content: identity, the status and its times, the lock,
+ * and the modified time itself. Every other key, unknown hand-added ones
+ * included, is what the author makes (content-lifecycle-conventions' Modified).
+ */
+const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
+  "id",
+  "status",
+  "createdAtUtc",
+  "updatedAtUtc",
+  "discardedAtUtc",
+  "verifiedAtUtc",
+  "publishedAtUtc",
+  "retiredAtUtc",
+  "locked",
+]);
 
 const CANONICAL_KEY_SET = new Set<string>(CANONICAL_KEYS);
 
@@ -75,18 +94,40 @@ export function readPost(filePath: string): Post {
   return { frontMatter, content, filePath };
 }
 
-export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
-  const cleanFm = canonicalizeFrontMatter(frontMatter);
+/** The file text a post serializes to, with the same cleanup the write applies. */
+export function serializePost(frontMatter: PostFrontMatter, content: string): string {
   // The body goes in as `{ content }`, never as a bare string. Handed a string,
   // gray-matter re-parses it as a document first and writes back only what it
   // considers the body — so a post opening with `---` (a thematic break, or
   // Markdown pasted with front matter of its own) had its text taken as YAML:
   // the body was erased from disk and its characters written out as numbered
   // front-matter keys. The object form treats the body as the opaque data it is.
-  const output = matter.stringify(
+  return matter.stringify(
     { content: multiline(content, BODY_MULTILINE_OPTS) },
-    cleanFm,
+    canonicalizeFrontMatter(frontMatter),
   );
+}
+
+/**
+ * A post's content as the write would store it: body, metadata and every other
+ * key the author writes. Two versions with equal snapshots hold the same
+ * content, so a change the write's own cleanup removes is not an edit, and
+ * neither is a status, a status time or the lock.
+ */
+export function contentSnapshot(post: { frontMatter: PostFrontMatter; content: string }): string {
+  return serializePost(contentKeys(post.frontMatter), post.content);
+}
+
+function contentKeys(frontMatter: PostFrontMatter): PostFrontMatter {
+  const content: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(frontMatter)) {
+    if (!NON_CONTENT_KEYS.has(key)) content[key] = value;
+  }
+  return content as PostFrontMatter;
+}
+
+export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
+  const output = serializePost(frontMatter, content);
   // recorded: a post .md file is the primary user-authored durable text this app owns — the very thing
   // the backup exists for. `filePath` is the full absolute path whether the workspace lives internally
   // under ~/.bigmouth/workspaces/ or at a user-chosen external location; either way the same managed-
@@ -164,8 +205,10 @@ export function projectIndexEntry(
   }
   if (Array.isArray(frontMatter.tags) && frontMatter.tags.length > 0) entry.tags = frontMatter.tags;
   if (frontMatter.sourceId) entry.sourceId = frontMatter.sourceId;
-  if (frontMatter.readyAtUtc) entry.readyAtUtc = frontMatter.readyAtUtc;
+  if (frontMatter.discardedAtUtc) entry.discardedAtUtc = frontMatter.discardedAtUtc;
+  if (frontMatter.verifiedAtUtc) entry.verifiedAtUtc = frontMatter.verifiedAtUtc;
   if (frontMatter.publishedAtUtc) entry.publishedAtUtc = frontMatter.publishedAtUtc;
-  if (frontMatter.expiredAtUtc) entry.expiredAtUtc = frontMatter.expiredAtUtc;
+  if (frontMatter.retiredAtUtc) entry.retiredAtUtc = frontMatter.retiredAtUtc;
+  if (frontMatter.locked === true) entry.locked = true;
   return entry;
 }

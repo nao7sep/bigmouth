@@ -12,11 +12,16 @@
  * queueMetadata, the store coalesces them into one disk write per debounce
  * window, and getPost overlays the pending content and metadata so every
  * reader — status changes, AI calls, export — always sees the newest edit
- * without knowing the buffer exists. Because updatePost and changeStatus read
- * through getPost, any full write persists the pending edits as a side effect
- * and clears the buffer. The main process therefore never depends on the
- * renderer to flush: quit calls flushAllPendingEdits and the newest keystroke,
- * in the editor or a metadata field, is on disk.
+ * without knowing the buffer exists. Every write of an unlocked post goes
+ * through rewritePost, which writes the pending edits with it and clears the
+ * buffer. The main process therefore never depends on the renderer to flush:
+ * quit calls flushAllPendingEdits and the newest keystroke, in the editor or a
+ * metadata field, is on disk.
+ *
+ * The modified time (`updatedAtUtc`) follows content-lifecycle-conventions:
+ * rewritePost moves it only when the post's content differs from the file it
+ * read, and an asset change moves it too. A status change, locking and a
+ * save of unchanged text leave it alone.
  *
  * The rule the buffer is built on: the store never reports success for text it
  * did not persist. Text that is not on disk is either retried (a failed write)
@@ -36,10 +41,10 @@ import type {
   EditablePostMetadata,
 } from "../shared/types.js";
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
-import { byCreatedDesc, byExpiredDesc, byPublishedDesc } from "@shared/postOrder";
+import { comparatorFor } from "@shared/postOrder";
 import { postFileName } from "../shared/filenames.js";
-import { readPost, writePost, projectIndexEntry } from "./postFile.js";
-import { applyStatusTransition, isEditLocked } from "../shared/postLifecycle.js";
+import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
+import { applyStatusTransition } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
 import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
@@ -92,7 +97,8 @@ const PENDING_RETRY_DELAY_MS = 5000;
 
 /**
  * One post's newest edits not yet on disk: its content, when the editor changed
- * it, and the metadata fields changed since the last write.
+ * it, the metadata fields changed since the last write, and when the last of
+ * them was made — the modified time they give the post when they are written.
  *
  * `terminal` is why no write from this path can land — the post is gone from
  * the index, or it is locked — and null while the edit is still savable. The
@@ -103,14 +109,12 @@ const PENDING_RETRY_DELAY_MS = 5000;
 interface PendingEdit {
   content?: string;
   frontMatter: EditablePostMetadata;
+  editedAt: Date;
   terminal: string | null;
 }
 
 const POST_MISSING_REASON = "post file is missing";
-
-function lockedReason(status: PostStatus): string {
-  return `post is ${status} and locked`;
-}
+const LOCKED_REASON = "post is locked";
 
 // dataDir -> post id -> newest edits not yet on disk.
 const pendingEdits = new Map<string, Map<string, PendingEdit>>();
@@ -120,14 +124,14 @@ const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
  * What became of a buffered edit. Retryable and terminal are deliberately
  * distinct: `save-failed` is retryable (the same write can land later), while
  * `post-missing` and `locked` are terminal — no retry can bring a deleted file
- * back or unlock a published post, so folding either into the retry loop would
- * spin forever. None is ever silent.
+ * back or unlock a post, so folding either into the retry loop would spin
+ * forever. None is ever silent.
  */
 export type ContentSaveEvent =
   | { kind: "saved"; dataDir: string; id: string; summary: PostIndexEntry }
   | { kind: "save-failed"; dataDir: string; id: string; message: string; error: unknown }
   | { kind: "post-missing"; dataDir: string; id: string }
-  | { kind: "locked"; dataDir: string; id: string; status: PostStatus };
+  | { kind: "locked"; dataDir: string; id: string };
 
 // Single subscriber (the IPC layer), which broadcasts to windows. The store
 // stays free of Electron types.
@@ -149,7 +153,7 @@ function pendingFor(dataDir: string, id: string): PendingEdit {
   }
   let pending = posts.get(id);
   if (!pending) {
-    pending = { frontMatter: {}, terminal: null };
+    pending = { frontMatter: {}, editedAt: utcNow(), terminal: null };
     posts.set(id, pending);
   }
   return pending;
@@ -214,6 +218,7 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
 export function queueContent(dataDir: string, id: string, content: string): void {
   const pending = pendingFor(dataDir, id);
   pending.content = content;
+  pending.editedAt = utcNow();
   scheduleIfSavable(dataDir, id, pending);
 }
 
@@ -237,6 +242,7 @@ export function queueMetadata(dataDir: string, id: string, edits: EditablePostMe
   }
   const pending = pendingFor(dataDir, id);
   Object.assign(pending.frontMatter, edits);
+  pending.editedAt = utcNow();
   scheduleIfSavable(dataDir, id, pending);
   return null;
 }
@@ -247,13 +253,8 @@ function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): v
     reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
     return;
   }
-  if (isEditLocked(entry.status)) {
-    reportTerminal(dataDir, id, lockedReason(entry.status), {
-      kind: "locked",
-      dataDir,
-      id,
-      status: entry.status,
-    });
+  if (entry.locked === true) {
+    reportTerminal(dataDir, id, LOCKED_REASON, { kind: "locked", dataDir, id });
     return;
   }
   // The post is there (or back, or unlocked): a later terminal state is
@@ -273,22 +274,17 @@ export function flushPostEdits(dataDir: string, id: string): boolean {
   if (getPending(dataDir, id) === undefined) return true;
 
   // Re-checked at write time, not only when the edit was queued. The debounce
-  // window is exactly long enough for the post to be published between a
+  // window is exactly long enough for the post to be locked between a
   // keystroke and its write, and the quit flush runs later still — so queue
   // time alone would leave the autosave accident the lock exists to prevent.
   const entry = index.getEntry(dataDir, id);
-  if (entry && isEditLocked(entry.status)) {
-    reportTerminal(dataDir, id, lockedReason(entry.status), {
-      kind: "locked",
-      dataDir,
-      id,
-      status: entry.status,
-    });
+  if (entry?.locked === true) {
+    reportTerminal(dataDir, id, LOCKED_REASON, { kind: "locked", dataDir, id });
     return false;
   }
 
   try {
-    // updatePost reads through the overlay, so an empty update persists the
+    // updatePost writes through the overlay, so an empty update persists the
     // pending edits and clears the buffer.
     const post = updatePost(dataDir, id, {});
     if (!post) {
@@ -347,52 +343,35 @@ export function refreshIndex(dataDir: string): void {
   index.refresh(dataDir);
 }
 
-export function listDrafts(dataDir: string): PostSummary[] {
-  return summaries(dataDir, "draft", byCreatedDesc);
-}
-
-export function listReady(dataDir: string): PostSummary[] {
-  return summaries(dataDir, "ready", byCreatedDesc);
-}
-
-export function listPublished(dataDir: string, offset: number, limit: number): PostSummary[] {
-  return index
-    .listByStatus(dataDir, "published")
-    .sort(byPublishedDesc)
-    .slice(offset, offset + limit)
-    .map((entry) => ({ frontMatter: entry }));
-}
-
-export function countPublished(dataDir: string): number {
-  return index.countByStatus(dataDir, "published");
-}
-
-export function listExpired(dataDir: string, offset: number, limit: number): PostSummary[] {
-  return index
-    .listByStatus(dataDir, "expired")
-    .sort(byExpiredDesc)
-    .slice(offset, offset + limit)
-    .map((entry) => ({ frontMatter: entry }));
-}
-
-export function countExpired(dataDir: string): number {
-  return index.countByStatus(dataDir, "expired");
-}
-
-function summaries(
+/**
+ * One status's posts, in its section's order: all of them, or the page
+ * `page` names.
+ */
+export function listByStatus(
   dataDir: string,
   status: PostStatus,
-  compare: (a: PostIndexEntry, b: PostIndexEntry) => number
+  page?: { offset: number; limit: number },
 ): PostSummary[] {
-  return index
-    .listByStatus(dataDir, status)
-    .sort(compare)
-    .map((entry) => ({ frontMatter: entry }));
+  const sorted = index.listByStatus(dataDir, status).sort(comparatorFor(status));
+  const shown = page ? sorted.slice(page.offset, page.offset + page.limit) : sorted;
+  return shown.map((entry) => ({ frontMatter: entry }));
+}
+
+export function countByStatus(dataDir: string, status: PostStatus): number {
+  return index.countByStatus(dataDir, status);
 }
 
 // --- Read ---
 
 export function getPost(dataDir: string, id: string): Post | null {
+  const post = readFromDisk(dataDir, id);
+  // Read through the write-behind buffer: every reader sees the newest edits.
+  if (post) overlayPending(post, getPending(dataDir, id));
+  return post;
+}
+
+/** The post as its file holds it, or null when it is not indexed or its file is gone. */
+function readFromDisk(dataDir: string, id: string): Post | null {
   const entry = index.getEntry(dataDir, id);
   if (!entry) return null;
 
@@ -402,15 +381,13 @@ export function getPost(dataDir: string, id: string): Post | null {
     index.rebuild(dataDir);
     return null;
   }
-  const post = readPost(filePath);
-  // Read through the write-behind buffer: every reader sees the newest edits,
-  // and any full write (updatePost, changeStatus) persists them as a side effect.
-  const pending = getPending(dataDir, id);
-  if (pending) {
-    if (pending.content !== undefined) post.content = pending.content;
-    applyMetadata(post.frontMatter, pending.frontMatter);
-  }
-  return post;
+  return readPost(filePath);
+}
+
+function overlayPending(post: Post, pending: PendingEdit | undefined): void {
+  if (!pending) return;
+  if (pending.content !== undefined) post.content = pending.content;
+  applyMetadata(post.frontMatter, pending.frontMatter);
 }
 
 /** Applies metadata edits to front matter: null removes a key, undefined leaves it. */
@@ -451,37 +428,77 @@ export function createPost(
   return { frontMatter, content: "", filePath };
 }
 
-// --- Update (content + editable metadata only) ---
+// --- Writes ---
 
+/**
+ * The one way an existing post is written. `change` edits the post as the
+ * file holds it plus, for an unlocked post, its buffered edits — so the write
+ * persists them and clears the buffer. A locked post's buffered edits stay
+ * buffered: only unlocking makes them writable again.
+ *
+ * The modified time moves when the content then differs from the file, or when
+ * `contentEdited` says the post's content changed outside the file (an asset),
+ * and it records when the edit was made: now for `change` itself, and when
+ * they were typed for buffered edits, which can be written seconds or minutes
+ * later. A file that would not change is not written at all. The filename is
+ * derived from immutable fields, so it never changes.
+ */
+function rewritePost(
+  dataDir: string,
+  id: string,
+  change: (post: Post) => void,
+  contentEdited = false,
+): Post | null {
+  const onDisk = readFromDisk(dataDir, id);
+  if (!onDisk) return null;
+
+  const post = structuredClone(onDisk);
+  const writesPending = onDisk.frontMatter.locked !== true;
+  const pending = writesPending ? getPending(dataDir, id) : undefined;
+  overlayPending(post, pending);
+  const onFile = contentSnapshot(onDisk);
+  const buffered = contentSnapshot(post);
+  change(post);
+
+  const fm = post.frontMatter;
+  const written = contentSnapshot(post);
+  if (contentEdited || (written !== onFile && written !== buffered)) {
+    fm.updatedAtUtc = formatUtcIso(utcNow());
+  } else if (pending && written !== onFile) {
+    fm.updatedAtUtc = formatUtcIso(pending.editedAt);
+  }
+  if (serializePost(onDisk.frontMatter, onDisk.content) !== serializePost(fm, post.content)) {
+    writePost(post.filePath, fm, post.content);
+  }
+  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
+
+  if (writesPending) clearPending(dataDir, id);
+  return post;
+}
+
+/** Writes content and editable metadata. The caller has refused a locked post. */
 export function updatePost(
   dataDir: string,
   id: string,
   updates: { content?: string; frontMatter?: EditablePostMetadata }
 ): Post | null {
-  const post = getPost(dataDir, id);
-  if (!post) return null;
-
-  const fm = post.frontMatter;
-  if (updates.frontMatter) {
-    const requestedSlug = updates.frontMatter.slug;
-    if (typeof requestedSlug === "string" && requestedSlug.length > 0) {
-      const conflict = slugConflictMessage(dataDir, id, requestedSlug);
-      if (conflict) throw new Error(`Another post already uses the slug ${JSON.stringify(requestedSlug)}`);
+  return rewritePost(dataDir, id, (post) => {
+    const requestedSlug = updates.frontMatter?.slug;
+    if (typeof requestedSlug === "string" && requestedSlug.length > 0 && slugConflictMessage(dataDir, id, requestedSlug)) {
+      throw new Error(`Another post already uses the slug ${JSON.stringify(requestedSlug)}`);
     }
-    applyMetadata(fm, updates.frontMatter);
-  }
-  fm.updatedAtUtc = formatUtcIso(utcNow());
+    if (updates.frontMatter) applyMetadata(post.frontMatter, updates.frontMatter);
+    if (updates.content !== undefined) post.content = updates.content;
+  });
+}
 
-  if (updates.content !== undefined) post.content = updates.content;
-
-  // The filename is derived from immutable fields, so it never changes.
-  writePost(post.filePath, fm, post.content);
-  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
-
-  // What was written is the newest of everything — the overlay carried in by
-  // getPost, or an explicit update that supersedes it.
-  clearPending(dataDir, id);
-  return post;
+/**
+ * Records that a post's attached files changed — an asset uploaded, replaced
+ * or deleted — by moving its modified time, with any buffered edits. The
+ * caller has refused a locked post.
+ */
+export function recordAssetChange(dataDir: string, id: string): Post | null {
+  return rewritePost(dataDir, id, () => {}, true);
 }
 
 /**
@@ -506,24 +523,27 @@ function slugConflictMessage(dataDir: string, id: string, slug: string): Message
   return null;
 }
 
-// --- Status change ---
+// --- Status and lock ---
 
+/** Moves a post to `newStatus`, locked or not. Selecting the current status writes nothing. */
 export function changeStatus(dataDir: string, id: string, newStatus: PostStatus): Post | null {
-  const post = getPost(dataDir, id);
-  if (!post) return null;
+  const current = getPost(dataDir, id);
+  if (!current || current.frontMatter.status === newStatus) return current;
+  return rewritePost(dataDir, id, (post) => applyStatusTransition(post.frontMatter, newStatus, utcNow()));
+}
 
-  const fm = post.frontMatter;
-  if (fm.status === newStatus) return post;
-
-  const now = utcNow();
-  applyStatusTransition(fm, newStatus, now);
-  fm.updatedAtUtc = formatUtcIso(now);
-
-  writePost(post.filePath, fm, post.content);
-  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
-
-  // The write carried the overlay (getPost applied it above).
-  clearPending(dataDir, id);
+/**
+ * Locks or unlocks a post. Locking writes the buffered edits first, as part
+ * of the same write; unlocking makes edits kept while it was locked savable
+ * again. The lock itself moves no time.
+ */
+export function setLocked(dataDir: string, id: string, locked: boolean): Post | null {
+  const post = rewritePost(dataDir, id, (next) => {
+    if (locked) next.frontMatter.locked = true;
+    else delete next.frontMatter.locked;
+  });
+  const pending = getPending(dataDir, id);
+  if (post && !locked && pending) scheduleIfSavable(dataDir, id, pending);
   return post;
 }
 
@@ -560,8 +580,8 @@ export function deletePost(dataDir: string, id: string): boolean {
 
   // Referential integrity: a post that links the deleted one as its source
   // would otherwise dangle, so clear that link. This is a system operation, not
-  // a user edit, so it is exempt from the published lock and does not bump
-  // updatedAtUtc — mirroring renameTarget.
+  // a user edit, so it is exempt from the lock and does not move updatedAtUtc
+  // — mirroring renameTarget.
   clearSourceReferences(dataDir, id);
 
   const filePath = filePathFor(dataDir, entry);
@@ -606,7 +626,8 @@ export interface BulkRewriteResult {
 
 /**
  * Rewrites the front matter of every indexed post that `matches`, as a system
- * operation: exempt from the published lock, and updatedAtUtc is left alone.
+ * operation: exempt from the lock, and updatedAtUtc is left alone — a rewrite
+ * the app makes on its own is not an edit (content-lifecycle-conventions).
  *
  * A post file that cannot be read (hand-edited into invalid YAML) is skipped
  * and reported, not thrown, as the index skips such a file; it is not a post
