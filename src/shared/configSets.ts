@@ -1,7 +1,7 @@
 import type { Settings } from "./types.js";
 import { settingsSetErrors } from "./settingsValidation.js";
 import { GENERATION_PROMPT_KEYS } from "./metadataFields.js";
-import { AI_ROLE_IDS, defaultThinkingFor, rowFor, thinkingFor, type AiRole } from "./aiModels.js";
+import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "./aiModels.js";
 
 export const SETTINGS_SET_KEYS = [
   "timezone", "supportedLanguages", "publishedPostsPerLoad", "maxUploadMb",
@@ -123,7 +123,7 @@ function equalsBuiltIn(key: string, values: Record<string, unknown>, builtIn: Re
   const thinkingRole = THINKING_SET_ROLES.get(key);
   if (thinkingRole) {
     const row = rowFor(String(values[modelSetKey(thinkingRole)] ?? ""));
-    return !row || thinkingFor(row.id, thinkingRole, String(value)) === defaultThinkingFor(row, thinkingRole);
+    return !row || thinkingFor(row.id, String(value)) === row.defaultThinking;
   }
   if (MODEL_SET_ROLES.has(key)) {
     return typeof value === "string" && value.trim().toLowerCase() === String(builtIn[key]).toLowerCase();

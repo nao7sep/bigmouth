@@ -5,6 +5,9 @@
 export type AiProvider = "anthropic";
 export type ModelKind = "text-frontier" | "text-smart" | "text-balanced" | "text-fast";
 
+// The lineup research document the rows and defaults below come from.
+export const MODEL_LINEUP = "ai-model-lineup-20261004";
+
 export const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
 
 // Product names, a display mapping at the interface edge; the id is the api-key id.
@@ -16,17 +19,20 @@ export interface SupportedModel {
   kinds: readonly ModelKind[];
   defaultFor: readonly ModelKind[];
   // The thinking values the model accepts, in the provider's own words, in the
-  // order its field lists them (thinking-values research).
+  // order its field lists them.
   thinking: readonly string[];
+  // The value a role takes on this model until the user changes it; it follows
+  // the model's tier, not the role's (ai-model-routing-conventions, Thinking).
+  defaultThinking: string;
 }
 
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export const SUPPORTED_MODELS: readonly SupportedModel[] = [
-  { provider: "anthropic", id: "claude-fable-5-1", kinds: ["text-frontier"], defaultFor: [], thinking: ["adaptive", ...EFFORT_LEVELS] },
-  { provider: "anthropic", id: "claude-opus-5-5", kinds: ["text-smart"], defaultFor: ["text-smart"], thinking: ["adaptive", ...EFFORT_LEVELS] },
-  { provider: "anthropic", id: "claude-sonnet-5-5", kinds: ["text-balanced"], defaultFor: ["text-balanced"], thinking: ["between_tools", "adaptive", ...EFFORT_LEVELS] },
-  { provider: "anthropic", id: "claude-haiku-4-5", kinds: ["text-fast"], defaultFor: ["text-fast"], thinking: ["off"] },
+  { provider: "anthropic", id: "claude-fable-5-1", kinds: ["text-frontier"], defaultFor: [], thinking: ["adaptive", ...EFFORT_LEVELS], defaultThinking: "adaptive" },
+  { provider: "anthropic", id: "claude-opus-5-5", kinds: ["text-smart"], defaultFor: ["text-smart"], thinking: ["adaptive", ...EFFORT_LEVELS], defaultThinking: "adaptive" },
+  { provider: "anthropic", id: "claude-sonnet-5-5", kinds: ["text-balanced"], defaultFor: ["text-balanced"], thinking: ["between_tools", "adaptive", ...EFFORT_LEVELS], defaultThinking: "adaptive" },
+  { provider: "anthropic", id: "claude-haiku-4-5", kinds: ["text-fast"], defaultFor: ["text-fast"], thinking: ["off"], defaultThinking: "off" },
 ];
 
 export const AI_ROLES = [
@@ -62,21 +68,12 @@ export function defaultModelFor(provider: AiProvider, kind: ModelKind): string {
   return row.id;
 }
 
-// A fast role thinks as little as the row allows; every other role thinks
-// adaptively where the row offers it, else at medium, else at its first value.
-export function defaultThinkingFor(row: SupportedModel, role: AiRole): string {
-  if (kindOf(role) === "text-fast") {
-    return row.thinking.find((value) => value === "off" || value === "none") ?? row.thinking[0]!;
-  }
-  return ["adaptive", "medium"].find((value) => row.thinking.includes(value)) ?? row.thinking[0]!;
-}
-
 // The value a role sends: its chosen value when the model's row lists it, else the
-// role's default for that row; a model with no row sends no thinking value.
-export function thinkingFor(model: string, role: AiRole, chosen: string): string | undefined {
+// row's default; a model with no row sends no thinking value.
+export function thinkingFor(model: string, chosen: string): string | undefined {
   const row = rowFor(model);
   if (!row) return undefined;
-  return row.thinking.includes(chosen) ? chosen : defaultThinkingFor(row, role);
+  return row.thinking.includes(chosen) ? chosen : row.defaultThinking;
 }
 
 // A row with one thinking value offers no choice, so it shows no Thinking field.

@@ -137,7 +137,7 @@ export function getRoleCall(workspace: Workspace, role: AiRole): RoleCall {
   return {
     endpoint: section.endpoint,
     model,
-    thinking: thinkingFor(model, role, section.thinking[role]),
+    thinking: thinkingFor(model, section.thinking[role]),
     apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, "anthropic"),
   };
 }
@@ -151,7 +151,7 @@ export function getAnthropicSettingsForClient(workspace: Workspace): AnthropicSe
   const section = anthropicSection(readConfig(workspace.dataDirectory));
   const thinking = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) {
-    thinking[role] = thinkingFor(section.models[role], role, section.thinking[role]) ?? section.thinking[role];
+    thinking[role] = thinkingFor(section.models[role], section.thinking[role]) ?? section.thinking[role];
   }
   return {
     ...section,

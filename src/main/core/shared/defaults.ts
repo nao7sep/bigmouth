@@ -4,7 +4,7 @@
 
 import type { Settings, AnalysisPrompt, GenerationPromptsData, WorkspaceConfig } from "./types.js";
 import { DEFAULT_CONTENT_FONT, type AnthropicSettings } from "@shared/types";
-import { AI_ROLE_IDS, ANTHROPIC_ENDPOINT, defaultModelFor, defaultThinkingFor, kindOf, rowFor, type AiRole } from "@shared/aiModels";
+import { AI_ROLE_IDS, ANTHROPIC_ENDPOINT, defaultModelFor, kindOf, rowFor, type AiRole } from "@shared/aiModels";
 import { modelSetKey, thinkingSetKey, type AnthropicSetKey } from "@shared/configSets";
 import { SYSTEM_TIME_ZONE } from "@shared/timeZone";
 import { DEFAULT_GENERATION_PROMPTS } from "../ai/generationPrompts.js";
@@ -15,7 +15,7 @@ export function defaultAnthropicSettings(): AnthropicSettings {
   const thinking = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) {
     models[role] = defaultModelFor("anthropic", kindOf(role));
-    thinking[role] = defaultThinkingFor(rowFor(models[role])!, role);
+    thinking[role] = rowFor(models[role])!.defaultThinking;
   }
   return { endpoint: ANTHROPIC_ENDPOINT, models, thinking };
 }

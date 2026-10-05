@@ -350,8 +350,11 @@ describe("settings stored by set", () => {
 
   it("changing one role's model writes only that role's set", () => {
     const defaults = defaultAnthropicSettings();
-    saveAnthropicSettings(ws, { ...defaults, models: { ...defaults.models, metadata: "claude-sonnet-5-5" }, thinking: { ...defaults.thinking, metadata: "between_tools" } });
+    // Sonnet's own default is adaptive, whichever role chooses it.
+    saveAnthropicSettings(ws, { ...defaults, models: { ...defaults.models, metadata: "claude-sonnet-5-5" }, thinking: { ...defaults.thinking, metadata: "adaptive" } });
     expect(saved()).toEqual({ "anthropic.metadata": "claude-sonnet-5-5" });
+    saveAnthropicSettings(ws, { ...defaults, models: { ...defaults.models, metadata: "claude-sonnet-5-5" }, thinking: { ...defaults.thinking, metadata: "between_tools" } });
+    expect(saved()).toEqual({ "anthropic.metadata": "claude-sonnet-5-5", "anthropic.thinking.metadata": "between_tools" });
   });
 
   it("saving a set equal to its built-in removes its key and keeps the file", () => {

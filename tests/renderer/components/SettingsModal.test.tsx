@@ -261,6 +261,27 @@ describe("SettingsModal — AI tab model fields", () => {
     expect([...fields[0]!.options].map((option) => option.value)).not.toContain("between_tools");
   });
 
+  it("takes the Thinking default from the chosen model's tier, not the role's, and lists that model's values", async () => {
+    const { getByRole } = await renderModal();
+    const thinkingFields = () => within(getByRole("tabpanel")).getAllByLabelText("Thinking") as HTMLSelectElement[];
+    const options = (field: HTMLSelectElement) => [...field.options].map((option) => option.value);
+    const panel = openAiTab(getByRole);
+    // Metadata is a fast role on Haiku, which shows no field; Sonnet brings its own adaptive default.
+    expect(thinkingFields()).toHaveLength(2);
+    fireEvent.change(within(panel).getByLabelText("Metadata model"), { target: { value: "claude-sonnet-5-5" } });
+    expect(thinkingFields()).toHaveLength(3);
+    expect(thinkingFields()[1]!.value).toBe("adaptive");
+    expect(options(thinkingFields()[1]!)).toEqual(["between_tools", "adaptive", "low", "medium", "high", "xhigh", "max"]);
+    for (const model of ["claude-fable-5-1", "claude-opus-5-5"]) {
+      fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Metadata model"), { target: { value: model } });
+      expect(thinkingFields()[1]!.value, model).toBe("adaptive");
+      expect(options(thinkingFields()[1]!), model).toEqual(["adaptive", "low", "medium", "high", "xhigh", "max"]);
+    }
+    // Back on Haiku the field goes again.
+    fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Metadata model"), { target: { value: "claude-haiku-4-5" } });
+    expect(thinkingFields()).toHaveLength(2);
+  });
+
   it("gates Save on an empty model or an endpoint that is not an http(s) address", async () => {
     const { getByRole } = await renderModal();
     const panel = openAiTab(getByRole);
