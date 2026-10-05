@@ -35,6 +35,35 @@ describe("buildClaudeParams", () => {
     expect(params("claude-sonnet-5-5", "max")).toMatchObject({ thinking: ADAPTIVE, output_config: { effort: "max" } });
   });
 
+  it("sends every effort level a 5.x row lists as chosen, its API default included", () => {
+    // Opus 5.5's API default effort is medium, Fable 5.1's and Sonnet 5.5's high:
+    // a value equal to that default is still sent, never left out.
+    for (const model of ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"]) {
+      for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+        expect(params(model, effort), `${model} ${effort}`).toEqual({
+          model,
+          max_tokens: MAX_TOKENS,
+          thinking: ADAPTIVE,
+          messages: [{ role: "user", content: "usr" }],
+          system: "sys",
+          output_config: { effort },
+        });
+      }
+    }
+  });
+
+  it("sends the feature's strict JSON format as given, for every row and the plain request", () => {
+    for (const [model, thinking] of [
+      ["claude-fable-5-1", "adaptive"],
+      ["claude-opus-5-5", "medium"],
+      ["claude-sonnet-5-5", "between_tools"],
+      ["claude-haiku-4-5", "off"],
+      ["claude-next-9", undefined],
+    ] as const) {
+      expect(params(model, thinking, FORMAT).output_config?.format, model).toEqual(FORMAT);
+    }
+  });
+
   it("sends Sonnet 5.5's between_tools as its own thinking type, with no other thinking field", () => {
     const request = params("claude-sonnet-5-5", "between_tools", FORMAT);
     expect(request.thinking).toEqual({ type: "between_tools" });
