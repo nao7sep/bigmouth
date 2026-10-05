@@ -24,8 +24,9 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { getBackupsDbPath } from "./storagePaths.js";
+import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
 import { warn as logWarn, serializeError } from "./logger.js";
 
 /** The store file under the resolved storage root. Computed lazily (not frozen into a module constant
@@ -73,7 +74,6 @@ function ensureOpen(): DatabaseSync | null {
   // hook before initAppDir, as a unit test can), and a resolver that threw once will throw again; calling
   // it inside the catch would let that second throw escape the whole best-effort wrapper.
   let file = "<unresolved>";
-  let opened: DatabaseSync | null = null;
   try {
     file = storeFile();
     // not recorded: backups.sqlite3 is the store itself — binary, and written by this backup layer, not
@@ -82,24 +82,27 @@ function ensureOpen(): DatabaseSync | null {
     // The storage root already exists (initAppDir mkdir's it at startup); this mkdir is a cheap guard so
     // the store can still open under a root a test relocated to.
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    opened = new DatabaseSync(file);
-    opened.exec("PRAGMA journal_mode = WAL");
-    // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
-    // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
-    opened.exec("PRAGMA busy_timeout = 5000");
-    opened.exec(SCHEMA);
-    db = opened;
-  } catch (err) {
-    try {
-      opened?.close();
-    } catch {
-      // The initialization error below is the useful diagnostic. Releasing a
-      // partially opened handle is best-effort on the already-failed path.
-    }
-    logWarn("backup store: could not open; recording disabled for this session", {
-      file,
-      error: serializeError(err),
+    // A store a newer version of BigMouth wrote is refused before anything is written to it, and left
+    // exactly as it is (store-recovery-conventions).
+    db = openSqliteStore("backups", file, (opened) => {
+      opened.exec("PRAGMA journal_mode = WAL");
+      // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
+      // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
+      opened.exec("PRAGMA busy_timeout = 5000");
+      opened.exec(SCHEMA);
     });
+  } catch (err) {
+    if (err instanceof NewerFormatError) {
+      logWarn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", {
+        file,
+        formatVersion: err.version,
+      });
+    } else {
+      logWarn("backup store: could not open; recording disabled for this session", {
+        file,
+        error: serializeError(err),
+      });
+    }
     db = null;
   }
   return db;

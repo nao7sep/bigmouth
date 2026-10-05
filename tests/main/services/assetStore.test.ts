@@ -11,6 +11,7 @@ import {
   assetDir,
   type AssetMeta,
 } from "@main/core/services/assetStore.js";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 
 let dataDir: string;
 const POST = "post-1";
@@ -178,16 +179,46 @@ describe("listAssets self-heals against the files on disk", () => {
 
     // The next upload and the next delete write the list back to meta.json.
     saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
-    const afterUpload = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")) as AssetMeta[];
+    const afterUpload = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")).assets as AssetMeta[];
     expect(afterUpload.find((a) => a.filename === "a.png")).toEqual({ filename: "a.png", size: 3 });
     expect(afterUpload.find((a) => a.filename === "b.png")?.uploadedAt).toBe("2026-01-01T00:00:00.000Z");
 
     fs.writeFileSync(path.join(dir, "c.png"), "xyz");
     deleteAsset(dataDir, POST, "b.png");
-    const afterDelete = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")) as AssetMeta[];
+    const afterDelete = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")).assets as AssetMeta[];
     expect(afterDelete).toEqual([
       { filename: "a.png", size: 3 },
       { filename: "c.png", size: 3 },
     ]);
+  });
+});
+
+// store-recovery-conventions: meta.json's format version.
+describe("asset metadata format version", () => {
+  const metaFile = () => path.join(assetDir(dataDir, POST), "meta.json");
+
+  it("writes this build's format version and reads the list back", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    expect(JSON.parse(fs.readFileSync(metaFile(), "utf-8"))).toEqual({ formatVersion: 1, assets: [meta("a.png")] });
+    expect(listAssets(dataDir, POST)).toEqual([meta("a.png")]);
+  });
+
+  it("reads a meta.json with no format version as version 1", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...meta("a.png"), width: 7 }] }));
+    expect(listAssets(dataDir, POST)).toEqual([{ ...meta("a.png"), width: 7 }]);
+  });
+
+  it("lists from the files over a meta.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const body = JSON.stringify({ formatVersion: 2, items: [] });
+    fs.writeFileSync(metaFile(), body);
+
+    expect(listAssets(dataDir, POST)).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(() => saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(NewerFormatError);
+    expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(NewerFormatError);
+
+    expect(fs.readFileSync(metaFile(), "utf-8")).toBe(body);
+    expect(fs.readdirSync(assetDir(dataDir, POST)).sort()).toEqual(["a.png", "meta.json"]);
   });
 });

@@ -11,6 +11,7 @@ import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, upda
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
@@ -416,5 +417,48 @@ describe("deleteWorkspace", () => {
 
   it("returns false for an unknown workspace id", () => {
     expect(deleteWorkspace("nope")).toBe(false);
+  });
+});
+
+// store-recovery-conventions: the registry's format version.
+describe("workspace registry format version", () => {
+  const registry = () => path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
+
+  it("writes this build's format version and reads the registry back", () => {
+    const ws = createWorkspace("A", tempDir("fmt"));
+    expect(JSON.parse(fs.readFileSync(registry(), "utf8"))).toEqual({ formatVersion: 1, workspaces: [ws] });
+    expect(initAppDir().workspaces).toEqual([ws]);
+  });
+
+  it("reads a registry with no format version as version 1", () => {
+    const dir = tempDir("fmt");
+    fs.writeFileSync(registry(), JSON.stringify({ workspaces: [{ id: "a", name: "A", dataDirectory: dir }] }));
+    expect(initAppDir().workspaces).toEqual([{ id: "a", name: "A", dataDirectory: dir }]);
+  });
+
+  it("halts on a registry a newer version wrote, naming it, and leaves it byte-identical", () => {
+    const body = JSON.stringify({ formatVersion: 2, workspaces: { future: true } });
+    fs.writeFileSync(registry(), body);
+
+    expect(() => initAppDir()).toThrow(NewerFormatError);
+    expect(() => initAppDir()).toThrow(registry());
+    expect(fs.readFileSync(registry(), "utf8")).toBe(body);
+  });
+
+  it("opens a workspace folder whose config.json a newer version wrote, leaving the file to say so when read", () => {
+    const dir = tempDir("fmt");
+    initializeWorkspaceData(dir);
+    const body = JSON.stringify({ formatVersion: 2, sets: {} });
+    fs.writeFileSync(path.join(dir, "config.json"), body);
+
+    expect(openWorkspace(dir).dataDirectory).toBe(dir);
+    expect(fs.readFileSync(path.join(dir, "config.json"), "utf8")).toBe(body);
+  });
+
+  it("opens a workspace folder whose config.json holds only its format version", () => {
+    const dir = tempDir("fmt");
+    initializeWorkspaceData(dir);
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ formatVersion: 1 }));
+    expect(openWorkspace(dir).dataDirectory).toBe(dir);
   });
 });

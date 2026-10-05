@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   closeRecords,
@@ -13,6 +14,7 @@ import {
   writeLogRecord,
   writeProviderCall,
 } from "@main/core/services/recordsStore.js";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 
 let root: string;
 
@@ -69,5 +71,60 @@ describe("stored-record signal", () => {
     expect(currentRecordsSession()).toBeNull();
     openRecords(path.join(root, "records.sqlite3"), path.join(root, "logs"), start);
     expect(currentRecordsSession()).toBe(start.toISOString());
+  });
+});
+
+// store-recovery-conventions: records.sqlite3's format version.
+describe("records database format version", () => {
+  function userVersion(file: string): number {
+    const db = new DatabaseSync(file);
+    try {
+      return (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+    } finally {
+      db.close();
+    }
+  }
+
+  it("stamps this build's format version and opens it again", () => {
+    const file = path.join(root, "records.sqlite3");
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    closeRecords();
+    expect(userVersion(file)).toBe(1);
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    const stored = vi.fn();
+    onRecordStored(stored);
+    line();
+    expect(stored).toHaveBeenCalledOnce();
+  });
+
+  it("reads a database with no format version as version 1", () => {
+    const file = path.join(root, "records.sqlite3");
+    const db = new DatabaseSync(file);
+    db.exec("CREATE TABLE earlier (id INTEGER)");
+    db.close();
+
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    const stored = vi.fn();
+    onRecordStored(stored);
+    line();
+    expect(stored).toHaveBeenCalledOnce();
+  });
+
+  it("writes to the fallback file over a database a newer version wrote, leaving it byte-identical", () => {
+    const file = path.join(root, "records.sqlite3");
+    const db = new DatabaseSync(file);
+    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 2");
+    db.close();
+    const bytes = fs.readFileSync(file);
+
+    const refused = openRecords(file, path.join(root, "logs"), new Date());
+    expect(refused).toBeInstanceOf(NewerFormatError);
+    expect(refused?.filePath).toBe(file);
+    line();
+    closeRecords();
+
+    expect(fs.readdirSync(path.join(root, "logs"))).toHaveLength(1);
+    expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+    expect(fs.readdirSync(root).sort()).toEqual(["logs", "records.sqlite3"]);
   });
 });

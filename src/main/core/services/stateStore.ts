@@ -21,15 +21,17 @@
  *     conventions exclude. It is still written atomically.
  */
 
-import fs from "node:fs";
 import type { UiState } from "../shared/types.js";
 import { defaultUiState } from "@shared/types";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { getStateJsonPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
 let uiState: UiState | null = null;
+// Set when a newer version of BigMouth wrote state.json: it is never written.
+let newerFormat = false;
 
 /**
  * Coerces an arbitrary parsed value into a valid UiState, replacing any bad or
@@ -67,38 +69,39 @@ function normalizeUiState(raw: unknown): UiState {
  * Resolves state.json under the storage root and loads it. Must run after
  * initAppDir() (it derives the path from getAppRoot()). A missing file leaves
  * defaults in memory without writing; an unreadable/invalid one self-heals to
- * defaults; the next deliberate view-state update replaces it.
+ * defaults; the next deliberate view-state update replaces it. One a newer
+ * version of BigMouth wrote is left exactly as it is: this launch keeps its view
+ * state in memory only.
  */
 export function initStateStore(): UiState {
   stateJsonPath = getStateJsonPath();
+  newerFormat = false;
+  uiState = defaultUiState();
 
-  if (!fs.existsSync(stateJsonPath)) {
-    // First run (or the user cleared it): defaults, written lazily on first update.
-    uiState = defaultUiState();
-    return uiState;
-  }
-
-  try {
-    const raw = fs.readFileSync(stateJsonPath, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      // Parses but does not fit its shape: corrupt, same branch as bad JSON
-      // (storage-path conventions) — never coerced and then overwritten by the
-      // first pane drag.
-      throw new Error("state.json does not contain a JSON object");
-    }
-    uiState = normalizeUiState(parsed);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      // Missing is the normal first-run case; state materializes on first use.
-      uiState = defaultUiState();
-      return uiState;
-    }
-    warn("state.json unreadable; using defaults", {
-      error: serializeError(err),
-      path: stateJsonPath,
-    });
-    uiState = defaultUiState();
+  const read = readJsonStore("state", stateJsonPath);
+  switch (read.kind) {
+    case "absent":
+      // First run (or the user cleared it): defaults, written lazily on first update.
+      break;
+    case "newer":
+      newerFormat = true;
+      warn("state.json was written by a newer version of BigMouth; left unchanged, view state is kept in memory", {
+        path: stateJsonPath,
+        formatVersion: read.version,
+      });
+      break;
+    case "unreadable":
+      // Parsing but not fitting its shape is corrupt, same branch as bad JSON —
+      // never coerced and then overwritten by the first pane drag.
+      warn("state.json unreadable; using defaults", {
+        detail: read.detail,
+        ...(read.error ? { error: serializeError(read.error) } : {}),
+        path: stateJsonPath,
+      });
+      break;
+    case "read":
+      uiState = normalizeUiState(read.value);
+      break;
   }
   return uiState;
 }
@@ -126,9 +129,10 @@ export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
   const next = normalizeUiState({ ...ensureLoaded(), ...patch });
   uiState = next;
+  if (newerFormat) return next;
   // not recorded: state.json is volatile state and nothing else (pane widths, zoom,
   // last selections), so the data-backup conventions keep it out of backups.sqlite3.
   // It is still written atomically (temp file, then rename).
-  writeFileAtomic(stateJsonPath, JSON.stringify(next, null, 2) + "\n");
+  writeFileAtomic(stateJsonPath, jsonStoreText("state", { ...next }));
   return next;
 }

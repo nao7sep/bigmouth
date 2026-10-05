@@ -13,6 +13,7 @@ import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
+import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import {
@@ -38,7 +39,7 @@ function defaultAppConfig(): AppConfig {
  * is only reasonable when the user can act on it, and `BIGMOUTH_DATA_DIR` can put
  * the registry anywhere.
  */
-function parseAppConfig(raw: unknown, filePath: string): AppConfig {
+function parseAppConfig(source: Record<string, unknown>, filePath: string): AppConfig {
   // A function declaration, not an arrow: TypeScript narrows on a `never` return
   // from one, which is what lets the callers below read as plain guards instead
   // of needing an unreachable throw after each.
@@ -48,9 +49,6 @@ function parseAppConfig(raw: unknown, filePath: string): AppConfig {
     );
   }
 
-  if (!raw || typeof raw !== "object") reject("it does not contain a JSON object");
-
-  const source = raw as Record<string, unknown>;
   const entries = source.workspaces;
   if (!Array.isArray(entries)) reject("its `workspaces` key is not an array");
 
@@ -91,26 +89,25 @@ export function initAppDir(): AppConfig {
   initStorageRoot();
   const registryPath = getWorkspacesJsonPath();
 
-  if (fs.existsSync(registryPath)) {
-    const raw = fs.readFileSync(registryPath, "utf-8");
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (cause) {
+  const read = readJsonStore("workspaces", registryPath);
+  switch (read.kind) {
+    case "absent":
+      appConfig = defaultAppConfig();
+      writeAppConfig();
+      break;
+    case "newer":
+      // Left exactly as it is, so the version that wrote it can still read it.
+      throw new NewerFormatError(registryPath, read.version);
+    case "unreadable":
       // A halt has to name the store AND its path and say the file was left in
-      // place, because halting only makes sense when there is a way back. A bare
-      // JSON.parse threw a SyntaxError, which reached the user as a startup
-      // dialog reading "Unexpected end of JSON input" — naming neither the file
-      // nor where it is, and BIGMOUTH_DATA_DIR can put it anywhere.
-      throw new Error(
-        `Cannot read the workspace registry at ${registryPath}: the file is not valid JSON. It was left unchanged.`,
-        { cause },
-      );
-    }
-    appConfig = parseAppConfig(parsed, registryPath);
-  } else {
-    appConfig = defaultAppConfig();
-    writeAppConfig();
+      // place, because halting only makes sense when there is a way back, and
+      // BIGMOUTH_DATA_DIR can put it anywhere.
+      throw new Error(`Cannot read the workspace registry at ${registryPath}: ${read.detail}. It was left unchanged.`, {
+        cause: read.error ?? undefined,
+      });
+    case "read":
+      appConfig = parseAppConfig(read.value, registryPath);
+      break;
   }
 
   return appConfig;
@@ -120,7 +117,7 @@ function writeAppConfig(): void {
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
   // folders themselves survive, so it is exactly the managed text the backup exists to protect.
-  writeManagedText(getWorkspacesJsonPath(), JSON.stringify(appConfig, null, 2) + "\n");
+  writeManagedText(getWorkspacesJsonPath(), jsonStoreText("workspaces", { workspaces: ensureLoaded().workspaces }));
 }
 
 function ensureLoaded(): AppConfig {
@@ -153,16 +150,18 @@ function isWorkspaceDirectory(dir: string): boolean {
   });
   if (!dirsPresent) return false;
 
-  // An untouched workspace has no config file; a present one must be a workspace config.
-  const configPath = path.join(dir, "config.json");
-  if (!fs.existsSync(configPath)) return true;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  } catch {
-    return false;
+  // An untouched workspace has no config file; a present one must be a workspace
+  // config. One a newer version of BigMouth wrote is one; opening it says so.
+  const read = readJsonStore("workspaceConfig", path.join(dir, "config.json"));
+  switch (read.kind) {
+    case "absent":
+    case "newer":
+      return true;
+    case "unreadable":
+      return false;
+    case "read":
+      return isWorkspaceConfig(read.value);
   }
-  return isWorkspaceConfig(parsed);
 }
 
 /**

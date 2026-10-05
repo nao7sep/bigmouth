@@ -2,8 +2,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { formatForFilenameMs, formatUtcIso } from "../shared/timestamps.js";
+import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS log_records (
@@ -76,23 +77,21 @@ export function onRecordStored(listener: (() => void) | null): void {
 
 /**
  * Opens the database for one session, a process launch named by its start time. When it cannot be
- * opened, every entry goes to the session's fallback file under `logsDir` instead.
+ * opened, every entry goes to the session's fallback file under `logsDir` instead. A database a newer
+ * version of BigMouth wrote is left exactly as it is, and returned as the refusal for the caller to log.
  */
-export function openRecords(dbPath: string, logsDir: string, sessionStart: Date): void {
+export function openRecords(dbPath: string, logsDir: string, sessionStart: Date): NewerFormatError | null {
   let db: DatabaseSync | null = null;
+  let newer: NewerFormatError | null = null;
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    db = new DatabaseSync(dbPath);
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec(SCHEMA);
+    db = openSqliteStore("records", dbPath, (opened) => {
+      opened.exec("PRAGMA journal_mode = WAL");
+      opened.exec(SCHEMA);
+    });
   } catch (err) {
-    try {
-      db?.close();
-    } catch {
-      // The open failure reported below is the useful diagnostic.
-    }
-    db = null;
-    reportFailure("records database could not be opened", err);
+    if (err instanceof NewerFormatError) newer = err;
+    else reportFailure("records database could not be opened", err);
   }
   records = {
     session: formatUtcIso(sessionStart),
@@ -100,6 +99,7 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
     db,
     fallbackPath: path.join(logsDir, `${formatForFilenameMs(sessionStart)}.log`),
   };
+  return newer;
 }
 
 export function closeRecords(): void {

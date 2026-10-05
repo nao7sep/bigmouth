@@ -21,6 +21,7 @@ import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { compareInstants } from "@shared/postOrder";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
@@ -28,6 +29,9 @@ import { isPostId } from "../shared/filenames.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
+// The data directories whose index.json a newer version of BigMouth wrote: it
+// is never written, and their index lives in memory only.
+const newerIndexes = new Set<string>();
 
 function postsDir(dataDir: string): string {
   return path.join(dataDir, "posts");
@@ -50,6 +54,7 @@ function modifiedAt(filePath: string): number {
 
 export function clearCache(dataDir: string): void {
   indexes.delete(dataDir);
+  newerIndexes.delete(dataDir);
 }
 
 export function getEntry(dataDir: string, id: string): PostIndexEntry | null {
@@ -181,29 +186,49 @@ function buildAndPersist(dataDir: string): Map<string, PostIndexEntry> {
 
 function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
   const filePath = indexPath(dataDir);
-  if (!fs.existsSync(filePath)) return null;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    if (!Array.isArray(parsed)) return null;
-    const map = new Map<string, PostIndexEntry>();
-    for (const item of parsed as PostIndexEntry[]) {
-      // index.json sits in the workspace folder and can be hand-edited too; a
-      // row with an id outside the grammar is dropped, and reconcile re-reads
-      // its file through the same gate as a rebuild.
-      if (item && isPostId(item.id)) map.set(item.id, item);
-    }
-    return map;
-  } catch (err) {
-    // Corrupt index — treat as absent and rebuild from the source of truth.
-    // The file existed and failed to parse, which is corruption rather than a
-    // cache miss, so it gets a line: without one, a workspace silently rebuilt
-    // its whole index on every launch with nothing to say the file was bad.
+  const read = readJsonStore("postIndex", filePath);
+  switch (read.kind) {
+    case "absent":
+      return null;
+    case "newer":
+      // Left exactly as it is, so the version that wrote it can still read it:
+      // this session's index is built from the post files and kept in memory.
+      newerIndexes.add(dataDir);
+      logWarn("post index was written by a newer version of BigMouth; left unchanged, the index is kept in memory", {
+        path: filePath,
+        formatVersion: read.version,
+      });
+      return null;
+    case "unreadable":
+      // Corrupt index — treat as absent and rebuild from the source of truth.
+      // The file existed and could not be used, which is corruption rather than
+      // a cache miss, so it gets a line: without one, a workspace silently
+      // rebuilt its whole index on every launch with nothing to say the file was bad.
+      logWarn("post index unreadable; rebuilding from the post files", {
+        path: filePath,
+        detail: read.detail,
+        ...(read.error ? { error: serializeError(read.error) } : {}),
+      });
+      return null;
+    case "read":
+      break;
+  }
+  const posts = read.value.posts;
+  if (!Array.isArray(posts)) {
     logWarn("post index unreadable; rebuilding from the post files", {
-      path: indexPath(dataDir),
-      error: serializeError(err),
+      path: filePath,
+      detail: "its posts key is not an array",
     });
     return null;
   }
+  const map = new Map<string, PostIndexEntry>();
+  for (const item of posts as PostIndexEntry[]) {
+    // index.json sits in the workspace folder and can be hand-edited too; a
+    // row with an id outside the grammar is dropped, and reconcile re-reads
+    // its file through the same gate as a rebuild.
+    if (item && isPostId(item.id)) map.set(item.id, item);
+  }
+  return map;
 }
 
 function buildFromDisk(dataDir: string): {
@@ -375,6 +400,7 @@ function findDuplicateSlugGroups(entries: Iterable<PostIndexEntry>): DuplicateSl
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
+  if (newerIndexes.has(dataDir)) return;
   // not recorded: posts/index.json is a cache rebuilt from the post files (data-backup conventions).
   writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()]));
 }
@@ -382,14 +408,13 @@ function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
 // --- Canonical serialization (byte-identical across rebuilds) ---
 
 /**
- * Serializes entries deterministically: sorted by (createdAtUtc instant, id),
- * each entry written with a fixed key order and absent optionals omitted,
- * 2-space indent, trailing newline.
+ * Serializes entries deterministically: the format version, then the posts
+ * sorted by (createdAtUtc instant, id), each entry written with a fixed key
+ * order and absent optionals omitted, 2-space indent, trailing newline.
  */
 export function canonicalIndexJson(entries: PostIndexEntry[]): string {
   const sorted = [...entries].sort(compareEntries);
-  const canonical = sorted.map(canonicalEntryObject);
-  return JSON.stringify(canonical, null, 2) + "\n";
+  return jsonStoreText("postIndex", { posts: sorted.map(canonicalEntryObject) });
 }
 
 function compareEntries(a: PostIndexEntry, b: PostIndexEntry): number {

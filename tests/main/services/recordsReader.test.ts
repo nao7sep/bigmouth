@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   RECORDS_READ_TIMEOUT_MS,
@@ -78,5 +79,20 @@ describe("records reader", () => {
     closeRecordsReader();
     await expect(waiting).rejects.toThrow(/closed/);
     await expect(readRecords({ op: "page", query })).rejects.toThrow(/not open/);
+  });
+});
+
+describe("records reader format version", () => {
+  it("refuses a database a newer version wrote, leaving it byte-identical", async () => {
+    const newer = path.join(root, "newer.sqlite3");
+    const db = new DatabaseSync(newer);
+    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 2");
+    db.close();
+    const bytes = fs.readFileSync(newer);
+
+    closeRecordsReader();
+    initRecordsReader(newer);
+    await expect(readRecords({ op: "sessions" })).rejects.toThrow(/newer version of BigMouth/);
+    expect(fs.readFileSync(newer).equals(bytes)).toBe(true);
   });
 });

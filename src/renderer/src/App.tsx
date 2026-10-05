@@ -128,16 +128,13 @@ export function App() {
   }, [activeWorkspace]);
 
   // The app-wide settings file is read before the window exists (it carries the
-  // theme); a reset of an unreadable file is reported here, once, by path.
+  // theme); a file it could not use is reported here, once, by path.
   useEffect(() => {
     let cancelled = false;
     getAppSettings()
-      .then(({ quarantinedTo }) => {
-        if (cancelled || quarantinedTo === null) return;
-        reportShellResult(
-          "app-settings-recovered",
-          message("app.settingsRecovered", { path: quarantinedTo }),
-        );
+      .then(({ notice }) => {
+        if (cancelled || notice === null) return;
+        reportShellResult("app-settings-notice", notice);
       })
       .catch((err: unknown) => reportProblem("renderer: app settings load failed", err));
     return () => {

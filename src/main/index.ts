@@ -138,7 +138,7 @@ async function handleStartupFailure(err: unknown): Promise<void> {
   } catch {
     // The logger itself may be what failed; stderr above already carried it.
   }
-  await showStartupFailure();
+  await showStartupFailure(err);
   app.exit(1);
 }
 

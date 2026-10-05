@@ -1,23 +1,25 @@
 /** App-wide choices stay in memory until the user edits their set. */
 
-import fs from "node:fs";
 import type { AppSettings, AppSettingsLoad } from "@shared/types";
 import {
   APP_SETTINGS_SET_KEYS,
   appSettingsSetHasShape,
-  appSettingsShapeIssue,
   defaultAppSettings,
   normalizeAppSettings,
 } from "@shared/appSettings";
 import { setsDifferingFromBuiltIn } from "@shared/configSets";
+import { message, type Message } from "@shared/i18n/translate";
 import { writeSetFile } from "../shared/setFile.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
+import { NewerFormatError, readJsonStore } from "../shared/storeFormat.js";
 import { getAppConfigPath } from "./storagePaths.js";
 import { serializeError, warn } from "./logger.js";
 
 let configPath: string | null = null;
 let current: AppSettings | null = null;
-let quarantinedTo: string | null = null;
+let notice: Message | null = null;
+// Set when a newer version of BigMouth wrote the file: it is never written.
+let newerFormat: NewerFormatError | null = null;
 
 function requirePath(): string {
   if (!configPath) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
@@ -31,33 +33,30 @@ function requirePath(): string {
  */
 export function initAppSettingsStore(): AppSettings {
   configPath = getAppConfigPath();
-  quarantinedTo = null;
+  notice = null;
+  newerFormat = null;
 
-  let text: string | null = null;
-  try {
-    text = fs.readFileSync(configPath, "utf-8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      return recover(configPath, `it could not be read (${(err as Error).message})`, err);
-    }
+  const read = readJsonStore("appConfig", configPath);
+  switch (read.kind) {
+    case "absent":
+      current = defaultAppSettings();
+      return current;
+    case "newer":
+      // Left exactly as it is, so the version that wrote it can still read it.
+      newerFormat = new NewerFormatError(configPath, read.version);
+      warn("config.json was written by a newer version of BigMouth; left unchanged, app settings use their built-ins", {
+        path: configPath,
+        formatVersion: read.version,
+      });
+      notice = message("app.settingsNewer", { path: configPath });
+      current = defaultAppSettings();
+      return current;
+    case "unreadable":
+      return recover(configPath, read.detail, read.error);
+    case "read":
+      current = effectiveSettings(read.value);
+      return current;
   }
-
-  if (text === null) {
-    current = defaultAppSettings();
-    return current;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    return recover(configPath, "it is not valid JSON", err);
-  }
-  const issue = appSettingsShapeIssue(parsed);
-  if (issue !== null) return recover(configPath, issue, null);
-
-  current = effectiveSettings(parsed as Record<string, unknown>);
-  return current;
 }
 
 // Recovery keeps built-ins in memory without replacing the quarantined file.
@@ -69,18 +68,14 @@ function recover(filePath: string, detail: string, err: unknown): AppSettings {
     movedTo,
     ...(err ? { error: serializeError(err) } : {}),
   });
-  if (movedTo === null) {
-    current = defaultAppSettings();
-    return current;
-  }
-  quarantinedTo = movedTo;
+  if (movedTo !== null) notice = message("app.settingsRecovered", { path: movedTo });
   current = defaultAppSettings();
   return current;
 }
 
 export function getAppSettingsLoad(): AppSettingsLoad {
   if (!current) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
-  return { settings: current, quarantinedTo };
+  return { settings: current, notice };
 }
 
 function effectiveSettings(map: Record<string, unknown>): AppSettings {
@@ -95,8 +90,9 @@ function effectiveSettings(map: Record<string, unknown>): AppSettings {
 
 export function saveAppSettings(next: Partial<AppSettings>): AppSettings {
   if (!current) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
+  if (newerFormat) throw newerFormat;
   const normalized = normalizeAppSettings({ ...current, ...next });
-  writeSetFile(requirePath(), setsDifferingFromBuiltIn(normalized, defaultAppSettings(), APP_SETTINGS_SET_KEYS));
+  writeSetFile("appConfig", requirePath(), setsDifferingFromBuiltIn(normalized, defaultAppSettings(), APP_SETTINGS_SET_KEYS));
   current = normalized;
   return normalized;
 }

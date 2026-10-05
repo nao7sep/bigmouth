@@ -333,3 +333,56 @@ describe("posts/index.json is not recorded", () => {
     clearCache(ws.dataDirectory);
   });
 });
+
+// store-recovery-conventions: backups.sqlite3's format version.
+describe("backup store — format version", () => {
+  const storeFile = () => path.join(getAppRoot(), "backups.sqlite3");
+
+  function userVersion(): number {
+    const db = new DatabaseSync(storeFile());
+    try {
+      return (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+    } finally {
+      db.close();
+    }
+  }
+
+  /** Replaces the store with a fresh file built by `setup`, the singleton closed first. */
+  function replaceStore(setup: string): void {
+    backupStore.closeBackupStore();
+    for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(storeFile() + suffix, { force: true });
+    const db = new DatabaseSync(storeFile());
+    db.exec(setup);
+    db.close();
+  }
+
+  it("stamps this build's format version and records into it", () => {
+    const file = path.join(root, "sample.md");
+    backupStore.record(file, Buffer.from("x"));
+    expect(userVersion()).toBe(1);
+    expect(rows(file)).toHaveLength(1);
+  });
+
+  it("reads a store with no format version as version 1", () => {
+    replaceStore("CREATE TABLE earlier (id INTEGER)");
+    const file = path.join(root, "sample.md");
+    backupStore.record(file, Buffer.from("x"));
+    expect(rows(file)).toHaveLength(1);
+  });
+
+  it("disables recording over a store a newer version wrote, leaving it byte-identical", () => {
+    replaceStore("CREATE TABLE future (id INTEGER); PRAGMA user_version = 2");
+    const bytes = fs.readFileSync(storeFile());
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      backupStore.record(path.join(root, "sample.md"), Buffer.from("x"));
+      backupStore.record(path.join(root, "sample.md"), Buffer.from("y"));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toMatch(/newer version of BigMouth/);
+    } finally {
+      warnSpy.mockRestore();
+    }
+    backupStore.closeBackupStore();
+    expect(fs.readFileSync(storeFile()).equals(bytes)).toBe(true);
+  });
+});

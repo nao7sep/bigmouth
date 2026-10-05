@@ -57,6 +57,8 @@
   "dialog.startupFailure.message": "BigMouth가 설정과 작업 공간을 끝까지 열지 못했습니다.",
   "dialog.startupFailure.detail": "게시물이나 작업 공간 문서는 변경되지 않았습니다. 세션 로그를 확인한 다음 BigMouth를 다시 시작하십시오.",
   "app.settingsRecovered": "앱 설정 파일을 읽을 수 없어 {path}(으)로 옮겼습니다. 테마와 인터페이스 언어가 시스템으로 돌아갔습니다.",
+  "app.settingsNewer": "앱 설정 파일 {path}은(는) 더 새로운 버전의 BigMouth에서 저장되어 변경하지 않고 그대로 두었습니다. 해당 버전으로 열 때까지 테마와 인터페이스 언어는 시스템을 따르며, 테마와 인터페이스 언어를 변경해도 저장되지 않습니다.",
+  "store.newerFormat": "{path}은(는) 더 새로운 버전의 BigMouth에서 저장되어 이 버전에서는 사용할 수 없습니다. 파일은 변경되지 않았습니다. 해당 버전으로 여십시오.",
   "app.uiStateLoadFailed": "저장된 화면 설정과 마지막 작업 공간을 불러올 수 없습니다. 이번 실행에서는 기본값을 사용합니다.",
   "app.workspacesLoadFailed": "작업 공간을 불러올 수 없습니다. 기억된 작업 공간은 바뀌지 않았습니다. 다시 시도하십시오.",
   "app.activeWorkspaceSaveFailed": "이 작업 공간은 열려 있지만 다음 실행을 위해 기억하지 못했습니다.",

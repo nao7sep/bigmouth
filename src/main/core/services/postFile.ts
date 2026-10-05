@@ -8,10 +8,13 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import matter from "gray-matter";
 import type { Post, PostFrontMatter, PostIndexEntry } from "../shared/types.js";
 import { multiline, truncate } from "../shared/textCleanup.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
+import { FORMAT_VERSIONS } from "../shared/formatVersions.js";
+import { FORMAT_VERSION_KEY, NewerFormatError, checkFormatVersion } from "../shared/storeFormat.js";
 
 // Length, in graphemes, of a body-derived preview label for an untitled post.
 const EXCERPT_MAX_CHARS = 100;
@@ -25,8 +28,9 @@ const BODY_MULTILINE_OPTS = {
   collapseBlankLines: false,
 } as const;
 
-// Canonical front-matter key order written into every `.md` file. Keeping a
-// fixed order makes files stable across rewrites and easy to diff.
+// Canonical front-matter key order written into every `.md` file, after the
+// format version. Keeping a fixed order makes files stable across rewrites and
+// easy to diff.
 const CANONICAL_KEYS = [
   "id",
   "target",
@@ -56,6 +60,7 @@ const CANONICAL_KEYS = [
  * included, is what the author makes (content-lifecycle-conventions' Modified).
  */
 const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
+  FORMAT_VERSION_KEY,
   "id",
   "status",
   "createdAtUtc",
@@ -67,7 +72,7 @@ const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
   "locked",
 ]);
 
-const CANONICAL_KEY_SET = new Set<string>(CANONICAL_KEYS);
+const CANONICAL_KEY_SET = new Set<string>([FORMAT_VERSION_KEY, ...CANONICAL_KEYS]);
 
 /**
  * Parses raw file text into an owned front matter object and trimmed content.
@@ -88,9 +93,17 @@ export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; conte
   };
 }
 
+/**
+ * Reads a post file. One a newer version of BigMouth wrote throws
+ * NewerFormatError, and every write of an existing post reads it first, so such
+ * a file is never written.
+ */
 export function readPost(filePath: string): Post {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { frontMatter, content } = parsePostRaw(raw);
+  const check = checkFormatVersion("postFile", frontMatter);
+  if (check.kind === "newer") throw new NewerFormatError(filePath, check.version);
+  if (check.kind === "unreadable") throw new Error(`${path.basename(filePath)}: ${check.detail}`);
   return { frontMatter, content, filePath };
 }
 
@@ -137,12 +150,13 @@ export function writePost(filePath: string, frontMatter: PostFrontMatter, conten
 }
 
 /**
- * Returns front matter with keys in canonical order and English supplement
- * fields stripped for English posts. Unknown keys are preserved (after the
- * known ones) so hand-added front matter survives a rewrite.
+ * Returns front matter with this build's format version first, the keys in
+ * canonical order and English supplement fields stripped for English posts.
+ * Unknown keys are preserved (after the known ones) so hand-added front matter
+ * survives a rewrite.
  */
 export function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, unknown> {
-  const cleanFm: Record<string, unknown> = {};
+  const cleanFm: Record<string, unknown> = { [FORMAT_VERSION_KEY]: FORMAT_VERSIONS.postFile };
   for (const key of CANONICAL_KEYS) {
     const value = frontMatter[key];
     if (value !== undefined) cleanFm[key] = value;

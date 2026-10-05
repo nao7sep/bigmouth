@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { presentFailure } from "@renderer/util/presentFailure";
+import { message } from "@shared/i18n/translate";
+import { carryingText } from "@shared/i18n/carriedMessage";
 
 afterEach(() => {
   delete (window as unknown as { bigmouth?: unknown }).bigmouth;
@@ -21,12 +23,12 @@ describe("presentFailure", () => {
     );
 
     const presented = presentFailure(
-      "Posts could not be loaded. Reopen the workspace to try again.",
+      message("session.postListFailed"),
       "renderer: hostile boundary test",
       diagnostic,
     );
 
-    expect(presented).not.toMatch(/EACCES|private\/tmp|BIGMOUTH_SENTINEL|invoking remote method/i);
+    expect(JSON.stringify(presented)).not.toMatch(/EACCES|private\/tmp|BIGMOUTH_SENTINEL|invoking remote method/i);
     expect(writeRendererLog).toHaveBeenCalledWith(expect.objectContaining({
       level: "error",
       detail: expect.objectContaining({
@@ -45,10 +47,19 @@ describe("presentFailure", () => {
       value: { writeRendererLog: vi.fn(() => { throw new Error("bridge failed"); }) },
     });
 
-    expect(presentFailure("Authored copy", "test diagnostic", new Error("original"))).toBe("Authored copy");
+    expect(presentFailure(message("session.postListFailed"), "test diagnostic", new Error("original")))
+      .toEqual(message("session.postListFailed"));
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("could not be recorded"),
       expect.objectContaining({ diagnostic: expect.objectContaining({ error: expect.objectContaining({ message: "original" }) }) }),
     );
+  });
+
+  it("shows the message a failure carries across IPC in place of the authored copy", () => {
+    Object.defineProperty(window, "bigmouth", { configurable: true, value: { writeRendererLog: vi.fn() } });
+    const carried = message("store.newerFormat", { path: "/data/ws/config.json" });
+    const err = new Error(`Error invoking remote method 'settings:get': Error: ${carryingText(carried)}`);
+
+    expect(presentFailure(message("settings.loadFailed"), "test diagnostic", err)).toEqual(carried);
   });
 });

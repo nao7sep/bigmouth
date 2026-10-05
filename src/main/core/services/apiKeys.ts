@@ -7,7 +7,7 @@
  * account; the machine-local workspace id is opaque (nanoid: mixed case,
  * `_`/`-`), so it lives in the container path and the key id is the provider:
  *
- *   { "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
+ *   { "formatVersion": 1, "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
  *
  * Contract (api-key-storage-conventions):
  *   - The key id is the provider; its environment variable is the id
@@ -22,6 +22,8 @@
  *   - A corrupt/unreadable file is moved aside to a timestamped neighbour and
  *     treated as empty rather than throwing; a non-string or non-conforming entry
  *     is ignored, so a hand-edited file never bricks key resolution.
+ *   - A file a newer version of BigMouth wrote (store-recovery-conventions) is
+ *     left in place and read as empty; storing a key into it is refused.
  *   - A stored value whose `obf:` payload fails strict base64 validation (a
  *     hand-edited or truncated file) resolves as absent rather than the
  *     garbage a tolerant base64 decoder would silently produce; resolveApiKey
@@ -34,6 +36,7 @@ import type { AiProvider } from "@shared/aiModels";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
+import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 const SECRETS_FILE_MODE = 0o600;
@@ -52,6 +55,8 @@ interface ApiKeysFile {
 // Warn at most once per process about an insecure file mode, so a key read on
 // every AI call does not spam the log. The tightening itself is never suppressed.
 let modeWarned = false;
+// A file a newer version wrote is read on every key lookup; it is reported once.
+let newerWarned = false;
 
 function apiKeyEnvVar(provider: AiProvider): string {
   return `${provider.toUpperCase()}_API_KEY`;
@@ -108,39 +113,50 @@ function normalize(raw: unknown): ApiKeysFile | null {
   return out;
 }
 
-function readFile(filePath: string): ApiKeysFile {
+function emptyFile(): ApiKeysFile {
+  return { workspaces: {} };
+}
+
+/**
+ * The stored keys, and the refusal any write must raise when a newer version of
+ * BigMouth wrote the file: that file is left exactly as it is, its keys read as
+ * absent, and nothing is written over it.
+ */
+function readFile(filePath: string): { data: ApiKeysFile; newer: NewerFormatError | null } {
   ensureSecureMode(filePath);
-  let text: string;
-  try {
-    text = fs.readFileSync(filePath, "utf-8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { workspaces: {} };
-    const movedTo = moveAsideInvalid(filePath);
-    logWarn("api-keys.json was unreadable; set aside and treating as empty", {
-      path: filePath,
-      movedTo,
-      error: serializeError(err),
-    });
-    return { workspaces: {} };
+  const read = readJsonStore("apiKeys", filePath);
+  switch (read.kind) {
+    case "absent":
+      return { data: emptyFile(), newer: null };
+    case "newer":
+      if (!newerWarned) {
+        newerWarned = true;
+        logWarn("api-keys.json was written by a newer version of BigMouth; left unchanged, its keys read as absent", {
+          path: filePath,
+          formatVersion: read.version,
+        });
+      }
+      return { data: emptyFile(), newer: new NewerFormatError(filePath, read.version) };
+    case "unreadable":
+      setAside(filePath, read.detail, read.error);
+      return { data: emptyFile(), newer: null };
+    case "read": {
+      const normalized = normalize(read.value);
+      if (normalized) return { data: normalized, newer: null };
+      setAside(filePath, "it has the wrong shape", null);
+      return { data: emptyFile(), newer: null };
+    }
   }
-  try {
-    const normalized = normalize(JSON.parse(text));
-    if (normalized) return normalized;
-    const movedTo = moveAsideInvalid(filePath);
-    logWarn("api-keys.json had the wrong shape; set aside and treating as empty", {
-      path: filePath,
-      movedTo,
-    });
-    return { workspaces: {} };
-  } catch (err) {
-    const movedTo = moveAsideInvalid(filePath);
-    logWarn("api-keys.json was not valid JSON; set aside and treating as empty", {
-      path: filePath,
-      movedTo,
-      error: serializeError(err),
-    });
-    return { workspaces: {} };
-  }
+}
+
+function setAside(filePath: string, detail: string, error: unknown): void {
+  const movedTo = moveAsideInvalid(filePath);
+  logWarn("api-keys.json unusable; set aside and treating as empty", {
+    path: filePath,
+    detail,
+    movedTo,
+    ...(error ? { error: serializeError(error) } : {}),
+  });
 }
 
 function writeFile(filePath: string, data: ApiKeysFile): void {
@@ -152,15 +168,17 @@ function writeFile(filePath: string, data: ApiKeysFile): void {
   // protection below, which is where a secret is guarded — not here.
   writeFileAtomic(
     filePath,
-    JSON.stringify(data, null, 2) + "\n",
+    jsonStoreText("apiKeys", { ...data }),
     ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined,
   );
 }
 
 // Apply a mutation and persist only if it changed the stored content, pruning
-// emptied workspace buckets so a cleared scope leaves no trace.
+// emptied workspace buckets so a cleared scope leaves no trace. A file a newer
+// version wrote is refused before anything is changed.
 function update(filePath: string, mutate: (data: ApiKeysFile) => void): void {
-  const data = readFile(filePath);
+  const { data, newer } = readFile(filePath);
+  if (newer) throw newer;
   const before = JSON.stringify(data);
   mutate(data);
   for (const [wsId, wsNode] of Object.entries(data.workspaces)) {
@@ -171,7 +189,7 @@ function update(filePath: string, mutate: (data: ApiKeysFile) => void): void {
 
 /** The stored key for a workspace, decoded and trimmed, or null. */
 function storedKey(filePath: string, workspaceId: string, provider: AiProvider): string | null {
-  const stored = readFile(filePath).workspaces[workspaceId]?.keys[provider];
+  const stored = readFile(filePath).data.workspaces[workspaceId]?.keys[provider];
   if (!stored) return null;
   const decoded = deobfuscate(stored);
   if (decoded === null) {
@@ -224,8 +242,13 @@ export function writeApiKey(filePath: string, workspaceId: string, provider: AiP
   });
 }
 
-/** Remove every stored key for a workspace — used when the workspace is deleted. */
+/**
+ * Remove every stored key for a workspace — used when the workspace is deleted.
+ * A file a newer version wrote is left as it is, its key with it, rather than
+ * failing the deletion.
+ */
 export function clearWorkspaceKeys(filePath: string, workspaceId: string): void {
+  if (readFile(filePath).newer) return;
   update(filePath, (data) => {
     delete data.workspaces[workspaceId];
   });

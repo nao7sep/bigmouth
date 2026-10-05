@@ -133,3 +133,28 @@ describe("stateStore — records list width", () => {
     expect(getUiState().recordsListWidth).toBe(RECORDS_LIST_WIDTH.default);
   });
 });
+
+// store-recovery-conventions: state.json's format version.
+describe("stateStore — format version", () => {
+  it("writes this build's format version and reads the state back", () => {
+    initStateStore();
+    updateUiState({ zoomLevel: 2 });
+    expect(JSON.parse(fs.readFileSync(statePath(), "utf-8"))).toEqual({ formatVersion: 1, ...defaultUiState(), zoomLevel: 2 });
+    expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 2 });
+  });
+
+  it("reads a state.json with no format version as version 1", () => {
+    fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: 3 }));
+    expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 3 });
+  });
+
+  it("keeps view state in memory over a state.json a newer version wrote, leaving it byte-identical", () => {
+    const body = JSON.stringify({ formatVersion: 2, zoomLevel: 4 });
+    fs.writeFileSync(statePath(), body);
+
+    expect(initStateStore()).toEqual(defaultUiState());
+    expect(updateUiState({ paneLeftWidth: 480 }).paneLeftWidth).toBe(480);
+    expect(getUiState().paneLeftWidth).toBe(480);
+    expect(fs.readFileSync(statePath(), "utf-8")).toBe(body);
+  });
+});

@@ -1,6 +1,5 @@
 /** Workspace settings are read and written by whole set. Secrets and selection have separate owners. */
 
-import fs from "node:fs";
 import path from "node:path";
 import type {
   Settings,
@@ -23,6 +22,7 @@ import {
 import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "@shared/aiModels";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeSetFile } from "../shared/setFile.js";
+import { NewerFormatError, readJsonStore } from "../shared/storeFormat.js";
 import { anthropicSets, makeDefaultConfig } from "../shared/defaults.js";
 import { warn } from "./logger.js";
 import * as apiKeys from "./apiKeys.js";
@@ -32,23 +32,22 @@ const CONFIG_FILE = "config.json";
 
 function readMap(dataDir: string): Record<string, unknown> {
   const filePath = path.join(dataDir, CONFIG_FILE);
-  let raw: string;
-  try {
-    raw = fs.readFileSync(filePath, "utf-8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw error;
+  const read = readJsonStore("workspaceConfig", filePath);
+  switch (read.kind) {
+    case "absent":
+      return {};
+    case "newer":
+      throw new NewerFormatError(filePath, read.version);
+    case "unreadable":
+      throw new Error(`Cannot read ${CONFIG_FILE} at ${filePath}: ${read.detail}. It was left unchanged.`, {
+        cause: read.error ?? undefined,
+      });
+    case "read":
+      if (!isWorkspaceConfig(read.value)) {
+        throw new Error(`${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`);
+      }
+      return read.value;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`${CONFIG_FILE} is not valid JSON. It was left unchanged at ${filePath}`, { cause });
-  }
-  if (!isWorkspaceConfig(parsed)) {
-    throw new Error(`${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`);
-  }
-  return parsed;
 }
 
 /** The config a stored map reads as, and each stored set that was invalid and read as its built-in. */
@@ -84,7 +83,7 @@ function readConfig(dataDir: string): WorkspaceConfig {
 
 function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>): void {
   const config = { ...readConfig(dataDir), ...changes };
-  writeSetFile(path.join(dataDir, CONFIG_FILE), setsDifferingFromBuiltIn(config, makeDefaultConfig(), WORKSPACE_SET_KEYS));
+  writeSetFile("workspaceConfig", path.join(dataDir, CONFIG_FILE), setsDifferingFromBuiltIn(config, makeDefaultConfig(), WORKSPACE_SET_KEYS));
 }
 
 function normalizeSettings(settings: Settings): Settings {

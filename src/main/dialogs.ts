@@ -10,6 +10,7 @@
  */
 
 import { message } from "@shared/i18n/translate";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { mainTranslator } from "./i18n.js";
 import { showPlainMessageDialog } from "./plain-message-dialog.js";
 
@@ -80,13 +81,16 @@ export async function confirmCloseWithRefusedMetadata(): Promise<RefusedMetadata
 /**
  * The fatal-halt alert: startup failed, so there is no window to show anything
  * in. It names what went wrong and states that nothing was changed, because a
- * halt is only actionable if the user knows where they stand.
+ * halt is only actionable if the user knows where they stand. A failure that
+ * carries its own message, such as a store a newer version wrote, is told in
+ * those words.
  */
-export async function showStartupFailure(): Promise<void> {
-  const { t } = mainTranslator();
+export async function showStartupFailure(err: unknown): Promise<void> {
+  const { t, text } = mainTranslator();
+  const carried = carriedMessage(err);
   await showPlainMessageDialog({
     title: t("dialog.startupFailure.title"),
     message: t("dialog.startupFailure.message"),
-    detail: t("dialog.startupFailure.detail"),
+    detail: carried ? text(carried) : t("dialog.startupFailure.detail"),
   });
 }

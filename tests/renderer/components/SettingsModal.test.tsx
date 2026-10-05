@@ -93,7 +93,7 @@ function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSetting
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AnthropicSettingsView = anthropic()) {
-  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, quarantinedTo: null });
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
   mock.getAnthropicSettings.mockResolvedValue(ai);

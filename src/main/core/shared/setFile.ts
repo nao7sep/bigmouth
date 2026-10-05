@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import { writeManagedText } from "./atomicWrite.js";
+import { jsonStoreText } from "./storeFormat.js";
+import type { StoreFormat } from "./formatVersions.js";
 
 /** Writes a settings file per config-sets-conventions; identical content is not rewritten. */
-export function writeSetFile(filePath: string, sets: Record<string, unknown>): void {
-  const text = JSON.stringify(sets, null, 2) + "\n";
+export function writeSetFile(format: StoreFormat, filePath: string, sets: Record<string, unknown>): void {
+  const text = jsonStoreText(format, sets);
   let existing: string | null = null;
   try {
     existing = fs.readFileSync(filePath, "utf-8");

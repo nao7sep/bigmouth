@@ -5,6 +5,8 @@
 // must stay environment-neutral (no DOM, no Node types), since `src/shared` is
 // type-checked under both the node and web configs.
 
+import type { Message } from "./i18n/translate.js";
+
 // --- Workspace ---
 
 export interface Workspace {
@@ -79,11 +81,11 @@ export interface AppSettings {
   language: LanguagePreference;
 }
 
-/** App settings as the renderer reads them, plus where an unreadable file was
- *  moved if this launch had to reset it (null when nothing was reset). */
+/** App settings as the renderer reads them, plus what the user is told about
+ *  the file this launch could not use (null when there is nothing to tell). */
 export interface AppSettingsLoad {
   settings: AppSettings;
-  quarantinedTo: string | null;
+  notice: Message | null;
 }
 
 // --- Post ---

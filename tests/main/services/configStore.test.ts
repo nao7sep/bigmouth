@@ -24,6 +24,7 @@ import {
   effectiveConfig,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 import { rowFor } from "@shared/aiModels";
 import { buildClaudeParams } from "@main/core/ai/claudeRequest.js";
 
@@ -34,6 +35,13 @@ const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 // A workspace for an already-initialized data directory under the current home.
+/** The sets a config file holds; every write records this build's format version first. */
+function setsIn(filePath: string): Record<string, unknown> {
+  const { formatVersion, ...sets } = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  expect(formatVersion).toBe(1);
+  return sets;
+}
+
 function workspaceAt(id: string, dir: string): Workspace {
   initializeWorkspaceData(dir);
   return { id, name: id, dataDirectory: dir };
@@ -76,7 +84,7 @@ describe("time zone", () => {
     expect(getSettings(dataDir).timezone).toBe("Asia/Tokyo");
 
     saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
-    const saved = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf-8"));
+    const saved = setsIn(path.join(dataDir, "config.json"));
     expect(saved).toEqual({ timezone: "Asia/Tokyo", uiFontFamily: "Inter" });
   });
 
@@ -99,7 +107,7 @@ describe("time zone", () => {
 describe("corrupt config files", () => {
   it("surfaces a clear error naming the file rather than a bare SyntaxError", () => {
     fs.writeFileSync(path.join(dataDir, "config.json"), "{ not valid json", "utf-8");
-    expect(() => getSettings(dataDir)).toThrow(/config\.json is not valid JSON/);
+    expect(() => getSettings(dataDir)).toThrow(/config\.json at .*: it is not valid JSON/);
   });
 
   it("uses the built-in for an invalid set without quarantining other sets", () => {
@@ -117,7 +125,7 @@ describe("corrupt config files", () => {
     saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
 
     // The save writes what the store holds: the invalid set and every built-in copy lose their keys.
-    const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const afterwards = setsIn(configPath);
     expect(afterwards).toEqual({ targets: authoredTargets, uiFontFamily: "Inter" });
   });
 
@@ -198,7 +206,7 @@ describe("settings", () => {
 
 describe("the Anthropic section", () => {
   const file = () => path.join(dataDir, "config.json");
-  const saved = () => JSON.parse(fs.readFileSync(file(), "utf8"));
+  const saved = () => setsIn(file());
   function input(over: Partial<AnthropicSettingsInput> = {}): AnthropicSettingsInput {
     return { ...defaultAnthropicSettings(), ...over };
   }
@@ -366,7 +374,7 @@ describe("the Anthropic section", () => {
 
 describe("settings stored by set", () => {
   const file = () => path.join(dataDir, "config.json");
-  const saved = () => JSON.parse(fs.readFileSync(file(), "utf8"));
+  const saved = () => setsIn(file());
 
   it("reads all built-ins without seeding a file", () => {
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
@@ -400,14 +408,14 @@ describe("settings stored by set", () => {
       expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
       expect(warning).toHaveBeenCalledOnce();
       expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "generationPrompts" }));
-      expect(saved()).toEqual(partial);
+      expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual(partial);
     } finally { warning.mockRestore(); }
   });
 
   it("reads a partial contentFont as absent rather than merging its members", () => {
     fs.writeFileSync(file(), JSON.stringify({ contentFont: { family: "Custom" } }));
     expect(getSettings(dataDir).contentFont).toEqual(DEFAULT_CONTENT_FONT);
-    expect(saved()).toEqual({ contentFont: { family: "Custom" } });
+    expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual({ contentFont: { family: "Custom" } });
   });
 
   it("changing one role's model writes only that role's set", () => {
@@ -450,7 +458,7 @@ it("a partial dialog save preserves another set changed after the dialog opened"
   saveSettings(dataDir, { timezone: "UTC" });
   saveSettings(dataDir, { uiFontFamily: "Iosevka" });
   expect(getSettings(dataDir)).toEqual({ ...DEFAULT_SETTINGS, timezone: "UTC", uiFontFamily: "Iosevka" });
-  expect(JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"))).toEqual({ timezone: "UTC", uiFontFamily: "Iosevka" });
+  expect(setsIn(path.join(dataDir, "config.json"))).toEqual({ timezone: "UTC", uiFontFamily: "Iosevka" });
 });
 
 it("warns on each read of an invalid workspace set and names its key", () => {
@@ -478,8 +486,35 @@ it("a settings save writes every set from what the store holds", () => {
   fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ supportedLanguages: ["ja", "en", "ja"] }));
   const saved = saveSettings(dataDir, { uiFontFamily: "Iosevka" });
   expect(saved.supportedLanguages).toEqual(["en", "ja"]);
-  expect(JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"))).toEqual({
+  expect(setsIn(path.join(dataDir, "config.json"))).toEqual({
     supportedLanguages: ["en", "ja"],
     uiFontFamily: "Iosevka",
+  });
+});
+
+describe("workspace config format version", () => {
+  const file = () => path.join(dataDir, "config.json");
+
+  it("reads a file with no format version as version 1", () => {
+    fs.writeFileSync(file(), JSON.stringify({ timezone: "UTC" }));
+    expect(getSettings(dataDir).timezone).toBe("UTC");
+  });
+
+  it("writes this build's format version and reads it back", () => {
+    saveSettings(dataDir, { timezone: "UTC" });
+    expect(fs.readFileSync(file(), "utf8")).toBe('{\n  "formatVersion": 1,\n  "timezone": "UTC"\n}\n');
+    expect(getSettings(dataDir).timezone).toBe("UTC");
+  });
+
+  it("refuses a file a newer version wrote, naming it, and leaves it byte-identical", () => {
+    const body = '{ "formatVersion": 2, "timezone": "UTC", "future": [1] }';
+    fs.writeFileSync(file(), body);
+
+    expect(() => getSettings(dataDir)).toThrow(NewerFormatError);
+    expect(() => getSettings(dataDir)).toThrow(file());
+    expect(() => saveSettings(dataDir, { timezone: "Asia/Tokyo" })).toThrow(NewerFormatError);
+    expect(() => saveTargets(dataDir, [])).toThrow(NewerFormatError);
+
+    expect(fs.readFileSync(file(), "utf8")).toBe(body);
   });
 });

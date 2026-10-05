@@ -10,6 +10,7 @@ import {
   clearWorkspaceKeys,
 } from "@main/core/services/apiKeys.js";
 import * as logger from "@main/core/services/logger.js";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 
 let dir: string;
 let keyFile: string;
@@ -41,12 +42,12 @@ describe("apiKeys secret store", () => {
     const raw = fs.readFileSync(keyFile, "utf-8");
     expect(raw).not.toContain("sk-ant-secret"); // obfuscated, not plaintext
     // Nested: workspace -> keys -> provider id.
-    expect(JSON.parse(raw)).toEqual({ workspaces: { [W1]: { keys: { anthropic: expect.stringMatching(/^obf:/) } } } });
+    expect(JSON.parse(raw)).toEqual({ formatVersion: 1, workspaces: { [W1]: { keys: { anthropic: expect.stringMatching(/^obf:/) } } } });
 
     writeApiKey(keyFile, W1, "anthropic", "");
     expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     // The emptied workspace bucket leaves no trace.
-    expect(JSON.parse(fs.readFileSync(keyFile, "utf-8"))).toEqual({ workspaces: {} });
+    expect(JSON.parse(fs.readFileSync(keyFile, "utf-8"))).toEqual({ formatVersion: 1, workspaces: {} });
   });
 
   it("keeps keys independent across workspaces", () => {
@@ -167,8 +168,8 @@ describe("apiKeys secret store", () => {
       expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/wrong shape/),
-        expect.objectContaining({ path: keyFile, movedTo: path.join(dir, quarantined!) }),
+        expect.stringMatching(/set aside/),
+        expect.objectContaining({ path: keyFile, detail: expect.stringMatching(/wrong shape/), movedTo: path.join(dir, quarantined!) }),
       );
       warnSpy.mockRestore();
     });
@@ -232,5 +233,35 @@ describe("file permissions (POSIX only)", () => {
     fs.chmodSync(keyFile, 0o644);
     resolveApiKey(keyFile, W1, "anthropic");
     expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
+  });
+
+  describe("format version", () => {
+    it("reads a file with no format version as version 1", () => {
+      fs.writeFileSync(keyFile, JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-plain");
+    });
+
+    it("writes this build's format version first and reads the key back", () => {
+      writeApiKey(keyFile, W1, "anthropic", "sk-round-trip");
+      expect(Object.keys(JSON.parse(fs.readFileSync(keyFile, "utf-8")))).toEqual(["formatVersion", "workspaces"]);
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-round-trip");
+    });
+
+    it("reads a file a newer version wrote as no key, refuses to store into it, and leaves it byte-identical", () => {
+      const body = JSON.stringify({ formatVersion: 2, vaults: { [W1]: { anthropic: "obf:c2stZnV0dXJl" } } });
+      fs.writeFileSync(keyFile, body);
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+        expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
+        expect(() => writeApiKey(keyFile, W1, "anthropic", "sk-new")).toThrow(NewerFormatError);
+        clearWorkspaceKeys(keyFile, W1);
+
+        expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
+        expect(fs.readdirSync(dir).filter((entry) => entry.endsWith(".invalid"))).toEqual([]);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 });

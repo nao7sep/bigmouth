@@ -57,6 +57,8 @@
   "dialog.startupFailure.message": "O BigMouth não conseguiu terminar de abrir suas configurações e seu espaço de trabalho.",
   "dialog.startupFailure.detail": "Nenhuma publicação nem documento do espaço de trabalho foi alterado. Verifique o registro da sessão e inicie o BigMouth novamente.",
   "app.settingsRecovered": "Não foi possível ler o arquivo de configurações do app, então ele foi movido para {path}. O tema e o idioma da interface voltaram para Sistema.",
+  "app.settingsNewer": "Uma versão mais recente do BigMouth salvou o arquivo de configurações do app {path}, então ele não foi alterado. Até que você o abra com essa versão, o tema e o idioma da interface seguem o Sistema, e as alterações feitas neles não são salvas.",
+  "store.newerFormat": "Uma versão mais recente do BigMouth salvou {path}, então esta versão não pode usar o arquivo. O arquivo não foi alterado; abra-o com essa versão.",
   "app.uiStateLoadFailed": "Não foi possível carregar as preferências de interface salvas e o último espaço de trabalho. Os padrões estão em uso nesta inicialização.",
   "app.workspacesLoadFailed": "Não foi possível carregar os espaços de trabalho. O espaço de trabalho lembrado não mudou; tente novamente.",
   "app.activeWorkspaceSaveFailed": "Este espaço de trabalho está aberto, mas não foi possível lembrá-lo para a próxima inicialização.",

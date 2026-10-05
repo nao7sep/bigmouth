@@ -28,6 +28,7 @@ import {
   sanitizeAssetFilename,
 } from "@shared/assetNames";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { isPostId } from "../shared/filenames.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
@@ -72,7 +73,7 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  * a missing `meta.json` next to real files is recovered, never an error.
  */
 export function listAssets(dataDir: string, postId: string): AssetMeta[] {
-  return reconcileAssets(assetDir(dataDir, postId));
+  return reconcileAssets(assetDir(dataDir, postId)).assets;
 }
 
 /**
@@ -102,7 +103,8 @@ export function saveAssetFile(
   }
 
   const dir = ensureAssetDir(dataDir, postId);
-  const siblings = reconcileAssets(dir);
+  const { assets: siblings, newer } = reconcileAssets(dir);
+  if (newer) throw newer;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
@@ -156,7 +158,9 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
   const dir = assetDir(dataDir, postId);
   const filePath = safeResolveUnder(dir, filename);
   const metaPath = path.join(dir, META_FILENAME);
-  const remaining = reconcileAssets(dir).filter((a) => a.filename !== filename);
+  const { assets, newer } = reconcileAssets(dir);
+  if (newer) throw newer;
+  const remaining = assets.filter((a) => a.filename !== filename);
 
   // Remove the file (the durable data) first, then update the cache. A crash
   // between the two heals on the next read: the now-missing file is reconciled
@@ -177,13 +181,16 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * projected entry for any asset file the cache doesn't know about (sorted by
  * name for determinism). The names the directory reserves for itself are
  * ignored — see isReservedAssetName, which saveAssetFile refuses to store.
+ *
+ * A `meta.json` a newer version of BigMouth wrote is not read, and `newer` is
+ * the refusal every write to this folder raises, so the file stays exactly as it is.
  */
-function reconcileAssets(dir: string): AssetMeta[] {
-  if (!fs.existsSync(dir)) return [];
+function reconcileAssets(dir: string): { assets: AssetMeta[]; newer: NewerFormatError | null } {
+  if (!fs.existsSync(dir)) return { assets: [], newer: null };
 
   const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
-  const cached = readAssetMeta(path.join(dir, META_FILENAME));
+  const { cached, newer } = readAssetMeta(path.join(dir, META_FILENAME));
   const result: AssetMeta[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
@@ -196,25 +203,40 @@ function reconcileAssets(dir: string): AssetMeta[] {
     if (accountedFor.has(filename)) continue;
     result.push(projectAssetFile(dir, filename));
   }
-  return result;
+  return { assets: result, newer };
 }
 
-function readAssetMeta(metaPath: string): AssetMeta[] {
-  if (!fs.existsSync(metaPath)) return [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
-    return Array.isArray(parsed) ? (parsed as AssetMeta[]) : [];
-  } catch (err) {
-    // Corrupt cache — treat as absent and rebuild from the files on disk. The
-    // file existed and failed to parse, which is corruption rather than a cache
-    // miss, so it gets a line rather than silence; the dimensions and metadata
-    // flags it held are gone until each asset is re-read.
-    logWarn("asset metadata cache unreadable; rebuilding from the files on disk", {
-      path: metaPath,
-      error: serializeError(err),
-    });
-    return [];
+function readAssetMeta(metaPath: string): { cached: AssetMeta[]; newer: NewerFormatError | null } {
+  const read = readJsonStore("assetMeta", metaPath);
+  switch (read.kind) {
+    case "absent":
+      return { cached: [], newer: null };
+    case "newer":
+      logWarn("asset metadata was written by a newer version of BigMouth; left unchanged, assets listed from the files on disk", {
+        path: metaPath,
+        formatVersion: read.version,
+      });
+      return { cached: [], newer: new NewerFormatError(metaPath, read.version) };
+    case "unreadable":
+      // Corrupt cache — treat as absent and rebuild from the files on disk. The
+      // file existed and could not be used, which is corruption rather than a
+      // cache miss, so it gets a line rather than silence; the dimensions and
+      // metadata flags it held are gone until each asset is re-read.
+      warnUnreadableMeta(metaPath, read.detail, read.error);
+      return { cached: [], newer: null };
+    case "read":
+      if (Array.isArray(read.value.assets)) return { cached: read.value.assets as AssetMeta[], newer: null };
+      warnUnreadableMeta(metaPath, "its assets key is not an array", null);
+      return { cached: [], newer: null };
   }
+}
+
+function warnUnreadableMeta(metaPath: string, detail: string, error: unknown): void {
+  logWarn("asset metadata cache unreadable; rebuilding from the files on disk", {
+    path: metaPath,
+    detail,
+    ...(error ? { error: serializeError(error) } : {}),
+  });
 }
 
 /**
@@ -247,7 +269,7 @@ function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
   // without the images (which are excluded) and is regenerable from them (reconcileAssets rebuilds it),
   // so it rides along into exclusion rather than being recorded orphaned (data-backup conventions:
   // anything colocated in a binary-bearing directory is excluded). Kept on the bare atomic write.
-  writeFileAtomic(metaPath, JSON.stringify(assets, null, 2) + "\n");
+  writeFileAtomic(metaPath, jsonStoreText("assetMeta", { assets }));
 }
 
 // The derived-filename grammar's atomic-write shape: `<stem>-<nanoid>.tmp`, same

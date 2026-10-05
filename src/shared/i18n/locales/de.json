@@ -57,6 +57,8 @@
   "dialog.startupFailure.message": "BigMouth konnte seine Einstellungen und seinen Arbeitsbereich nicht vollständig öffnen.",
   "dialog.startupFailure.detail": "Es wurden keine Beiträge oder Dokumente des Arbeitsbereichs geändert. Prüfen Sie das Sitzungsprotokoll und starten Sie BigMouth dann erneut.",
   "app.settingsRecovered": "Die App-Einstellungsdatei konnte nicht gelesen werden und wurde daher nach {path} verschoben. Design und Sprache der Oberfläche stehen wieder auf „System“.",
+  "app.settingsNewer": "Eine neuere Version von BigMouth hat die App-Einstellungsdatei {path} gespeichert, daher wurde sie nicht verändert. Bis Sie sie mit der neueren Version öffnen, stehen Design und Sprache der Oberfläche auf „System“, und Änderungen daran werden nicht gespeichert.",
+  "store.newerFormat": "Eine neuere Version von BigMouth hat {path} gespeichert, daher kann diese Version die Datei nicht verwenden. Die Datei wurde nicht verändert; öffnen Sie sie mit der neueren Version.",
   "app.uiStateLoadFailed": "Die gespeicherten Oberflächeneinstellungen und der zuletzt genutzte Arbeitsbereich konnten nicht geladen werden. Für diesen Start gelten die Standardwerte.",
   "app.workspacesLoadFailed": "Die Arbeitsbereiche konnten nicht geladen werden. Der gemerkte Arbeitsbereich bleibt unverändert; versuchen Sie es erneut.",
   "app.activeWorkspaceSaveFailed": "Dieser Arbeitsbereich ist geöffnet, konnte aber nicht für den nächsten Start gemerkt werden.",

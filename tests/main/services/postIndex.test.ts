@@ -13,7 +13,9 @@ import {
   clearCache,
   rebuildIndex,
   deletePost,
+  renameTarget,
 } from "@main/core/services/postStore.js";
+import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 import { canonicalIndexJson } from "@main/core/services/postIndex.js";
 import type { PostIndexEntry } from "@main/core/shared/types.js";
 
@@ -258,9 +260,9 @@ describe("a hand-edited post id outside the nanoid grammar", () => {
   it("is dropped from a hand-edited index.json too", () => {
     const post = createPost(dataDir, "blogger", "en");
     const indexFile = path.join(dataDir, "posts", "index.json");
-    const rows = JSON.parse(fs.readFileSync(indexFile, "utf-8")) as PostIndexEntry[];
-    rows.push({ ...rows[0], id: ".." });
-    fs.writeFileSync(indexFile, JSON.stringify(rows));
+    const stored = JSON.parse(fs.readFileSync(indexFile, "utf-8")) as { formatVersion: number; posts: PostIndexEntry[] };
+    stored.posts.push({ ...stored.posts[0], id: ".." });
+    fs.writeFileSync(indexFile, JSON.stringify(stored));
     // The index must look newer than the post, so reconcile trusts its rows.
     const later = new Date(Date.now() + 60_000);
     fs.utimesSync(indexFile, later, later);
@@ -483,5 +485,89 @@ describe("reconcile", () => {
     expect(draftIds).not.toContain(gone.frontMatter.id);
     expect(getPost(dataDir, gone.frontMatter.id)).toBeNull();
     expect(indexBytes()).not.toContain(gone.frontMatter.id);
+  });
+});
+
+// store-recovery-conventions: each store's format version.
+describe("post file format version", () => {
+  it("writes this build's format version first in a new post's front matter", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    expect(fs.readFileSync(post.filePath, "utf-8")).toMatch(/^---\nformatVersion: 1\nid: /);
+    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.formatVersion).toBe(1);
+  });
+
+  it("reads a post file with no format version as version 1", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1\n", ""));
+    clearCache(dataDir);
+
+    expect(rebuildIndex(dataDir).skipped).toEqual([]);
+    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.id).toBe(post.frontMatter.id);
+  });
+
+  it("skips a post file a newer version wrote and leaves it byte-identical", () => {
+    const kept = createPost(dataDir, "blogger", "en");
+    const newer = createPost(dataDir, "blogger", "en");
+    const body = fs.readFileSync(newer.filePath, "utf-8").replace("formatVersion: 1", "formatVersion: 2");
+    fs.writeFileSync(newer.filePath, body);
+
+    const rebuilt = rebuildIndex(dataDir);
+    expect(rebuilt.skipped.map((s) => s.fileName)).toEqual([path.basename(newer.filePath)]);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([kept.frontMatter.id]);
+    expect(renameTarget(dataDir, "blogger", "renamed").skipped).toEqual([]);
+    expect(fs.readFileSync(newer.filePath, "utf-8")).toBe(body);
+  });
+
+  it("refuses to write a post whose file a newer version replaced, leaving it byte-identical", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const body = fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1", "formatVersion: 2");
+    fs.writeFileSync(post.filePath, body);
+
+    expect(() => changeStatus(dataDir, post.frontMatter.id, "verified")).toThrow(NewerFormatError);
+    expect(() => setLocked(dataDir, post.frontMatter.id, true)).toThrow(NewerFormatError);
+    expect(fs.readFileSync(post.filePath, "utf-8")).toBe(body);
+  });
+});
+
+describe("post index format version", () => {
+  function indexFile(): string {
+    return path.join(dataDir, "posts", "index.json");
+  }
+
+  it("writes this build's format version and reads the index back", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    expect(indexBytes()).toMatch(/^\{\n {2}"formatVersion": 1,\n {2}"posts": \[/);
+    const before = indexBytes();
+    clearCache(dataDir);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
+    expect(indexBytes()).toBe(before);
+  });
+
+  it("reads an index with no format version as version 1, without rewriting it", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const { posts } = JSON.parse(indexBytes()) as { posts: PostIndexEntry[] };
+    const body = JSON.stringify({ posts });
+    fs.writeFileSync(indexFile(), body);
+    const later = new Date(Date.now() + 60_000);
+    fs.utimesSync(indexFile(), later, later);
+    clearCache(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
+    expect(indexBytes()).toBe(body);
+  });
+
+  it("keeps the index in memory over one a newer version wrote, leaving it byte-identical", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const body = JSON.stringify({ formatVersion: 2, entries: { future: true } });
+    fs.writeFileSync(indexFile(), body);
+    clearCache(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([first.frontMatter.id]);
+    const second = createPost(dataDir, "blogger", "en");
+    changeStatus(dataDir, first.frontMatter.id, "verified");
+    rebuildIndex(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([second.frontMatter.id]);
+    expect(fs.readFileSync(indexFile(), "utf-8")).toBe(body);
   });
 });

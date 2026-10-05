@@ -57,6 +57,8 @@
   "dialog.startupFailure.message": "BigMouth n’a pas pu finir d’ouvrir ses réglages et son espace de travail.",
   "dialog.startupFailure.detail": "Aucune publication ni aucun document de l’espace de travail n’a été modifié. Consultez le journal de session, puis relancez BigMouth.",
   "app.settingsRecovered": "Le fichier de réglages de l’app n’a pas pu être lu\u00a0; il a donc été déplacé vers {path}. Le thème et la langue de l’interface sont revenus à Système.",
+  "app.settingsNewer": "Une version plus récente de BigMouth a enregistré le fichier de réglages de l’app {path}\u00a0; il n’a donc pas été modifié. Tant que vous ne l’ouvrez pas avec cette version plus récente, le thème et la langue de l’interface suivent Système et leurs modifications ne sont pas enregistrées.",
+  "store.newerFormat": "Une version plus récente de BigMouth a enregistré {path}\u00a0; cette version ne peut donc pas l’utiliser. Le fichier n’a pas été modifié\u00a0; ouvrez-le avec la version plus récente.",
   "app.uiStateLoadFailed": "Les préférences d’interface enregistrées et le dernier espace de travail n’ont pas pu être chargés. Les valeurs par défaut s’appliquent pour ce lancement.",
   "app.workspacesLoadFailed": "Les espaces de travail n’ont pas pu être chargés. L’espace de travail mémorisé est inchangé\u00a0; réessayez.",
   "app.activeWorkspaceSaveFailed": "Cet espace de travail est ouvert, mais il n’a pas pu être mémorisé pour le prochain lancement.",
