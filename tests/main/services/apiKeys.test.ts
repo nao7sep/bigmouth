@@ -11,6 +11,7 @@ import {
 } from "@main/core/services/apiKeys.js";
 import * as logger from "@main/core/services/logger.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let dir: string;
 let keyFile: string;
@@ -262,6 +263,30 @@ describe("file permissions (POSIX only)", () => {
       } finally {
         warnSpy.mockRestore();
       }
+    });
+  });
+
+  describe("an unusable file that cannot be moved aside", () => {
+    it("reads as no key, refuses writes, and is never written over", () => {
+      const body = "{ not json";
+      fs.writeFileSync(keyFile, body);
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+        throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+      });
+      try {
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+        expect(() => writeApiKey(keyFile, W1, "anthropic", "sk-new")).toThrow(QuarantineError);
+        clearWorkspaceKeys(keyFile, W1);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/could not be set aside/),
+          expect.objectContaining({ path: keyFile }),
+        );
+      } finally {
+        rename.mockRestore();
+        warnSpy.mockRestore();
+      }
+      expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
     });
   });
 });

@@ -20,8 +20,10 @@
  *     protection is the file's 0600 mode. On POSIX the file is created 0600 and a
  *     group/world-readable file is tightened on read (warned once per process).
  *   - A corrupt/unreadable file is moved aside to a timestamped neighbour and
- *     treated as empty rather than throwing; a non-string or non-conforming entry
- *     is ignored, so a hand-edited file never bricks key resolution.
+ *     treated as empty rather than throwing; one that cannot be moved aside is
+ *     left in place, read as empty, and never written over. A non-string or
+ *     non-conforming entry is ignored, so a hand-edited file never bricks key
+ *     resolution.
  *   - A file a newer version of BigMouth wrote (store-recovery-conventions) is
  *     left in place and read as empty; storing a key into it is refused.
  *   - A stored value whose `obf:` payload fails strict base64 validation (a
@@ -35,7 +37,7 @@ import fs from "node:fs";
 import type { AiProvider } from "@shared/aiModels";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
-import { moveAsideInvalid } from "../shared/quarantine.js";
+import { QuarantineError, moveAsideInvalid } from "../shared/quarantine.js";
 import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
@@ -118,16 +120,17 @@ function emptyFile(): ApiKeysFile {
 }
 
 /**
- * The stored keys, and the refusal any write must raise when a newer version of
- * BigMouth wrote the file: that file is left exactly as it is, its keys read as
- * absent, and nothing is written over it.
+ * The stored keys, and the refusal any write must raise when the file must not
+ * be written over: a newer version of BigMouth wrote it, or it was unusable and
+ * could not be moved aside. Its keys then read as absent and the file is left
+ * exactly as it is; a read never throws (api-key-storage-conventions).
  */
-function readFile(filePath: string): { data: ApiKeysFile; newer: NewerFormatError | null } {
+function readFile(filePath: string): { data: ApiKeysFile; refusal: Error | null } {
   ensureSecureMode(filePath);
   const read = readJsonStore("apiKeys", filePath);
   switch (read.kind) {
     case "absent":
-      return { data: emptyFile(), newer: null };
+      return { data: emptyFile(), refusal: null };
     case "newer":
       if (!newerWarned) {
         newerWarned = true;
@@ -136,27 +139,39 @@ function readFile(filePath: string): { data: ApiKeysFile; newer: NewerFormatErro
           formatVersion: read.version,
         });
       }
-      return { data: emptyFile(), newer: new NewerFormatError(filePath, read.version) };
+      return { data: emptyFile(), refusal: new NewerFormatError(filePath, read.version) };
     case "unreadable":
-      setAside(filePath, read.detail, read.error);
-      return { data: emptyFile(), newer: null };
+      return { data: emptyFile(), refusal: setAside(filePath, read.detail, read.error) };
     case "read": {
       const normalized = normalize(read.value);
-      if (normalized) return { data: normalized, newer: null };
-      setAside(filePath, "it has the wrong shape", null);
-      return { data: emptyFile(), newer: null };
+      if (normalized) return { data: normalized, refusal: null };
+      return { data: emptyFile(), refusal: setAside(filePath, "it has the wrong shape", null) };
     }
   }
 }
 
-function setAside(filePath: string, detail: string, error: unknown): void {
-  const movedTo = moveAsideInvalid(filePath);
-  logWarn("api-keys.json unusable; set aside and treating as empty", {
-    path: filePath,
-    detail,
-    movedTo,
-    ...(error ? { error: serializeError(error) } : {}),
-  });
+// Moves an unusable file aside; a failed move degrades to "no key" and is
+// returned as the refusal for writes, so its bytes are never written over.
+function setAside(filePath: string, detail: string, error: unknown): QuarantineError | null {
+  try {
+    const movedTo = moveAsideInvalid(filePath);
+    logWarn("api-keys.json unusable; set aside and treating as empty", {
+      path: filePath,
+      detail,
+      movedTo,
+      ...(error ? { error: serializeError(error) } : {}),
+    });
+    return null;
+  } catch (failure) {
+    if (!(failure instanceof QuarantineError)) throw failure;
+    logWarn("api-keys.json unusable and could not be set aside; left unchanged, treating as empty", {
+      path: filePath,
+      detail,
+      ...(error ? { error: serializeError(error) } : {}),
+      moveError: serializeError(failure.cause),
+    });
+    return failure;
+  }
 }
 
 function writeFile(filePath: string, data: ApiKeysFile): void {
@@ -175,10 +190,11 @@ function writeFile(filePath: string, data: ApiKeysFile): void {
 
 // Apply a mutation and persist only if it changed the stored content, pruning
 // emptied workspace buckets so a cleared scope leaves no trace. A file a newer
-// version wrote is refused before anything is changed.
+// version wrote, or one that could not be set aside, is refused before anything
+// is changed.
 function update(filePath: string, mutate: (data: ApiKeysFile) => void): void {
-  const { data, newer } = readFile(filePath);
-  if (newer) throw newer;
+  const { data, refusal } = readFile(filePath);
+  if (refusal) throw refusal;
   const before = JSON.stringify(data);
   mutate(data);
   for (const [wsId, wsNode] of Object.entries(data.workspaces)) {
@@ -244,11 +260,11 @@ export function writeApiKey(filePath: string, workspaceId: string, provider: AiP
 
 /**
  * Remove every stored key for a workspace — used when the workspace is deleted.
- * A file a newer version wrote is left as it is, its key with it, rather than
- * failing the deletion.
+ * A file that must not be written over is left as it is, its key with it,
+ * rather than failing the deletion.
  */
 export function clearWorkspaceKeys(filePath: string, workspaceId: string): void {
-  if (readFile(filePath).newer) return;
+  if (readFile(filePath).refusal) return;
   update(filePath, (data) => {
     delete data.workspaces[workspaceId];
   });

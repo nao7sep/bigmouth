@@ -9,6 +9,8 @@ import path from "node:path";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { QuarantineError } from "@main/core/shared/quarantine.js";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
 import {
   getAppSettingsLoad,
@@ -169,3 +171,30 @@ describe("appSettingsStore format version", () => {
     expect(quarantined()).toEqual([]);
   });
 });
+
+// store-recovery-conventions: a failed quarantine rename propagates, so nothing resets over the bytes.
+it("stops with a message naming an unreadable file it could not move aside, and leaves it in place", () => {
+  fs.writeFileSync(configPath(), "{ theme");
+  const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+    throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+  });
+  try {
+    expect(() => initAppSettingsStore()).toThrow(QuarantineError);
+    expect(carriedMessage(captured(() => initAppSettingsStore()))).toEqual(
+      message("store.quarantineFailed", { path: configPath() }),
+    );
+  } finally {
+    rename.mockRestore();
+  }
+  expect(fs.readFileSync(configPath(), "utf-8")).toBe("{ theme");
+  expect(quarantined()).toEqual([]);
+});
+
+function captured(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (err) {
+    return err;
+  }
+  return null;
+}

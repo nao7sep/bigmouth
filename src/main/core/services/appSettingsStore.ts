@@ -59,7 +59,9 @@ export function initAppSettingsStore(): AppSettings {
   }
 }
 
-// Recovery keeps built-ins in memory without replacing the quarantined file.
+// Recovery keeps built-ins in memory without replacing the quarantined file. A
+// failed move propagates and stops startup, naming the file, rather than leaving
+// its bytes where the next save would write over them.
 function recover(filePath: string, detail: string, err: unknown): AppSettings {
   const movedTo = moveAsideInvalid(filePath);
   warn("config.json unusable; app settings reset", {
@@ -68,7 +70,7 @@ function recover(filePath: string, detail: string, err: unknown): AppSettings {
     movedTo,
     ...(err ? { error: serializeError(err) } : {}),
   });
-  if (movedTo !== null) notice = message("app.settingsRecovered", { path: movedTo });
+  notice = message("app.settingsRecovered", { path: movedTo });
   current = defaultAppSettings();
   return current;
 }
