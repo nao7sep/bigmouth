@@ -24,7 +24,7 @@ export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
     `Write a short readable English URL slug.\n` +
     `- Derive it from the English title or central angle when available.\n` +
     `- Prefer a natural phrase over a keyword list.\n` +
-    `- Use only lowercase letters, numbers, and hyphens.\n` +
+    `- Use only lowercase letters, numbers, and hyphens, with no leading, trailing, or doubled hyphen.\n` +
     `- Keep it specific, memorable, and under 60 characters.`,
   tags:
     `Write 5 to 8 tags in the same language as the draft.\n` +

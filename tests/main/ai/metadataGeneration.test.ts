@@ -1,4 +1,5 @@
 import { DEFAULT_GENERATION_PROMPTS } from "@main/core/ai/generationPrompts.js";
+import { GENERATED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import { describe, it, expect } from "vitest";
 import {
   isMetadataField,
@@ -141,6 +142,20 @@ describe("buildMetadataGenerationRequest", () => {
       customPrompts: { ...DEFAULT_GENERATION_PROMPTS, title: "MY CUSTOM TITLE GUIDANCE" },
     });
     expect(req.systemPrompt).toContain("MY CUSTOM TITLE GUIDANCE");
+  });
+});
+
+describe("the built-in field guidance", () => {
+  // The SDK moves a strict schema's length, count and pattern rules into its
+  // descriptions, so only the guidance states what the answer is held to.
+  it("states the rules the answer is held to and leaves the format to the schema", () => {
+    expect(DEFAULT_GENERATION_PROMPTS.slug).toContain("lowercase letters, numbers, and hyphens, with no leading, trailing, or doubled hyphen");
+    expect(DEFAULT_GENERATION_PROMPTS.slug).toContain(`under ${GENERATED_SLUG_MAX_LENGTH} characters`);
+    expect(DEFAULT_GENERATION_PROMPTS.tags).toContain("5 to 8 tags");
+    expect(DEFAULT_GENERATION_PROMPTS.tagsEn).toContain("5 to 8 English tags");
+    for (const [field, prompt] of Object.entries(DEFAULT_GENERATION_PROMPTS)) {
+      expect(prompt, field).not.toMatch(/json|output only|reply with/i);
+    }
   });
 });
 
