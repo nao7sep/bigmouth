@@ -21,6 +21,7 @@ import {
   getAnthropicSettingsForClient,
   getRoleCall,
   saveAnthropicSettings,
+  effectiveConfig,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
 import { rowFor } from "@shared/aiModels";
@@ -331,6 +332,24 @@ describe("the Anthropic section", () => {
     expect(sent("analysis")).toEqual({ type: "disabled" });
     expect(sent("metadata")).toEqual({ type: "adaptive", display: "summarized" });
     expect(sent("imagingPrompts")).toEqual({ type: "adaptive", display: "summarized" });
+  });
+
+  it("loads a thinking the file does not hold as the selected row's own default, and the built-in under an id with no row", () => {
+    const defaults = defaultAnthropicSettings();
+    const { config, issues } = effectiveConfig({
+      // Haiku's own default is off, not the balanced role's built-in adaptive.
+      "anthropic.analysis": "claude-haiku-4-5",
+      // A stored thinking is kept.
+      "anthropic.metadata": "claude-sonnet-5-5",
+      "anthropic.thinking.metadata": "between_tools",
+      "anthropic.imagingPrompts": "claude-next-9",
+    });
+    expect(issues).toEqual([]);
+    expect(config["anthropic.thinking.analysis"]).toBe("off");
+    expect(config["anthropic.thinking.metadata"]).toBe("between_tools");
+    expect(config["anthropic.thinking.imagingPrompts"]).toBe(defaults.thinking.imagingPrompts);
+    // An invalid stored thinking reads as absent, so it too is the selected row's default.
+    expect(effectiveConfig({ "anthropic.analysis": "claude-haiku-4-5", "anthropic.thinking.analysis": 7 }).config["anthropic.thinking.analysis"]).toBe("off");
   });
 
   it("keeps a thinking saved under a model with no row through a relaunch, unsent, until it returns to its built-in", () => {

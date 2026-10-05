@@ -18,8 +18,9 @@ import {
   setsDifferingFromBuiltIn,
   thinkingSetKey,
   workspaceSetIssue,
+  type WorkspaceSetKey,
 } from "@shared/configSets";
-import { AI_ROLE_IDS, thinkingFor, type AiRole } from "@shared/aiModels";
+import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "@shared/aiModels";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeSetFile } from "../shared/setFile.js";
 import { anthropicSets, makeDefaultConfig } from "../shared/defaults.js";
@@ -50,14 +51,33 @@ function readMap(dataDir: string): Record<string, unknown> {
   return parsed;
 }
 
-function readConfig(dataDir: string): WorkspaceConfig {
-  const map = readMap(dataDir);
+/** The config a stored map reads as, and each stored set that was invalid and read as its built-in. */
+export function effectiveConfig(map: Record<string, unknown>): { config: WorkspaceConfig; issues: { key: WorkspaceSetKey; issue: string }[] } {
   const config = structuredClone(makeDefaultConfig());
+  const issues: { key: WorkspaceSetKey; issue: string }[] = [];
+  const stored = new Set<WorkspaceSetKey>();
   for (const key of WORKSPACE_SET_KEYS) {
     if (!Object.hasOwn(map, key)) continue;
     const issue = workspaceSetIssue(key, map[key]);
-    if (issue === null) Object.assign(config, { [key]: map[key] });
-    else warn("workspace config set is invalid; using built-in", { path: path.join(dataDir, CONFIG_FILE), key, issue });
+    if (issue === null) {
+      Object.assign(config, { [key]: map[key] });
+      stored.add(key);
+    } else issues.push({ key, issue });
+  }
+  // A thinking is stored only while it differs from the selected model's own default,
+  // so one the file does not hold is that row's default, not the role's built-in
+  // (which belongs to the role's default model). An id with no row keeps the built-in.
+  for (const role of AI_ROLE_IDS) {
+    const row = rowFor(config[modelSetKey(role)]);
+    if (row && !stored.has(thinkingSetKey(role))) config[thinkingSetKey(role)] = row.defaultThinking;
+  }
+  return { config, issues };
+}
+
+function readConfig(dataDir: string): WorkspaceConfig {
+  const { config, issues } = effectiveConfig(readMap(dataDir));
+  for (const { key, issue } of issues) {
+    warn("workspace config set is invalid; using built-in", { path: path.join(dataDir, CONFIG_FILE), key, issue });
   }
   return config;
 }
