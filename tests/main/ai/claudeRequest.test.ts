@@ -91,6 +91,8 @@ describe("buildClaudeParams", () => {
       system: "sys",
       output_config: { format: FORMAT },
     });
+    // A thinking value that reaches the builder for such an id still adds nothing.
+    expect(params("claude-next-9", "max", FORMAT)).toEqual(params("claude-next-9", undefined, FORMAT));
     expect(buildClaudeParams({ model: "local-model", system: "", userContent: "u" }, undefined)).toEqual({
       model: "local-model",
       max_tokens: MAX_TOKENS,
