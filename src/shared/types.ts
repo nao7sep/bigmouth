@@ -35,8 +35,7 @@ export const DEFAULT_PANE_RIGHT_WIDTH = 480;
  * per persisted-store-separation-conventions: a settings reset must not touch it,
  * and its splitter-drag churn must not rewrite a config file. It is disposable:
  * losing it just reopens the picker and restores default
- * pane widths. (Was three keys in renderer localStorage: bm-pane-left-width,
- * bm-pane-right-width, bm-workspace-id.)
+ * pane widths.
  */
 export interface UiState {
   paneLeftWidth: number;   // left side-pane INTENT width (px); display is clamped at render time
