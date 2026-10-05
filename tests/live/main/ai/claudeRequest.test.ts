@@ -15,8 +15,9 @@ const MAX_TOKENS = 64;
 const CALL_TIMEOUT_MS = 60_000;
 
 // Each row at its default thinking, and Sonnet 5.5's between_tools, its one
-// thinking kind besides adaptive; every effort level is adaptive thinking with
-// an effort the lineup survey already tested.
+// thinking kind besides adaptive. Every effort level is adaptive thinking with
+// an effort value that Anthropic documents; neither this lane nor the lineup
+// survey calls each level.
 const CASES: readonly [model: string, thinking: string][] = [
   ...SUPPORTED_MODELS.map((row) => [row.id, row.defaultThinking] as [string, string]),
   ["claude-sonnet-5-5", "between_tools"],
