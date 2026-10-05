@@ -101,9 +101,11 @@ describe("the model tables", () => {
     }
     expect(thinkingAfterModelEdit(sonnet, "claude-opus-5-5", "max")).toEqual({ thinking: "adaptive", lastListedModel: "claude-opus-5-5" });
     expect(thinkingAfterModelEdit(sonnet, "claude-haiku-4-5", "max").thinking).toBe("off");
-    // An unlisted id keeps the value and the last listed id; a field that has held no row starts at the first row it reaches.
+    // An unlisted id keeps the value and the last listed id; a field that has held no row keeps the value
+    // at the first row it reaches when that row lists it, and otherwise starts at that row's default.
     expect(thinkingAfterModelEdit(sonnet, "claude-next-9", "max")).toEqual({ thinking: "max", lastListedModel: sonnet });
-    expect(thinkingAfterModelEdit("claude-next-9", sonnet, "max").thinking).toBe("adaptive");
+    expect(thinkingAfterModelEdit("claude-next-9", sonnet, "max")).toEqual({ thinking: "max", lastListedModel: sonnet });
+    expect(thinkingAfterModelEdit("claude-next-9", "claude-opus-5-5", "between_tools")).toEqual({ thinking: "adaptive", lastListedModel: "claude-opus-5-5" });
   });
 
   it("keeps the choice when a letter of the id is deleted and retyped, and resets it on reaching another row", () => {

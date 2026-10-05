@@ -117,13 +117,14 @@ function canonical(value: unknown): unknown {
 
 // A model id is its own key, compared trimmed and case-insensitively. A role's
 // thinking equals its built-in while the value it sends is the default for the
-// model the role selects, and always for a model with no row.
+// model the role selects; under a model with no row it is kept, unsent, while it
+// differs from the built-in.
 function equalsBuiltIn(key: string, values: Record<string, unknown>, builtIn: Record<string, unknown>): boolean {
   const value = values[key];
   const thinkingRole = THINKING_SET_ROLES.get(key);
   if (thinkingRole) {
     const row = rowFor(String(values[modelSetKey(thinkingRole)] ?? ""));
-    return !row || thinkingFor(row.id, String(value)) === row.defaultThinking;
+    return row ? thinkingFor(row.id, String(value)) === row.defaultThinking : value === builtIn[key];
   }
   if (MODEL_SET_ROLES.has(key)) {
     return typeof value === "string" && value.trim().toLowerCase() === String(builtIn[key]).toLowerCase();

@@ -293,12 +293,23 @@ describe("the Anthropic section", () => {
       thinking: { ...defaults.thinking, analysis: "between_tools" },
     }));
     expect(getRoleCall(ws, "analysis")).toMatchObject({ model: "claude-next-9", thinking: undefined });
-    // A model with no row sends no thinking, so its role's thinking is never stored.
-    expect(saved()).toEqual({ "anthropic.analysis": "claude-next-9" });
+    // A model with no row sends no thinking; its role's choice is kept for when a listed row returns.
+    expect(saved()).toEqual({ "anthropic.analysis": "claude-next-9", "anthropic.thinking.analysis": "between_tools" });
 
     fs.writeFileSync(file(), JSON.stringify({ "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
     expect(getRoleCall(ws, "analysis").thinking).toBe("adaptive");
     expect(getAnthropicSettingsForClient(ws).thinking.analysis).toBe("adaptive");
+  });
+
+  it("keeps a thinking saved under a model with no row through a relaunch, unsent, until it returns to its built-in", () => {
+    const defaults = defaultAnthropicSettings();
+    saveAnthropicSettings(ws, input({ models: { ...defaults.models, imagingPrompts: "claude-next-9" }, thinking: { ...defaults.thinking, imagingPrompts: "max" } }));
+    expect(saved()).toEqual({ "anthropic.imagingPrompts": "claude-next-9", "anthropic.thinking.imagingPrompts": "max" });
+    // Each read goes to the file, as a relaunch does.
+    expect(getAnthropicSettingsForClient(ws).thinking.imagingPrompts).toBe("max");
+    expect(getRoleCall(ws, "imagingPrompts")).toMatchObject({ model: "claude-next-9", thinking: undefined });
+    saveAnthropicSettings(ws, input({ models: { ...defaults.models, imagingPrompts: "claude-next-9" } }));
+    expect(saved()).toEqual({ "anthropic.imagingPrompts": "claude-next-9" });
   });
 });
 

@@ -81,7 +81,8 @@ export function thinkingFor(model: string, chosen: string): string | undefined {
 // different row than that last listed one; an id with no row, passed through while
 // typing or landed on, keeps both, so the choice stays stored, hidden and unsent,
 // and returning to the same row keeps it. A field that opens on an unlisted id has
-// held no row yet, so the first row it reaches sets its default.
+// held no row yet, so the first row it reaches keeps the value when it lists it and
+// otherwise sets its default.
 export function thinkingAfterModelEdit(
   lastListedModel: string,
   nextModel: string,
@@ -89,7 +90,9 @@ export function thinkingAfterModelEdit(
 ): { thinking: string; lastListedModel: string } {
   const next = rowFor(nextModel);
   if (!next) return { thinking: chosen, lastListedModel };
-  return { thinking: next === rowFor(lastListedModel) ? chosen : next.defaultThinking, lastListedModel: nextModel };
+  const held = rowFor(lastListedModel);
+  const keeps = held ? next === held : next.thinking.includes(chosen);
+  return { thinking: keeps ? chosen : next.defaultThinking, lastListedModel: nextModel };
 }
 
 // A row with one thinking value offers no choice, so it shows no Thinking field.

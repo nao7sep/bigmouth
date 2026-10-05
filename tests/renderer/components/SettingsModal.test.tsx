@@ -287,6 +287,32 @@ describe("SettingsModal — AI tab model fields", () => {
     expect(analysisThinking()).toBe("adaptive");
   });
 
+  it("reopened on a Thinking stored under an id with no row, keeps it at the first listed row that offers it", async () => {
+    const { getByRole } = await renderModal(anthropic({
+      models: { analysis: "claude-next-9", metadata: "claude-haiku-4-5", imagingPrompts: "claude-sonnet-5-5" },
+      thinking: { analysis: "between_tools", metadata: "off", imagingPrompts: "adaptive" },
+    }));
+    openAiTab(getByRole);
+    const model = () => within(getByRole("tabpanel")).getByLabelText("Analysis model");
+    const analysisThinking = () => (within(getByRole("tabpanel")).getAllByLabelText("Thinking")[0] as HTMLSelectElement).value;
+    expect(within(getByRole("tabpanel")).getAllByLabelText("Thinking")).toHaveLength(1);
+    fireEvent.change(model(), { target: { value: "claude-sonnet-5-5" } });
+    expect(analysisThinking()).toBe("between_tools");
+    // Once the field has held a listed row, reaching a different one resets it.
+    fireEvent.change(model(), { target: { value: "claude-opus-5-5" } });
+    expect(analysisThinking()).toBe("adaptive");
+  });
+
+  it("reopened on a Thinking stored under an id with no row, takes the default of a listed row that does not offer it", async () => {
+    const { getByRole } = await renderModal(anthropic({
+      models: { analysis: "claude-next-9", metadata: "claude-haiku-4-5", imagingPrompts: "claude-sonnet-5-5" },
+      thinking: { analysis: "between_tools", metadata: "off", imagingPrompts: "adaptive" },
+    }));
+    openAiTab(getByRole);
+    fireEvent.change(within(getByRole("tabpanel")).getByLabelText("Analysis model"), { target: { value: "claude-opus-5-5" } });
+    expect((within(getByRole("tabpanel")).getAllByLabelText("Thinking")[0] as HTMLSelectElement).value).toBe("adaptive");
+  });
+
   it("takes the Thinking default from the chosen model's tier, not the role's, and lists that model's values", async () => {
     const { getByRole } = await renderModal();
     const thinkingFields = () => within(getByRole("tabpanel")).getAllByLabelText("Thinking") as HTMLSelectElement[];
