@@ -40,7 +40,7 @@ export interface AssetMeta {
   width?: number;         // pixels (images only)
   height?: number;        // pixels (images only)
   hasMetadata?: boolean;  // true if EXIF/IPTC/XMP metadata was detected at upload
-  uploadedAt: string;     // ISO 8601
+  uploadedAt?: string;    // ISO 8601; absent when no upload was recorded (see projectAssetFile)
 }
 
 const META_FILENAME = "meta.json";
@@ -66,7 +66,7 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  * actually on disk — the image files are the source of truth, `meta.json` is a
  * derived cache (the same relationship the post index has with the `.md` files).
  * Cached entries whose file is gone are dropped; files present without a cached
- * entry are projected minimally (size + mtime, no dimensions). This is what makes
+ * entry are projected minimally (size only). This is what makes
  * the write paths below crash-safe without any backup/rollback machinery: an
  * interrupted upload or delete heals to a consistent list on the next read, and
  * a missing `meta.json` next to real files is recovered, never an error.
@@ -217,14 +217,15 @@ function readAssetMeta(metaPath: string): AssetMeta[] {
   }
 }
 
-/** Minimal metadata for an asset file with no cached entry (size + mtime). */
+/**
+ * Minimal metadata for an asset file with no cached entry: its size. It has no
+ * upload time, because none was recorded — the file's modified time is when it
+ * was last written, which a copy or a git checkout resets, so it is not taken
+ * for one (content-lifecycle-conventions: a missing time is not made up). The
+ * next upload or delete writes this entry to `meta.json` as it is.
+ */
 function projectAssetFile(dir: string, filename: string): AssetMeta {
-  const stat = fs.statSync(path.join(dir, filename));
-  return {
-    filename,
-    size: stat.size,
-    uploadedAt: stat.mtime.toISOString(),
-  };
+  return { filename, size: fs.statSync(path.join(dir, filename)).size };
 }
 
 /**

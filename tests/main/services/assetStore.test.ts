@@ -165,4 +165,29 @@ describe("listAssets self-heals against the files on disk", () => {
 
     expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
   });
+
+  // content-lifecycle-conventions: a missing time is not made up. A file's
+  // modified time is when it was last written — a copy or a git checkout resets
+  // it — so it is not an upload time, shown or stored.
+  it("gives a file it has no record of no upload time, and never stores one", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const dir = assetDir(dataDir, POST);
+    fs.unlinkSync(path.join(dir, "meta.json"));
+
+    expect(listAssets(dataDir, POST)[0]).toEqual({ filename: "a.png", size: 3 });
+
+    // The next upload and the next delete write the list back to meta.json.
+    saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
+    const afterUpload = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")) as AssetMeta[];
+    expect(afterUpload.find((a) => a.filename === "a.png")).toEqual({ filename: "a.png", size: 3 });
+    expect(afterUpload.find((a) => a.filename === "b.png")?.uploadedAt).toBe("2026-01-01T00:00:00.000Z");
+
+    fs.writeFileSync(path.join(dir, "c.png"), "xyz");
+    deleteAsset(dataDir, POST, "b.png");
+    const afterDelete = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")) as AssetMeta[];
+    expect(afterDelete).toEqual([
+      { filename: "a.png", size: 3 },
+      { filename: "c.png", size: 3 },
+    ]);
+  });
 });

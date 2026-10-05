@@ -211,7 +211,9 @@ export interface AssetMeta {
   width?: number;
   height?: number;
   hasMetadata?: boolean;
-  uploadedAt: string;
+  // When the app stored the file. Absent for a file it found in the folder
+  // without a record of its upload: that time is unknown, and never guessed.
+  uploadedAt?: string;
 }
 
 // --- AI settings ---
