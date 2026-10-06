@@ -39,6 +39,8 @@ const shell = vi.hoisted(() => ({
   dialogChoices: [] as number[],
   // When set, the dialog stays open until the test answers it.
   dialogAnswer: null as Promise<number> | null,
+  // Answers an open dialog with its cancel choice, as an ending session does.
+  cancelOpenDialog: null as (() => void) | null,
   windowLoadFailure: null as Error | null,
   windowCloses: 0,
   loggedErrors: [] as unknown[][],
@@ -66,8 +68,12 @@ vi.mock("electron", () => ({
 vi.mock("@main/plain-message-dialog.js", () => ({
   showPlainMessageDialog: async (options: { detail?: string; buttons?: string[] }) => {
     shell.dialogs.push(options);
-    return shell.dialogAnswer ?? shell.dialogChoices.shift() ?? shell.dialogChoice;
+    if (shell.dialogAnswer) {
+      return Promise.race([shell.dialogAnswer, new Promise<number>((resolve) => { shell.cancelOpenDialog = () => resolve(0); })]);
+    }
+    return shell.dialogChoices.shift() ?? shell.dialogChoice;
   },
+  cancelOpenMessageDialogs: () => shell.cancelOpenDialog?.(),
 }));
 
 // What each flush at quit does, in order: "store" runs the real store's flush in
@@ -165,6 +171,7 @@ async function bootApp(): Promise<PostStore> {
   shell.dialogChoice = 0;
   shell.dialogChoices = [];
   shell.dialogAnswer = null;
+  shell.cancelOpenDialog = null;
   flush.plan = [];
   flush.calls = 0;
   shell.windowLoadFailure = null;
@@ -192,6 +199,13 @@ async function quit(): Promise<void> {
   });
 }
 
+const PLATFORM = process.platform;
+
+/** Runs the rest of the test as if on `platform`; afterEach puts the real one back. */
+function onPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, "platform", { value: platform });
+}
+
 beforeEach(() => {
   processHandlers.clear();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
@@ -200,6 +214,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  Object.defineProperty(process, "platform", { value: PLATFORM });
   // A quit the test left unfinished holds the store's writes.
   flush.store?.resumePendingFlushes();
   // vi.resetModules() gives this file a fresh backup-store singleton, distinct
@@ -331,19 +346,30 @@ describe("quit flushes the write-behind buffer", () => {
 // An ending OS session never asks: the app writes what it can within the
 // flush's bound, logs what it could not, and exits.
 describe("an ending OS session", () => {
-  it("never blocks when the OS is ending the session (Windows session-end)", async () => {
+  it("writes and exits on Windows' session-end, which raises no before-quit", async () => {
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "saved at logoff");
+
+    windowHandlers.get("session-end")!({ reasons: ["logoff"] });
+
+    // Synchronously: the session may end as soon as the handler returns.
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("saved at logoff");
+    expect(shell.dialogs).toEqual([]);
+    expect(shell.exits).toEqual([0]);
+  });
+
+  it("logs and exits on Windows' session-end when the posts cannot be written", async () => {
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");
     store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
     fs.unlinkSync(post.filePath);
 
-    // Windows raises session-end on the window; there is no app-level event.
     windowHandlers.get("session-end")!({ reasons: ["logoff"] });
-    await quit();
 
-    // A dialog here would block until Windows force-terminated the app, losing
-    // the buffer — exactly what the escape hatch exists to prevent.
+    // A dialog here would block until Windows force-terminated the app.
     expect(shell.dialogs).toEqual([]);
+    expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush failed at quit");
     expect(shell.exits).toEqual([0]);
   });
 
@@ -353,8 +379,7 @@ describe("an ending OS session", () => {
     store.queueContent(dataDir, post.frontMatter.id, "stuck behind a stalled disk");
     flush.plan = ["stall"];
 
-    powerHandlers.get("shutdown")!();
-    await quit();
+    windowHandlers.get("session-end")!({ reasons: ["shutdown"] });
 
     expect(shell.dialogs).toEqual([]);
     expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush did not finish at quit");
@@ -373,6 +398,63 @@ describe("an ending OS session", () => {
     expect(shell.dialogs).toEqual([]);
     expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush failed at quit");
     expect(shell.exits).toEqual([0]);
+  });
+
+  it("answers a quit question already open, and exits", async () => {
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+    shell.dialogAnswer = new Promise(() => {}); // the user never answers
+
+    await quit();
+    expect(shell.dialogs).toHaveLength(1);
+
+    powerHandlers.get("shutdown")!();
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    // The logout's own quit, held while the first one finishes.
+    appHandlers.get("before-quit")!({ preventDefault: () => {} });
+    expect(shell.dialogs).toHaveLength(1);
+    expect(shell.exits).toEqual([0]);
+  });
+});
+
+// Off macOS the main window's close is the quit, so it goes through the same
+// save and stays open when the user cancels.
+describe("closing the main window off macOS", () => {
+  it("is held and becomes the quit", async () => {
+    onPlatform("win32");
+    await bootApp();
+    const preventDefault = vi.fn();
+
+    windowHandlers.get("close")!({ preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(shell.quitRequests).toBe(1);
+    expect(shell.windowCloses).toBe(0);
+  });
+
+  it("asks about a refused metadata value as a quit, not a close", async () => {
+    onPlatform("linux");
+    await bootApp();
+    const { setMetadataRefusal } = await import("@main/ipc/refusedMetadata.js");
+    setMetadataRefusal({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "p1", true);
+
+    windowHandlers.get("close")!({ preventDefault: () => {} });
+    await quit(); // the before-quit that app.quit() raises
+
+    expect(shell.dialogs).toHaveLength(1);
+    expect(shell.dialogs[0].buttons).toEqual(["Cancel", "Quit Anyway"]);
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("is let through when the OS session is ending", async () => {
+    onPlatform("win32");
+    await bootApp();
+    windowHandlers.get("session-end")!({ reasons: ["logoff"] });
+    const preventDefault = vi.fn();
+    windowHandlers.get("close")!({ preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 });
 
@@ -405,7 +487,8 @@ describe("a refused metadata value on screen", () => {
     await vi.waitFor(() => expect(shell.exits).toEqual([0]));
   });
 
-  it("holds the window close until the user chooses, then closes on Close Anyway", async () => {
+  it("holds the window close on macOS until the user chooses, then closes on Close Anyway", async () => {
+    onPlatform("darwin");
     await bootApp();
     await refuseInMainWindow();
     const preventDefault = vi.fn();
@@ -425,7 +508,8 @@ describe("a refused metadata value on screen", () => {
     expect(again).not.toHaveBeenCalled();
   });
 
-  it("closes without asking when nothing on screen was refused", async () => {
+  it("closes on macOS without asking when nothing on screen was refused", async () => {
+    onPlatform("darwin");
     await bootApp();
     const preventDefault = vi.fn();
     windowHandlers.get("close")!({ preventDefault });

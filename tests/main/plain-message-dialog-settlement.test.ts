@@ -56,7 +56,7 @@ vi.mock("electron", () => ({
   nativeTheme: { shouldUseDarkColors: false },
 }));
 
-import { showPlainMessageDialog } from "@main/plain-message-dialog";
+import { cancelOpenMessageDialogs, showPlainMessageDialog } from "@main/plain-message-dialog";
 
 describe("plain message dialog settlement", () => {
   beforeEach(() => {
@@ -95,5 +95,24 @@ describe("plain message dialog settlement", () => {
     electronMock.getLastWindow()?.triggerDomReady();
 
     await expect(pending).resolves.toBe(0);
+  });
+
+  // An ending OS session answers every open dialog for the user.
+  it("answers an open dialog with its cancel choice and closes it when asked to", async () => {
+    const pending = showPlainMessageDialog({
+      title: "Unsaved changes",
+      message: "Choose",
+      buttons: ["Cancel", "Retry", "Quit Anyway"],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    const window = electronMock.getLastWindow()!;
+
+    cancelOpenMessageDialogs();
+
+    await expect(pending).resolves.toBe(0);
+    expect(window.isDestroyed()).toBe(true);
+    // A settled dialog is no longer open: asking again reaches nothing.
+    expect(() => cancelOpenMessageDialogs()).not.toThrow();
   });
 });

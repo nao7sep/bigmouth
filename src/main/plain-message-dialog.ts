@@ -15,6 +15,17 @@ export interface PlainMessageDialogOptions {
 
 const CHOICE_ORIGIN = "https://bigmouth-dialog.invalid/choice/";
 
+// Each open dialog's way to answer itself with its cancel choice.
+const openDialogs = new Set<() => void>();
+
+/**
+ * Answers every open dialog with its cancel choice and closes it. An ending OS
+ * session calls this, so no dialog holds it (modal-dialog-conventions).
+ */
+export function cancelOpenMessageDialogs(): void {
+  for (const cancel of [...openDialogs]) cancel();
+}
+
 /** App-authored message shell: no framework severity/application icon. */
 export async function showPlainMessageDialog(options: PlainMessageDialogOptions): Promise<number> {
   const translator = mainTranslator();
@@ -48,9 +59,12 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
     const settle = (choice: number): void => {
       if (settled) return;
       settled = true;
+      openDialogs.delete(cancel);
       resolve(choice);
       if (!win.isDestroyed()) win.close();
     };
+    const cancel = (): void => settle(cancelId);
+    openDialogs.add(cancel);
     const settleLoadFailure = (phase: string, error: unknown): void => {
       console.error(`[bigmouth] message dialog ${phase} failed:`, error);
       settle(cancelId);

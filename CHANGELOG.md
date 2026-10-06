@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A post's updated time changes only when its text, metadata, assets or source link change. Changing its status, locking it, and saving text or metadata equal to what is on disk no longer move it; uploading, replacing or deleting an asset now does.
 - An asset found in a post's folder without a record of its upload no longer gets its file's modified time saved as its upload time.
 - Quitting waits at most 2 seconds for the posts to be written, so a stalled disk no longer hangs it. When they cannot be written, the quit is cancelled and asks to cancel, retry or quit anyway.
+- A Windows logoff or shutdown writes the posts before BigMouth exits, and closing the main window on Windows or Linux stays open when that quit is cancelled.
 
 ## [0.1.0] - 2026-07-08
 

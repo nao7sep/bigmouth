@@ -10,6 +10,7 @@ import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
 import { holdPendingFlushes, resumePendingFlushes } from "./core/services/postStore.js";
 import { QUIT_FLUSH_BOUND_MS, flushPendingEditsWithin } from "./core/services/quitFlush.js";
+import { cancelOpenMessageDialogs } from "./plain-message-dialog.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
@@ -93,13 +94,16 @@ async function bootstrap(): Promise<void> {
 }
 
 // Opens the window and subscribes to the platform's session-end signal. Windows
-// raises "session-end" on the window (Electron has no app-level equivalent);
-// macOS and Linux raise powerMonitor "shutdown" below. Both set the same flag,
-// so a logoff on any platform takes the never-block path at quit.
+// raises "session-end" on the window (Electron has no app-level equivalent) and
+// never raises before-quit for a logoff, so the handler itself saves and exits:
+// the session may end as soon as it returns. macOS and Linux raise powerMonitor
+// "shutdown" below, and their quit then arrives through before-quit.
 //
-// Closing the window drops what its fields show, so a metadata value the store
-// refused (and so never buffered) asks first. The app stays alive on macOS
-// after the window closes; quit has its own check in before-quit.
+// Off macOS, closing the main window is how the app quits, so the close becomes
+// the quit: it saves first, and the window stays open when the user cancels.
+// On macOS the app stays alive after the window closes, and the store writes
+// the buffer on its debounce; closing it drops only what its fields show, so a
+// metadata value the store refused (and so never buffered) asks first.
 async function openMainWindow(): Promise<void> {
   const window = await createMainWindow();
   mainWindow = window;
@@ -109,11 +113,21 @@ async function openMainWindow(): Promise<void> {
   });
   window.on("session-end", () => {
     systemShutdown = true;
+    shuttingDown = true;
+    holdPendingFlushes();
+    flushAtQuit();
+    exitApp();
   });
   const ownerId = window.webContents.id;
   let askingToClose = false;
   window.on("close", (event) => {
-    if (systemShutdown || !holdsRefusedMetadata(ownerId)) return;
+    if (systemShutdown) return;
+    if (process.platform !== "darwin") {
+      event.preventDefault();
+      app.quit();
+      return;
+    }
+    if (!holdsRefusedMetadata(ownerId)) return;
     event.preventDefault();
     if (askingToClose) return;
     askingToClose = true;
@@ -192,9 +206,10 @@ if (!ownsInstance) {
   // any buffered content and metadata edits within the flush's bound, close the
   // records database, then exit deterministically. The post store owns pending
   // edits (write-behind), so this flush — not a renderer round-trip — is what
-  // guarantees the newest keystroke is on disk. When the user's posts cannot
-  // be written, a quit the user started asks to cancel, retry or quit anyway;
-  // an ending session never asks.
+  // guarantees the newest keystroke is on disk. Menu Quit, Cmd+Q, the Dock's
+  // Quit, closing the main window off macOS, and a macOS or Linux logout all
+  // arrive here. When the user's posts cannot be written, a quit the user
+  // started asks to cancel, retry or quit anyway; an ending session never asks.
   // A quit arriving while that runs, the question included, is held too, so
   // only the shutdown's own app.exit(0) ends the process.
   app.on("before-quit", (event) => {
@@ -222,11 +237,13 @@ if (!ownsInstance) {
     })();
   });
 
-  // During OS shutdown or logout the app must not block: flush what it can and go.
+  // During OS shutdown or logout the app must not block: a question already
+  // open is answered for it, and the quit that follows flushes and goes.
   // macOS and Linux only — Windows has no powerMonitor "shutdown"; its signal is
   // the window's "session-end", wired in openMainWindow.
   powerMonitor.on("shutdown", () => {
     systemShutdown = true;
+    cancelOpenMessageDialogs();
   });
 
   process.on("uncaughtException", (err) => {
