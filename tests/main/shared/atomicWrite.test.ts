@@ -83,6 +83,23 @@ describe("writeFileAtomic", () => {
     expect(fs.statSync(target).mode & 0o777).toBe(0o600);
   });
 
+  it.runIf(process.platform !== "win32")("keeps the permissions of the file it replaces", () => {
+    const target = path.join(dir, "data.json");
+    fs.writeFileSync(target, "old");
+    fs.chmodSync(target, 0o640);
+    writeFileAtomic(target, "new");
+    expect(fs.readFileSync(target, "utf-8")).toBe("new");
+    expect(fs.statSync(target).mode & 0o777).toBe(0o640);
+  });
+
+  it.runIf(process.platform !== "win32")("applies an explicit mode over the replaced file's permissions", () => {
+    const target = path.join(dir, "secret.json");
+    fs.writeFileSync(target, "old");
+    fs.chmodSync(target, 0o644);
+    writeFileAtomic(target, "new", 0o600);
+    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+  });
+
   it("names the temp file <stem>-<nanoid>.tmp in the target's own directory", () => {
     // Derived-filename grammar: the discriminator is hyphen-joined into the
     // target's stem, never dot-appended after the full filename.

@@ -68,6 +68,17 @@ const grayMatterCache = matter as unknown as {
   clearCache: () => void;
 };
 
+describe("saving a changed post", () => {
+  it.runIf(process.platform !== "win32")("keeps the permissions the file already had", () => {
+    const file = path.join(dir, "post.md");
+    writePost(file, frontMatter(), "first");
+    fs.chmodSync(file, 0o640);
+    writePost(file, frontMatter(), "second");
+    expect(readPost(file).content).toBe("second");
+    expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+  });
+});
+
 describe("parsing does not accumulate in gray-matter's global cache", () => {
   // Called with no options, gray-matter memoizes every parse by the whole input
   // string and never evicts, so each autosave flush retained another full copy

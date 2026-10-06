@@ -91,6 +91,17 @@ describe("saveAssetFile / listAssets / deleteAsset", () => {
 
 // --- Case-insensitive sibling collisions (macOS/Windows never clobber) -------
 
+describe("replacing an asset", () => {
+  it.runIf(process.platform !== "win32")("keeps the permissions of the file it replaces", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const file = path.join(assetDir(dataDir, POST), "a.png");
+    fs.chmodSync(file, 0o640);
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("de"), meta("a.png", 2));
+    expect(fs.readFileSync(file, "utf8")).toBe("de");
+    expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+  });
+});
+
 describe("saveAssetFile disambiguates case-only filename collisions", () => {
   it("keeps both files when a new name differs only in case from an existing one", () => {
     saveAssetFile(dataDir, POST, "Photo.png", Buffer.from("abc"), meta("Photo.png"));

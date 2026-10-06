@@ -11,6 +11,9 @@
  * concurrent unlocked writers of the same target each rename their own complete content into place
  * without ever sharing — and tearing — one temp file.
  *
+ * Replacing an existing file carries its permission mode onto the temp before the rename. Its extended
+ * attributes and Finder tags are not carried: Node cannot copy them without a native dependency.
+ *
  * An optional `mode` is applied at creation — the temp file is opened with those permissions, so the
  * secret content never touches disk at a looser default for even an instant (a chmod after the write
  * would leave exactly that window). Used for the `0600` secrets file; the umask only clears bits, so
@@ -35,8 +38,12 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   const ext = path.extname(filePath);
   const stem = path.basename(filePath, ext);
   const tempPath = path.join(dir, `${stem}-${nanoid()}.tmp`);
+  // A replace keeps the file's permissions (content-lifecycle-conventions); an
+  // explicit mode, the secrets file's, wins over them.
+  const keptMode = mode === undefined ? existingMode(filePath) : undefined;
   try {
     fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
+    if (keptMode !== undefined) fs.chmodSync(tempPath, keptMode);
     fs.renameSync(tempPath, filePath);
   } catch (err) {
     // A write that fails removes its own temp (storage-path-conventions).
@@ -47,6 +54,12 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
     }
     throw err;
   }
+}
+
+/** The permission bits of the file a write is about to replace, or undefined when there is none. */
+export function existingMode(filePath: string): number | undefined {
+  const stat = fs.statSync(filePath, { throwIfNoEntry: false });
+  return stat ? stat.mode & 0o7777 : undefined;
 }
 
 /**

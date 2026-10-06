@@ -21,7 +21,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { nanoid } from "nanoid";
 import {
   assetFilenameKey,
   isReservedAssetName,
@@ -111,21 +110,15 @@ export function saveAssetFile(
   const finalMeta: AssetMeta = { ...meta, filename: finalName };
   const existing = siblings.filter((a) => a.filename !== finalName);
 
-  // Install the file via temp+rename (atomic, and replaces any same-named file),
-  // then commit the metadata. If a crash lands between the two, the orphaned file
-  // is reconciled back into the list on the next read — no data is lost.
-  const tempPath = path.join(dir, tempName(finalName));
-  try {
-    // not recorded: an uploaded asset is BINARY (an image/attachment), copied in and re-acquirable from
-    // its source. Binaries are written by code paths that never call the record hook — they carry no
-    // text-recovery value and would bloat the text history (data-backup conventions: binary and
-    // binary-ish writes are excluded). This is a raw fs write, not the managed-text choke point.
-    fs.writeFileSync(tempPath, buffer);
-    fs.renameSync(tempPath, destPath);
-  } catch (err) {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    throw err;
-  }
+  // Install the file via temp+rename (atomic, and replaces any same-named file,
+  // keeping its permissions), then commit the metadata. If a crash lands between
+  // the two, the orphaned file is reconciled back into the list on the next read
+  // — no data is lost.
+  // not recorded: an uploaded asset is BINARY (an image/attachment), copied in and re-acquirable from
+  // its source. Binaries are written by code paths that never call the record hook — they carry no
+  // text-recovery value and would bloat the text history (data-backup conventions: binary and
+  // binary-ish writes are excluded). This is the bare atomic write, not the managed-text choke point.
+  writeFileAtomic(destPath, buffer);
   writeAssetMeta(metaPath, [...existing, finalMeta]);
   return finalMeta;
 }
@@ -272,12 +265,3 @@ function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
   writeFileAtomic(metaPath, jsonStoreText("assetMeta", { assets }));
 }
 
-// The derived-filename grammar's atomic-write shape: `<stem>-<nanoid>.tmp`, same
-// directory as the final asset file. The nanoid is what lets two uploads of the
-// same name race safely — each writes its own temp and only one rename wins.
-function tempName(filename: string): string {
-  const safeName = sanitizeFilename(filename);
-  const ext = path.extname(safeName);
-  const stem = path.basename(safeName, ext);
-  return `${stem}-${nanoid()}.tmp`;
-}
