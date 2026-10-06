@@ -377,6 +377,23 @@ describe("api wrappers — call-through and argument shape", () => {
       });
     });
 
+    it("uploadAsset forwards where the file is on disk when the bridge knows it", async () => {
+      const b = bridge();
+      b.pathForFile = vi.fn().mockReturnValue("/Users/me/notes.txt");
+      installBridge(b);
+      const buffer = new TextEncoder().encode("notes").buffer;
+      const file = { name: "notes.txt", arrayBuffer: vi.fn().mockResolvedValue(buffer) } as unknown as File;
+
+      await uploadAsset("p1", file);
+
+      expect(b.pathForFile).toHaveBeenCalledWith(file);
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
+        name: "notes.txt",
+        data: buffer,
+        sourcePath: "/Users/me/notes.txt",
+      });
+    });
+
     it("uploads malformed images without dimensions when Chromium rejects the decode", async () => {
       const b = bridge();
       installBridge(b);

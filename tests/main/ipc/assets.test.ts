@@ -316,6 +316,37 @@ describe("uploadAsset", () => {
     expect(before).not.toBe("2030-01-01T00:00:00.000Z");
   });
 
+  // A copy keeps the source's metadata (content-lifecycle-conventions).
+  it("keeps the picked file's modified time and permissions on the copy", async () => {
+    const id = createDraft();
+    const sourcePath = path.join(home, "picked.png");
+    fs.writeFileSync(sourcePath, PNG_1x1);
+    if (process.platform !== "win32") fs.chmodSync(sourcePath, 0o640);
+    const then = new Date("2021-03-04T05:06:07.000Z");
+    fs.utimesSync(sourcePath, then, then);
+
+    await invokeUpload(wsId, id, { ...upload("pic.png", PNG_1x1), sourcePath });
+
+    const stat = fs.statSync(path.join(dataDir, "assets", id, "pic.png"));
+    expect(stat.mtime.toISOString()).toBe(then.toISOString());
+    if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(0o640);
+  });
+
+  it("takes nothing from a source path that is not the uploaded file", async () => {
+    const id = createDraft();
+    const other = path.join(home, "other.png");
+    fs.writeFileSync(other, Buffer.from("a different size"));
+    const then = new Date("2021-03-04T05:06:07.000Z");
+    fs.utimesSync(other, then, then);
+
+    for (const [index, sourcePath] of [other, "relative.png", 42].entries()) {
+      const bytes = Buffer.concat([PNG_1x1, Buffer.from([index])]);
+      await invokeUpload(wsId, id, { ...upload("pic.png", bytes), sourcePath } as AssetUploadInput);
+      const stat = fs.statSync(path.join(dataDir, "assets", id, "pic.png"));
+      expect(stat.mtime.toISOString()).not.toBe(then.toISOString());
+    }
+  });
+
   // A write that changes nothing is skipped (content-lifecycle-conventions).
   it("changes nothing when the same file is uploaded again under its name", async () => {
     const id = createDraft();

@@ -205,6 +205,8 @@ export interface AssetUploadInput {
   data: ArrayBuffer;
   width?: number;
   height?: number;
+  /** Where the picked or dropped file is on disk, so the copy keeps its metadata. */
+  sourcePath?: string;
 }
 
 /** Where each paged list section's requested page starts. */
@@ -373,6 +375,8 @@ export interface BigMouthApi {
   // Assets
   listAssets(wsId: string, postId: string): Promise<AssetMeta[]>;
   uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetUploadResult>;
+  /** The on-disk path of a picked or dropped file, or "" when it has none. */
+  pathForFile(file: File): string;
   deleteAsset(wsId: string, postId: string, filename: string): Promise<void>;
 
   // AI generation

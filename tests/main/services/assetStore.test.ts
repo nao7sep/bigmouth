@@ -102,6 +102,30 @@ describe("replacing an asset", () => {
   });
 });
 
+describe("an uploaded copy keeps its source's metadata", () => {
+  const source = {
+    mode: 0o640,
+    atime: new Date("2021-03-04T05:06:07.000Z"),
+    mtime: new Date("2021-03-04T05:06:07.000Z"),
+  };
+
+  it("keeps the source's modified time, and its permissions where the platform has them", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"), source);
+    const stat = fs.statSync(path.join(assetDir(dataDir, POST), "a.png"));
+    expect(stat.mtime.toISOString()).toBe("2021-03-04T05:06:07.000Z");
+    if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(0o640);
+    // The upload time stays the moment of the upload, apart from the file's time.
+    expect(listAssets(dataDir, POST)[0].uploadedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("keeps the new source's metadata when it replaces an asset", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("xyz"), meta("a.png"), source);
+    const stat = fs.statSync(path.join(assetDir(dataDir, POST), "a.png"));
+    expect(stat.mtime.toISOString()).toBe("2021-03-04T05:06:07.000Z");
+  });
+});
+
 describe("re-uploading an asset's own bytes", () => {
   it("writes nothing and keeps the asset's place and upload time", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));

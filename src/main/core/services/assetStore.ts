@@ -43,6 +43,13 @@ export interface AssetMeta {
   uploadedAt?: string;    // ISO 8601; absent when no upload was recorded (see projectAssetFile)
 }
 
+/** What a copy keeps of the user's file it was made from. */
+export interface AssetSourceMetadata {
+  mode: number;
+  atime: Date;
+  mtime: Date;
+}
+
 const META_FILENAME = "meta.json";
 
 /**
@@ -88,6 +95,14 @@ export function listAssets(dataDir: string, postId: string): AssetMeta[] {
  * A name this directory reserves is refused outright rather than stored, because
  * a stored one could never be listed again — see isReservedAssetName.
  *
+ * An uploaded file is a copy of the user's file, so it keeps the `source`
+ * metadata Node can carry: the modified (and access) time and, apart from
+ * Windows, the permission mode. On Windows the mode is only the read-only
+ * attribute, which would leave an attachment the app could neither replace nor
+ * delete. Extended attributes, Finder tags and the birth time are not carried:
+ * Node cannot set them without a native dependency. A destination that refuses
+ * one of these keeps the rest (content-lifecycle-conventions).
+ *
  * Re-uploading the bytes an asset of the same name already holds changes nothing:
  * nothing is written, the asset keeps its place and recorded upload time, and
  * `changed` is false, so the post was not edited.
@@ -97,7 +112,8 @@ export function saveAssetFile(
   postId: string,
   filename: string,
   buffer: Buffer,
-  meta: AssetMeta
+  meta: AssetMeta,
+  source?: AssetSourceMetadata,
 ): { asset: AssetMeta; changed: boolean } {
   if (isReservedAssetName(filename)) {
     throw new Error(
@@ -125,8 +141,24 @@ export function saveAssetFile(
   // text-recovery value and would bloat the text history (data-backup conventions: binary and
   // binary-ish writes are excluded). This is the bare atomic write, not the managed-text choke point.
   writeFileAtomic(destPath, buffer);
+  if (source) keepSourceMetadata(destPath, source);
   writeAssetMeta(metaPath, [...existing, finalMeta]);
   return { asset: finalMeta, changed: true };
+}
+
+function keepSourceMetadata(destPath: string, source: AssetSourceMetadata): void {
+  if (process.platform !== "win32") {
+    try {
+      fs.chmodSync(destPath, source.mode);
+    } catch (err) {
+      logWarn("asset copy kept no permission mode", { path: destPath, error: serializeError(err) });
+    }
+  }
+  try {
+    fs.utimesSync(destPath, source.atime, source.mtime);
+  } catch (err) {
+    logWarn("asset copy kept no modified time", { path: destPath, error: serializeError(err) });
+  }
 }
 
 /**

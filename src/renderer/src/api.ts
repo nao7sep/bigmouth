@@ -333,10 +333,13 @@ export async function uploadAsset(postId: string, file: File, workspaceId?: stri
   // Decode and read concurrently; dimension failure is deliberately contained
   // inside imageDimensions, while a byte-read failure still aborts the upload.
   const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
+  // The file's place on disk lets the main process keep its metadata on the copy.
+  const sourcePath = bridge().pathForFile(file);
   const result = await bridge().uploadAsset(requireWs(workspaceId), postId, {
     name: file.name,
     data,
     ...dimensions,
+    ...(typeof sourcePath === "string" && sourcePath.length > 0 ? { sourcePath } : {}),
   });
   if (result.ok) return result.asset;
   throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));

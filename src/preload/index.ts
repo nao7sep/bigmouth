@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
   type PostContentSavedEvent,
@@ -210,6 +210,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetMeta[]>,
   uploadAsset: (wsId: string, postId: string, file: AssetUploadInput) =>
     ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetUploadResult>,
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
   deleteAsset: (wsId: string, postId: string, filename: string) =>
     ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<void>,
 

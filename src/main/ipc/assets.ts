@@ -21,6 +21,7 @@ import {
   sanitizeFilename,
   safeResolveUnder,
   type AssetMeta,
+  type AssetSourceMetadata,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -68,6 +69,23 @@ function readUploadDimensions(
     return {};
   }
   return { width, height };
+}
+
+/**
+ * The metadata a copy keeps from the file the renderer says it read
+ * (content-lifecycle-conventions), or undefined when that path is not an
+ * absolute path to a regular file of the uploaded size. The path is untrusted
+ * IPC input: it is only stat'ed, never read or written.
+ */
+function readSourceMetadata(sourcePath: unknown, size: number): AssetSourceMetadata | undefined {
+  if (typeof sourcePath !== "string" || !path.isAbsolute(sourcePath)) return undefined;
+  try {
+    const stat = fs.statSync(sourcePath, { throwIfNoEntry: false });
+    if (!stat || !stat.isFile() || stat.size !== size) return undefined;
+    return { mode: stat.mode & 0o7777, atime: stat.atime, mtime: stat.mtime };
+  } catch {
+    return undefined;
+  }
 }
 
 export function registerAssetHandlers(): void {
@@ -137,7 +155,7 @@ export function registerAssetHandlers(): void {
 
     let storedMeta: AssetMeta;
     try {
-      const saved = saveAssetFile(dir, pid, filename, buffer, meta);
+      const saved = saveAssetFile(dir, pid, filename, buffer, meta, readSourceMetadata(file.sourcePath, buffer.length));
       storedMeta = saved.asset;
       // An attached file is the post's content, so a changed one edited the post.
       if (saved.changed) recordAssetChange(dir, pid);
