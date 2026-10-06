@@ -15,7 +15,7 @@ import { mainTranslator } from "./i18n.js";
 import { showPlainMessageDialog } from "./plain-message-dialog.js";
 
 /** What the user chose when told their unsaved edits could not be written. */
-export type UnsavedChangesChoice = "cancel" | "quit-anyway";
+export type UnsavedChangesChoice = "cancel" | "retry" | "quit-anyway";
 
 /** What quitting now would lose. */
 export interface UnsavedAtQuit {
@@ -28,36 +28,37 @@ export interface UnsavedAtQuit {
 /**
  * Asks whether to quit with edits that could not be saved.
  *
- * Cancel is both the default and the Escape path, because it is the choice that
- * loses nothing.
+ * Edits that could not be written offer Retry, the default; a refused value
+ * alone does not, because writing again cannot change it. Cancel is the Escape
+ * path, because it loses nothing.
  */
 export async function confirmQuitWithUnsavedChanges(unsaved: UnsavedAtQuit): Promise<UnsavedChangesChoice> {
   const { t } = mainTranslator();
   const refused = message("dialog.refusedMetadata.explanation");
-  const choice = await showPlainMessageDialog(
-    unsaved.writeFailures
-      ? {
-          title: t("dialog.unsavedChanges.title"),
-          message: t("dialog.unsavedChanges.message"),
-          detail: unsaved.refusedMetadata
-            ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
-            : t("dialog.unsavedChanges.detail"),
-          buttons: [t("common.cancel"), t("dialog.quitAnyway")],
-          defaultId: 0,
-          cancelId: 0,
-          destructiveId: 1,
-        }
-      : {
-          title: t("dialog.unsavedMetadata.title"),
-          message: t("dialog.unsavedMetadata.message"),
-          detail: t("dialog.unsavedMetadata.quitDetail", { refused }),
-          buttons: [t("common.cancel"), t("dialog.quitAnyway")],
-          defaultId: 0,
-          cancelId: 0,
-          destructiveId: 1,
-        },
-  );
-  return choice === 0 ? "cancel" : "quit-anyway";
+  if (unsaved.writeFailures) {
+    const choice = await showPlainMessageDialog({
+      title: t("dialog.unsavedChanges.title"),
+      message: t("dialog.unsavedChanges.message"),
+      detail: unsaved.refusedMetadata
+        ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
+        : t("dialog.unsavedChanges.detail"),
+      buttons: [t("common.cancel"), t("common.retry"), t("dialog.quitAnyway")],
+      defaultId: 1,
+      cancelId: 0,
+      destructiveId: 2,
+    });
+    return choice === 1 ? "retry" : choice === 2 ? "quit-anyway" : "cancel";
+  }
+  const choice = await showPlainMessageDialog({
+    title: t("dialog.unsavedMetadata.title"),
+    message: t("dialog.unsavedMetadata.message"),
+    detail: t("dialog.unsavedMetadata.quitDetail", { refused }),
+    buttons: [t("common.cancel"), t("dialog.quitAnyway")],
+    defaultId: 0,
+    cancelId: 0,
+    destructiveId: 1,
+  });
+  return choice === 1 ? "quit-anyway" : "cancel";
 }
 
 /** What the user chose when closing a window that shows a refused metadata value. */

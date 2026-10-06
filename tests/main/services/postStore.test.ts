@@ -22,6 +22,10 @@ import {
   clearCache,
   rebuildIndex,
   renameTarget,
+  copyPendingEdits,
+  holdPendingFlushes,
+  resumePendingFlushes,
+  announceContentSaveEvents,
 } from "@main/core/services/postStore.js";
 
 let dataDir: string;
@@ -883,5 +887,66 @@ describe("pending content (write-behind buffer)", () => {
         { id: "no-such-post", message: "post file is missing" },
       ]);
     });
+  });
+});
+
+// At quit the buffer is written on a worker thread of its own (quitFlush.ts):
+// the edits are copied across, the copy is written by a fresh store, and this
+// thread writes nothing on its own until the quit is over.
+describe("the quit's flush on another thread", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    resumePendingFlushes();
+    setContentSaveListener(null);
+    flushAllPendingEdits();
+  });
+
+  it("writes the copied edits from a fresh store, with the time they were made", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-06T01:00:00.000Z"));
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    vi.setSystemTime(new Date("2026-10-06T01:05:00.000Z"));
+    queueContent(dataDir, id, "typed a moment before quitting");
+    expect(queueMetadata(dataDir, id, { title: "Last Title" })).toBeNull();
+    const copies = copyPendingEdits().filter((copy) => copy.id === id);
+
+    vi.resetModules();
+    const thread = await import("@main/core/services/postStore.js");
+    thread.adoptPendingEdits(copies);
+    vi.setSystemTime(new Date("2026-10-06T01:09:00.000Z"));
+    expect(thread.flushAllPendingEdits()).toEqual([]);
+
+    const written = fs.readFileSync(post.filePath, "utf8");
+    expect(written).toContain("typed a moment before quitting");
+    expect(written).toContain("Last Title");
+    expect(written).toContain("2026-10-06T01:05:00.000Z");
+
+    // This thread kept its copy; writing it again changes nothing on disk.
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(fs.readFileSync(post.filePath, "utf8")).toBe(written);
+  });
+
+  it("holds the debounce and the retry while a quit owns the buffer, and resumes them after", () => {
+    vi.useFakeTimers();
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "armed before the quit");
+    holdPendingFlushes();
+    queueContent(dataDir, post.frontMatter.id, "typed while the quit runs");
+    vi.advanceTimersByTime(60_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fs.readFileSync(post.filePath, "utf8")).not.toContain("typed while the quit runs");
+
+    resumePendingFlushes();
+    vi.advanceTimersByTime(1_000);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed while the quit runs");
+  });
+
+  it("tells this thread's listener what became of edits another thread wrote", () => {
+    const events: ContentSaveEvent[] = [];
+    setContentSaveListener((event) => events.push(event));
+    const missing: ContentSaveEvent = { kind: "post-missing", dataDir, id: "p1" };
+    announceContentSaveEvents([missing]);
+    expect(events).toEqual([missing]);
   });
 });

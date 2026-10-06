@@ -35,6 +35,12 @@ describe("plain message dialog", () => {
     expect(html).not.toMatch(/\.button:hover,\.button:focus\{background:/);
   });
 
+  // Three buttons in a long language outgrow the dialog's narrowest width.
+  it("wraps its buttons onto another row rather than clipping them", () => {
+    const html = renderPlainMessageDialogHtml({ title: "T", message: "M" }, ["Abbrechen", "Erneut versuchen", "Trotzdem beenden"]);
+    expect(html).toContain(".actions{display:flex;flex-wrap:wrap;");
+  });
+
   it("declares the interface language and names its body region in it", () => {
     const html = renderPlainMessageDialogHtml({ title: "T", message: "M" }, ["OK"], createTranslator("ja"));
     expect(html).toContain('<html lang="ja">');

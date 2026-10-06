@@ -28,11 +28,13 @@ export default defineConfig({
     build: {
       outDir: "out/main",
       rollupOptions: {
-        // The records reader's thread is its own entry beside index.js, where
-        // recordsReader.ts looks for it.
+        // The records reader's and the quit flush's threads are entries of
+        // their own beside index.js, where recordsReader.ts and quitFlush.ts
+        // look for them.
         input: {
           index: resolve("src/main/index.ts"),
           "records-reader-worker": resolve("src/main/core/services/recordsReaderWorker.ts"),
+          "quit-flush-worker": resolve("src/main/core/services/quitFlushWorker.ts"),
         },
         output: {
           entryFileNames: "[name].js",

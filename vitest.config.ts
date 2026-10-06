@@ -45,6 +45,7 @@ export default defineConfig({
         "src/renderer/src/main.tsx", // React DOM mount
         "src/renderer/src/records.tsx", // React DOM mount of the records window
         "src/main/core/services/recordsReaderWorker.ts", // worker-thread wiring
+        "src/main/core/services/quitFlushWorker.ts", // worker-thread wiring
         "src/renderer/src/vite-env.d.ts",
         "**/*.d.ts",
       ],

@@ -8,7 +8,8 @@ import {
 
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
-import { flushAllPendingEdits } from "./core/services/postStore.js";
+import { holdPendingFlushes, resumePendingFlushes } from "./core/services/postStore.js";
+import { QUIT_FLUSH_BOUND_MS, flushPendingEditsWithin } from "./core/services/quitFlush.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
@@ -47,7 +48,7 @@ let shuttingDown = false;
 let mainWindow: BrowserWindow | null = null;
 
 // Set when the OS itself is going down: quit must then never block on a dialog
-// (modal-dialog-conventions) — flush best-effort and let the shutdown proceed.
+// (modal-dialog-conventions) — flush within the bound and let the shutdown proceed.
 let systemShutdown = false;
 
 // Startup sequence: resolve the storage root, bring up logging, register the
@@ -128,6 +129,33 @@ async function openMainWindow(): Promise<void> {
   });
 }
 
+/**
+ * Writes the buffered post edits within the bound and logs what it could not
+ * write. Returns whether they are all known to be on disk.
+ */
+function flushAtQuit(): boolean {
+  const outcome = flushPendingEditsWithin();
+  switch (outcome.kind) {
+    case "flushed":
+      if (outcome.failures.length === 0) return true;
+      logError("pending edits flush failed at quit", { failures: outcome.failures });
+      return false;
+    case "expired":
+      logError("pending edits flush did not finish at quit", { boundMs: QUIT_FLUSH_BOUND_MS });
+      return false;
+    case "crashed":
+      logError("pending edits flush could not run at quit", { error: outcome.error });
+      return false;
+  }
+}
+
+function exitApp(): void {
+  info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
+  closeRecordsReader();
+  closeLogger();
+  app.exit(0);
+}
+
 let handlingStartupFailure = false;
 async function handleStartupFailure(err: unknown): Promise<void> {
   if (handlingStartupFailure) return;
@@ -160,35 +188,37 @@ if (!ownsInstance) {
   // This listener only stops Electron's default quit when every window is gone.
   app.on("window-all-closed", () => {});
 
-  // Clean shutdown: hold the quit, write any buffered content and metadata
-  // edits, close the records database, then exit deterministically. The
-  // post store owns pending edits (write-behind), so this flush — not a renderer
-  // round-trip — is what guarantees the newest keystroke is on disk. A quit
-  // arriving while that runs, the unsaved-changes question included, is held
-  // too, so only the shutdown's own app.exit(0) ends the process.
+  // Clean shutdown (unsaved-edits-conventions, Quitting): hold the quit, write
+  // any buffered content and metadata edits within the flush's bound, close the
+  // records database, then exit deterministically. The post store owns pending
+  // edits (write-behind), so this flush — not a renderer round-trip — is what
+  // guarantees the newest keystroke is on disk. When the user's posts cannot
+  // be written, a quit the user started asks to cancel, retry or quit anyway;
+  // an ending session never asks.
+  // A quit arriving while that runs, the question included, is held too, so
+  // only the shutdown's own app.exit(0) ends the process.
   app.on("before-quit", (event) => {
     event.preventDefault();
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
+    holdPendingFlushes();
 
-    const failures = flushAllPendingEdits();
-    const refusedMetadata = anyRefusedMetadata();
     void (async () => {
-      if (failures.length > 0) logError("pending edits flush failed at quit", { failures });
-      if ((failures.length > 0 || refusedMetadata) && !systemShutdown) {
-        const unsaved = { writeFailures: failures.length > 0, refusedMetadata };
-        if (await confirmQuitWithUnsavedChanges(unsaved) === "cancel") {
+      for (;;) {
+        const writeFailures = !flushAtQuit();
+        const refusedMetadata = anyRefusedMetadata();
+        if (systemShutdown || (!writeFailures && !refusedMetadata)) break;
+        const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
+        if (systemShutdown || choice === "quit-anyway") break;
+        if (choice === "cancel") {
           shuttingDown = false;
+          resumePendingFlushes();
           return;
         }
       }
-
-      info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
-      closeRecordsReader();
-      closeLogger();
-      app.exit(0);
+      exitApp();
     })();
   });
 
