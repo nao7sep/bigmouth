@@ -35,8 +35,18 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   const ext = path.extname(filePath);
   const stem = path.basename(filePath, ext);
   const tempPath = path.join(dir, `${stem}-${nanoid()}.tmp`);
-  fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
-  fs.renameSync(tempPath, filePath);
+  try {
+    fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    // A write that fails removes its own temp (storage-path-conventions).
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // The save's own failure is the one to report.
+    }
+    throw err;
+  }
 }
 
 /**

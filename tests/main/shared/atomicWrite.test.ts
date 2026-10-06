@@ -42,6 +42,39 @@ describe("writeFileAtomic", () => {
     expect(fs.readdirSync(dir)).toEqual(["data.json"]);
   });
 
+  it("removes its temp and rethrows the original failure when the install fails", () => {
+    const target = path.join(dir, "data.json");
+    fs.writeFileSync(target, "original");
+    const failure = new Error("rename refused");
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      throw failure;
+    });
+    try {
+      expect(() => writeFileAtomic(target, "new")).toThrow(failure);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(fs.readdirSync(dir)).toEqual(["data.json"]);
+    expect(fs.readFileSync(target, "utf-8")).toBe("original");
+  });
+
+  it("rethrows the original failure even when removing the temp also fails", () => {
+    const target = path.join(dir, "data.json");
+    const failure = new Error("rename refused");
+    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      throw failure;
+    });
+    const rmSpy = vi.spyOn(fs, "rmSync").mockImplementationOnce(() => {
+      throw new Error("cleanup refused");
+    });
+    try {
+      expect(() => writeFileAtomic(target, "new")).toThrow(failure);
+    } finally {
+      renameSpy.mockRestore();
+      rmSpy.mockRestore();
+    }
+  });
+
   it.runIf(process.platform !== "win32")("creates the file at the requested mode", () => {
     // The mode is applied at creation, so the content never exists at a looser
     // default for even an instant (used for the 0600 secrets file).
