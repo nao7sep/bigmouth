@@ -101,7 +101,7 @@ describe("AssetsTab loading", () => {
     mockListAssets
       .mockResolvedValueOnce({ assets: [asset({ filename: "a.png", uploadedAt: undefined })], movedAside })
       .mockResolvedValue({ assets: [asset({ filename: "a.png", uploadedAt: undefined }), asset({ filename: "b.png" })] });
-    mockUploadAsset.mockResolvedValue(asset({ filename: "b.png" }));
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "b.png" }) });
     const { container, getByText } = await renderTab();
     const notice = `BigMouth could not read ${movedAside.path} and moved it to ${movedAside.movedTo}. The attached files are listed from the folder, and the upload times and image details it held are now unknown.`;
     expect(getByText(notice)).toBeTruthy();
@@ -146,7 +146,7 @@ describe("AssetsTab loading", () => {
 describe("AssetsTab upload via file input", () => {
   it("uploads a chosen file then reloads the list", async () => {
     mockListAssets.mockResolvedValueOnce({ assets: [] }).mockResolvedValueOnce({ assets: [asset()] });
-    mockUploadAsset.mockResolvedValue(asset());
+    mockUploadAsset.mockResolvedValue({ asset: asset() });
     const { container } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -231,7 +231,7 @@ describe("AssetsTab upload via file input", () => {
     mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset
       .mockRejectedValueOnce(new Error("disk unavailable"))
-      .mockResolvedValueOnce(asset({ filename: "retry.png" }));
+      .mockResolvedValue({ asset: asset({ filename: "retry.png" }) });
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -264,7 +264,7 @@ describe("AssetsTab upload via file input", () => {
 
   it("summarizes a partial batch and does not clear it after an unrelated success", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
-    mockUploadAsset.mockResolvedValue(asset());
+    mockUploadAsset.mockResolvedValue({ asset: asset() });
     const { container, getByText } = await renderTab({ maxUploadMb: 1 });
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -284,7 +284,7 @@ describe("AssetsTab upload via file input", () => {
 
   it("asks to replace a duplicate filename and uploads when confirmed", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "dup.png" })] });
-    mockUploadAsset.mockResolvedValue(asset({ filename: "dup.png" }));
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "dup.png" }) });
     const { container, getByRole } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -343,7 +343,7 @@ describe("AssetsTab upload via file input", () => {
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
 
-    mockUploadAsset.mockResolvedValue(asset({ filename: "draft_.png" }));
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "draft_.png" }) });
     await act(async () => {
       fireEvent.change(input, { target: { files: [makeFile("draft?.png")] } });
     });
@@ -354,7 +354,7 @@ describe("AssetsTab upload via file input", () => {
 describe("AssetsTab drag and drop", () => {
   it("uploads files provided by a drop event", async () => {
     mockListAssets.mockResolvedValueOnce({ assets: [] }).mockResolvedValueOnce({ assets: [asset()] });
-    mockUploadAsset.mockResolvedValue(asset());
+    mockUploadAsset.mockResolvedValue({ asset: asset() });
     const { container } = await renderTab();
     const zone = assetCollection(container);
 
@@ -369,7 +369,7 @@ describe("AssetsTab drag and drop", () => {
 
   it("accepts a drop over a populated asset card through the pane receiver", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "existing.png" })] });
-    mockUploadAsset.mockResolvedValue(asset({ filename: "new.png" }));
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "new.png" }) });
     const { container } = await renderTab();
     const card = container.querySelector(".asset-card") as HTMLElement;
     const file = makeFile("new.png");
@@ -443,9 +443,9 @@ describe("AssetsTab drag and drop", () => {
     mockUploadAsset
       .mockImplementationOnce(async () => {
         await firstUpload;
-        return asset({ filename: "first.png" });
+        return { asset: asset({ filename: "first.png" }) };
       })
-      .mockResolvedValueOnce(asset({ filename: "second.png" }));
+      .mockResolvedValueOnce({ asset: asset({ filename: "second.png" }) });
     const { container } = await renderTab();
     const zone = assetCollection(container);
 
@@ -495,7 +495,7 @@ describe("AssetsTab drag and drop", () => {
 describe("AssetsTab delete", () => {
   it("deletes after confirmation and removes the card", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "gone.png" })] });
-    mockDeleteAsset.mockResolvedValue(undefined);
+    mockDeleteAsset.mockResolvedValue({});
     const { container, getByRole, getByTitle } = await renderTab();
 
     await act(async () => {
@@ -528,6 +528,60 @@ describe("AssetsTab delete", () => {
     await waitFor(() => expect(getByText(
       "stay.png could not be deleted. It remains attached to this post; try again.",
     )).toBeTruthy());
+  });
+});
+
+describe("AssetsTab asset changes whose record could not be saved", () => {
+  it("counts the file as added and says what was not saved", async () => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "a.png" }), unsaved: ["details", "modifiedTime"] });
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("a.png")] } });
+    });
+
+    expect(getByText("Added 1 asset.")).toBeTruthy();
+    expect(getByText("a.png was added, but its upload time and image details could not be saved.")).toBeTruthy();
+    expect(getByText("a.png was added, but this post's modified time could not be updated.")).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
+  });
+
+  it("removes a deleted file's row and says the post's modified time was not updated", async () => {
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "gone.png" })] });
+    mockDeleteAsset.mockResolvedValue({ unsaved: ["modifiedTime"] });
+    const { container, getByRole, getByTitle, getByText } = await renderTab();
+
+    await act(async () => {
+      fireEvent.click(getByTitle("Delete"));
+    });
+    const dialog = getByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    });
+
+    await waitFor(() => expect(container.querySelector(".asset-card")).toBeNull());
+    expect(getByText("gone.png was deleted, but this post's modified time could not be updated.")).toBeTruthy();
+  });
+
+  it("lists the attachments again after a failed delete", async () => {
+    mockListAssets
+      .mockResolvedValueOnce({ assets: [asset({ filename: "gone.png" })] })
+      .mockResolvedValue({ assets: [] });
+    mockDeleteAsset.mockRejectedValue(new Error("boom"));
+    const { container, getByRole, getByTitle } = await renderTab();
+
+    await act(async () => {
+      fireEvent.click(getByTitle("Delete"));
+    });
+    const dialog = getByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    });
+
+    await waitFor(() => expect(container.querySelector(".asset-card")).toBeNull());
+    expect(mockListAssets).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -151,9 +151,17 @@ export function AssetsTab({
     if (locked) return;
     const admissionFailures: Array<{ file: File; reason: Message }> = [];
     const operationalFailures: Array<{ file: File; reason: Message }> = [];
+    // Added, but something that records the addition could not be saved.
+    const unsavedLines: NoticeLine[] = [];
     for (const file of files) {
       try {
-        await uploadAsset(postId, file, workspaceId);
+        const { asset, unsaved } = await uploadAsset(postId, file, workspaceId);
+        if (unsaved?.includes("details")) {
+          unsavedLines.push({ message: message("assets.addedWithoutDetails", { name: asset.filename }) });
+        }
+        if (unsaved?.includes("modifiedTime")) {
+          unsavedLines.push({ message: message("assets.addedWithoutPostTime", { name: asset.filename }) });
+        }
       } catch (err) {
         if (err instanceof AssetUploadAdmissionError) {
           admissionFailures.push({ file, reason: err.reason });
@@ -167,10 +175,11 @@ export function AssetsTab({
     }
     const refreshFailure = await load();
     const invalid = [...rejected, ...admissionFailures];
-    if (invalid.length > 0 || operationalFailures.length > 0 || refreshFailure) {
+    if (invalid.length > 0 || operationalFailures.length > 0 || unsavedLines.length > 0 || refreshFailure) {
       const addedCount = files.length - admissionFailures.length - operationalFailures.length;
       const lines: NoticeLine[] = [];
       if (addedCount > 0) lines.push({ message: message("assets.added", { count: addedCount }) });
+      lines.push(...unsavedLines);
       if (invalid.length > 0) lines.push(notAdded(invalid));
       if (operationalFailures.length > 0) lines.push(notAdded(operationalFailures));
       if (refreshFailure) lines.push({ message: refreshFailure });
@@ -178,6 +187,7 @@ export function AssetsTab({
         severity: operationalFailures.length > 0 || refreshFailure ? "error" : "warning",
         lines,
         issueKeys: [
+          ...(unsavedLines.length > 0 ? files.map(assetIssueKey) : []),
           ...invalid.map(({ file }) => assetIssueKey(file)),
           ...operationalFailures.map(({ file }) => assetIssueKey(file)),
           ...(refreshFailure ? [`refresh:${postId}`] : []),
@@ -316,14 +326,23 @@ export function AssetsTab({
     });
     if (!ok) return;
     try {
-      await deleteAsset(postId, filename, workspaceId);
+      const { unsaved } = await deleteAsset(postId, filename, workspaceId);
       setAssets((prev) => {
         const next = prev.filter((a) => a.filename !== filename);
         assetsRef.current = next;
         return next;
       });
+      if (unsaved?.includes("modifiedTime")) {
+        setUploadNotice({
+          severity: "warning",
+          lines: [{ message: message("assets.deletedWithoutPostTime", { name: filename }) }],
+          issueKeys: [`delete:${filename}`],
+        });
+      }
     } catch (err) {
       reportProblem("Asset deletion failed.", err, { postId, filename });
+      // Show the attachments as they now are, whatever the failure left.
+      void load();
       const carried = carriedMessage(err);
       setUploadNotice({
         severity: "error",

@@ -336,6 +336,9 @@
     "many": "Se agregaron {count} de recursos.",
     "other": "Se agregaron {count} recursos."
   },
+  "assets.addedWithoutDetails": "Se agregó {name}, pero no se pudieron guardar su hora de subida ni sus datos de imagen.",
+  "assets.addedWithoutPostTime": "Se agregó {name}, pero no se pudo actualizar la hora de modificación de esta publicación.",
+  "assets.deletedWithoutPostTime": "Se eliminó {name}, pero no se pudo actualizar la hora de modificación de esta publicación.",
   "assets.notAdded": {
     "one": "No se pudo agregar {count} elemento:",
     "many": "No se pudieron agregar {count} de elementos:",

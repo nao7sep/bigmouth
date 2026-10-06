@@ -336,6 +336,9 @@
     "many": "{count} de ressources ajoutées.",
     "other": "{count} ressources ajoutées."
   },
+  "assets.addedWithoutDetails": "{name} a été ajouté, mais son heure d’envoi et ses informations d’image n’ont pas pu être enregistrées.",
+  "assets.addedWithoutPostTime": "{name} a été ajouté, mais l’heure de modification de cette publication n’a pas pu être mise à jour.",
+  "assets.deletedWithoutPostTime": "{name} a été supprimé, mais l’heure de modification de cette publication n’a pas pu être mise à jour.",
   "assets.notAdded": {
     "one": "{count} élément n’a pas pu être ajouté\u00a0:",
     "many": "{count} d’éléments n’ont pas pu être ajoutés\u00a0:",

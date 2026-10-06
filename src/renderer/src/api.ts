@@ -24,6 +24,8 @@ import type {
   ImagingStyle,
 } from "@shared/types";
 import {
+  type AssetDeleteResult,
+  type AssetUnsavedStep,
   type AssetUploadInput,
   type AssetUploadAdmission,
   type PostContentSavedEvent,
@@ -330,7 +332,13 @@ async function imageDimensions(file: File): Promise<Pick<AssetUploadInput, "widt
   }
 }
 
-export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<AssetMeta> {
+/** An added asset, and what could not be saved after the file itself was added. */
+export interface UploadedAsset {
+  asset: AssetMeta;
+  unsaved?: AssetUnsavedStep[];
+}
+
+export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<UploadedAsset> {
   // Decode and read concurrently; dimension failure is deliberately contained
   // inside imageDimensions, while a byte-read failure still aborts the upload.
   const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
@@ -342,7 +350,7 @@ export async function uploadAsset(postId: string, file: File, workspaceId?: stri
     ...dimensions,
     ...(typeof sourcePath === "string" && sourcePath.length > 0 ? { sourcePath } : {}),
   });
-  if (result.ok) return result.asset;
+  if (result.ok) return result.unsaved ? { asset: result.asset, unsaved: result.unsaved } : { asset: result.asset };
   throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));
 }
 
@@ -357,7 +365,7 @@ function assetUploadAdmissionMessage(admission: AssetUploadAdmission): Message {
   }
 }
 
-export function deleteAsset(postId: string, filename: string, workspaceId?: string): Promise<void> {
+export function deleteAsset(postId: string, filename: string, workspaceId?: string): Promise<AssetDeleteResult> {
   return bridge().deleteAsset(requireWs(workspaceId), postId, filename);
 }
 

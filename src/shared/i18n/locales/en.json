@@ -330,6 +330,9 @@
     "one": "Added {count} asset.",
     "other": "Added {count} assets."
   },
+  "assets.addedWithoutDetails": "{name} was added, but its upload time and image details could not be saved.",
+  "assets.addedWithoutPostTime": "{name} was added, but this post's modified time could not be updated.",
+  "assets.deletedWithoutPostTime": "{name} was deleted, but this post's modified time could not be updated.",
   "assets.notAdded": {
     "one": "{count} item could not be added:",
     "other": "{count} items could not be added:"

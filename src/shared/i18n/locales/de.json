@@ -330,6 +330,9 @@
     "one": "{count} Asset hinzugefügt.",
     "other": "{count} Assets hinzugefügt."
   },
+  "assets.addedWithoutDetails": "{name} wurde hinzugefügt, aber Hochladezeit und Bildangaben konnten nicht gespeichert werden.",
+  "assets.addedWithoutPostTime": "{name} wurde hinzugefügt, aber die Änderungszeit dieses Beitrags konnte nicht aktualisiert werden.",
+  "assets.deletedWithoutPostTime": "{name} wurde gelöscht, aber die Änderungszeit dieses Beitrags konnte nicht aktualisiert werden.",
   "assets.notAdded": {
     "one": "{count} Element konnte nicht hinzugefügt werden:",
     "other": "{count} Elemente konnten nicht hinzugefügt werden:"

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CHANNELS, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
+import { CHANNELS, type AssetDeleteResult, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
 import type { AssetListing, AssetMeta, Post, Target } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
@@ -379,14 +379,86 @@ describe("uploadAsset", () => {
   });
 });
 
+// An asset change that reached the file stands; what failed after it is said,
+// not reported as a failure of the change (error-handling-conventions).
+describe("an asset change whose record could not be saved", () => {
+  /** Fails every rename onto a path ending in `suffix`, as a full or read-only volume would. */
+  function failRenamesOnto(suffix: string) {
+    const realRename = fs.renameSync.bind(fs);
+    return vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(to).endsWith(suffix)) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+      return realRename(from, to);
+    });
+  }
+
+  it("keeps an added file and says its details were not saved", async () => {
+    const id = createDraft();
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("first.png", PNG_1x1));
+    const spy = failRenamesOnto("meta.json");
+    let result: AssetUploadResult;
+    try {
+      result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png" }), unsaved: ["details"] });
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual(["first.png", "a.png"]);
+  });
+
+  it("keeps an added file and says the post's modified time was not updated", async () => {
+    const id = createDraft();
+    const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+    const spy = failRenamesOnto(".md");
+    let result: AssetUploadResult;
+    try {
+      result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png" }), unsaved: ["modifiedTime"] });
+    expect(fs.existsSync(path.join(dataDir, "assets", id, "a.png"))).toBe(true);
+    expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe(before);
+  });
+
+  it("keeps a deleted file deleted and says the post's modified time was not updated", async () => {
+    const id = createDraft();
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+    const spy = failRenamesOnto(".md");
+    let result: AssetDeleteResult;
+    try {
+      result = invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toEqual({ unsaved: ["modifiedTime"] });
+    expect(fs.existsSync(path.join(dataDir, "assets", id, "a.png"))).toBe(false);
+  });
+
+  it("keeps a deleted file deleted when meta.json cannot be rewritten, and lists it gone", async () => {
+    const id = createDraft();
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+    const spy = failRenamesOnto("meta.json");
+    let result: AssetDeleteResult;
+    try {
+      result = invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toEqual({});
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual(["b.txt"]);
+  });
+});
+
 describe("deleteAsset", () => {
   it("removes a previously uploaded asset", async () => {
     const id = createDraft();
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
     expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual(["a.png"]);
 
-    const result = invoke<void>(CHANNELS.deleteAsset, wsId, id, "a.png");
-    expect(result).toBeUndefined();
+    const result = invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png");
+    expect(result).toEqual({});
     expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets).toEqual([]);
   });
 

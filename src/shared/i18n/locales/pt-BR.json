@@ -336,6 +336,9 @@
     "many": "{count} de recursos adicionados.",
     "other": "{count} recursos adicionados."
   },
+  "assets.addedWithoutDetails": "{name} foi adicionado, mas não foi possível salvar o horário de envio e as informações de imagem.",
+  "assets.addedWithoutPostTime": "{name} foi adicionado, mas não foi possível atualizar o horário de modificação desta publicação.",
+  "assets.deletedWithoutPostTime": "{name} foi excluído, mas não foi possível atualizar o horário de modificação desta publicação.",
   "assets.notAdded": {
     "one": "Não foi possível adicionar {count} item:",
     "many": "Não foi possível adicionar {count} de itens:",

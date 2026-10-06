@@ -324,6 +324,9 @@
   "assets.added": {
     "other": "에셋 {count}개를 추가했습니다."
   },
+  "assets.addedWithoutDetails": "{name}을(를) 추가했지만 업로드 시간과 이미지 정보를 저장할 수 없었습니다.",
+  "assets.addedWithoutPostTime": "{name}을(를) 추가했지만 이 게시물의 수정 시간을 업데이트할 수 없었습니다.",
+  "assets.deletedWithoutPostTime": "{name}을(를) 삭제했지만 이 게시물의 수정 시간을 업데이트할 수 없었습니다.",
   "assets.notAdded": {
     "other": "항목 {count}개를 추가할 수 없습니다:"
   },

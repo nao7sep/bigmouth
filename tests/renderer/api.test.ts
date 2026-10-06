@@ -484,7 +484,7 @@ describe("api wrappers — call-through and argument shape", () => {
         arrayBuffer: vi.fn().mockResolvedValue(buffer),
       } as unknown as File;
 
-      await expect(uploadAsset("p1", file)).resolves.toBeUndefined();
+      await expect(uploadAsset("p1", file)).resolves.toEqual({ asset: undefined });
       expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
         name: "photo.gif",
         data: buffer,

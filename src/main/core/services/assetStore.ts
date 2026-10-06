@@ -56,6 +56,21 @@ export interface AssetSourceMetadata {
 const META_FILENAME = "meta.json";
 
 /**
+ * The attached file was installed or removed, but `meta.json` could not be
+ * written after it: the change to the file stands, and only its record is
+ * missing until the next read reconciles the folder.
+ */
+export class AssetRecordError extends Error {
+  readonly asset: AssetMeta;
+
+  constructor(asset: AssetMeta, cause: unknown) {
+    super(`The asset ${JSON.stringify(asset.filename)} changed, but meta.json could not be written`, { cause });
+    this.name = "AssetRecordError";
+    this.asset = asset;
+  }
+}
+
+/**
  * A post's asset folder. Every asset path, and the delete of a whole post's
  * assets, goes through here, so an id outside the post-id grammar is refused
  * here rather than trusted to have been checked by each caller.
@@ -147,7 +162,11 @@ export function saveAssetFile(
   // binary-ish writes are excluded). This is the bare atomic write, not the managed-text choke point.
   writeFileAtomic(destPath, buffer);
   if (source) keepSourceMetadata(destPath, source);
-  writeAssetMeta(metaPath, [...existing, finalMeta]);
+  try {
+    writeAssetMeta(metaPath, [...existing, finalMeta]);
+  } catch (cause) {
+    throw new AssetRecordError(finalMeta, cause);
+  }
   return { asset: finalMeta, changed: true };
 }
 
@@ -203,11 +222,15 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
   // out of the list.
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-  if (remaining.length === 0) {
-    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
-    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
-  } else {
-    writeAssetMeta(metaPath, remaining);
+  try {
+    if (remaining.length === 0) {
+      if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+    } else {
+      writeAssetMeta(metaPath, remaining);
+    }
+  } catch (cause) {
+    throw new AssetRecordError(assets.find((a) => a.filename === filename) ?? { filename, size: 0 }, cause);
   }
 }
 

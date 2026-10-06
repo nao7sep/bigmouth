@@ -324,6 +324,9 @@
   "assets.added": {
     "other": "{count} 件のアセットを追加しました。"
   },
+  "assets.addedWithoutDetails": "{name} を追加しましたが、アップロード日時と画像の情報を保存できませんでした。",
+  "assets.addedWithoutPostTime": "{name} を追加しましたが、この投稿の更新日時を更新できませんでした。",
+  "assets.deletedWithoutPostTime": "{name} を削除しましたが、この投稿の更新日時を更新できませんでした。",
   "assets.notAdded": {
     "other": "{count} 件の項目を追加できませんでした:"
   },

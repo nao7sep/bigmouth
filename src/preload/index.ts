@@ -9,6 +9,7 @@ import {
   type AnalysisStreamFrame,
   type AnalysisStreamHandle,
   type AnalysisStreamParams,
+  type AssetDeleteResult,
   type AssetUploadInput,
   type AssetUploadResult,
   type BigMouthApi,
@@ -212,7 +213,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetUploadResult>,
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   deleteAsset: (wsId: string, postId: string, filename: string) =>
-    ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<void>,
+    ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<AssetDeleteResult>,
 
   // --- AI generation ---
   generateMetadata: (wsId: string, postId: string, fields: string[], content: string) =>

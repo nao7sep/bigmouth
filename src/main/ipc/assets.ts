@@ -6,6 +6,8 @@ import exifr from "exifr";
 
 import {
   CHANNELS,
+  type AssetDeleteResult,
+  type AssetUnsavedStep,
   type AssetUploadInput,
   type AssetUploadResult,
 } from "@shared/ipc";
@@ -22,6 +24,7 @@ import {
   safeResolveUnder,
   type AssetMeta,
   type AssetSourceMetadata,
+  AssetRecordError,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -85,6 +88,25 @@ function readSourceMetadata(sourcePath: unknown, size: number): AssetSourceMetad
     return { mode: stat.mode & 0o7777, atime: stat.atime, mtime: stat.mtime };
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Moves the post's modified time for an asset change that already happened, and
+ * says whether it could; a failure here does not undo the change.
+ */
+function recordPostEdit(dir: string, wsId: string, postId: string, filename: string): boolean {
+  try {
+    recordAssetChange(dir, postId);
+    return true;
+  } catch (err) {
+    logError("post modified time not updated after an asset change", {
+      workspace: wsId,
+      postId,
+      filename,
+      error: serializeError(err),
+    });
+    return false;
   }
 }
 
@@ -153,16 +175,20 @@ export function registerAssetHandlers(): void {
       return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
     }
 
-    let storedMeta: AssetMeta;
+    let saved: { asset: AssetMeta; changed: boolean };
+    const unsaved: AssetUnsavedStep[] = [];
     try {
-      const saved = saveAssetFile(dir, pid, filename, buffer, meta, readSourceMetadata(file.sourcePath, buffer.length));
-      storedMeta = saved.asset;
-      // An attached file is the post's content, so a changed one edited the post.
-      if (saved.changed) recordAssetChange(dir, pid);
+      saved = saveAssetFile(dir, pid, filename, buffer, meta, readSourceMetadata(file.sourcePath, buffer.length));
     } catch (err) {
       logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
-      throw new Error(assetStoreErrorMessage(err));
+      // Past the file's install the upload stands, and only what records it is missing.
+      if (!(err instanceof AssetRecordError)) throw new Error(assetStoreErrorMessage(err));
+      saved = { asset: err.asset, changed: true };
+      unsaved.push("details");
     }
+    const storedMeta = saved.asset;
+    // An attached file is the post's content, so a changed one edited the post.
+    if (saved.changed && !recordPostEdit(dir, wsId, pid, storedMeta.filename)) unsaved.push("modifiedTime");
     logInfo("asset uploaded", {
       workspace: wsId,
       postId: pid,
@@ -172,7 +198,7 @@ export function registerAssetHandlers(): void {
       height: height ?? null,
       hasMetadata: hasMetadata ?? false,
     });
-    return { ok: true, asset: storedMeta } satisfies AssetUploadResult;
+    return { ok: true, asset: storedMeta, ...(unsaved.length > 0 ? { unsaved } : {}) } satisfies AssetUploadResult;
   });
 
   ipcMain.handle(CHANNELS.deleteAsset, (_event, wsId: string, postId: string, filename: string) => {
@@ -200,11 +226,13 @@ export function registerAssetHandlers(): void {
 
     try {
       deleteAsset(dir, pid, fn);
-      recordAssetChange(dir, pid);
     } catch (err) {
       logError("asset metadata update failed", { workspace: wsId, postId: pid, filename: fn, error: serializeError(err) });
-      throw new Error(assetStoreErrorMessage(err));
+      // Past the file's removal the delete stands; the next read reconciles meta.json.
+      if (!(err instanceof AssetRecordError)) throw new Error(assetStoreErrorMessage(err));
     }
+    const unsaved: AssetUnsavedStep[] = recordPostEdit(dir, wsId, pid, fn) ? [] : ["modifiedTime"];
     logInfo("asset deleted", { workspace: wsId, postId: pid, filename: fn });
+    return (unsaved.length > 0 ? { unsaved } : {}) satisfies AssetDeleteResult;
   });
 }

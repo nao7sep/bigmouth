@@ -324,6 +324,9 @@
   "assets.added": {
     "other": "已添加 {count} 个素材。"
   },
+  "assets.addedWithoutDetails": "已添加 {name}，但无法保存其上传时间和图像信息。",
+  "assets.addedWithoutPostTime": "已添加 {name}，但无法更新此帖子的修改时间。",
+  "assets.deletedWithoutPostTime": "已删除 {name}，但无法更新此帖子的修改时间。",
   "assets.notAdded": {
     "other": "有 {count} 项无法添加："
   },

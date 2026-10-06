@@ -219,9 +219,20 @@ export type AssetUploadAdmission =
   | { code: "reserved-name"; filename: string }
   | { code: "post-locked" };
 
+/**
+ * What could not be saved after the attached file itself was added or removed;
+ * the change to the file stands. "details" is the asset's upload time and image
+ * details, "modifiedTime" the post's modified time.
+ */
+export type AssetUnsavedStep = "details" | "modifiedTime";
+
 export type AssetUploadResult =
-  | { ok: true; asset: AssetMeta }
+  | { ok: true; asset: AssetMeta; unsaved?: AssetUnsavedStep[] }
   | { ok: false; admission: AssetUploadAdmission };
+
+export interface AssetDeleteResult {
+  unsaved?: AssetUnsavedStep[];
+}
 
 export interface PostUpdate {
   content?: string;
@@ -378,7 +389,7 @@ export interface BigMouthApi {
   uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetUploadResult>;
   /** The on-disk path of a picked or dropped file, or "" when it has none. */
   pathForFile(file: File): string;
-  deleteAsset(wsId: string, postId: string, filename: string): Promise<void>;
+  deleteAsset(wsId: string, postId: string, filename: string): Promise<AssetDeleteResult>;
 
   // AI generation
   generateMetadata(
