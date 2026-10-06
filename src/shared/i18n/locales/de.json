@@ -329,7 +329,7 @@
   "metadata.refusedInvalidSlug": "Ungültiger Slug: Verwenden Sie 1–{max} Buchstaben, Ziffern, Bindestriche oder Unterstriche, darunter mindestens einen Buchstaben oder eine Ziffer",
   "metadata.refusedInvalid": "Diese Änderung konnte nicht gespeichert werden. Öffnen Sie den Beitrag erneut und versuchen Sie es noch einmal.",
   "assets.loadFailed": "Assets konnten nicht geladen werden. Öffnen Sie diesen Beitrag erneut, um es noch einmal zu versuchen.",
-  "assets.metaMovedAside": "BigMouth konnte {path} nicht lesen und hat die Datei nach {movedTo} verschoben. Die angehängten Dateien werden anhand des Ordners aufgelistet; die darin gespeicherten Hochladezeiten und Bildangaben sind nun unbekannt.",
+  "assets.metaMovedAside": "BigMouth konnte {path} nicht lesen und hat die Datei nach {movedTo} verschoben. Die angehängten Dateien werden anhand des Ordners aufgelistet; die in dieser Datei gespeicherten Hochladezeiten und Bildangaben sind nun unbekannt.",
   "assets.added": {
     "one": "{count} Asset hinzugefügt.",
     "other": "{count} Assets hinzugefügt."

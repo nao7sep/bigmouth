@@ -103,7 +103,7 @@ describe("AssetsTab loading", () => {
       .mockResolvedValue({ assets: [asset({ filename: "a.png", uploadedAt: undefined }), asset({ filename: "b.png" })] });
     mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "b.png" }) });
     const { container, getByText } = await renderTab();
-    const notice = `BigMouth could not read ${movedAside.path} and moved it to ${movedAside.movedTo}. The attached files are listed from the folder, and the upload times and image details it held are now unknown.`;
+    const notice = `BigMouth could not read ${movedAside.path} and moved it to ${movedAside.movedTo}. The attached files are listed from the folder, and the upload times and image details that file held are now unknown.`;
     expect(getByText(notice)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
 

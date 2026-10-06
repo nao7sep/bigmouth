@@ -329,7 +329,7 @@
   "metadata.refusedInvalidSlug": "Invalid slug: use 1–{max} letters, digits, hyphens, or underscores, including at least one letter or digit",
   "metadata.refusedInvalid": "This edit could not be saved. Reopen the post and try again.",
   "assets.loadFailed": "Assets could not be loaded. Reopen this post to try again.",
-  "assets.metaMovedAside": "BigMouth could not read {path} and moved it to {movedTo}. The attached files are listed from the folder, and the upload times and image details it held are now unknown.",
+  "assets.metaMovedAside": "BigMouth could not read {path} and moved it to {movedTo}. The attached files are listed from the folder, and the upload times and image details that file held are now unknown.",
   "assets.added": {
     "one": "Added {count} asset.",
     "other": "Added {count} assets."

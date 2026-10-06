@@ -335,7 +335,7 @@
   "metadata.refusedInvalidSlug": "Slug non valide\u00a0: utilisez de 1 à {max} lettres, chiffres, tirets ou tirets bas, dont au moins une lettre ou un chiffre",
   "metadata.refusedInvalid": "Cette modification n’a pas pu être enregistrée. Rouvrez la publication et réessayez.",
   "assets.loadFailed": "Les ressources n’ont pas pu être chargées. Rouvrez cette publication pour réessayer.",
-  "assets.metaMovedAside": "BigMouth n’a pas pu lire {path} et l’a déplacé vers {movedTo}. Les fichiers joints sont listés d’après le dossier, et les heures d’envoi et les informations d’image qu’il contenait sont désormais inconnues.",
+  "assets.metaMovedAside": "BigMouth n’a pas pu lire {path} et l’a déplacé vers {movedTo}. Les fichiers joints sont listés d’après le dossier, et les heures d’envoi et les informations d’image que contenait ce fichier sont désormais inconnues.",
   "assets.added": {
     "one": "{count} ressource ajoutée.",
     "many": "{count} de ressources ajoutées.",

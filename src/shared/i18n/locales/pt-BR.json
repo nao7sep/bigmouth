@@ -335,7 +335,7 @@
   "metadata.refusedInvalidSlug": "Slug inválido: use de 1 a {max} letras, dígitos, hifens ou sublinhados, com pelo menos uma letra ou um dígito",
   "metadata.refusedInvalid": "Não foi possível salvar esta edição. Abra a publicação novamente e tente outra vez.",
   "assets.loadFailed": "Não foi possível carregar os recursos. Abra esta publicação novamente para tentar outra vez.",
-  "assets.metaMovedAside": "O BigMouth não conseguiu ler {path} e o moveu para {movedTo}. Os arquivos anexados são listados a partir da pasta, e os horários de envio e as informações de imagem que ele guardava agora são desconhecidos.",
+  "assets.metaMovedAside": "O BigMouth não conseguiu ler {path} e o moveu para {movedTo}. Os arquivos anexados são listados a partir da pasta, e os horários de envio e as informações de imagem que esse arquivo guardava agora são desconhecidos.",
   "assets.added": {
     "one": "{count} recurso adicionado.",
     "many": "{count} de recursos adicionados.",

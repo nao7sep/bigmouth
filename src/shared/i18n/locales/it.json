@@ -335,7 +335,7 @@
   "metadata.refusedInvalidSlug": "Slug non valido: usa da 1 a {max} lettere, cifre, trattini o trattini bassi, con almeno una lettera o una cifra",
   "metadata.refusedInvalid": "Non è stato possibile salvare questa modifica. Riapri il post e riprova.",
   "assets.loadFailed": "Non è stato possibile caricare le risorse. Riapri questo post per riprovare.",
-  "assets.metaMovedAside": "BigMouth non è riuscito a leggere {path} e lo ha spostato in {movedTo}. I file allegati sono elencati in base alla cartella, e gli orari di caricamento e i dati delle immagini che conteneva ora sono sconosciuti.",
+  "assets.metaMovedAside": "BigMouth non è riuscito a leggere {path} e lo ha spostato in {movedTo}. I file allegati sono elencati in base alla cartella, e gli orari di caricamento e i dati delle immagini contenuti in quel file ora sono sconosciuti.",
   "assets.added": {
     "one": "{count} risorsa aggiunta.",
     "many": "{count} di risorse aggiunte.",
