@@ -42,6 +42,7 @@ import type {
 } from "../shared/types.js";
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { comparatorFor } from "@shared/postOrder";
+import type { UnreadablePostFile } from "@shared/types";
 import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
 import { applyStatusTransition } from "../shared/postLifecycle.js";
@@ -339,8 +340,9 @@ export function flushAllPendingEdits(): { id: string; message: string }[] {
  * another editor), which nothing watches. A list read calls this first, so the
  * Posts list shows such an edit the next time it is read.
  */
-export function refreshIndex(dataDir: string): void {
-  index.refresh(dataDir);
+/** Reconciles the index with the post files; returns the files it cannot read. */
+export function refreshIndex(dataDir: string): UnreadablePostFile[] {
+  return index.refresh(dataDir);
 }
 
 /**

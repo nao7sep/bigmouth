@@ -10,7 +10,7 @@ vi.mock("@renderer/api", () => ({
 
 import { usePostPicker } from "@renderer/hooks/usePostPicker";
 import { listPosts } from "@renderer/api";
-import type { PostListResponse, PostStatus, PostSummary } from "@shared/types";
+import type { PostListSection, PostStatus, PostSummary } from "@shared/types";
 
 const mockListPosts = vi.mocked(listPosts);
 
@@ -39,7 +39,7 @@ function page(posts: Sections, totals: Partial<Record<PostStatus, number>> = {},
       status,
       { posts: posts[status] ?? [], total: totals[status] ?? posts[status]?.length ?? 0, offset: offsets[status] ?? 0 },
     ]),
-  ) as PostListResponse;
+  ) as Record<PostStatus, PostListSection>;
 }
 
 // The mocked listPosts settles within the current macrotask, so one macrotask

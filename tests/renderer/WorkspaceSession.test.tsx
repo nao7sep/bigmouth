@@ -416,6 +416,21 @@ describe("WorkspaceSession initial load", () => {
     expect(queryByText("This workspace could not be loaded. Reopen it to try again.")).toBeNull();
   });
 
+  it("names the post files the list left out, until dismissed or the set changes", async () => {
+    const broken = "/d/a/posts/20260101-000000-utc-broken.md";
+    const newer = "/d/a/posts/20260101-000001-utc-newer.md";
+    mockListPosts.mockResolvedValue({ ...LIST, unreadable: [{ path: broken, newer: false }, { path: newer, newer: true }] });
+    const { getByText, container, queryByText } = await mountLoaded();
+
+    expect(getByText("2 post files are not in the list because BigMouth could not read them:")).toBeTruthy();
+    expect(getByText(`BigMouth could not read ${broken}, so the file was left unchanged. Repair or move it, then try again.`)).toBeTruthy();
+    expect(getByText(`A newer version of BigMouth saved ${newer}, so this version cannot use it. The file was left unchanged; open it with that version.`)).toBeTruthy();
+    expect(container.querySelector(".toolbar-warning")).toBeTruthy();
+
+    fireEvent.click(container.querySelector(".toolbar-warning .operational-result-dismiss")!);
+    expect(queryByText(/post files are not in the list/)).toBeNull();
+  });
+
   it("cannot apply a workspace font after the session unmounts", async () => {
     let resolveSettings!: (settings: Settings) => void;
     mockGetSettings.mockReturnValue(

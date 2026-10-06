@@ -19,9 +19,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
+import type { UnreadablePostFile } from "@shared/types";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
-import { jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { compareInstants } from "@shared/postOrder";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
@@ -145,10 +146,16 @@ export function rebuild(dataDir: string): RebuildResult {
  * Brings the in-memory index up to date with the Markdown files, which BigMouth
  * explicitly lets the user edit outside the app. Cheap: a `stat` per file, and a
  * read only of the files written since the index was (see reconcile).
+ *
+ * Returns the post files left out because they cannot be read, so the list can
+ * say so: each is a document of its own, reported in place while the rest
+ * keep working (store-recovery-conventions).
  */
-export function refresh(dataDir: string): void {
+export function refresh(dataDir: string): UnreadablePostFile[] {
   const map = state(dataDir);
-  if (reconcile(dataDir, map)) persist(dataDir, map);
+  const { changed, unreadable } = reconcile(dataDir, map);
+  if (changed) persist(dataDir, map);
+  return unreadable;
 }
 
 // --- Internal ---
@@ -173,7 +180,7 @@ function load(dataDir: string): Map<string, PostIndexEntry> {
   const parsed = readIndexFile(dataDir);
   if (!parsed) return buildAndPersist(dataDir);
 
-  const changed = reconcile(dataDir, parsed);
+  const { changed } = reconcile(dataDir, parsed);
   if (changed) persist(dataDir, parsed);
   return parsed;
 }
@@ -290,7 +297,8 @@ function buildFromDisk(dataDir: string): {
 /**
  * Reconciles an in-memory index against the files on disk: adds files the index
  * is missing, re-reads files that changed under it, drops entries whose file is
- * gone. Returns whether anything changed.
+ * gone. Returns whether anything changed, and the files that cannot be read:
+ * those are never rows, so every reconcile reads them again and finds them all.
  *
  * The re-read is by modification time against the index file's own. A post's
  * filename is fixed for its lifetime, so a status flipped by a `git revert`, a
@@ -299,13 +307,19 @@ function buildFromDisk(dataDir: string): {
  * while the editor showed the new one, and only Settings → Rebuild index fixed
  * it. Cheap: a `stat` per file, and a read only of the few that are newer.
  */
-function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
+function reconcile(
+  dataDir: string,
+  map: Map<string, PostIndexEntry>,
+): { changed: boolean; unreadable: UnreadablePostFile[] } {
   const onDisk = new Set(postFileNames(dataDir));
   const indexed = new Map<string, string>();
   for (const [id, entry] of map) indexed.set(entry.fileName, id);
 
   const indexedAt = modifiedAt(indexPath(dataDir));
   let changed = false;
+  const unreadable: UnreadablePostFile[] = [];
+  const noteUnreadable = (fileName: string, newer: boolean) =>
+    unreadable.push({ path: path.join(postsDir(dataDir), fileName), newer });
 
   for (const fileName of onDisk) {
     const existingId = indexed.get(fileName);
@@ -318,6 +332,7 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
         // retaining its old row leaves a post in the list that cannot be opened.
         map.delete(existingId);
         changed = true;
+        noteUnreadable(fileName, result.newer);
         continue;
       }
       if (canonicalEntryJson(result.entry) === canonicalEntryJson(map.get(existingId)!)) continue;
@@ -329,7 +344,8 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
       continue;
     }
     const result = tryEntryFromFile(dataDir, fileName);
-    if ("entry" in result && insertUnique(map, result.entry)) changed = true;
+    if (!("entry" in result)) noteUnreadable(fileName, result.newer);
+    else if (insertUnique(map, result.entry)) changed = true;
   }
 
   for (const [id, entry] of [...map.entries()]) {
@@ -339,7 +355,7 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
     }
   }
 
-  return changed;
+  return { changed, unreadable };
 }
 
 /**
@@ -354,20 +370,20 @@ function reconcile(dataDir: string, map: Map<string, PostIndexEntry>): boolean {
 function tryEntryFromFile(
   dataDir: string,
   fileName: string,
-): { entry: PostIndexEntry } | { reason: string } {
+): { entry: PostIndexEntry } | { reason: string; newer: boolean } {
   try {
     const post = readPost(path.join(postsDir(dataDir), fileName));
     if (!post.frontMatter.id) {
       const reason = "no id in its front matter";
       logWarn("post file skipped", { fileName, reason });
-      return { reason };
+      return { reason, newer: false };
     }
     // The id names the post's asset folder, so one outside the grammar (`..`,
     // `.`, a path) never becomes a row the app could delete or upload through.
     if (!isPostId(post.frontMatter.id)) {
       const reason = `invalid post id ${JSON.stringify(post.frontMatter.id)}`;
       logWarn("post file skipped", { fileName, reason });
-      return { reason };
+      return { reason, newer: false };
     }
     // A status outside the five reaches no list section, so an entry built from it
     // would sit in the index describing a post no list can show — indexed by
@@ -375,7 +391,7 @@ function tryEntryFromFile(
     if (!isPostStatus(post.frontMatter.status)) {
       const reason = `unknown status ${JSON.stringify(post.frontMatter.status)}`;
       logWarn("post file skipped", { fileName, reason });
-      return { reason };
+      return { reason, newer: false };
     }
     return { entry: projectIndexEntry(post.frontMatter, fileName, post.content) };
   } catch (err) {
@@ -383,7 +399,7 @@ function tryEntryFromFile(
     // line diagnosable, and the two are not interchangeable.
     const reason = err instanceof Error ? err.message : String(err);
     logWarn("post file skipped", { fileName, reason, error: serializeError(err) });
-    return { reason };
+    return { reason, newer: err instanceof NewerFormatError };
   }
 }
 

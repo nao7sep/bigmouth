@@ -118,6 +118,11 @@
   "session.metadataUnsaved": "Les modifications des métadonnées n’ont pas pu être enregistrées. Réglez-les avant de recharger les réglages.",
   "session.refreshFailed": "Les réglages ont changé, mais cet espace de travail n’a pas pu être actualisé. Rouvrez l’espace de travail pour utiliser les réglages enregistrés.",
   "session.postListFailed": "La liste des publications n’a pas pu être actualisée. Rouvrez l’espace de travail pour réessayer.",
+  "session.unreadablePosts": {
+    "one": "{count}\u00a0fichier de publication n’apparaît pas dans la liste, car BigMouth n’a pas pu le lire\u00a0:",
+    "many": "{count}\u00a0de fichiers de publication n’apparaissent pas dans la liste, car BigMouth n’a pas pu les lire\u00a0:",
+    "other": "{count}\u00a0fichiers de publication n’apparaissent pas dans la liste, car BigMouth n’a pas pu les lire\u00a0:"
+  },
   "session.morePublishedFailed": "D’autres publications publiées n’ont pas pu être chargées. Celles déjà affichées sont inchangées\u00a0; réessayez.",
   "session.moreDiscardedFailed": "D’autres publications abandonnées n’ont pas pu être chargées. Celles déjà affichées sont inchangées\u00a0; réessayez.",
   "session.moreRetiredFailed": "D’autres publications retirées n’ont pas pu être chargées. Celles déjà affichées sont inchangées\u00a0; réessayez.",

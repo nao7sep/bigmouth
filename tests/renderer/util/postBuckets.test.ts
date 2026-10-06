@@ -6,7 +6,7 @@ import {
   removePostFromLists,
   type PostLists,
 } from "@renderer/util/postBuckets";
-import type { PostListResponse, PostStatus, PostSummary } from "@shared/types";
+import type { PostListSection, PostStatus, PostSummary } from "@shared/types";
 import { LIST_TIME_KEY } from "@shared/postOrder";
 
 function summary(
@@ -208,7 +208,7 @@ describe("listsFromResponse", () => {
         status,
         { posts: [summary(status, status)], total: i + 1, offset: 0 },
       ]),
-    ) as PostListResponse;
+    ) as Record<PostStatus, PostListSection>;
     const next = listsFromResponse(response);
     expect(ids(next.retired.posts)).toEqual(["retired"]);
     expect(totals(next)).toEqual({ draft: 1, discarded: 2, verified: 3, published: 4, retired: 5 });

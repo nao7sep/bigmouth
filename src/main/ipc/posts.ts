@@ -140,8 +140,9 @@ export function registerPostHandlers(): void {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const lim = limit || getSettings(dir).postsPerLoad;
 
-    refreshIndex(dir);
+    const unreadable = refreshIndex(dir);
     const response = {} as PostListResponse;
+    if (unreadable.length > 0) response.unreadable = unreadable;
     for (const status of POST_STATUSES) {
       if (!isPagedPostStatus(status)) {
         const posts = listByStatus(dir, status);

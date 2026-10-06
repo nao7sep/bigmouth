@@ -907,6 +907,20 @@ button:disabled,
   border-bottom: 1px solid var(--bm-danger-border);
 }
 
+.toolbar-warning {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bm-warning-soft);
+  color: var(--bm-warning);
+  font-size: 13px;
+  border-bottom: 1px solid var(--bm-warning-border);
+  overflow-wrap: anywhere;
+}
+
 .operational-result-message {
   min-width: 0;
   flex: 1 1 auto;

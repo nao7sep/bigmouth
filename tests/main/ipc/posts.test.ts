@@ -192,6 +192,31 @@ describe("listPosts", () => {
     expect(secondPage[status].offset).toBe(2);
   });
 
+  // store-recovery-conventions: a post file is a document of its own, so one
+  // this build cannot read is reported in place while the rest keep working.
+  it("names each post file it left out of the list, and leaves the files as they are", () => {
+    const kept = createDraft();
+    const posts = path.join(dataDir, "posts");
+    const broken = path.join(posts, "20260101-000000-utc-broken.md");
+    const newer = path.join(posts, "20260101-000001-utc-newer.md");
+    fs.writeFileSync(broken, "---\nid: [unclosed\n---\nbody\n");
+    fs.writeFileSync(newer, "---\nformatVersion: 99\nid: NEWERxxxxxxxxxxxxxxxx\nstatus: draft\n---\nbody\n");
+
+    const res = invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0);
+
+    expect(listIds(res, "draft")).toEqual([kept]);
+    expect(res.unreadable).toEqual([
+      { path: broken, newer: false },
+      { path: newer, newer: true },
+    ]);
+    expect(fs.readFileSync(broken, "utf8")).toBe("---\nid: [unclosed\n---\nbody\n");
+    // Still named on the next read, and gone from the answer once repaired.
+    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0).unreadable).toHaveLength(2);
+    fs.rmSync(broken);
+    fs.rmSync(newer);
+    expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0).unreadable).toBeUndefined();
+  });
+
   it("loads draft and verified posts whole, whatever the limit", () => {
     for (let i = 0; i < 3; i++) createDraft();
     expect(invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 1).draft.posts).toHaveLength(3);

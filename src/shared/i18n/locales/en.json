@@ -118,6 +118,10 @@
   "session.metadataUnsaved": "Metadata changes could not be saved. Resolve them before reloading settings.",
   "session.refreshFailed": "Settings changed, but this workspace could not be refreshed. Reopen the workspace to use the saved settings.",
   "session.postListFailed": "The post list could not be refreshed. Reopen the workspace to try again.",
+  "session.unreadablePosts": {
+    "one": "{count} post file is not in the list because BigMouth could not read it:",
+    "other": "{count} post files are not in the list because BigMouth could not read them:"
+  },
   "session.morePublishedFailed": "More published posts could not be loaded. The posts already shown are unchanged; try again.",
   "session.moreDiscardedFailed": "More discarded posts could not be loaded. The posts already shown are unchanged; try again.",
   "session.moreRetiredFailed": "More retired posts could not be loaded. The posts already shown are unchanged; try again.",

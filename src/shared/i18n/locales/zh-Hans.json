@@ -118,6 +118,9 @@
   "session.metadataUnsaved": "无法保存元数据更改。请先解决这些问题，再重新加载设置。",
   "session.refreshFailed": "设置已更改，但无法刷新此工作区。请重新打开工作区以使用已保存的设置。",
   "session.postListFailed": "无法刷新文章列表。请重新打开工作区后重试。",
+  "session.unreadablePosts": {
+    "other": "BigMouth 无法读取 {count} 个文章文件，因此它们不在列表中："
+  },
   "session.morePublishedFailed": "无法加载更多已发布的文章。已显示的文章没有改变；请重试。",
   "session.moreDiscardedFailed": "无法加载更多已弃用的文章。已显示的文章没有改变；请重试。",
   "session.moreRetiredFailed": "无法加载更多已下线的文章。已显示的文章没有改变；请重试。",

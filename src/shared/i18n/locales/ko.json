@@ -118,6 +118,9 @@
   "session.metadataUnsaved": "메타데이터 변경 사항을 저장할 수 없습니다. 설정을 다시 불러오기 전에 해결하십시오.",
   "session.refreshFailed": "설정은 바뀌었지만 이 작업 공간을 새로 고칠 수 없습니다. 저장된 설정을 사용하려면 작업 공간을 다시 여십시오.",
   "session.postListFailed": "게시물 목록을 새로 고칠 수 없습니다. 작업 공간을 다시 열어서 재시도하십시오.",
+  "session.unreadablePosts": {
+    "other": "BigMouth에서 게시물 파일 {count}개를 읽을 수 없어 목록에 표시하지 않았습니다:"
+  },
   "session.morePublishedFailed": "게시된 게시물을 더 불러올 수 없습니다. 이미 표시된 게시물은 바뀌지 않았습니다. 다시 시도하십시오.",
   "session.moreDiscardedFailed": "미채택 게시물을 더 불러올 수 없습니다. 이미 표시된 게시물은 바뀌지 않았습니다. 다시 시도하십시오.",
   "session.moreRetiredFailed": "게시 종료된 게시물을 더 불러올 수 없습니다. 이미 표시된 게시물은 바뀌지 않았습니다. 다시 시도하십시오.",

@@ -118,6 +118,11 @@
   "session.metadataUnsaved": "Não foi possível salvar as alterações de metadados. Resolva-as antes de recarregar as configurações.",
   "session.refreshFailed": "As configurações mudaram, mas não foi possível atualizar este espaço de trabalho. Abra o espaço de trabalho novamente para usar as configurações salvas.",
   "session.postListFailed": "Não foi possível atualizar a lista de publicações. Abra o espaço de trabalho novamente para tentar outra vez.",
+  "session.unreadablePosts": {
+    "one": "{count} arquivo de publicação não está na lista porque o BigMouth não conseguiu lê-lo:",
+    "many": "{count} de arquivos de publicação não estão na lista porque o BigMouth não conseguiu lê-los:",
+    "other": "{count} arquivos de publicação não estão na lista porque o BigMouth não conseguiu lê-los:"
+  },
   "session.morePublishedFailed": "Não foi possível carregar mais publicações publicadas. As que já aparecem não mudaram; tente novamente.",
   "session.moreDiscardedFailed": "Não foi possível carregar mais publicações descartadas. As que já aparecem não mudaram; tente novamente.",
   "session.moreRetiredFailed": "Não foi possível carregar mais publicações retiradas. As que já aparecem não mudaram; tente novamente.",

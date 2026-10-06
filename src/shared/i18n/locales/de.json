@@ -118,6 +118,10 @@
   "session.metadataUnsaved": "Metadatenänderungen konnten nicht gespeichert werden. Beheben Sie das, bevor die Einstellungen neu geladen werden.",
   "session.refreshFailed": "Die Einstellungen wurden geändert, aber dieser Arbeitsbereich konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um die gespeicherten Einstellungen zu verwenden.",
   "session.postListFailed": "Die Beitragsliste konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um es noch einmal zu versuchen.",
+  "session.unreadablePosts": {
+    "one": "{count} Beitragsdatei fehlt in der Liste, weil BigMouth sie nicht lesen konnte:",
+    "other": "{count} Beitragsdateien fehlen in der Liste, weil BigMouth sie nicht lesen konnte:"
+  },
   "session.morePublishedFailed": "Weitere veröffentlichte Beiträge konnten nicht geladen werden. Die angezeigten Beiträge bleiben unverändert; versuchen Sie es erneut.",
   "session.moreDiscardedFailed": "Weitere verworfene Beiträge konnten nicht geladen werden. Die angezeigten Beiträge bleiben unverändert; versuchen Sie es erneut.",
   "session.moreRetiredFailed": "Weitere zurückgezogene Beiträge konnten nicht geladen werden. Die angezeigten Beiträge bleiben unverändert; versuchen Sie es erneut.",

@@ -173,8 +173,17 @@ export interface PostListSection {
   offset: number;
 }
 
-/** The Posts list: one section per status. */
-export type PostListResponse = Record<PostStatus, PostListSection>;
+/**
+ * A post file the list leaves out because this build cannot read it. It is left
+ * as it is; `newer` says a newer version of BigMouth wrote it.
+ */
+export interface UnreadablePostFile {
+  path: string;
+  newer: boolean;
+}
+
+/** The Posts list: one section per status, and the post files it could not read. */
+export type PostListResponse = Record<PostStatus, PostListSection> & { unreadable?: UnreadablePostFile[] };
 
 /**
  * The subset of front matter a client may edit. Identity (id) and lifecycle

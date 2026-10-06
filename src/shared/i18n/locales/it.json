@@ -118,6 +118,11 @@
   "session.metadataUnsaved": "Non è stato possibile salvare le modifiche ai metadati. Risolvile prima di ricaricare le impostazioni.",
   "session.refreshFailed": "Le impostazioni sono cambiate, ma non è stato possibile aggiornare questo spazio di lavoro. Riapri lo spazio di lavoro per usare le impostazioni salvate.",
   "session.postListFailed": "Non è stato possibile aggiornare l’elenco dei post. Riapri lo spazio di lavoro per riprovare.",
+  "session.unreadablePosts": {
+    "one": "{count} file di post non è nell’elenco perché BigMouth non è riuscito a leggerlo:",
+    "many": "{count} di file di post non sono nell’elenco perché BigMouth non è riuscito a leggerli:",
+    "other": "{count} file di post non sono nell’elenco perché BigMouth non è riuscito a leggerli:"
+  },
   "session.morePublishedFailed": "Non è stato possibile caricare altri post pubblicati. Quelli già mostrati non sono cambiati; riprova.",
   "session.moreDiscardedFailed": "Non è stato possibile caricare altri post scartati. Quelli già mostrati non sono cambiati; riprova.",
   "session.moreRetiredFailed": "Non è stato possibile caricare altri post ritirati. Quelli già mostrati non sono cambiati; riprova.",

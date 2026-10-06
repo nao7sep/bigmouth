@@ -37,6 +37,7 @@ import type {
   PostSummary,
   Settings,
   Target,
+  UnreadablePostFile,
   Workspace,
 } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
@@ -124,6 +125,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
     const { t, text } = useI18n();
     const [loadError, setLoadError] = useState<Message | null>(null);
+    // Post files the list leaves out because they cannot be read. A dismissed
+    // set stays hidden until the set changes.
+    const [unreadablePosts, setUnreadablePosts] = useState<UnreadablePostFile[]>([]);
+    const [dismissedUnreadable, setDismissedUnreadable] = useState<string | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
     /**
@@ -207,6 +212,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         const data = await listPosts(offsets, pubBatchSize);
 
         listVersionRef.current += 1;
+        setUnreadablePosts(data.unreadable ?? []);
         const fresh = listsFromResponse(data);
         if (append) {
           const current = listsRef.current;
@@ -234,6 +240,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)));
       // The app changed the lists while this read was out: they are newer.
       if (listVersionRef.current !== version) return;
+      setUnreadablePosts(data.unreadable ?? []);
 
       const fresh = listsFromResponse(data);
       for (const status of PAGED_POST_STATUSES) {
@@ -590,6 +597,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const postLoading =
       Boolean(selectedPostId) &&
       currentPost?.frontMatter.id !== selectedPostId;
+    const unreadableKey = unreadablePosts.map((file) => file.path).join("\n");
 
     return (
       <div className="workspace-session">
@@ -601,6 +609,20 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             onDismiss={() => setLoadError(null)}
           >
             {text(loadError)}
+          </OperationalResult>
+        )}
+        {unreadablePosts.length > 0 && unreadableKey !== dismissedUnreadable && (
+          <OperationalResult
+            severity="warning"
+            className="toolbar-warning"
+            onDismiss={() => setDismissedUnreadable(unreadableKey)}
+          >
+            <div>{t("session.unreadablePosts", { count: unreadablePosts.length })}</div>
+            {unreadablePosts.map((file) => (
+              <div key={file.path}>
+                {text(message(file.newer ? "store.newerFormat" : "store.unreadable", { path: file.path }))}
+              </div>
+            ))}
           </OperationalResult>
         )}
         <div
