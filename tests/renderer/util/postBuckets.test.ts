@@ -65,10 +65,13 @@ describe("applyPostMutationToLists", () => {
   it.each(PAGED.flatMap((from) => PAGED.filter((to) => to !== from).map((to) => [from, to] as const)))(
     "moves %s -> %s, shifting one total onto the other",
     (from, to) => {
-      const prev = lists({ [from]: { posts: [inSection("a", from)], total: 4 }, [to]: { posts: [], total: 2 } });
+      const prev = lists({
+        [from]: { posts: [inSection("a", from)], total: 4 },
+        [to]: { posts: [inSection("b", to, "2026-01-01T00:00:00.000Z")], total: 2 },
+      });
       const next = applyPostMutationToLists(prev, inSection("a", to), to, null);
       expect(ids(next[from].posts)).toEqual([]);
-      expect(ids(next[to].posts)).toEqual(["a"]);
+      expect(ids(next[to].posts)).toEqual(["a", "b"]);
       expect(next[from].total).toBe(3);
       expect(next[to].total).toBe(3);
     },
@@ -89,6 +92,45 @@ describe("applyPostMutationToLists", () => {
     const next = applyPostMutationToLists(prev, inSection("deep", status, "2026-01-01T00:00:00.000Z"), status, status);
     expect(ids(next[status].posts)).toEqual(["onpage"]);
     expect(next[status].total).toBe(5);
+  });
+
+  it("keeps a restored old publication off the loaded published rows while older rows are unloaded", () => {
+    // 4 published posts, the newest 2 loaded. Retired -> published keeps the
+    // publication time, which belongs below the loaded rows: adding it would
+    // make the next page start past a row nobody loaded, and fetch this one again.
+    const prev = lists({
+      published: {
+        posts: [
+          inSection("p4", "published", "2026-04-01T00:00:00.000Z"),
+          inSection("p3", "published", "2026-03-01T00:00:00.000Z"),
+        ],
+        total: 4,
+      },
+      retired: { posts: [inSection("old", "retired", "2026-09-01T00:00:00.000Z")], total: 1 },
+    });
+    const restored = summary("old", "published", { publishedAtUtc: "2026-01-15T00:00:00.000Z" });
+    const next = applyPostMutationToLists(prev, restored, "published", null);
+    expect(ids(next.published.posts)).toEqual(["p4", "p3"]);
+    expect(next.published.total).toBe(5);
+    expect(ids(next.retired.posts)).toEqual([]);
+    expect(next.retired.total).toBe(0);
+  });
+
+  it("adds a restored publication that sorts among the loaded published rows", () => {
+    const prev = lists({
+      published: {
+        posts: [
+          inSection("p4", "published", "2026-04-01T00:00:00.000Z"),
+          inSection("p2", "published", "2026-02-01T00:00:00.000Z"),
+        ],
+        total: 4,
+      },
+      retired: { posts: [inSection("mid", "retired", "2026-09-01T00:00:00.000Z")], total: 1 },
+    });
+    const restored = summary("mid", "published", { publishedAtUtc: "2026-03-01T00:00:00.000Z" });
+    const next = applyPostMutationToLists(prev, restored, "published", null);
+    expect(ids(next.published.posts)).toEqual(["p4", "mid", "p2"]);
+    expect(next.published.total).toBe(5);
   });
 
   it.each(PAGED)("decrements the %s total for an off-page post leaving it", (status) => {

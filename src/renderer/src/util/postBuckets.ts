@@ -63,8 +63,14 @@ export function applyPostMutationToLists(
     }
     // For a paged section, only fold the post into the loaded page when it is
     // already there or arriving from elsewhere — a re-save of a post in that
-    // section but not on the loaded page belongs deeper in it, not the top.
-    const include = status === section && (loadedIn === section || previousStatus !== section);
+    // section but not on the loaded page belongs deeper in it, not the top. A
+    // post arriving from elsewhere joins only when it sorts inside the loaded
+    // rows, so they stay the section's first rows and the next page, which starts
+    // at their count, neither skips a row nor repeats this one.
+    const include =
+      status === section &&
+      (loadedIn === section ||
+        (previousStatus !== section && belongsInLoadedRows(prev[section], summary, section)));
     const posts = nextSummariesForStatus(prev[section].posts, summary, section, include);
     let total = prev[section].total;
     if (previousStatus === section && status !== section) {
@@ -75,6 +81,16 @@ export function applyPostMutationToLists(
     next[section] = { posts, total };
   }
   return next;
+}
+
+/**
+ * Whether a post entering a paged section sorts among its loaded rows: always
+ * when every row is loaded, otherwise only ahead of the last loaded one.
+ */
+function belongsInLoadedRows(section: ListSection, summary: PostSummary, status: PostStatus): boolean {
+  if (section.posts.length >= section.total) return true;
+  const last = section.posts[section.posts.length - 1];
+  return last !== undefined && compareSummaries(status, summary, last) < 0;
 }
 
 /**
