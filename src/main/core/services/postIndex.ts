@@ -221,14 +221,46 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
     });
     return null;
   }
-  const map = new Map<string, PostIndexEntry>();
-  for (const item of posts as PostIndexEntry[]) {
-    // index.json sits in the workspace folder and can be hand-edited too; a
-    // row with an id outside the grammar is dropped, and reconcile re-reads
-    // its file through the same gate as a rebuild.
-    if (item && isPostId(item.id)) map.set(item.id, item);
+  // index.json sits in the workspace folder and can be hand-edited too. It is
+  // only a cache of the post files, so a row that is not an index entry makes
+  // the whole file unreadable and the index is rebuilt from them.
+  if (!posts.every(isIndexEntry)) {
+    logWarn("post index unreadable; rebuilding from the post files", {
+      path: filePath,
+      detail: "one of its posts is not an index entry",
+    });
+    return null;
   }
+  const map = new Map<string, PostIndexEntry>();
+  for (const item of posts) map.set(item.id, item);
   return map;
+}
+
+// A post file may lack its target, language or created time, so its row does too.
+const ENTRY_OPTIONAL_TEXT_KEYS = [
+  "target",
+  "language",
+  "createdAtUtc",
+  "slug",
+  "title",
+  "titleEn",
+  "excerpt",
+  "sourceId",
+  "discardedAtUtc",
+  "verifiedAtUtc",
+  "publishedAtUtc",
+  "retiredAtUtc",
+] as const;
+
+/** Whether a cached row has the shape an index entry is written in. */
+function isIndexEntry(value: unknown): value is PostIndexEntry {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (!isPostId(row.id) || !isPostStatus(row.status)) return false;
+  if (typeof row.fileName !== "string") return false;
+  if (!ENTRY_OPTIONAL_TEXT_KEYS.every((key) => row[key] === undefined || typeof row[key] === "string")) return false;
+  if (row.tags !== undefined && !(Array.isArray(row.tags) && row.tags.every((tag) => typeof tag === "string"))) return false;
+  return row.locked === undefined || row.locked === true;
 }
 
 function buildFromDisk(dataDir: string): {

@@ -74,6 +74,51 @@ const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
 
 const CANONICAL_KEY_SET = new Set<string>([FORMAT_VERSION_KEY, ...CANONICAL_KEYS]);
 
+// The known keys' shapes. The identity, status and created and updated times are
+// text whenever they are present; the other text keys may also be empty (YAML's
+// `key:` with no value). Unknown keys are the author's and are not checked.
+const REQUIRED_TEXT_KEYS = ["id", "target", "status", "language", "createdAtUtc", "updatedAtUtc"] as const;
+const OPTIONAL_TEXT_KEYS = [
+  "sourceId",
+  "title",
+  "titleEn",
+  "slug",
+  "metaDescription",
+  "metaDescriptionEn",
+  "extra",
+  "discardedAtUtc",
+  "verifiedAtUtc",
+  "publishedAtUtc",
+  "retiredAtUtc",
+] as const;
+const TEXT_LIST_KEYS = ["tags", "tagsEn"] as const;
+
+/**
+ * Why front matter does not fit the shape BigMouth reads, or null when it does.
+ * A file whose format marker is current can still hold, say, a title that is a
+ * YAML map; such a file is unreadable rather than coerced
+ * (store-recovery-conventions). An absent key is fine.
+ */
+export function frontMatterShapeProblem(frontMatter: Record<string, unknown>): string | null {
+  for (const key of REQUIRED_TEXT_KEYS) {
+    const value = frontMatter[key];
+    if (value !== undefined && typeof value !== "string") return `its ${key} is not text`;
+  }
+  for (const key of OPTIONAL_TEXT_KEYS) {
+    const value = frontMatter[key];
+    if (value !== undefined && value !== null && typeof value !== "string") return `its ${key} is not text`;
+  }
+  for (const key of TEXT_LIST_KEYS) {
+    const value = frontMatter[key];
+    if (value !== undefined && value !== null && !(Array.isArray(value) && value.every((item) => typeof item === "string"))) {
+      return `its ${key} is not a list of text`;
+    }
+  }
+  const locked = frontMatter.locked;
+  if (locked !== undefined && typeof locked !== "boolean") return "its locked is not true or false";
+  return null;
+}
+
 /**
  * Parses raw file text into an owned front matter object and trimmed content.
  *
@@ -96,7 +141,8 @@ export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; conte
 /**
  * Reads a post file. One a newer version of BigMouth wrote throws
  * NewerFormatError, and every write of an existing post reads it first, so such
- * a file is never written.
+ * a file is never written. One whose known keys do not have their shape throws
+ * too, and is left as it is.
  */
 export function readPost(filePath: string): Post {
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -104,6 +150,8 @@ export function readPost(filePath: string): Post {
   const check = checkFormatVersion("postFile", frontMatter);
   if (check.kind === "newer") throw new NewerFormatError(filePath, check.version);
   if (check.kind === "unreadable") throw new Error(`${path.basename(filePath)}: ${check.detail}`);
+  const problem = frontMatterShapeProblem(frontMatter);
+  if (problem) throw new Error(`${path.basename(filePath)}: ${problem}`);
   return { frontMatter, content, filePath };
 }
 

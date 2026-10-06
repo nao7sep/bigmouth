@@ -229,6 +229,49 @@ describe("tolerates bad source files (one bad file never poisons the workspace)"
   });
 });
 
+// The format marker says which format a file is in, not that every key in it has
+// that format's shape: a hand edit can still turn a title into a YAML map, which
+// would reach the list as something it cannot show (store-recovery-conventions).
+describe("a known front-matter key of the wrong shape", () => {
+  it.each([
+    ["an object-valued title", "title: Good", "title:\n  nested: map"],
+    ["an object-valued target", "target: blogger", "target:\n  name: blogger"],
+    ["a tag list holding a map", "status: draft", "status: draft\ntags:\n  - ok\n  - key: value"],
+    ["a locked flag that is text", "status: draft", "status: draft\nlocked: \"yes\""],
+  ])("leaves %s out of the list and the file as it is, keeping the other posts", (_name, find, replace) => {
+    const keeper = createPost(dataDir, "blogger", "en");
+    const edited = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, edited.frontMatter.id, { frontMatter: { title: "Good" } });
+    const raw = fs.readFileSync(edited.filePath, "utf-8").replace(find, replace);
+    expect(raw).toContain(replace);
+    fs.writeFileSync(edited.filePath, raw);
+    clearCache(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([keeper.frontMatter.id]);
+    expect(fs.readFileSync(edited.filePath, "utf-8")).toBe(raw);
+    const result = rebuildIndex(dataDir);
+    expect(result.skipped).toEqual([
+      { fileName: path.basename(edited.filePath), reason: expect.stringMatching(/^\S+\.md: its \w+ is not/) },
+    ]);
+  });
+
+  it("rebuilds a cached index row of the wrong shape from the post files", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "Real title" } });
+    const indexFile = path.join(dataDir, "posts", "index.json");
+    const stored = JSON.parse(fs.readFileSync(indexFile, "utf-8")) as { formatVersion: number; posts: PostIndexEntry[] };
+    (stored.posts[0] as unknown as Record<string, unknown>).title = { nested: "map" };
+    fs.writeFileSync(indexFile, JSON.stringify(stored));
+    // The index must look newer than the post, so reconcile would trust its rows.
+    const later = new Date("2100-01-01T00:00:00.000Z");
+    fs.utimesSync(indexFile, later, later);
+    clearCache(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.title)).toEqual(["Real title"]);
+    expect(JSON.parse(indexBytes()).posts[0].title).toBe("Real title");
+  });
+});
+
 // A post file may be hand-edited, and its id names the post's asset folder. An
 // id of `..` once reached a recursive delete of `assets/..`: the whole
 // workspace folder, posts and uploads alike.
@@ -388,7 +431,7 @@ describe("a rebuild says what it left behind", () => {
 
     expect(result.indexed).toBe(0);
     expect(result.skipped).toEqual([
-      { fileName: path.basename(post.filePath), reason: "slug must be a string, got number" },
+      { fileName: path.basename(post.filePath), reason: `${path.basename(post.filePath)}: its slug is not text` },
     ]);
     expect(fs.readFileSync(post.filePath, "utf-8")).toContain("slug: 123");
   });
