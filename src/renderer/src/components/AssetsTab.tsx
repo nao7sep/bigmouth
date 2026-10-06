@@ -15,6 +15,7 @@ import { inspectAssetDragOffer } from "../util/assetDrop";
 import { AssetUploadAdmissionError } from "../util/assetUpload";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
 
 interface AssetsTabProps extends Pick<
   HTMLAttributes<HTMLDivElement>,
@@ -153,7 +154,9 @@ export function AssetsTab({
         if (err instanceof AssetUploadAdmissionError) {
           admissionFailures.push({ file, reason: err.reason });
         } else {
-          operationalFailures.push({ file, reason: message("assets.fileNotAdded") });
+          // A failure that carries its own words, such as a meta.json a newer
+          // version saved, is told in them.
+          operationalFailures.push({ file, reason: carriedMessage(err) ?? message("assets.fileNotAdded") });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });
         }
       }
@@ -317,9 +320,13 @@ export function AssetsTab({
       });
     } catch (err) {
       reportProblem("Asset deletion failed.", err, { postId, filename });
+      const carried = carriedMessage(err);
       setUploadNotice({
         severity: "error",
-        lines: [{ message: message("assets.deleteFailed", { name: filename }) }],
+        lines: [
+          { message: message("assets.deleteFailed", { name: filename }) },
+          ...(carried ? [{ message: carried }] : []),
+        ],
         issueKeys: [`delete:${filename}`],
       });
     }

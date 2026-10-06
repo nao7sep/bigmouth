@@ -11,7 +11,19 @@ import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, upda
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
+
+/** The unreadable-store failure `fn` throws: what the user is told, and the detail for the log. */
+function unreadable(fn: () => unknown): UnreadableStoreError {
+  try {
+    fn();
+  } catch (err) {
+    expect(err).toBeInstanceOf(UnreadableStoreError);
+    return err as UnreadableStoreError;
+  }
+  throw new Error("expected an unreadable-store failure");
+}
 
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
@@ -61,9 +73,10 @@ describe("an unreadable registry names itself", () => {
     ["a workspace entry missing its fields", '{ "workspaces": [{ "id": "a" }] }'],
   ])("names the path and says it was left alone for %s", (_name, contents) => {
     const reload = withRegistry(contents);
+    const registryPath = path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
 
-    expect(reload).toThrow(/workspaces\.json/);
-    expect(reload).toThrow(/left unchanged/);
+    expect(carriedMessage(unreadable(reload))).toEqual({ key: "store.unreadable", values: { path: registryPath } });
+    expect(fs.readFileSync(registryPath, "utf8")).toBe(contents);
   });
 
   it("rejects duplicate workspace ids without rewriting the registry", () => {
@@ -78,7 +91,7 @@ describe("an unreadable registry names itself", () => {
     });
     const reload = withRegistry(raw);
 
-    expect(reload).toThrow(/workspace id.*appears more than once/);
+    expect(unreadable(reload).detail).toMatch(/workspace id.*appears more than once/);
     expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
   });
 
@@ -96,7 +109,7 @@ describe("an unreadable registry names itself", () => {
     });
     const reload = withRegistry(raw);
 
-    expect(reload).toThrow(/name the same folder/);
+    expect(unreadable(reload).detail).toMatch(/name the same folder/);
     expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
   });
 });
@@ -293,6 +306,19 @@ describe("openWorkspace gating", () => {
     expect(fs.readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(foreign);
   });
 
+  it("names a damaged config.json beside posts/ and assets/ instead of calling the folder no workspace", () => {
+    const dir = tempDir("damaged");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.mkdirSync(path.join(dir, "assets"));
+    const configPath = path.join(dir, "config.json");
+    fs.writeFileSync(configPath, '{ "formatVersion": 1, ');
+    for (const open of [() => openWorkspace(dir), () => openOrCreateWorkspace(undefined, dir)]) {
+      expect(carriedMessage(unreadable(open))).toEqual({ key: "store.unreadable", values: { path: configPath } });
+    }
+    expect(listWorkspaces()).toHaveLength(0);
+    expect(fs.readFileSync(configPath, "utf-8")).toBe('{ "formatVersion": 1, ');
+  });
+
   it("rejects opening a workspace nested inside a registered workspace", () => {
     const outer = tempDir("open-outer");
     createWorkspace("Outer", outer);
@@ -435,7 +461,9 @@ describe("workspace registry format version", () => {
   it("halts on a registry without its format version as unreadable, leaving it unchanged", () => {
     const body = JSON.stringify({ workspaces: [{ id: "a", name: "A", dataDirectory: tempDir("fmt") }] });
     fs.writeFileSync(registry(), body);
-    expect(() => initAppDir()).toThrow(/workspaces\.json: it has no formatVersion\. It was left unchanged/);
+    const failure = unreadable(() => initAppDir());
+    expect(failure.filePath).toBe(registry());
+    expect(failure.detail).toBe("it has no formatVersion");
     expect(fs.readFileSync(registry(), "utf8")).toBe(body);
   });
 

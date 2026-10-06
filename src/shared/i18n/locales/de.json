@@ -60,6 +60,7 @@
   "app.settingsNewer": "Eine neuere Version von BigMouth hat die App-Einstellungsdatei {path} gespeichert, daher wurde sie nicht verändert. Bis Sie sie mit der neueren Version öffnen, stehen Design und Sprache der Oberfläche auf „System“, und Änderungen daran werden nicht gespeichert.",
   "store.newerFormat": "Eine neuere Version von BigMouth hat {path} gespeichert, daher kann diese Version die Datei nicht verwenden. Die Datei wurde nicht verändert; öffnen Sie sie mit der neueren Version.",
   "store.quarantineFailed": "BigMouth konnte {path} weder lesen noch beiseiteschieben, daher wurde die Datei weder verändert noch überschrieben. Reparieren oder verschieben Sie die Datei und versuchen Sie es dann erneut.",
+  "store.unreadable": "BigMouth konnte {path} nicht lesen, daher wurde die Datei nicht verändert. Reparieren oder verschieben Sie die Datei und versuchen Sie es dann erneut.",
   "app.uiStateLoadFailed": "Die gespeicherten Oberflächeneinstellungen und der zuletzt genutzte Arbeitsbereich konnten nicht geladen werden. Für diesen Start gelten die Standardwerte.",
   "app.workspacesLoadFailed": "Die Arbeitsbereiche konnten nicht geladen werden. Der gemerkte Arbeitsbereich bleibt unverändert; versuchen Sie es erneut.",
   "app.activeWorkspaceSaveFailed": "Dieser Arbeitsbereich ist geöffnet, konnte aber nicht für den nächsten Start gemerkt werden.",

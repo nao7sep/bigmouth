@@ -13,7 +13,7 @@ import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
-import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import {
@@ -44,9 +44,7 @@ function parseAppConfig(source: Record<string, unknown>, filePath: string): AppC
   // from one, which is what lets the callers below read as plain guards instead
   // of needing an unreachable throw after each.
   function reject(detail: string): never {
-    throw new Error(
-      `Cannot read the workspace registry at ${filePath}: ${detail}. It was left unchanged.`,
-    );
+    throw new UnreadableStoreError(filePath, detail);
   }
 
   const entries = source.workspaces;
@@ -102,9 +100,7 @@ export function initAppDir(): AppConfig {
       // A halt has to name the store AND its path and say the file was left in
       // place, because halting only makes sense when there is a way back, and
       // BIGMOUTH_DATA_DIR can put it anywhere.
-      throw new Error(`Cannot read the workspace registry at ${registryPath}: ${read.detail}. It was left unchanged.`, {
-        cause: read.error ?? undefined,
-      });
+      throw new UnreadableStoreError(registryPath, read.detail, read.error);
     case "read":
       appConfig = parseAppConfig(read.value, registryPath);
       break;
@@ -158,7 +154,12 @@ function isWorkspaceDirectory(dir: string): boolean {
     case "newer":
       return true;
     case "unreadable":
-      return false;
+      // JSON that parses but is not ours belongs to another tool's folder. A file
+      // that cannot be read or parsed beside posts/ and assets/ is a workspace
+      // config that is damaged: saying so, with its path, beats calling the
+      // folder no workspace at all.
+      if (read.error === null) return false;
+      throw new UnreadableStoreError(path.join(dir, "config.json"), read.detail, read.error);
     case "read":
       return isWorkspaceConfig(read.value);
   }

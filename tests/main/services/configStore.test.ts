@@ -6,6 +6,7 @@ import path from "node:path";
 import type { Workspace } from "@shared/types";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { DEFAULT_SETTINGS, makeDefaultConfig, defaultAnthropicSettings, DEFAULT_ANALYSIS_PROMPTS, DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
@@ -24,7 +25,7 @@ import {
   effectiveConfig,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { rowFor } from "@shared/aiModels";
 import { buildClaudeParams } from "@main/core/ai/claudeRequest.js";
 
@@ -106,8 +107,16 @@ describe("time zone", () => {
 
 describe("corrupt config files", () => {
   it("surfaces a clear error naming the file rather than a bare SyntaxError", () => {
-    fs.writeFileSync(path.join(dataDir, "config.json"), "{ not valid json", "utf-8");
-    expect(() => getSettings(dataDir)).toThrow(/config\.json at .*: it is not valid JSON/);
+    const configPath = path.join(dataDir, "config.json");
+    fs.writeFileSync(configPath, "{ not valid json", "utf-8");
+    expect(() => getSettings(dataDir)).toThrow(UnreadableStoreError);
+    try {
+      getSettings(dataDir);
+    } catch (err) {
+      // The user is told the file's path in the app's own words; the detail stays for the log.
+      expect(carriedMessage(err)).toEqual({ key: "store.unreadable", values: { path: configPath } });
+      expect((err as UnreadableStoreError).detail).toBe("it is not valid JSON");
+    }
   });
 
   it("uses the built-in for an invalid set without quarantining other sets", () => {
@@ -499,7 +508,7 @@ describe("workspace config format version", () => {
   it("refuses a file without its format version as unreadable, leaving it unchanged", () => {
     const body = JSON.stringify({ timezone: "UTC" });
     fs.writeFileSync(file(), body);
-    expect(() => getSettings(dataDir)).toThrow(/config\.json at .*: it has no formatVersion/);
+    expect(() => getSettings(dataDir)).toThrow(expect.objectContaining({ filePath: file(), detail: "it has no formatVersion" }));
     expect(fs.readFileSync(file(), "utf8")).toBe(body);
   });
 

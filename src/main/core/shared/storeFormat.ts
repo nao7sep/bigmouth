@@ -27,6 +27,22 @@ export class NewerFormatError extends Error {
   }
 }
 
+/**
+ * A store this build cannot read that is left exactly as it is. The user is
+ * told its path and how to recover; `detail` says what was wrong, for the log.
+ */
+export class UnreadableStoreError extends Error {
+  readonly filePath: string;
+  readonly detail: string;
+
+  constructor(filePath: string, detail: string, cause?: unknown) {
+    super(carryingText(message("store.unreadable", { path: filePath })), cause === undefined || cause === null ? undefined : { cause });
+    this.name = "UnreadableStoreError";
+    this.filePath = filePath;
+    this.detail = detail;
+  }
+}
+
 /** What a store's marker says about a parsed store. */
 export type FormatCheck =
   | { kind: "read"; version: number }

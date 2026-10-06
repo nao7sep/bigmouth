@@ -22,7 +22,7 @@ import {
 import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "@shared/aiModels";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { writeSetFile } from "../shared/setFile.js";
-import { NewerFormatError, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, readJsonStore } from "../shared/storeFormat.js";
 import { anthropicSets, makeDefaultConfig } from "../shared/defaults.js";
 import { warn } from "./logger.js";
 import * as apiKeys from "./apiKeys.js";
@@ -39,12 +39,10 @@ function readMap(dataDir: string): Record<string, unknown> {
     case "newer":
       throw new NewerFormatError(filePath, read.version);
     case "unreadable":
-      throw new Error(`Cannot read ${CONFIG_FILE} at ${filePath}: ${read.detail}. It was left unchanged.`, {
-        cause: read.error ?? undefined,
-      });
+      throw new UnreadableStoreError(filePath, read.detail, read.error);
     case "read":
       if (!isWorkspaceConfig(read.value)) {
-        throw new Error(`${CONFIG_FILE} is not a BigMouth workspace config. It was left unchanged at ${filePath}`);
+        throw new UnreadableStoreError(filePath, "it is not a BigMouth workspace config");
       }
       return read.value;
   }

@@ -19,6 +19,7 @@ import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
 import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
+import { carryingText } from "@shared/i18n/carriedMessage";
 
 const mockListAssets = vi.mocked(listAssets);
 const mockUploadAsset = vi.mocked(uploadAsset);
@@ -172,6 +173,22 @@ describe("AssetsTab upload via file input", () => {
       expect.any(Error),
       expect.objectContaining({ filename: "bad.png" }),
     );
+  });
+
+  it("tells an upload failure that carries its own words in them", async () => {
+    mockListAssets.mockResolvedValue([]);
+    const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
+    mockUploadAsset.mockRejectedValue(
+      new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })),
+    );
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("new.png")] } });
+    });
+
+    expect(getByText(`new.png: A newer version of BigMouth saved ${metaPath}, so this version cannot use it. The file was left unchanged; open it with that version.`)).toBeTruthy();
   });
 
   it("presents predictable upload admission rejection as a warning without error logging", async () => {
@@ -490,6 +507,27 @@ describe("AssetsTab delete", () => {
     await waitFor(() => expect(getByText(
       "stay.png could not be deleted. It remains attached to this post; try again.",
     )).toBeTruthy());
+  });
+});
+
+describe("AssetsTab delete failure with its own words", () => {
+  it("keeps the delete failure and adds the reason it carries", async () => {
+    mockListAssets.mockResolvedValue([asset({ filename: "stay.png" })]);
+    const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
+    mockDeleteAsset.mockRejectedValue(new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })));
+    const { getByRole, getByTitle, getByText } = await renderTab();
+
+    await act(async () => {
+      fireEvent.click(getByTitle("Delete"));
+    });
+    const dialog = getByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    });
+    await waitFor(() => expect(getByText(
+      "stay.png could not be deleted. It remains attached to this post; try again.",
+    )).toBeTruthy());
+    expect(getByText(`A newer version of BigMouth saved ${metaPath}, so this version cannot use it. The file was left unchanged; open it with that version.`)).toBeTruthy();
   });
 });
 

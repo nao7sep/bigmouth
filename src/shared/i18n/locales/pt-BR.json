@@ -60,6 +60,7 @@
   "app.settingsNewer": "Uma versão mais recente do BigMouth salvou o arquivo de configurações do app {path}, então ele não foi alterado. Até que você o abra com essa versão, o tema e o idioma da interface seguem o Sistema, e as alterações feitas neles não são salvas.",
   "store.newerFormat": "Uma versão mais recente do BigMouth salvou {path}, então esta versão não pode usar o arquivo. O arquivo não foi alterado; abra-o com essa versão.",
   "store.quarantineFailed": "O BigMouth não conseguiu ler {path} nem movê-lo para outro lugar, então o arquivo não foi alterado e nada foi gravado por cima dele. Repare ou mova o arquivo e tente novamente.",
+  "store.unreadable": "O BigMouth não conseguiu ler {path}, então o arquivo não foi alterado. Repare ou mova o arquivo e tente novamente.",
   "app.uiStateLoadFailed": "Não foi possível carregar as preferências de interface salvas e o último espaço de trabalho. Os padrões estão em uso nesta inicialização.",
   "app.workspacesLoadFailed": "Não foi possível carregar os espaços de trabalho. O espaço de trabalho lembrado não mudou; tente novamente.",
   "app.activeWorkspaceSaveFailed": "Este espaço de trabalho está aberto, mas não foi possível lembrá-lo para a próxima inicialização.",

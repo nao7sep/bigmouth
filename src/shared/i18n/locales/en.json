@@ -60,6 +60,7 @@
   "app.settingsNewer": "A newer version of BigMouth saved the app settings file {path}, so it was left unchanged. Until you open it with that version, the theme and interface language follow System, and changes to them are not saved.",
   "store.newerFormat": "A newer version of BigMouth saved {path}, so this version cannot use it. The file was left unchanged; open it with that version.",
   "store.quarantineFailed": "BigMouth could not read {path} and could not move it aside, so the file was left unchanged and nothing was written over it. Repair or move the file, then try again.",
+  "store.unreadable": "BigMouth could not read {path}, so the file was left unchanged. Repair or move it, then try again.",
   "app.uiStateLoadFailed": "The saved interface preferences and last workspace could not be loaded. Defaults are in use for this launch.",
   "app.workspacesLoadFailed": "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
   "app.activeWorkspaceSaveFailed": "This workspace is open, but it could not be remembered for the next launch.",
