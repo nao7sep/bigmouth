@@ -15,6 +15,7 @@ import type {
   AppSettings,
   AppSettingsLoad,
   AnalysisPrompt,
+  AssetListing,
   AssetMeta,
   EditablePostMetadata,
   GenerationPromptsData,
@@ -373,7 +374,7 @@ export interface BigMouthApi {
   saveAnalysisPrompts(wsId: string, prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]>;
 
   // Assets
-  listAssets(wsId: string, postId: string): Promise<AssetMeta[]>;
+  listAssets(wsId: string, postId: string): Promise<AssetListing>;
   uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetUploadResult>;
   /** The on-disk path of a picked or dropped file, or "" when it has none. */
   pathForFile(file: File): string;

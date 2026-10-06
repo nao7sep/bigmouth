@@ -24,7 +24,7 @@ import type {
   AnthropicSettingsView,
   AppSettings,
   AppSettingsLoad,
-  AssetMeta,
+  AssetListing,
   EditablePostMetadata,
   GenerationPromptsData,
   ImagingOptions,
@@ -207,7 +207,7 @@ const api = {
 
   // --- Assets ---
   listAssets: (wsId: string, postId: string) =>
-    ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetMeta[]>,
+    ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetListing>,
   uploadAsset: (wsId: string, postId: string, file: AssetUploadInput) =>
     ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetUploadResult>,
   pathForFile: (file: File) => webUtils.getPathForFile(file),

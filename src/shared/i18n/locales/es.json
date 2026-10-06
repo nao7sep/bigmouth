@@ -330,6 +330,7 @@
   "metadata.refusedInvalidSlug": "Slug no válido: usa de 1 a {max} letras, dígitos, guiones o guiones bajos, con al menos una letra o un dígito",
   "metadata.refusedInvalid": "No se pudo guardar este cambio. Vuelve a abrir la publicación e inténtalo de nuevo.",
   "assets.loadFailed": "No se pudieron cargar los recursos. Vuelve a abrir esta publicación para intentarlo de nuevo.",
+  "assets.metaMovedAside": "BigMouth no pudo leer {path} y lo movió a {movedTo}. Los archivos adjuntos se muestran a partir de la carpeta, y las horas de subida y los datos de imagen que guardaba ahora se desconocen.",
   "assets.added": {
     "one": "Se agregó {count} recurso.",
     "many": "Se agregaron {count} de recursos.",

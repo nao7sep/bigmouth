@@ -13,7 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHANNELS, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
-import type { AssetMeta, Post, Target } from "@shared/types";
+import type { AssetListing, AssetMeta, Post, Target } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
@@ -114,7 +114,7 @@ describe("asset IPC handlers — workspace resolution", () => {
 describe("listAssets", () => {
   it("returns an empty list for a post with no assets", () => {
     const id = createDraft();
-    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets).toEqual([]);
   });
 
   it("rejects an invalid postId (path-traversal defense)", () => {
@@ -133,7 +133,7 @@ describe("uploadAsset", () => {
     expect(meta.height).toBe(1);
     expect(meta.uploadedAt).toBeTruthy();
 
-    const listed = invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id);
+    const listed = invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets;
     expect(listed.map((a) => a.filename)).toEqual(["pic.png"]);
     // The bytes actually landed on disk under assets/{postId}/.
     expect(fs.existsSync(path.join(assetDir(dataDir, id), "pic.png"))).toBe(true);
@@ -244,7 +244,7 @@ describe("uploadAsset", () => {
     setLocked(dataDir, id, true);
 
     await expect(pending).resolves.toEqual({ ok: false, admission: { code: "post-locked" } });
-    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets).toEqual([]);
   });
 
   // The reader has always filtered these names out of every listing, so storing
@@ -262,7 +262,7 @@ describe("uploadAsset", () => {
       ).resolves.toEqual({ ok: false, admission: { code: "reserved-name", filename: name } });
 
       // The asset that was already there is untouched.
-      expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual([
+      expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual([
         "keep.png",
       ]);
     },
@@ -276,7 +276,7 @@ describe("uploadAsset", () => {
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("桜.png", PNG_1x1));
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("梅.png", PNG_1x1));
 
-    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename).sort()).toEqual(
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename).sort()).toEqual(
       ["梅.png", "桜.png"].sort(),
     );
   });
@@ -364,7 +364,7 @@ describe("uploadAsset", () => {
       expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png", uploadedAt: "2030-01-01T00:00:00.000Z" }) });
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
       expect(fs.readFileSync(metaFile, "utf8")).toBe(metaBefore);
-      expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual(["a.png", "b.txt"]);
+      expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual(["a.png", "b.txt"]);
     } finally {
       vi.useRealTimers();
     }
@@ -383,11 +383,11 @@ describe("deleteAsset", () => {
   it("removes a previously uploaded asset", async () => {
     const id = createDraft();
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual(["a.png"]);
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets.map((a) => a.filename)).toEqual(["a.png"]);
 
     const result = invoke<void>(CHANNELS.deleteAsset, wsId, id, "a.png");
     expect(result).toBeUndefined();
-    expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id)).toEqual([]);
+    expect(invoke<AssetListing>(CHANNELS.listAssets, wsId, id).assets).toEqual([]);
   });
 
   it("rejects an invalid postId or filename", () => {

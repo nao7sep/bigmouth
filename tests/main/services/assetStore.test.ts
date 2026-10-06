@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +12,7 @@ import {
   type AssetMeta,
 } from "@main/core/services/assetStore.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let dataDir: string;
 const POST = "post-1";
@@ -69,7 +70,7 @@ describe("sanitizeFilename", () => {
 describe("saveAssetFile / listAssets / deleteAsset", () => {
   it("round-trips an asset and its metadata", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    const listed = listAssets(dataDir, POST);
+    const listed = listAssets(dataDir, POST).assets;
     expect(listed.map((a) => a.filename)).toEqual(["a.png"]);
     expect(listed[0].size).toBe(3);
   });
@@ -84,7 +85,7 @@ describe("saveAssetFile / listAssets / deleteAsset", () => {
   it("removes the file, the meta, and the empty dir on the last delete", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     deleteAsset(dataDir, POST, "a.png");
-    expect(listAssets(dataDir, POST)).toEqual([]);
+    expect(listAssets(dataDir, POST).assets).toEqual([]);
     expect(fs.existsSync(assetDir(dataDir, POST))).toBe(false);
   });
 });
@@ -115,7 +116,7 @@ describe("an uploaded copy keeps its source's metadata", () => {
     expect(stat.mtime.toISOString()).toBe("2021-03-04T05:06:07.000Z");
     if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(0o640);
     // The upload time stays the moment of the upload, apart from the file's time.
-    expect(listAssets(dataDir, POST)[0].uploadedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(listAssets(dataDir, POST).assets[0].uploadedAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("keeps the new source's metadata when it replaces an asset", () => {
@@ -140,7 +141,7 @@ describe("re-uploading an asset's own bytes", () => {
 
     expect(again).toEqual({ asset: meta("a.png"), changed: false });
     expect(fs.readFileSync(metaPath, "utf8")).toBe(metaBefore);
-    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png", "b.png"]);
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["a.png", "b.png"]);
   });
 
   it("replaces an asset whose bytes differ", () => {
@@ -165,7 +166,7 @@ describe("saveAssetFile disambiguates case-only filename collisions", () => {
     expect(onDisk.sort()).toEqual(["Photo.png", "photo (1).png"].sort());
 
     // ...and meta.json records both, exactly as written to disk.
-    const listed = listAssets(dataDir, POST);
+    const listed = listAssets(dataDir, POST).assets;
     expect(listed.map((a) => a.filename).sort()).toEqual(["Photo.png", "photo (1).png"].sort());
     expect(listed.find((a) => a.filename === "Photo.png")?.size).toBe(3);
     expect(listed.find((a) => a.filename === "photo (1).png")?.size).toBe(2);
@@ -176,7 +177,7 @@ describe("saveAssetFile disambiguates case-only filename collisions", () => {
     const { asset: stored } = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
 
     expect(stored.filename).toBe("photo.png");
-    const listed = listAssets(dataDir, POST);
+    const listed = listAssets(dataDir, POST).assets;
     expect(listed.map((a) => a.filename)).toEqual(["photo.png"]);
     expect(listed[0].size).toBe(2); // overwritten, not duplicated
   });
@@ -191,7 +192,7 @@ describe("listAssets self-heals against the files on disk", () => {
     fs.unlinkSync(path.join(assetDir(dataDir, POST), "meta.json"));
 
     // Old behaviour threw here; now the file is projected back into the list.
-    const listed = listAssets(dataDir, POST);
+    const listed = listAssets(dataDir, POST).assets;
     expect(listed.map((a) => a.filename)).toEqual(["a.png"]);
     expect(listed[0].size).toBe(3); // size recovered from the file itself
   });
@@ -202,7 +203,7 @@ describe("listAssets self-heals against the files on disk", () => {
     // Simulate a crash after the file was unlinked but before meta was rewritten.
     fs.unlinkSync(path.join(assetDir(dataDir, POST), "a.png"));
 
-    const listed = listAssets(dataDir, POST);
+    const listed = listAssets(dataDir, POST).assets;
     expect(listed.map((a) => a.filename)).toEqual(["b.png"]);
   });
 
@@ -210,21 +211,14 @@ describe("listAssets self-heals against the files on disk", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(path.join(assetDir(dataDir, POST), ".upload-tmp-123"), "partial");
 
-    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["a.png"]);
   });
 
   it("ignores a crash-orphaned <stem>-<nanoid>.tmp (current atomic-write shape, no leading dot)", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(path.join(assetDir(dataDir, POST), "photo-V1StGXR8_Z5jD.tmp"), "partial");
 
-    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
-  });
-
-  it("tolerates a corrupt meta.json by rebuilding from the files", () => {
-    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    fs.writeFileSync(path.join(assetDir(dataDir, POST), "meta.json"), "{ not json");
-
-    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png"]);
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["a.png"]);
   });
 
   // content-lifecycle-conventions: a missing time is not made up. A file's
@@ -235,7 +229,7 @@ describe("listAssets self-heals against the files on disk", () => {
     const dir = assetDir(dataDir, POST);
     fs.unlinkSync(path.join(dir, "meta.json"));
 
-    expect(listAssets(dataDir, POST)[0]).toEqual({ filename: "a.png", size: 3 });
+    expect(listAssets(dataDir, POST).assets[0]).toEqual({ filename: "a.png", size: 3 });
 
     // The next upload and the next delete write the list back to meta.json.
     saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
@@ -253,6 +247,54 @@ describe("listAssets self-heals against the files on disk", () => {
   });
 });
 
+// store-recovery-conventions: meta.json holds upload times nothing can rebuild,
+// so an unusable one is moved aside before the files are listed without it.
+describe("an unusable meta.json is moved aside", () => {
+  const dir = () => assetDir(dataDir, POST);
+  const invalidFiles = () => fs.readdirSync(dir()).filter((name) => name.endsWith(".invalid"));
+
+  it.each([
+    ["is not JSON", "{ not json"],
+    ["has no format version", JSON.stringify({ assets: [] })],
+    ["has an assets key that is not a list", JSON.stringify({ formatVersion: 1, assets: {} })],
+    ["holds an entry that is not an asset record", JSON.stringify({ formatVersion: 1, assets: [null] })],
+    ["holds an entry with a wrong field", JSON.stringify({ formatVersion: 1, assets: [{ filename: "a.png", size: "3" }] })],
+  ])("keeps the bytes of one that %s and lists the files from the folder", (_name, body) => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    fs.writeFileSync(path.join(dir(), "meta.json"), body);
+
+    const listing = listAssets(dataDir, POST);
+
+    expect(listing.assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(invalidFiles()).toHaveLength(1);
+    const [moved] = invalidFiles();
+    expect(moved).toMatch(/^meta-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
+    expect(fs.readFileSync(path.join(dir(), moved), "utf8")).toBe(body);
+    expect(listing.movedAside).toEqual({ path: path.join(dir(), "meta.json"), movedTo: path.join(dir(), moved) });
+    // Absent now, so nothing is written until the next upload or delete.
+    expect(fs.existsSync(path.join(dir(), "meta.json"))).toBe(false);
+    expect(listAssets(dataDir, POST).movedAside).toBeUndefined();
+  });
+
+  it("writes nothing when the move fails, leaving meta.json and the files as they were", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const metaPath = path.join(dir(), "meta.json");
+    fs.writeFileSync(metaPath, "{ not json");
+    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    });
+    try {
+      expect(() => saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(QuarantineError);
+      expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(QuarantineError);
+      expect(() => listAssets(dataDir, POST)).toThrow(QuarantineError);
+    } finally {
+      renameSpy.mockRestore();
+    }
+    expect(fs.readFileSync(metaPath, "utf8")).toBe("{ not json");
+    expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "meta.json"]);
+  });
+});
+
 // store-recovery-conventions: meta.json's format version.
 describe("asset metadata format version", () => {
   const metaFile = () => path.join(assetDir(dataDir, POST), "meta.json");
@@ -260,13 +302,13 @@ describe("asset metadata format version", () => {
   it("writes this build's format version and reads the list back", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     expect(JSON.parse(fs.readFileSync(metaFile(), "utf-8"))).toEqual({ formatVersion: 1, assets: [meta("a.png")] });
-    expect(listAssets(dataDir, POST)).toEqual([meta("a.png")]);
+    expect(listAssets(dataDir, POST).assets).toEqual([meta("a.png")]);
   });
 
   it("reads a meta.json without its format version as unreadable: listed from the files", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...meta("a.png"), width: 7 }] }));
-    expect(listAssets(dataDir, POST)).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
   });
 
   it("lists from the files over a meta.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {
@@ -274,7 +316,7 @@ describe("asset metadata format version", () => {
     const body = JSON.stringify({ formatVersion: 2, items: [] });
     fs.writeFileSync(metaFile(), body);
 
-    expect(listAssets(dataDir, POST)).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
     expect(() => saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(NewerFormatError);
     expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(NewerFormatError);
 

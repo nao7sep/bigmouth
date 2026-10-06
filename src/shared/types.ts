@@ -224,6 +224,15 @@ export interface AssetMeta {
   uploadedAt?: string;
 }
 
+/**
+ * A post's attached files. `movedAside` is set when the asset metadata could not
+ * be read and was moved to `movedTo`, so the files are listed from the folder.
+ */
+export interface AssetListing {
+  assets: AssetMeta[];
+  movedAside?: { path: string; movedTo: string };
+}
+
 // --- AI settings ---
 
 import type { AiRole } from "./aiModels.js";

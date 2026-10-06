@@ -93,15 +93,15 @@ export function registerAssetHandlers(): void {
     const dir = resolveWorkspace(wsId).dataDirectory;
     const pid = readPostId(postId);
     if (!pid) throw new Error("Invalid postId");
-    let assets;
+    let listing;
     try {
-      assets = listAssets(dir, pid);
+      listing = listAssets(dir, pid);
     } catch (err) {
       logError("assets list failed", { workspace: wsId, postId: pid, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));
     }
-    logInfo("assets listed", { workspace: wsId, postId: pid, count: assets.length });
-    return assets;
+    logInfo("assets listed", { workspace: wsId, postId: pid, count: listing.assets.length });
+    return listing;
   });
 
   // Upload receives raw bytes over IPC: the renderer reads the picked File to an

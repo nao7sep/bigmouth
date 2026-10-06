@@ -8,6 +8,7 @@ import type {
   AnalysisPrompt,
   Settings,
   Target,
+  AssetListing,
   AssetMeta,
   AnthropicSettingsInput,
   AnthropicSettingsView,
@@ -297,7 +298,7 @@ export function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<Analysis
 
 // --- Assets ---
 
-export function listAssets(postId: string, workspaceId?: string): Promise<AssetMeta[]> {
+export function listAssets(postId: string, workspaceId?: string): Promise<AssetListing> {
   return bridge().listAssets(requireWs(workspaceId), postId);
 }
 

@@ -320,6 +320,7 @@
   "metadata.refusedInvalidSlug": "别名无效：请使用 1 到 {max} 个英文字母、数字、连字符或下划线，且至少包含一个字母或数字",
   "metadata.refusedInvalid": "无法保存此编辑。请重新打开文章后重试。",
   "assets.loadFailed": "无法加载素材。请重新打开这篇文章后重试。",
+  "assets.metaMovedAside": "BigMouth 无法读取 {path}，已将其移到 {movedTo}。附件按文件夹中的文件列出，其中记录的上传时间和图像信息现已未知。",
   "assets.added": {
     "other": "已添加 {count} 个素材。"
   },

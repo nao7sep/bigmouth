@@ -81,7 +81,7 @@ function assetCollection(container: HTMLElement): HTMLElement {
 
 describe("AssetsTab loading", () => {
   it("shows the empty state when there are no assets", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { getByText } = await renderTab();
     expect(getByText("No assets yet.")).toBeTruthy();
     expect(getByText("Drop files here or use Add.")).toBeTruthy();
@@ -93,10 +93,31 @@ describe("AssetsTab loading", () => {
     expect(getByText("Assets could not be loaded. Reopen this post to try again.")).toBeTruthy();
   });
 
+  it("says where an unreadable meta.json was moved, and keeps saying it through a later upload", async () => {
+    const movedAside = {
+      path: "/Users/me/Workspace/assets/p1/meta.json",
+      movedTo: "/Users/me/Workspace/assets/p1/meta-20261006-031340-123-utc.invalid",
+    };
+    mockListAssets
+      .mockResolvedValueOnce({ assets: [asset({ filename: "a.png", uploadedAt: undefined })], movedAside })
+      .mockResolvedValue({ assets: [asset({ filename: "a.png", uploadedAt: undefined }), asset({ filename: "b.png" })] });
+    mockUploadAsset.mockResolvedValue(asset({ filename: "b.png" }));
+    const { container, getByText } = await renderTab();
+    const notice = `BigMouth could not read ${movedAside.path} and moved it to ${movedAside.movedTo}. The attached files are listed from the folder, and the upload times and image details it held are now unknown.`;
+    expect(getByText(notice)).toBeTruthy();
+    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("b.png")] } });
+    });
+    expect(getByText(notice)).toBeTruthy();
+  });
+
   it("renders an image asset with a thumbnail and an exif note", async () => {
-    mockListAssets.mockResolvedValue([
+    mockListAssets.mockResolvedValue({ assets: [
       asset({ filename: "photo.jpg", size: 3_000_000, width: 800, height: 600, hasMetadata: true }),
-    ]);
+    ] });
     const { container, getByText } = await renderTab();
     const card = container.querySelector(".asset-card") as HTMLElement;
     expect(card.className).toBe("asset-card");
@@ -107,7 +128,7 @@ describe("AssetsTab loading", () => {
   });
 
   it("renders a non-image asset with an extension icon instead of a thumbnail", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "notes.pdf", size: 500 })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "notes.pdf", size: 500 })] });
     const { container, getByText } = await renderTab();
     const card = container.querySelector(".asset-card") as HTMLElement;
     expect(card.querySelector("img")).toBeNull();
@@ -116,7 +137,7 @@ describe("AssetsTab loading", () => {
   });
 
   it("formats sizes in KB for mid-range files", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "a.png", size: 4096 })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "a.png", size: 4096 })] });
     const { getByText } = await renderTab();
     expect(getByText("4.0 kB")).toBeTruthy();
   });
@@ -124,7 +145,7 @@ describe("AssetsTab loading", () => {
 
 describe("AssetsTab upload via file input", () => {
   it("uploads a chosen file then reloads the list", async () => {
-    mockListAssets.mockResolvedValueOnce([]).mockResolvedValueOnce([asset()]);
+    mockListAssets.mockResolvedValueOnce({ assets: [] }).mockResolvedValueOnce({ assets: [asset()] });
     mockUploadAsset.mockResolvedValue(asset());
     const { container } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -139,7 +160,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("rejects files over the size limit and uploads nothing", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container, getByText } = await renderTab({ maxUploadMb: 1 });
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -156,7 +177,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("collects per-file failures into one persistent result", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset.mockRejectedValue(new Error("server said no"));
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -176,7 +197,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("tells an upload failure that carries its own words in them", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
     mockUploadAsset.mockRejectedValue(
       new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })),
@@ -192,7 +213,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("presents predictable upload admission rejection as a warning without error logging", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset.mockRejectedValue(new AssetUploadAdmissionError({ key: "assets.admissionLocked" }));
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -207,7 +228,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("clears a failed result when a successful batch covers the failed asset", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset
       .mockRejectedValueOnce(new Error("disk unavailable"))
       .mockResolvedValueOnce(asset({ filename: "retry.png" }));
@@ -228,7 +249,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("rejects reserved asset names as input warnings before upload", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -242,7 +263,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("summarizes a partial batch and does not clear it after an unrelated success", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset.mockResolvedValue(asset());
     const { container, getByText } = await renderTab({ maxUploadMb: 1 });
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -262,7 +283,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("asks to replace a duplicate filename and uploads when confirmed", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "dup.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "dup.png" })] });
     mockUploadAsset.mockResolvedValue(asset({ filename: "dup.png" }));
     const { container, getByRole } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -280,7 +301,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("cancels the upload when the replace dialog is dismissed", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "dup.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "dup.png" })] });
     const { container, getByRole } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -295,7 +316,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("asks before replacing a Unicode filename using the main-process rules", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "写真.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "写真.png" })] });
     const { container, getByRole } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -308,7 +329,7 @@ describe("AssetsTab upload via file input", () => {
   });
 
   it("rejects a batch whose distinct filenames sanitize to the same stored name", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
@@ -332,7 +353,7 @@ describe("AssetsTab upload via file input", () => {
 
 describe("AssetsTab drag and drop", () => {
   it("uploads files provided by a drop event", async () => {
-    mockListAssets.mockResolvedValueOnce([]).mockResolvedValueOnce([asset()]);
+    mockListAssets.mockResolvedValueOnce({ assets: [] }).mockResolvedValueOnce({ assets: [asset()] });
     mockUploadAsset.mockResolvedValue(asset());
     const { container } = await renderTab();
     const zone = assetCollection(container);
@@ -347,7 +368,7 @@ describe("AssetsTab drag and drop", () => {
   });
 
   it("accepts a drop over a populated asset card through the pane receiver", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "existing.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "existing.png" })] });
     mockUploadAsset.mockResolvedValue(asset({ filename: "new.png" }));
     const { container } = await renderTab();
     const card = container.querySelector(".asset-card") as HTMLElement;
@@ -361,7 +382,7 @@ describe("AssetsTab drag and drop", () => {
   });
 
   it("accepts protected Finder delivery without accepting non-file data", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container } = await renderTab();
     const zone = assetCollection(container);
 
@@ -416,7 +437,7 @@ describe("AssetsTab drag and drop", () => {
   });
 
   it("serializes rapid drops through admission, upload, and refresh", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     let releaseFirst: (() => void) | undefined;
     const firstUpload = new Promise<void>((resolve) => { releaseFirst = resolve; });
     mockUploadAsset
@@ -455,7 +476,7 @@ describe("AssetsTab drag and drop", () => {
   });
 
   it("explains a committed drop without local file data", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container, getByText } = await renderTab();
     const zone = assetCollection(container);
     const droppedText = createEvent.drop(zone, {
@@ -473,7 +494,7 @@ describe("AssetsTab drag and drop", () => {
 
 describe("AssetsTab delete", () => {
   it("deletes after confirmation and removes the card", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "gone.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "gone.png" })] });
     mockDeleteAsset.mockResolvedValue(undefined);
     const { container, getByRole, getByTitle } = await renderTab();
 
@@ -491,7 +512,7 @@ describe("AssetsTab delete", () => {
   });
 
   it("surfaces a delete failure in the error banner", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "stay.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "stay.png" })] });
     mockDeleteAsset.mockRejectedValue(new Error("delete boom"));
     const { getByRole, getByTitle, getByText } = await renderTab();
 
@@ -512,7 +533,7 @@ describe("AssetsTab delete", () => {
 
 describe("AssetsTab delete failure with its own words", () => {
   it("keeps the delete failure and adds the reason it carries", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "stay.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "stay.png" })] });
     const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
     mockDeleteAsset.mockRejectedValue(new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })));
     const { getByRole, getByTitle, getByText } = await renderTab();
@@ -533,7 +554,7 @@ describe("AssetsTab delete failure with its own words", () => {
 
 describe("AssetsTab insert", () => {
   it("inserts image markdown for an image asset", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "photo.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "photo.png" })] });
     const onInsertAtCursor = vi.fn();
     const { getByTitle } = await renderTab({ onInsertAtCursor });
     fireEvent.click(getByTitle("Insert at cursor"));
@@ -541,7 +562,7 @@ describe("AssetsTab insert", () => {
   });
 
   it("inserts a plain link for a non-image asset", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "doc.pdf" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "doc.pdf" })] });
     const onInsertAtCursor = vi.fn();
     const { getByTitle } = await renderTab({ onInsertAtCursor });
     fireEvent.click(getByTitle("Insert at cursor"));
@@ -549,7 +570,7 @@ describe("AssetsTab insert", () => {
   });
 
   it("encodes an asset filename that would otherwise break a Markdown destination", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "写真 (1).png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "写真 (1).png" })] });
     const onInsertAtCursor = vi.fn();
     const { getByTitle } = await renderTab({ onInsertAtCursor });
     fireEvent.click(getByTitle("Insert at cursor"));
@@ -571,7 +592,7 @@ describe("AssetsTab result", () => {
 
 describe("AssetsTab locked", () => {
   it("disables Add and card actions", async () => {
-    mockListAssets.mockResolvedValue([asset({ filename: "ro.png" })]);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "ro.png" })] });
     const { container, getByRole } = await renderTab({ locked: true });
     expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
@@ -580,7 +601,7 @@ describe("AssetsTab locked", () => {
   });
 
   it("explains a committed drop while locked", async () => {
-    mockListAssets.mockResolvedValue([]);
+    mockListAssets.mockResolvedValue({ assets: [] });
     const { container, getByText } = await renderTab({ locked: true });
     await act(async () => {
       fireEvent.drop(assetCollection(container), { dataTransfer: { files: [makeFile("x.png")] } });

@@ -100,6 +100,8 @@ export function AssetsTab({
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
   const [uploadNotice, setUploadNotice] = useState<AssetNotice | null>(null);
+  // Its own slot, so no later upload result replaces it before it is read.
+  const [recoveryNotice, setRecoveryNotice] = useState<Message | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assetsRef = useRef<AssetMeta[]>([]);
   const uploadTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -112,9 +114,10 @@ export function AssetsTab({
 
   const load = useCallback(async (): Promise<Message | null> => {
     try {
-      const list = await listAssets(postId, workspaceId);
+      const { assets: list, movedAside } = await listAssets(postId, workspaceId);
       assetsRef.current = list;
       setAssets(list);
+      if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
       return null;
     } catch (err) {
       return presentFailure(
@@ -130,6 +133,7 @@ export function AssetsTab({
     setAssets([]);
     assetsRef.current = [];
     setUploadNotice(null);
+    setRecoveryNotice(null);
     void load().then((failure) => {
       if (failure) setUploadNotice({
         severity: "error",
@@ -393,6 +397,17 @@ export function AssetsTab({
           {uploading ? t("assets.adding") : t("assets.add")}
         </button>
       </div>
+
+      {recoveryNotice && (
+        <OperationalResult
+          severity="warning"
+          className="assets-result assets-result--warning"
+          dismissClassName="assets-result-dismiss"
+          onDismiss={() => setRecoveryNotice(null)}
+        >
+          {text(recoveryNotice)}
+        </OperationalResult>
+      )}
 
       {uploadNotice && (
         <OperationalResult

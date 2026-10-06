@@ -28,6 +28,8 @@ import {
 } from "@shared/assetNames";
 import { holdsBytes, writeFileAtomic } from "../shared/atomicWrite.js";
 import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { moveAsideInvalid } from "../shared/quarantine.js";
+import type { AssetListing } from "@shared/types";
 import { isPostId } from "../shared/filenames.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
@@ -42,6 +44,7 @@ export interface AssetMeta {
   hasMetadata?: boolean;  // true if EXIF/IPTC/XMP metadata was detected at upload
   uploadedAt?: string;    // ISO 8601; absent when no upload was recorded (see projectAssetFile)
 }
+
 
 /** What a copy keeps of the user's file it was made from. */
 export interface AssetSourceMetadata {
@@ -69,17 +72,19 @@ function ensureAssetDir(dataDir: string, postId: string): string {
 }
 
 /**
- * Lists a post's assets, reconciling the cached `meta.json` against the files
- * actually on disk — the image files are the source of truth, `meta.json` is a
- * derived cache (the same relationship the post index has with the `.md` files).
+ * Lists a post's assets, reconciling `meta.json` against the files actually on
+ * disk — the files are the source of truth for what is attached, while
+ * `meta.json` also holds what only the upload knew: its time, the image's size
+ * and whether it carried metadata.
  * Cached entries whose file is gone are dropped; files present without a cached
  * entry are projected minimally (size only). This is what makes
  * the write paths below crash-safe without any backup/rollback machinery: an
  * interrupted upload or delete heals to a consistent list on the next read, and
  * a missing `meta.json` next to real files is recovered, never an error.
  */
-export function listAssets(dataDir: string, postId: string): AssetMeta[] {
-  return reconcileAssets(assetDir(dataDir, postId)).assets;
+export function listAssets(dataDir: string, postId: string): AssetListing {
+  const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId));
+  return movedAside ? { assets, movedAside } : { assets };
 }
 
 /**
@@ -216,12 +221,16 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * A `meta.json` a newer version of BigMouth wrote is not read, and `newer` is
  * the refusal every write to this folder raises, so the file stays exactly as it is.
  */
-function reconcileAssets(dir: string): { assets: AssetMeta[]; newer: NewerFormatError | null } {
+function reconcileAssets(dir: string): {
+  assets: AssetMeta[];
+  newer: NewerFormatError | null;
+  movedAside?: { path: string; movedTo: string };
+} {
   if (!fs.existsSync(dir)) return { assets: [], newer: null };
 
   const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, newer } = readAssetMeta(path.join(dir, META_FILENAME));
+  const { cached, newer, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
   const result: AssetMeta[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
@@ -234,10 +243,22 @@ function reconcileAssets(dir: string): { assets: AssetMeta[]; newer: NewerFormat
     if (accountedFor.has(filename)) continue;
     result.push(projectAssetFile(dir, filename));
   }
-  return { assets: result, newer };
+  return { assets: result, newer, movedAside };
 }
 
-function readAssetMeta(metaPath: string): { cached: AssetMeta[]; newer: NewerFormatError | null } {
+/**
+ * The recorded entries of `meta.json`. Its upload times are facts the app
+ * recorded and nothing can rebuild, so a file that cannot be read, or whose
+ * entries are not asset records, is moved aside before anything is listed or
+ * written (store-recovery-conventions); a failed move throws QuarantineError
+ * and nothing is written. The files are then listed from the folder, as when
+ * `meta.json` is absent.
+ */
+function readAssetMeta(metaPath: string): {
+  cached: AssetMeta[];
+  newer: NewerFormatError | null;
+  movedAside?: { path: string; movedTo: string };
+} {
   const read = readJsonStore("assetMeta", metaPath);
   switch (read.kind) {
     case "absent":
@@ -249,25 +270,46 @@ function readAssetMeta(metaPath: string): { cached: AssetMeta[]; newer: NewerFor
       });
       return { cached: [], newer: new NewerFormatError(metaPath, read.version) };
     case "unreadable":
-      // Corrupt cache — treat as absent and rebuild from the files on disk. The
-      // file existed and could not be used, which is corruption rather than a
-      // cache miss, so it gets a line rather than silence; the dimensions and
-      // metadata flags it held are gone until each asset is re-read.
-      warnUnreadableMeta(metaPath, read.detail, read.error);
-      return { cached: [], newer: null };
-    case "read":
-      if (Array.isArray(read.value.assets)) return { cached: read.value.assets as AssetMeta[], newer: null };
-      warnUnreadableMeta(metaPath, "its assets key is not an array", null);
-      return { cached: [], newer: null };
+      return moveAsideUnreadableMeta(metaPath, read.detail, read.error);
+    case "read": {
+      const assets = read.value.assets;
+      if (!Array.isArray(assets)) return moveAsideUnreadableMeta(metaPath, "its assets key is not an array", null);
+      if (!assets.every(isAssetMeta)) return moveAsideUnreadableMeta(metaPath, "one of its assets is not an asset record", null);
+      return { cached: assets, newer: null };
+    }
   }
 }
 
-function warnUnreadableMeta(metaPath: string, detail: string, error: unknown): void {
-  logWarn("asset metadata cache unreadable; rebuilding from the files on disk", {
+function moveAsideUnreadableMeta(
+  metaPath: string,
+  detail: string,
+  error: unknown,
+): { cached: AssetMeta[]; newer: null; movedAside: { path: string; movedTo: string } } {
+  const movedTo = moveAsideInvalid(metaPath);
+  logWarn("asset metadata unreadable; moved aside, assets listed from the files on disk", {
     path: metaPath,
+    movedTo,
     detail,
     ...(error ? { error: serializeError(error) } : {}),
   });
+  return { cached: [], newer: null, movedAside: { path: metaPath, movedTo } };
+}
+
+function isAssetMeta(value: unknown): value is AssetMeta {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const { filename, size, width, height, hasMetadata, uploadedAt } = value as Record<string, unknown>;
+  const isDimension = (n: unknown) => n === undefined || (typeof n === "number" && Number.isSafeInteger(n) && n > 0);
+  return (
+    typeof filename === "string" &&
+    filename.length > 0 &&
+    typeof size === "number" &&
+    Number.isSafeInteger(size) &&
+    size >= 0 &&
+    isDimension(width) &&
+    isDimension(height) &&
+    (hasMetadata === undefined || typeof hasMetadata === "boolean") &&
+    (uploadedAt === undefined || typeof uploadedAt === "string")
+  );
 }
 
 /**
