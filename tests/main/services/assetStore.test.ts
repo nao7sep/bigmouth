@@ -102,10 +102,35 @@ describe("replacing an asset", () => {
   });
 });
 
+describe("re-uploading an asset's own bytes", () => {
+  it("writes nothing and keeps the asset's place and upload time", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
+    const metaPath = path.join(assetDir(dataDir, POST), "meta.json");
+    const metaBefore = fs.readFileSync(metaPath, "utf8");
+
+    const again = saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), {
+      ...meta("a.png"),
+      uploadedAt: "2027-01-01T00:00:00.000Z",
+    });
+
+    expect(again).toEqual({ asset: meta("a.png"), changed: false });
+    expect(fs.readFileSync(metaPath, "utf8")).toBe(metaBefore);
+    expect(listAssets(dataDir, POST).map((a) => a.filename)).toEqual(["a.png", "b.png"]);
+  });
+
+  it("replaces an asset whose bytes differ", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const again = saveAssetFile(dataDir, POST, "a.png", Buffer.from("xyz"), meta("a.png"));
+    expect(again.changed).toBe(true);
+    expect(fs.readFileSync(path.join(assetDir(dataDir, POST), "a.png"), "utf8")).toBe("xyz");
+  });
+});
+
 describe("saveAssetFile disambiguates case-only filename collisions", () => {
   it("keeps both files when a new name differs only in case from an existing one", () => {
     saveAssetFile(dataDir, POST, "Photo.png", Buffer.from("abc"), meta("Photo.png"));
-    const stored = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
+    const { asset: stored } = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
 
     // The second upload gets a distinct, human-readable name (casing preserved).
     expect(stored.filename).toBe("photo (1).png");
@@ -124,7 +149,7 @@ describe("saveAssetFile disambiguates case-only filename collisions", () => {
 
   it("replaces in place on an exact same-name (case-identical) re-upload", () => {
     saveAssetFile(dataDir, POST, "photo.png", Buffer.from("abc"), meta("photo.png"));
-    const stored = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
+    const { asset: stored } = saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2));
 
     expect(stored.filename).toBe("photo.png");
     const listed = listAssets(dataDir, POST);

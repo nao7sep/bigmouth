@@ -26,7 +26,7 @@ import {
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
-import { writeFileAtomic } from "../shared/atomicWrite.js";
+import { holdsBytes, writeFileAtomic } from "../shared/atomicWrite.js";
 import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { isPostId } from "../shared/filenames.js";
 import { serializeError, warn as logWarn } from "./logger.js";
@@ -87,6 +87,10 @@ export function listAssets(dataDir: string, postId: string): AssetMeta[] {
  *
  * A name this directory reserves is refused outright rather than stored, because
  * a stored one could never be listed again — see isReservedAssetName.
+ *
+ * Re-uploading the bytes an asset of the same name already holds changes nothing:
+ * nothing is written, the asset keeps its place and recorded upload time, and
+ * `changed` is false, so the post was not edited.
  */
 export function saveAssetFile(
   dataDir: string,
@@ -94,7 +98,7 @@ export function saveAssetFile(
   filename: string,
   buffer: Buffer,
   meta: AssetMeta
-): AssetMeta {
+): { asset: AssetMeta; changed: boolean } {
   if (isReservedAssetName(filename)) {
     throw new Error(
       `"${filename}" is a name BigMouth keeps for its own bookkeeping. Rename the file and try again.`,
@@ -109,6 +113,8 @@ export function saveAssetFile(
   const metaPath = path.join(dir, META_FILENAME);
   const finalMeta: AssetMeta = { ...meta, filename: finalName };
   const existing = siblings.filter((a) => a.filename !== finalName);
+  const current = siblings.find((a) => a.filename === finalName);
+  if (current && holdsBytes(destPath, buffer)) return { asset: current, changed: false };
 
   // Install the file via temp+rename (atomic, and replaces any same-named file,
   // keeping its permissions), then commit the metadata. If a crash lands between
@@ -120,7 +126,7 @@ export function saveAssetFile(
   // binary-ish writes are excluded). This is the bare atomic write, not the managed-text choke point.
   writeFileAtomic(destPath, buffer);
   writeAssetMeta(metaPath, [...existing, finalMeta]);
-  return finalMeta;
+  return { asset: finalMeta, changed: true };
 }
 
 /**

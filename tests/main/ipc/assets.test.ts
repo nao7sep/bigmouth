@@ -308,12 +308,35 @@ describe("uploadAsset", () => {
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
 
       vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", Buffer.concat([PNG_1x1, Buffer.from([0])])));
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-02T00:00:00.000Z");
     } finally {
       vi.useRealTimers();
     }
     expect(before).not.toBe("2030-01-01T00:00:00.000Z");
+  });
+
+  // A write that changes nothing is skipped (content-lifecycle-conventions).
+  it("changes nothing when the same file is uploaded again under its name", async () => {
+    const id = createDraft();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+      const metaFile = path.join(dataDir, "assets", id, "meta.json");
+      const metaBefore = fs.readFileSync(metaFile, "utf8");
+
+      vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
+      const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+
+      expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png", uploadedAt: "2030-01-01T00:00:00.000Z" }) });
+      expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
+      expect(fs.readFileSync(metaFile, "utf8")).toBe(metaBefore);
+      expect(invoke<AssetMeta[]>(CHANNELS.listAssets, wsId, id).map((a) => a.filename)).toEqual(["a.png", "b.txt"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("leaves the modified time alone when the upload is refused", async () => {

@@ -137,9 +137,10 @@ export function registerAssetHandlers(): void {
 
     let storedMeta: AssetMeta;
     try {
-      storedMeta = saveAssetFile(dir, pid, filename, buffer, meta);
-      // An attached file is the post's content, so the post was edited.
-      recordAssetChange(dir, pid);
+      const saved = saveAssetFile(dir, pid, filename, buffer, meta);
+      storedMeta = saved.asset;
+      // An attached file is the post's content, so a changed one edited the post.
+      if (saved.changed) recordAssetChange(dir, pid);
     } catch (err) {
       logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));

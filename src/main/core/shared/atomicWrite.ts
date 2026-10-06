@@ -33,7 +33,13 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import { record } from "../services/backupStore.js";
 
-export function writeFileAtomic(filePath: string, content: string | Buffer, mode?: number): void {
+/**
+ * Writes `content` to `filePath` atomically and returns true, or returns false
+ * without writing when the file already holds exactly these bytes
+ * (content-lifecycle-conventions: a write that changes nothing is skipped).
+ */
+export function writeFileAtomic(filePath: string, content: string | Buffer, mode?: number): boolean {
+  if (holdsBytes(filePath, content)) return false;
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const stem = path.basename(filePath, ext);
@@ -54,6 +60,18 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
     }
     throw err;
   }
+  return true;
+}
+
+/** Whether `filePath` already holds exactly `content`; a file that cannot be read does not. */
+export function holdsBytes(filePath: string, content: string | Buffer): boolean {
+  let current: Buffer;
+  try {
+    current = fs.readFileSync(filePath);
+  } catch {
+    return false;
+  }
+  return current.equals(typeof content === "string" ? Buffer.from(content, "utf8") : content);
 }
 
 /** The permission bits of the file a write is about to replace, or undefined when there is none. */
@@ -75,6 +93,6 @@ export function existingMode(filePath: string): number | undefined {
  */
 export function writeManagedText(filePath: string, text: string): void {
   const bytes = Buffer.from(text, "utf8");
-  writeFileAtomic(filePath, bytes);
+  if (!writeFileAtomic(filePath, bytes)) return;
   record(filePath, bytes);
 }

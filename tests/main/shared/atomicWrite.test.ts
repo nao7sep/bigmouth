@@ -42,6 +42,24 @@ describe("writeFileAtomic", () => {
     expect(fs.readdirSync(dir)).toEqual(["data.json"]);
   });
 
+  it("skips a write of the bytes the file already holds, leaving the file untouched", () => {
+    const target = path.join(dir, "data.json");
+    fs.writeFileSync(target, "same");
+    const past = new Date("2020-01-01T00:00:00.000Z");
+    fs.utimesSync(target, past, past);
+    const renameSpy = vi.spyOn(fs, "renameSync");
+    try {
+      expect(writeFileAtomic(target, "same")).toBe(false);
+      expect(writeFileAtomic(target, Buffer.from("same"))).toBe(false);
+      expect(renameSpy).not.toHaveBeenCalled();
+    } finally {
+      renameSpy.mockRestore();
+    }
+    expect(fs.statSync(target).mtime.toISOString()).toBe(past.toISOString());
+    expect(writeFileAtomic(target, "changed")).toBe(true);
+    expect(fs.readFileSync(target, "utf-8")).toBe("changed");
+  });
+
   it("removes its temp and rethrows the original failure when the install fails", () => {
     const target = path.join(dir, "data.json");
     fs.writeFileSync(target, "original");
