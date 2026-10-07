@@ -14,6 +14,14 @@ const state = vi.hoisted(() => ({
   logged: [] as unknown[][],
 }));
 
+vi.mock("@main/storageAccess.js", async () => {
+  const records = await import("@main/core/services/recordsStore.js");
+  const workspaces = await import("@main/core/services/workspaceStore.js");
+  return {
+    currentRecordsSession: async () => records.currentRecordsSession(),
+    listWorkspaces: async () => workspaces.listWorkspaces(),
+  };
+});
 vi.mock("electron", () => ({
   ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
 }));

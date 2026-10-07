@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { windowMinimumForZoom } from "@shared/layout";
 import { CHANNELS } from "@shared/ipc";
-import { getUiState, updateUiState } from "./core/services/stateStore.js";
+import { getUiState, updateUiState } from "./storageAccess.js";
 import { error as logError, serializeError, warn } from "./core/services/logger.js";
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
@@ -99,11 +99,12 @@ export function buildWindowOptions(
  * covers the trackpad/scroll gesture; the menu roles do not fire it, so the
  * level is read back after each of them too.
  */
-function configureZoom(window: BrowserWindow): void {
-  const { zoomLevel } = getUiState();
+async function configureZoom(window: BrowserWindow): Promise<void> {
+  const { zoomLevel } = (await getUiState());
+  if (window.isDestroyed()) return;
   window.webContents.setZoomLevel(zoomLevel);
 
-  const remember = (): void => {
+  const remember = async (): Promise<void> => {
     if (window.isDestroyed()) return;
     try {
       const required = windowMinimumForZoom(window.webContents.getZoomFactor());
@@ -121,7 +122,9 @@ function configureZoom(window: BrowserWindow): void {
         }
       }
       const level = window.webContents.getZoomLevel();
-      if (level !== getUiState().zoomLevel) updateUiState({ zoomLevel: level });
+      const savedLevel = (await getUiState()).zoomLevel;
+      if (window.isDestroyed() || window.webContents.getZoomLevel() !== level) return;
+      if (level !== savedLevel) (await updateUiState({ zoomLevel: level }));
     } catch (error) {
       warn("window zoom or minimum could not be updated", { error: serializeError(error) });
     }
@@ -146,7 +149,7 @@ function configureZoom(window: BrowserWindow): void {
   window.on("restore", remember);
   window.on("leave-full-screen", remember);
   window.on("close", remember);
-  const onDisplayMetricsChanged = (): void => remember();
+  const onDisplayMetricsChanged = (): void => { void remember(); };
   screen.on("display-metrics-changed", onDisplayMetricsChanged);
   window.once("closed", () =>
     screen.removeListener("display-metrics-changed", onDisplayMetricsChanged),
@@ -154,7 +157,7 @@ function configureZoom(window: BrowserWindow): void {
 }
 
 export async function createMainWindow(): Promise<BrowserWindow> {
-  const zoomFactor = zoomFactorForLevel(getUiState().zoomLevel);
+  const zoomFactor = zoomFactorForLevel((await getUiState()).zoomLevel);
   let workArea: { width: number; height: number } | undefined;
   try {
     workArea = screen.getPrimaryDisplay().workAreaSize;
@@ -165,8 +168,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   const window = createWindowWithUsablePersistedBounds("main", () => new BrowserWindow(options));
   configureWindowActivity(window);
 
-  window.once("ready-to-show", () => {
-    try { configureZoom(window); }
+  window.once("ready-to-show", async () => {
+    try { (await configureZoom(window)); }
     catch (error) { warn("window zoom could not be restored", { error: serializeError(error) }); }
     window.show();
   });

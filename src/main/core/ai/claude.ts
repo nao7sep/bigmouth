@@ -9,7 +9,7 @@ import { buildClaudeParams } from "./claudeRequest.js";
 import { MAX_ATTEMPTS, isRetryable, retryDelayMs, waitFor } from "./retryPolicy.js";
 import { utcNow } from "../shared/timestamps.js";
 import { serializeError } from "../services/logger.js";
-import { writeProviderCall } from "../services/recordsStore.js";
+import { writeProviderCall } from "../../storageAccess.js";
 
 /**
  * How long a stream may go with NO output at all before it is abandoned.
@@ -101,7 +101,7 @@ export class ClaudeProvider implements AiProvider {
 
   /** Records one attempt with what came back (data-lifecycle-conventions, Records). */
   private record(startedAt: Date, request: unknown, outcome: { response: unknown } | { error: unknown }): void {
-    writeProviderCall({
+    void writeProviderCall({
       ...this.call,
       provider: "anthropic",
       startedAt,
@@ -109,7 +109,7 @@ export class ClaudeProvider implements AiProvider {
       request,
       response: "response" in outcome ? outcome.response : undefined,
       error: "error" in outcome ? serializeError(outcome.error) : undefined,
-    });
+    }).catch((error) => console.error("[bigmouth] Provider record could not reach storage", error));
   }
 
   /** Settles `pending` after recording it. */

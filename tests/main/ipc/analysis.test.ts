@@ -16,6 +16,16 @@ const provider = vi.hoisted(() => ({
   rejectFinished: null as null | ((err: unknown) => void),
 }));
 
+vi.mock("@main/storageAccess.js", async () => {
+  const postStore = await import("@main/core/services/postStore.js");
+  const configStore = await import("@main/core/services/configStore.js");
+  return {
+    getPost: async (...args: Parameters<typeof postStore.getPost>) => postStore.getPost(...args),
+    getAnalysisPrompts: async (...args: Parameters<typeof configStore.getAnalysisPrompts>) => configStore.getAnalysisPrompts(...args),
+    getRoleCall: async (...args: Parameters<typeof configStore.getRoleCall>) => configStore.getRoleCall(...args),
+  };
+});
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (channel: string, cb: (...args: unknown[]) => unknown) => ipc.handlers.set(channel, cb),
@@ -146,7 +156,7 @@ describe("analysis stream handlers", () => {
   it("forwards deltas then a done frame on normal completion", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-done");
-    start(event, "req-done", params);
+    await start(event, "req-done", params);
 
     provider.onText!("Hello ");
     provider.onText!("world");
@@ -165,7 +175,7 @@ describe("analysis stream handlers", () => {
   it("sends reasoning as thinking frames, never as answer deltas", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-think");
-    start(event, "req-think", params);
+    await start(event, "req-think", params);
 
     provider.onThinking!("weighing ");
     provider.onThinking!("the claim");
@@ -186,7 +196,7 @@ describe("analysis stream handlers", () => {
   it("does not count reasoning as having written an answer", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-think-only");
-    start(event, "req-think-only", params);
+    await start(event, "req-think-only", params);
 
     provider.onThinking!("reasoned a lot");
     provider.resolveFinished!("recovered text");
@@ -202,7 +212,7 @@ describe("analysis stream handlers", () => {
   it("drops reasoning that arrives after an abort", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-think-abort");
-    start(event, "req-think-abort", params);
+    await start(event, "req-think-abort", params);
 
     abort(undefined, "req-think-abort");
     provider.onThinking!("late reasoning");
@@ -214,7 +224,7 @@ describe("analysis stream handlers", () => {
   it("aborting an active stream cancels the provider and suppresses later frames", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-abort");
-    start(event, "req-abort", params);
+    await start(event, "req-abort", params);
 
     provider.onText!("partial");
     abort(undefined, "req-abort");
@@ -233,7 +243,7 @@ describe("analysis stream handlers", () => {
   it("ignores an abort for an unknown or already-finished request without throwing", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-finish");
-    start(event, "req-finish", params);
+    await start(event, "req-finish", params);
     provider.resolveFinished!("all done");
     await tick();
 
@@ -248,7 +258,7 @@ describe("analysis stream handlers", () => {
   it("sends an error frame when the provider stream rejects", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-err");
-    start(event, "req-err", params);
+    await start(event, "req-err", params);
 
     provider.rejectFinished!(new Error("provider exploded"));
     await tick();
@@ -258,9 +268,9 @@ describe("analysis stream handlers", () => {
 
   // A stream must not outlive the window that asked for it — the app stays
   // alive on macOS after its window closes, and the stream would bill to the end.
-  it("aborts a stream when its window is destroyed", () => {
+  it("aborts a stream when its window is destroyed", async () => {
     const event = makeEvent();
-    start(event, "req-closed", params);
+    await start(event, "req-closed", params);
 
     event.sender.emit("destroyed");
 
@@ -271,10 +281,10 @@ describe("analysis stream handlers", () => {
   // same id; one window's abort must never reach the other's stream.
   it("keeps the same request id from two windows apart", async () => {
     const first = makeEvent();
-    start(first, "ai-1", params);
+    await start(first, "ai-1", params);
     const firstAbort = provider.abort!;
     const second = makeEvent();
-    start(second, "ai-1", params);
+    await start(second, "ai-1", params);
     const secondAbort = provider.abort!;
 
     abort({ sender: first.sender }, "ai-1");

@@ -1,11 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { protocol } from "electron";
 
 import { ASSET_SCHEME } from "@shared/ipc";
-import { getWorkspace } from "./core/services/workspaceStore.js";
+import { getWorkspace, readAssetFile } from "./storageAccess.js";
 import { assetDir, safeResolveUnder } from "./core/services/assetStore.js";
 import { error as logError, serializeError } from "./core/services/logger.js";
 import { isPostId } from "./core/shared/filenames.js";
@@ -70,7 +68,7 @@ export function handleAssetProtocol(): void {
     if (!isPostId(postId)) return notFound;
     const fn = readFilename(filename);
     if (!fn) return notFound;
-    const ws = getWorkspace(wsId);
+    const ws = (await getWorkspace(wsId));
     if (!ws) return notFound;
 
     let filePath: string;
@@ -79,11 +77,10 @@ export function handleAssetProtocol(): void {
     } catch {
       return notFound;
     }
-    if (!existsSync(filePath)) return notFound;
 
     let data: Buffer;
     try {
-      data = await readFile(filePath);
+      data = Buffer.from(await readAssetFile(filePath));
     } catch (err) {
       logError("asset protocol read failed", { workspace: wsId, postId, filename: fn, error: serializeError(err) });
       return notFound;

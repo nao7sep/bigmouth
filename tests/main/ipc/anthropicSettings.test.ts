@@ -1,6 +1,6 @@
 // Integration test for the Anthropic section's IPC handlers: the real configStore
 // and key store run against a throwaway BIGMOUTH_DATA_DIR and a real registered
-// workspace; only `electron` (ipcMain) and the logger are mocked.
+// workspace; the async storageAccess edge calls the real services while Electron and the logger are mocked.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -10,6 +10,16 @@ import { CHANNELS } from "@shared/ipc";
 import type { AnthropicSettingsView } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  const configStore = await import("@main/core/services/configStore.js");
+  return {
+    getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    getAnthropicSettingsForClient: async (...args: Parameters<typeof configStore.getAnthropicSettingsForClient>) => configStore.getAnthropicSettingsForClient(...args),
+    saveAnthropicSettings: async (...args: Parameters<typeof configStore.saveAnthropicSettings>) => configStore.saveAnthropicSettings(...args),
+  };
+});
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -36,8 +46,8 @@ let dataDir: string;
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
-function invoke(channel: string, ...args: unknown[]): AnthropicSettingsView {
-  return handlers.get(channel)!({}, ...args) as AnthropicSettingsView;
+function invoke(channel: string, ...args: unknown[]): Promise<AnthropicSettingsView> {
+  return handlers.get(channel)!({}, ...args) as Promise<AnthropicSettingsView>;
 }
 
 function section(over: Record<string, unknown> = {}) {
@@ -70,11 +80,11 @@ afterEach(() => {
 });
 
 describe("Anthropic section IPC", () => {
-  it("saves the section and its key, and answers with the section, never the key", () => {
-    const view = invoke(CHANNELS.saveAnthropicSettings, wsId, section({ apiKey: "sk-ant-secret" }));
+  it("saves the section and its key, and answers with the section, never the key", async () => {
+    const view = (await invoke(CHANNELS.saveAnthropicSettings, wsId, section({ apiKey: "sk-ant-secret" })));
     expect(view).toEqual({ ...section(), hasApiKey: true, usingEnvKey: false });
     expect(JSON.stringify(view)).not.toContain("sk-ant-secret");
-    expect(invoke(CHANNELS.getAnthropicSettings, wsId)).toEqual(view);
+    expect((await invoke(CHANNELS.getAnthropicSettings, wsId))).toEqual(view);
     expect(fs.readFileSync(getApiKeysPath(), "utf8")).not.toContain("sk-ant-secret");
     expect(fs.readFileSync(path.join(dataDir, "config.json"), "utf8")).not.toContain("sk-ant");
   });
@@ -85,13 +95,13 @@ describe("Anthropic section IPC", () => {
     ["an empty model", { models: { analysis: "", metadata: "m", imagingPrompts: "i" } }, /must name a model/],
     ["a thinking value that is not a string", { thinking: { analysis: 1, metadata: "off", imagingPrompts: "adaptive" } }, /must be a string/],
     ["a key that is not a string", { apiKey: 42 }, /apiKey must be a string/],
-  ])("rejects %s and writes nothing", (_case, over, error) => {
-    expect(() => invoke(CHANNELS.saveAnthropicSettings, wsId, section(over))).toThrow(error);
+  ])("rejects %s and writes nothing", async (_case, over, error) => {
+    await expect(invoke(CHANNELS.saveAnthropicSettings, wsId, section(over))).rejects.toThrow(error);
     expect(fs.existsSync(path.join(dataDir, "config.json"))).toBe(false);
     expect(fs.existsSync(getApiKeysPath())).toBe(false);
   });
 
-  it("rejects an unknown workspace", () => {
-    expect(() => invoke(CHANNELS.getAnthropicSettings, "no-such-ws")).toThrow();
+  it("rejects an unknown workspace", async () => {
+    await expect(invoke(CHANNELS.getAnthropicSettings, "no-such-ws")).rejects.toThrow();
   });
 });

@@ -1,8 +1,8 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
-import { getPost } from "../core/services/postStore.js";
-import { getRoleCall } from "../core/services/configStore.js";
+import { getPost } from "../storageAccess.js";
+import { getRoleCall } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildImagingSchema,
@@ -52,10 +52,10 @@ async function generateImaging(
   options: ImagingOptions,
   signal: AbortSignal,
 ): Promise<string[]> {
-  const ws = resolveWorkspace(wsId);
+  const ws = (await resolveWorkspace(wsId));
   const dir = ws.dataDirectory;
   if (!postId) throw new Error("postId is required");
-  const post = getPost(dir, postId);
+  const post = (await getPost(dir, postId));
   if (!post) throw new Error("Post not found");
 
   // Reject out-of-set option values rather than silently coercing them.
@@ -78,7 +78,7 @@ async function generateImaging(
     frontMatter: post.frontMatter,
   });
 
-  const roleCall = getRoleCall(ws, "imagingPrompts");
+  const roleCall = (await getRoleCall(ws, "imagingPrompts"));
   let provider;
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "imaging" });
@@ -101,6 +101,7 @@ async function generateImaging(
   });
 
   try {
+    signal.throwIfAborted();
     const raw = await provider.generateJson(systemPrompt, userContent, buildImagingSchema(options.count), {
       maxDurationMs: IMAGING_GENERATION_MAX_MS,
       signal,

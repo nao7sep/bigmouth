@@ -21,19 +21,19 @@ import {
   postExists,
   listReferrers,
   getPostSummary,
-  queueContent,
-  queueMetadata,
+  queueWorkspaceContent,
+  queueWorkspaceMetadata,
   setContentSaveListener,
-} from "../core/services/postStore.js";
+} from "../storageAccess.js";
 import type { RebuildResult } from "../core/services/postIndex.js";
-import { getSettings, getTargets } from "../core/services/configStore.js";
-import { validateMetadataEdit, validatePostUpdate } from "../core/shared/postUpdate.js";
+import { getSettings, getTargets } from "../storageAccess.js";
+import { validatePostUpdate } from "../core/shared/postUpdate.js";
 import { POST_STATUSES, isPostStatus } from "../core/shared/postLifecycle.js";
 import { isPagedPostStatus } from "@shared/postStatus";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-import { message, type Message } from "@shared/i18n/translate";
-import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
+import { message } from "@shared/i18n/translate";
+
 
 
 
@@ -43,22 +43,6 @@ import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 const POST_MISSING_DETAIL = "This post's file is missing.";
 const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
 const LOCKED_DETAIL = "This post is locked against edits.";
-
-/**
- * What the Metadata tab says when it refuses an edit, in the reader's language.
- * Only the lock and the slug format can come from what a person types; the
- * other reasons are shapes the tab never sends, logged with their code.
- */
-function metadataRefusal(reason: string): Message {
-  switch (reason) {
-    case "locked":
-      return message("metadata.refusedLocked");
-    case "invalid-slug":
-      return message("metadata.refusedInvalidSlug", { max: ACCEPTED_SLUG_MAX_LENGTH });
-    default:
-      return message("metadata.refusedInvalid");
-  }
-}
 
 /** Sends a main -> renderer event to every live window. */
 function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent): void {
@@ -99,15 +83,15 @@ export function registerPostHandlers(): void {
   // A workspace that no longer resolves is one of those failures: the text
   // never reached the buffer, so it is reported on the same channel instead of
   // being logged away while the editor still looks saved.
-  ipcMain.on(CHANNELS.queuePostContent, (_event, wsId: string, id: string, content: string) => {
+  ipcMain.on(CHANNELS.queuePostContent, async (_event, wsId: string, id: string, content: string) => {
     if (typeof wsId !== "string" || typeof id !== "string" || typeof content !== "string") return;
     try {
-      const dir = resolveWorkspace(wsId).dataDirectory;
+      const pending = queueWorkspaceContent(wsId, id, content);
       // Per keystroke, so `debug` by the logging conventions' frequency rule —
       // never on a user's disk, and exactly the trail wanted when chasing a save
       // that did not land.
       logDebug("post content queued", { workspace: wsId, postId: id, length: content.length });
-      queueContent(dir, id, content);
+      await pending;
     } catch (err) {
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
       const failure: PostContentSaveFailedEvent = {
@@ -123,29 +107,21 @@ export function registerPostHandlers(): void {
   // index row, never the post file, because it runs per keystroke. The reply is
   // the refusal (null when buffered) so the field can say why it will not save;
   // save outcomes after that ride the same events as content.
-  ipcMain.handle(CHANNELS.queuePostMetadata, (_event, wsId: string, id: string, edits: unknown) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const entry = getPostSummary(dir, id);
-    if (!entry) return message("metadata.refusedNotFound");
-    const validation = validateMetadataEdit(entry, edits);
-    if (!validation.ok) {
-      logDebug("post metadata refused", { workspace: wsId, postId: id, reason: validation.reason });
-      return metadataRefusal(validation.reason);
-    }
-    logDebug("post metadata queued", { workspace: wsId, postId: id, keys: Object.keys(validation.edits) });
-    return queueMetadata(dir, id, validation.edits);
+  ipcMain.handle(CHANNELS.queuePostMetadata, async (_event, wsId: string, id: string, edits: unknown) => {
+    if (typeof wsId !== "string" || typeof id !== "string") return message("metadata.refusedInvalid");
+    return await queueWorkspaceMetadata(wsId, id, edits);
   });
 
-  ipcMain.handle(CHANNELS.listPosts, (_event, wsId: string, offsets: unknown, limit: number) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const lim = limit || getSettings(dir).postsPerLoad;
+  ipcMain.handle(CHANNELS.listPosts, async (_event, wsId: string, offsets: unknown, limit: number) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
+    const lim = limit || (await getSettings(dir)).postsPerLoad;
 
-    const unreadable = refreshIndex(dir);
+    const unreadable = (await refreshIndex(dir));
     const response = {} as PostListResponse;
     if (unreadable.length > 0) response.unreadable = unreadable;
     for (const status of POST_STATUSES) {
       if (!isPagedPostStatus(status)) {
-        const posts = listByStatus(dir, status);
+        const posts = (await listByStatus(dir, status));
         response[status] = { posts, total: posts.length, offset: 0 };
         continue;
       }
@@ -153,8 +129,8 @@ export function registerPostHandlers(): void {
       const requested = (offsets as Partial<Record<string, unknown>> | null)?.[status];
       const offset = typeof requested === "number" ? Math.max(0, requested) : 0;
       response[status] = {
-        posts: listByStatus(dir, status, { offset, limit: lim }),
-        total: countByStatus(dir, status),
+        posts: (await listByStatus(dir, status, { offset, limit: lim })),
+        total: (await countByStatus(dir, status)),
         offset,
       };
     }
@@ -170,11 +146,11 @@ export function registerPostHandlers(): void {
     return response;
   });
 
-  ipcMain.handle(CHANNELS.rebuildPostIndex, (_event, wsId: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+  ipcMain.handle(CHANNELS.rebuildPostIndex, async (_event, wsId: string) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
     let result: RebuildResult & { orphanedAssets: number };
     try {
-      result = rebuildIndex(dir);
+      result = (await rebuildIndex(dir));
     } catch (err) {
       logError("post index rebuild failed", { workspace: wsId, error: serializeError(err) });
       throw err instanceof Error ? err : new Error("Index rebuild failed");
@@ -198,9 +174,9 @@ export function registerPostHandlers(): void {
     };
   });
 
-  ipcMain.handle(CHANNELS.getPost, (_event, wsId: string, id: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const post = getPost(dir, id);
+  ipcMain.handle(CHANNELS.getPost, async (_event, wsId: string, id: string) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
+    const post = (await getPost(dir, id));
     if (!post) {
       warn("post lookup failed", { workspace: wsId, postId: id, reason: "not-found" });
       throw new Error("Post not found");
@@ -214,14 +190,14 @@ export function registerPostHandlers(): void {
     return { frontMatter: post.frontMatter, content: post.content };
   });
 
-  ipcMain.handle(CHANNELS.listReferrers, (_event, wsId: string, id: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const ids = listReferrers(dir, id);
+  ipcMain.handle(CHANNELS.listReferrers, async (_event, wsId: string, id: string) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
+    const ids = (await listReferrers(dir, id));
     return { count: ids.length, ids };
   });
 
-  ipcMain.handle(CHANNELS.createPost, (_event, wsId: string, target: string, language: string, sourceId?: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+  ipcMain.handle(CHANNELS.createPost, async (_event, wsId: string, target: string, language: string, sourceId?: string) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
     if (typeof target !== "string" || !target.trim() || typeof language !== "string" || !language.trim()) {
       throw new Error("target and language are required");
     }
@@ -232,8 +208,8 @@ export function registerPostHandlers(): void {
     const normalizedTarget = target.trim();
     const normalizedLanguage = language.trim();
     const normalizedSourceId = sourceId?.trim() || undefined;
-    const targets = getTargets(dir);
-    const settings = getSettings(dir);
+    const targets = (await getTargets(dir));
+    const settings = (await getSettings(dir));
 
     if (targets.length === 0) {
       throw new Error("No targets configured. Add a target in Settings before creating a post.");
@@ -244,11 +220,11 @@ export function registerPostHandlers(): void {
     if (!settings.supportedLanguages.includes(normalizedLanguage)) {
       throw new Error(`Unsupported language: ${normalizedLanguage}`);
     }
-    if (normalizedSourceId && !postExists(dir, normalizedSourceId)) {
+    if (normalizedSourceId && !(await postExists(dir, normalizedSourceId))) {
       throw new Error("Source post not found");
     }
 
-    const post = createPost(dir, normalizedTarget, normalizedLanguage, normalizedSourceId);
+    const post = (await createPost(dir, normalizedTarget, normalizedLanguage, normalizedSourceId));
     info("post created", {
       workspace: wsId,
       postId: post.frontMatter.id,
@@ -259,10 +235,10 @@ export function registerPostHandlers(): void {
     return { frontMatter: post.frontMatter, content: post.content };
   });
 
-  ipcMain.handle(CHANNELS.updatePost, (_event, wsId: string, id: string, updates: PostUpdate) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+  ipcMain.handle(CHANNELS.updatePost, async (_event, wsId: string, id: string, updates: PostUpdate) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
     const content = updates?.content;
-    const existing = getPost(dir, id);
+    const existing = (await getPost(dir, id));
     if (!existing) {
       throw new Error("Post not found");
     }
@@ -282,13 +258,13 @@ export function registerPostHandlers(): void {
 
     // The only edit check that needs the filesystem: a referenced source post
     // must exist. The self-source rule is decided purely in validatePostUpdate.
-    if (typeof edits.sourceId === "string" && edits.sourceId && !postExists(dir, edits.sourceId)) {
+    if (typeof edits.sourceId === "string" && edits.sourceId && !(await postExists(dir, edits.sourceId))) {
       throw new Error("Source post not found");
     }
 
     const oldSlug = existing.frontMatter.slug?.trim() ?? "";
     const oldFilePath = existing.filePath;
-    const post = updatePost(dir, id, { content, frontMatter: edits });
+    const post = (await updatePost(dir, id, { content, frontMatter: edits }));
     if (!post) {
       warn("post update failed", { workspace: wsId, postId: id, reason: "not-found-after-update" });
       throw new Error("Post not found");
@@ -311,22 +287,22 @@ export function registerPostHandlers(): void {
     return {
       frontMatter: post.frontMatter,
       content: post.content,
-      summary: getPostSummary(dir, post.frontMatter.id),
+      summary: (await getPostSummary(dir, post.frontMatter.id)),
     };
   });
 
-  ipcMain.handle(CHANNELS.changePostStatus, (_event, wsId: string, id: string, status: PostStatus) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+  ipcMain.handle(CHANNELS.changePostStatus, async (_event, wsId: string, id: string, status: PostStatus) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
     if (!isPostStatus(status)) {
       throw new Error("Invalid status");
     }
-    const before = getPost(dir, id);
+    const before = (await getPost(dir, id));
     if (!before) {
       warn("post status change failed", { workspace: wsId, postId: id, requestedStatus: status, reason: "not-found" });
       throw new Error("Post not found");
     }
     try {
-      const post = changeStatus(dir, id, status);
+      const post = (await changeStatus(dir, id, status));
       if (!post) {
         throw new Error("Post not found");
       }
@@ -343,7 +319,7 @@ export function registerPostHandlers(): void {
       return {
         frontMatter: post.frontMatter,
         content: post.content,
-        summary: getPostSummary(dir, post.frontMatter.id),
+        summary: (await getPostSummary(dir, post.frontMatter.id)),
       };
     } catch (err) {
       logError("post status change failed", {
@@ -359,12 +335,12 @@ export function registerPostHandlers(): void {
 
   // Locking is not an edit: it changes no time, and it is allowed whatever the
   // post's status. Locking writes the post's buffered edits first.
-  ipcMain.handle(CHANNELS.setPostLocked, (_event, wsId: string, id: string, locked: unknown) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
+  ipcMain.handle(CHANNELS.setPostLocked, async (_event, wsId: string, id: string, locked: unknown) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
     if (typeof locked !== "boolean") {
       throw new Error("locked must be a boolean");
     }
-    const post = setLocked(dir, id, locked);
+    const post = (await setLocked(dir, id, locked));
     if (!post) {
       warn("post lock change failed", { workspace: wsId, postId: id, locked, reason: "not-found" });
       throw new Error("Post not found");
@@ -373,13 +349,13 @@ export function registerPostHandlers(): void {
     return {
       frontMatter: post.frontMatter,
       content: post.content,
-      summary: getPostSummary(dir, post.frontMatter.id),
+      summary: (await getPostSummary(dir, post.frontMatter.id)),
     };
   });
 
-  ipcMain.handle(CHANNELS.deletePost, (_event, wsId: string, id: string) => {
-    const dir = resolveWorkspace(wsId).dataDirectory;
-    const deleted = deletePost(dir, id);
+  ipcMain.handle(CHANNELS.deletePost, async (_event, wsId: string, id: string) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
+    const deleted = (await deletePost(dir, id));
     if (!deleted) {
       warn("post delete failed", { workspace: wsId, postId: id, reason: "not-found" });
       throw new Error("Post not found");

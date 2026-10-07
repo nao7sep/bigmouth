@@ -22,6 +22,18 @@ const ai = vi.hoisted(() => ({
   roleCall: null as unknown,
 }));
 
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  const postStore = await import("@main/core/services/postStore.js");
+  const configStore = await import("@main/core/services/configStore.js");
+  return {
+    getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    getPost: async (...args: Parameters<typeof postStore.getPost>) => postStore.getPost(...args),
+    getGenerationPrompts: async (...args: Parameters<typeof configStore.getGenerationPrompts>) => configStore.getGenerationPrompts(...args),
+    getRoleCall: async (...args: Parameters<typeof configStore.getRoleCall>) => configStore.getRoleCall(...args),
+  };
+});
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (ch: string, cb: (...args: unknown[]) => unknown) => handlers.set(ch, cb),
@@ -123,10 +135,20 @@ describe("metadata generation IPC handler", () => {
     };
 
     const pending = invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
+    await vi.waitFor(() => expect(signal).toBeDefined());
     sendAbort();
 
     expect(signal?.aborted).toBe(true);
     await expect(pending).rejects.toThrow(/cancelled/);
+  });
+
+  it("cancels during storage lookup before starting a paid call", async () => {
+    const generate = vi.fn(() => ({}));
+    ai.generateJsonImpl = generate;
+    const pending = invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
+    sendAbort();
+    await expect(pending).rejects.toThrow(/cancelled/);
+    expect(generate).not.toHaveBeenCalled();
   });
 
   it("generates the requested fields from the structured AI response", async () => {

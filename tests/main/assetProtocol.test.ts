@@ -15,6 +15,14 @@ const captured = vi.hoisted(() => ({
   privileged: null as null | unknown,
 }));
 
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  return {
+    getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    readAssetFile: async (file: string) => (await import("node:fs")).readFileSync(file),
+  };
+});
+
 vi.mock("electron", () => ({
   protocol: {
     registerSchemesAsPrivileged: (schemes: unknown) => {

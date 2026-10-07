@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@main/core/services/recordsStore.js", () => ({ writeProviderCall: () => {} }));
+vi.mock("@main/storageAccess.js", () => ({ writeProviderCall: async () => {} }));
 
 import { ClaudeProvider } from "@main/core/ai/claude.js";
 

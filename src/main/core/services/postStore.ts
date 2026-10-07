@@ -15,7 +15,7 @@
  * without knowing the buffer exists. Every write of an unlocked post goes
  * through rewritePost, which writes the pending edits with it and clears the
  * buffer. The main process therefore never depends on the renderer to flush:
- * quit runs flushAllPendingEdits over a copy of the buffer (quitFlush.ts) and
+ * quit runs flushAllPendingEdits on the persistent storage worker and
  * the newest keystroke, in the editor or a metadata field, is on disk.
  *
  * The modified time (`updatedAtUtc`) follows content-lifecycle-conventions:
@@ -221,11 +221,11 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
  * be saved, but it is still the user's work, so it is kept and the terminal
  * failure is reported — never dropped in silence.
  */
-export function queueContent(dataDir: string, id: string, content: string): void {
+export function queueContent(dataDir: string, id: string, content: string, editedAt = utcNow()): void {
   const pending = pendingFor(dataDir, id);
   const before = pendingAuthorSnapshot(dataDir, id, pending);
   pending.content = content;
-  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = utcNow();
+  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = editedAt;
   scheduleIfSavable(dataDir, id, pending);
 }
 
@@ -240,7 +240,7 @@ export function queueContent(dataDir: string, id: string, content: string): void
  * refused edit is not buffered, so the buffer never holds a value that could
  * not be written.
  */
-export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata): Message | null {
+export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata, editedAt = utcNow()): Message | null {
   if (!index.getEntry(dataDir, id)) return message("metadata.refusedNotFound");
   const slug = edits.slug;
   if (typeof slug === "string" && slug.length > 0) {
@@ -250,7 +250,7 @@ export function queueMetadata(dataDir: string, id: string, edits: EditablePostMe
   const pending = pendingFor(dataDir, id);
   const before = pendingAuthorSnapshot(dataDir, id, pending);
   Object.assign(pending.frontMatter, edits);
-  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = utcNow();
+  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = editedAt;
   scheduleIfSavable(dataDir, id, pending);
   return null;
 }

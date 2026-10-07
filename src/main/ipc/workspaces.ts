@@ -7,20 +7,20 @@ import {
   openOrCreateWorkspace,
   updateWorkspace,
   deleteWorkspace,
-} from "../core/services/workspaceStore.js";
-import { clearCache } from "../core/services/postStore.js";
+  clearCache,
+} from "../storageAccess.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 
 export function registerWorkspaceHandlers(): void {
-  ipcMain.handle(CHANNELS.listWorkspaces, () => {
-    const workspaces = listWorkspaces();
+  ipcMain.handle(CHANNELS.listWorkspaces, async () => {
+    const workspaces = await listWorkspaces();
     info("workspaces listed", { count: workspaces.length });
     return workspaces;
   });
 
-  ipcMain.handle(CHANNELS.openOrCreateWorkspace, (_event, name?: string, dataDirectory?: string) => {
+  ipcMain.handle(CHANNELS.openOrCreateWorkspace, async (_event, name?: string, dataDirectory?: string) => {
     try {
-      const ws = openOrCreateWorkspace(name?.trim(), dataDirectory);
+      const ws = await openOrCreateWorkspace(name?.trim(), dataDirectory);
       info("workspace selected", {
         workspaceId: ws.id,
         workspaceName: ws.name,
@@ -33,13 +33,13 @@ export function registerWorkspaceHandlers(): void {
     }
   });
 
-  ipcMain.handle(CHANNELS.updateWorkspace, (_event, id: string, updates: { name?: string }) => {
+  ipcMain.handle(CHANNELS.updateWorkspace, async (_event, id: string, updates: { name?: string }) => {
     const name = updates?.name?.trim();
     if (!name) throw new Error("Workspace name is required");
 
     let ws;
     try {
-      ws = updateWorkspace(id, { name });
+      ws = await updateWorkspace(id, { name });
     } catch (err) {
       logError("workspace update failed", { workspaceId: id, error: serializeError(err) });
       throw err instanceof Error ? err : new Error("Failed to update workspace");
@@ -56,16 +56,16 @@ export function registerWorkspaceHandlers(): void {
     return ws;
   });
 
-  ipcMain.handle(CHANNELS.deleteWorkspace, (_event, id: string) => {
+  ipcMain.handle(CHANNELS.deleteWorkspace, async (_event, id: string) => {
     // Capture the data directory before removal so the derived in-memory index is
     // evicted — re-opening the same folder later must not serve a stale cache.
-    const removed = getWorkspace(id);
-    const deleted = deleteWorkspace(id);
+    const removed = await getWorkspace(id);
+    const deleted = await deleteWorkspace(id);
     if (!deleted) {
       warn("workspace delete failed", { workspaceId: id, reason: "not-found" });
       throw new Error("Workspace not found");
     }
-    if (removed) clearCache(removed.dataDirectory);
+    if (removed) await clearCache(removed.dataDirectory);
     info("workspace removed from registry", { workspaceId: id });
   });
 }

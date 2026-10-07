@@ -12,6 +12,16 @@ import type { AnalysisPrompt } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  const configStore = await import("@main/core/services/configStore.js");
+  return {
+    getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    getAnalysisPrompts: async (...args: Parameters<typeof configStore.getAnalysisPrompts>) => configStore.getAnalysisPrompts(...args),
+    saveAnalysisPrompts: async (...args: Parameters<typeof configStore.saveAnalysisPrompts>) => configStore.saveAnalysisPrompts(...args),
+  };
+});
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (ch: string, cb: (...args: unknown[]) => unknown) => handlers.set(ch, cb),
@@ -35,8 +45,8 @@ let home: string;
 let wsId: string;
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
-function invoke<T>(channel: string, ...args: unknown[]): T {
-  return handlers.get(channel)!({}, ...args) as T;
+function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return handlers.get(channel)!({}, ...args) as Promise<T>;
 }
 
 beforeEach(() => {
@@ -55,47 +65,43 @@ afterEach(() => {
 });
 
 describe("analysis-prompt IPC handlers", () => {
-  it("returns the built-in defaults independent of any workspace", () => {
-    const defaults = invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPromptDefaults);
+  it("returns the built-in defaults independent of any workspace", async () => {
+    const defaults = (await invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPromptDefaults));
     expect(defaults).toEqual(DEFAULT_ANALYSIS_PROMPTS);
   });
 
-  it("lists the seeded default prompts for a fresh workspace", () => {
-    const prompts = invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPrompts, wsId);
+  it("lists the seeded default prompts for a fresh workspace", async () => {
+    const prompts = (await invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPrompts, wsId));
     expect(prompts.map((p) => p.name)).toEqual(DEFAULT_ANALYSIS_PROMPTS.map((p) => p.name));
   });
 
-  it("saves prompts through the store and round-trips them", () => {
+  it("saves prompts through the store and round-trips them", async () => {
     const next: AnalysisPrompt[] = [
       { name: "Tone", text: "Check the tone of {content}" },
       { name: "Empty body allowed", text: "" },
     ];
-    const saved = invoke<AnalysisPrompt[]>(CHANNELS.saveAnalysisPrompts, wsId, next);
+    const saved = (await invoke<AnalysisPrompt[]>(CHANNELS.saveAnalysisPrompts, wsId, next));
     expect(saved).toEqual(next);
-    expect(invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPrompts, wsId)).toEqual(next);
+    expect((await invoke<AnalysisPrompt[]>(CHANNELS.listAnalysisPrompts, wsId))).toEqual(next);
   });
 
-  it("normalizes each saved prompt to only name + text", () => {
-    const saved = invoke<AnalysisPrompt[]>(CHANNELS.saveAnalysisPrompts, wsId, [
+  it("normalizes each saved prompt to only name + text", async () => {
+    const saved = (await invoke<AnalysisPrompt[]>(CHANNELS.saveAnalysisPrompts, wsId, [
       { name: "P", text: "t", stray: 1 } as unknown as AnalysisPrompt,
-    ]);
+    ]));
     expect(saved[0]).toEqual({ name: "P", text: "t" });
     expect(saved[0]).not.toHaveProperty("stray");
   });
 
-  it("validates the save payload before reaching the store", () => {
-    expect(() => invoke(CHANNELS.saveAnalysisPrompts, wsId, "nope")).toThrow(/must be an array/);
-    expect(() => invoke(CHANNELS.saveAnalysisPrompts, wsId, [null])).toThrow(/must be an object/);
-    expect(() => invoke(CHANNELS.saveAnalysisPrompts, wsId, [{ name: "", text: "t" }])).toThrow(/non-empty name/);
-    expect(() =>
-      invoke(CHANNELS.saveAnalysisPrompts, wsId, [{ name: "P", text: 5 } as unknown as AnalysisPrompt]),
-    ).toThrow(/text string/);
+  it("validates the save payload before reaching the store", async () => {
+    await expect(invoke(CHANNELS.saveAnalysisPrompts, wsId, "nope")).rejects.toThrow(/must be an array/);
+    await expect(invoke(CHANNELS.saveAnalysisPrompts, wsId, [null])).rejects.toThrow(/must be an object/);
+    await expect(invoke(CHANNELS.saveAnalysisPrompts, wsId, [{ name: "", text: "t" }])).rejects.toThrow(/non-empty name/);
+    await expect(invoke(CHANNELS.saveAnalysisPrompts, wsId, [{ name: "P", text: 5 } as unknown as AnalysisPrompt])).rejects.toThrow(/text string/);
   });
 
-  it("surfaces an unknown workspace as a thrown Error", () => {
-    expect(() => invoke(CHANNELS.listAnalysisPrompts, "nope")).toThrow(/Workspace not found/);
-    expect(() => invoke(CHANNELS.saveAnalysisPrompts, "nope", [{ name: "P", text: "t" }])).toThrow(
-      /Workspace not found/,
-    );
+  it("surfaces an unknown workspace as a thrown Error", async () => {
+    await expect(invoke(CHANNELS.listAnalysisPrompts, "nope")).rejects.toThrow(/Workspace not found/);
+    await expect(invoke(CHANNELS.saveAnalysisPrompts, "nope", [{ name: "P", text: "t" }])).rejects.toThrow(/Workspace not found/);
   });
 });

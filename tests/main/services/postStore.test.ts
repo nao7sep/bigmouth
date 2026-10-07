@@ -941,7 +941,7 @@ describe("pending content (write-behind buffer)", () => {
   });
 });
 
-// At quit the buffer is written on a worker thread of its own (quitFlush.ts):
+// Buffer copies retain authored times when adopted by a fresh store:
 // the edits are copied across, the copy is written by a fresh store, and this
 // thread writes nothing on its own until the quit is over.
 describe("the quit's flush on another thread", () => {

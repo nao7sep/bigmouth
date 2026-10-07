@@ -4,7 +4,7 @@ import { CHANNELS } from "@shared/ipc";
 import type { AnthropicSettingsInput } from "@shared/types";
 import { AI_ROLE_IDS } from "@shared/aiModels";
 import { modelSetKey, thinkingSetKey, workspaceSetIssue } from "@shared/configSets";
-import { getAnthropicSettingsForClient, saveAnthropicSettings } from "../core/services/configStore.js";
+import { getAnthropicSettingsForClient, saveAnthropicSettings } from "../storageAccess.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
@@ -31,17 +31,17 @@ function anthropicInput(body: unknown): AnthropicSettingsInput {
 }
 
 export function registerAnthropicSettingsHandlers(): void {
-  ipcMain.handle(CHANNELS.getAnthropicSettings, (_event, wsId: string) => {
-    const ws = resolveWorkspace(wsId);
-    const settings = getAnthropicSettingsForClient(ws);
+  ipcMain.handle(CHANNELS.getAnthropicSettings, async (_event, wsId: string) => {
+    const ws = await resolveWorkspace(wsId);
+    const settings = await getAnthropicSettingsForClient(ws);
     info("anthropic settings loaded", { workspace: ws.id, hasApiKey: settings.hasApiKey });
     return settings;
   });
 
-  ipcMain.handle(CHANNELS.saveAnthropicSettings, (_event, wsId: string, body: unknown) => {
-    const ws = resolveWorkspace(wsId);
+  ipcMain.handle(CHANNELS.saveAnthropicSettings, async (_event, wsId: string, body: unknown) => {
+    const ws = await resolveWorkspace(wsId);
     const input = anthropicInput(body);
-    const settings = saveAnthropicSettings(ws, input);
+    const settings = await saveAnthropicSettings(ws, input);
     info("anthropic settings saved", {
       workspace: ws.id,
       endpoint: settings.endpoint,

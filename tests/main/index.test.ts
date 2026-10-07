@@ -5,7 +5,7 @@
 // quit is the real one. That is the point: the store's own tests stop at its
 // API, and the failure this guards — the app exiting while the editor still
 // showed unsaved text — only exists once the two are wired together. The one
-// seam is the worker thread the app runs that flush on (quitFlush.ts, tested on
+// seam is the worker thread the app runs that flush on (storageOwner.ts, tested on
 // its own): here the same store flush runs in place, or the test makes it
 // stall past its bound.
 //
@@ -81,15 +81,29 @@ vi.mock("@main/plain-message-dialog.js", () => ({
 const flush = vi.hoisted(() => ({
   plan: [] as ("store" | "stall")[],
   calls: 0,
-  store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes">,
+  store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes" | "holdPendingFlushes">,
 }));
-vi.mock("@main/core/services/quitFlush.js", () => ({
-  QUIT_FLUSH_BOUND_MS: 2000,
-  flushPendingEditsWithin: () => {
+vi.mock("@main/storageOwner.js", () => {
+  const flushNow = () => {
     flush.calls++;
+    flush.store!.holdPendingFlushes();
     if ((flush.plan.shift() ?? "store") === "stall") return { kind: "expired" };
     return { kind: "flushed", failures: flush.store!.flushAllPendingEdits() };
+  };
+  return { storageOwner: {
+    onRecordStored: () => {}, flushAsync: async () => flushNow(), flushWithin: flushNow,
+    finishAsync: async () => {}, finishWithin: () => {}, stop: async () => {},
+  } };
+});
+vi.mock("@main/storageAccess.js", async () => ({
+  initialize: async () => {
+    const store = await import("@main/core/services/workspaceStore.js");
+    const paths = await import("@main/core/services/storagePaths.js");
+    const config = store.initAppDir();
+    return { config, settings: { theme: "system", language: "system" }, recordsDbPath: paths.getRecordsDbPath(), recordsPath: null };
   },
+  log: async () => {},
+  resumePendingFlushes: async () => flush.store!.resumePendingFlushes(),
 }));
 
 vi.mock("@main/window.js", () => ({
@@ -119,6 +133,7 @@ vi.mock("@main/theme.js", () => ({
 }));
 vi.mock("@main/core/services/logger.js", () => ({
   initLogger: () => {},
+  setLogSink: () => {},
   closeLogger: () => {},
   getRecordsPath: () => null,
   isDebugLoggingEnabled: () => false,
@@ -197,6 +212,7 @@ async function quit(): Promise<void> {
   await vi.waitFor(() => {
     if (shell.dialogs.length === 0 && shell.exits.length === 0) throw new Error("quit is still settling");
   });
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 const PLATFORM = process.platform;

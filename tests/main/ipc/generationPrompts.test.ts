@@ -12,6 +12,16 @@ import type { GenerationPromptsData } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  const configStore = await import("@main/core/services/configStore.js");
+  return {
+    getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    getGenerationPrompts: async (...args: Parameters<typeof configStore.getGenerationPrompts>) => configStore.getGenerationPrompts(...args),
+    saveGenerationPrompts: async (...args: Parameters<typeof configStore.saveGenerationPrompts>) => configStore.saveGenerationPrompts(...args),
+  };
+});
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (ch: string, cb: (...args: unknown[]) => unknown) => handlers.set(ch, cb),
@@ -36,8 +46,8 @@ let wsId: string;
 let wsDir: string;
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 
-function invoke<T>(channel: string, ...args: unknown[]): T {
-  return handlers.get(channel)!({}, ...args) as T;
+function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return handlers.get(channel)!({}, ...args) as Promise<T>;
 }
 
 beforeEach(() => {
@@ -56,27 +66,27 @@ afterEach(() => {
 });
 
 describe("generation-prompt IPC handlers", () => {
-  it("returns the built-in defaults independent of any workspace", () => {
-    const defaults = invoke<GenerationPromptsData>(CHANNELS.getGenerationPromptDefaults);
+  it("returns the built-in defaults independent of any workspace", async () => {
+    const defaults = (await invoke<GenerationPromptsData>(CHANNELS.getGenerationPromptDefaults));
     expect(defaults).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
   });
 
-  it("returns the seeded prompts for a fresh workspace", () => {
-    const prompts = invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId);
+  it("returns the seeded prompts for a fresh workspace", async () => {
+    const prompts = (await invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId));
     expect(prompts).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
   });
 
-  it("saves prompts through the store and round-trips them", () => {
+  it("saves prompts through the store and round-trips them", async () => {
     const next: GenerationPromptsData = { prompts: {
       ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom title prompt", slug: "Custom slug prompt",
     } };
-    const saved = invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, next);
+    const saved = (await invoke<GenerationPromptsData>(CHANNELS.saveGenerationPrompts, wsId, next));
     expect(saved.prompts.title).toBe("Custom title prompt");
     expect(saved.prompts.slug).toBe("Custom slug prompt");
-    expect(invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId)).toEqual(saved);
+    expect((await invoke<GenerationPromptsData>(CHANNELS.getGenerationPrompts, wsId))).toEqual(saved);
   });
 
-  it("validates the save payload before reaching the store", () => {
+  it("validates the save payload before reaching the store", async () => {
     const full = DEFAULT_GENERATION_PROMPTS_DATA.prompts;
     const { title: _title, ...partial } = full;
     for (const body of [
@@ -88,15 +98,13 @@ describe("generation-prompt IPC handlers", () => {
       { prompts: partial },
       { prompts: { ...full, bogus: "unknown key" } },
     ]) {
-      expect(() => invoke(CHANNELS.saveGenerationPrompts, wsId, body)).toThrow(/prompts must map every/);
+      await expect(invoke(CHANNELS.saveGenerationPrompts, wsId, body)).rejects.toThrow(/prompts must map every/);
     }
     expect(fs.existsSync(path.join(wsDir, "config.json"))).toBe(false);
   });
 
-  it("surfaces an unknown workspace as a thrown Error", () => {
-    expect(() => invoke(CHANNELS.getGenerationPrompts, "nope")).toThrow(/Workspace not found/);
-    expect(() => invoke(CHANNELS.saveGenerationPrompts, "nope", { prompts: { title: "t" } })).toThrow(
-      /Workspace not found/,
-    );
+  it("surfaces an unknown workspace as a thrown Error", async () => {
+    await expect(invoke(CHANNELS.getGenerationPrompts, "nope")).rejects.toThrow(/Workspace not found/);
+    await expect(invoke(CHANNELS.saveGenerationPrompts, "nope", { prompts: { title: "t" } })).rejects.toThrow(/Workspace not found/);
   });
 });

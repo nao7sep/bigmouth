@@ -69,7 +69,11 @@ function serializeErrorInner(err: unknown, seen: WeakSet<object>): unknown {
   return { message: String(err) };
 }
 
+let logSink: ((level: LogLevel, message: string, fields?: LogFields) => void) | null = null;
+export function setLogSink(sink: typeof logSink): void { logSink = sink; }
+
 function emit(level: LogLevel, message: string, fields?: LogFields): void {
+  if (logSink) { logSink(level, message, fields); return; }
   const record: Record<string, unknown> = {
     time: formatUtcIso(utcNow()),
     level,

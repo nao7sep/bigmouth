@@ -39,8 +39,8 @@ vi.mock("@anthropic-ai/sdk/helpers/json-schema", () => ({
 }));
 
 const recorded = vi.hoisted(() => ({ calls: [] as unknown[] }));
-vi.mock("@main/core/services/recordsStore.js", () => ({
-  writeProviderCall: (call: unknown) => recorded.calls.push(call),
+vi.mock("@main/storageAccess.js", () => ({
+  writeProviderCall: async (call: unknown) => recorded.calls.push(call),
 }));
 
 import type { Middleware } from "@anthropic-ai/sdk";

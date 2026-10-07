@@ -6,26 +6,21 @@ import {
   showStartupFailure,
 } from "./dialogs.js";
 
-import { initAppDir } from "./core/services/workspaceStore.js";
-import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
-import { holdPendingFlushes, resumePendingFlushes } from "./core/services/postStore.js";
-import { QUIT_FLUSH_BOUND_MS, flushPendingEditsWithin } from "./core/services/quitFlush.js";
+import { initialize, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
+import { storageOwner } from "./storageOwner.js";
+const QUIT_FLUSH_BOUND_MS = 2000;
 import { cancelOpenMessageDialogs } from "./plain-message-dialog.js";
-import { initStateStore } from "./core/services/stateStore.js";
-import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
 import {
-  initLogger,
+  setLogSink,
   info,
   error as logError,
   serializeError,
-  getRecordsPath,
   isDebugLoggingEnabled,
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
 import { notifyRecordsChanged } from "./records-window.js";
 import { closeRecordsReader, initRecordsReader } from "./core/services/recordsReader.js";
-import { onRecordStored } from "./core/services/recordsStore.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata, forgetRefusedMetadata, holdsRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
@@ -40,6 +35,9 @@ app.setName("BigMouth");
 // and overwrite a newer index.json. One app process may own that state; a second
 // launch is routed back to its existing window before it can touch durable data.
 const ownsInstance = app.requestSingleInstanceLock();
+if (ownsInstance) setLogSink((level, message, fields) => {
+  void storageLog(level, message, fields).catch((error) => console.error("[bigmouth] Log could not reach storage", error));
+});
 
 let shuttingDown = false;
 
@@ -58,17 +56,11 @@ let systemShutdown = false;
 async function bootstrap(): Promise<void> {
   // First, so that even a failure below is reported in the computer's language.
   await detectComputerLanguage();
-  const appConfig = initAppDir();
-  initLogger(getRecordsDbPath(), getLogsDir());
-  initRecordsReader(getRecordsDbPath());
-  onRecordStored(notifyRecordsChanged);
-  // State store (view state: pane widths + last workspace) resolves state.json under
-  // the same storage root, so it must init after initAppDir(); after initLogger too,
-  // so a self-heal warning on an invalid file is actually logged.
-  initStateStore();
-  // App-wide settings carry the theme, applied before the window exists so its
-  // first frame, title bar, and background already match the saved choice.
-  const appSettings = initAppSettingsStore();
+  storageOwner.onRecordStored(notifyRecordsChanged);
+  const initialized = await initialize();
+  const appConfig = initialized.config;
+  const appSettings = initialized.settings;
+  initRecordsReader(initialized.recordsDbPath);
   applyThemePreference(appSettings.theme);
   // The menu, dialogs and the window's first text all speak the saved language.
   await applyLanguagePreference(appSettings.language);
@@ -77,7 +69,7 @@ async function bootstrap(): Promise<void> {
     version: __APP_VERSION__,
     workspaceCount: appConfig.workspaces.length,
     debug: isDebugLoggingEnabled(),
-    records: getRecordsPath(),
+    records: initialized.recordsPath,
   });
 
   handleAssetProtocol();
@@ -113,9 +105,8 @@ async function openMainWindow(): Promise<void> {
   window.on("session-end", () => {
     systemShutdown = true;
     shuttingDown = true;
-    holdPendingFlushes();
-    flushAtQuit();
-    exitApp();
+    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS));
+    exitAppWithin();
   });
   const ownerId = window.webContents.id;
   let askingToClose = false;
@@ -148,8 +139,11 @@ async function openMainWindow(): Promise<void> {
  * Writes the buffered post edits within the bound and logs what it could not
  * write. Returns whether they are all known to be on disk.
  */
-function flushAtQuit(): boolean {
-  const outcome = flushPendingEditsWithin();
+async function flushAtQuit(): Promise<boolean> {
+  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS));
+}
+
+function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>): boolean {
   switch (outcome.kind) {
     case "flushed":
       if (outcome.failures.length === 0) return true;
@@ -164,11 +158,20 @@ function flushAtQuit(): boolean {
   }
 }
 
-function exitApp(): void {
-  // The bounded flush owns the final durable writes. Process exit releases
-  // database handles without an unbounded synchronous close on the quit path.
+function terminateApp(): void {
   closeRecordsReader();
+  void storageOwner.stop();
   app.exit(0);
+}
+
+async function exitApp(): Promise<void> {
+  try { await storageOwner.finishAsync(1000); }
+  finally { terminateApp(); }
+}
+
+function exitAppWithin(): void {
+  try { storageOwner.finishWithin(1000); }
+  finally { terminateApp(); }
 }
 
 let handlingStartupFailure = false;
@@ -219,26 +222,25 @@ if (!ownsInstance) {
       return;
     }
     shuttingDown = true;
-    holdPendingFlushes();
 
     void (async () => {
       try {
         for (;;) {
-          const writeFailures = !flushAtQuit();
+          const writeFailures = !await flushAtQuit();
           const refusedMetadata = anyRefusedMetadata();
           if (systemShutdown || (!writeFailures && !refusedMetadata)) break;
           const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
           if (systemShutdown || choice === "quit-anyway") break;
           if (choice === "cancel") {
             shuttingDown = false;
-            resumePendingFlushes();
+            void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
             return;
           }
         }
-        exitApp();
+        await exitApp();
       } catch (error) {
         shuttingDown = false;
-        resumePendingFlushes();
+        void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
         logError("quit confirmation failed; quit cancelled", { error: serializeError(error) });
       }
     })();

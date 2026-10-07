@@ -1,8 +1,8 @@
 import { ipcMain } from "electron";
 
 import { CHANNELS, type MetadataGenerationResults } from "@shared/ipc";
-import { getPost } from "../core/services/postStore.js";
-import { getGenerationPrompts, getRoleCall } from "../core/services/configStore.js";
+import { getPost } from "../storageAccess.js";
+import { getGenerationPrompts, getRoleCall } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildMetadataGenerationRequest,
@@ -47,7 +47,7 @@ async function generateMetadata(
   content: string,
   signal: AbortSignal,
 ): Promise<MetadataGenerationResults> {
-  const ws = resolveWorkspace(wsId);
+  const ws = (await resolveWorkspace(wsId));
   const dir = ws.dataDirectory;
   if (!postId || !Array.isArray(fields) || fields.length === 0) {
     throw new Error("postId and fields[] are required");
@@ -60,9 +60,9 @@ async function generateMetadata(
   const validFields = normalizeMetadataFields(fields);
   if (validFields.length === 0) return results;
 
-  const post = getPost(dir, postId);
+  const post = (await getPost(dir, postId));
   if (!post) throw new Error("Post not found");
-  const roleCall = getRoleCall(ws, "metadata");
+  const roleCall = (await getRoleCall(ws, "metadata"));
   let provider;
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "metadata" });
@@ -73,7 +73,7 @@ async function generateMetadata(
 
   const postContent = content?.trim() ? content : post.content;
   const contentSource = content?.trim() ? "request" : "stored";
-  const customPrompts = getGenerationPrompts(dir).prompts;
+  const customPrompts = (await getGenerationPrompts(dir)).prompts;
 
   try {
     const request = buildMetadataGenerationRequest({
@@ -98,6 +98,7 @@ async function generateMetadata(
       userContent: request.userContent,
       schema: request.schema,
     });
+    signal.throwIfAborted();
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
       maxDurationMs: METADATA_GENERATION_MAX_MS,
       signal,

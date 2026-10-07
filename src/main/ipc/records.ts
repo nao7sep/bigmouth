@@ -11,8 +11,7 @@ import {
 } from "@shared/records";
 import { error as logError, serializeError } from "../core/services/logger.js";
 import { readRecords } from "../core/services/recordsReader.js";
-import { currentRecordsSession } from "../core/services/recordsStore.js";
-import { listWorkspaces } from "../core/services/workspaceStore.js";
+import { currentRecordsSession, listWorkspaces } from "../storageAccess.js";
 import { openRecordsWindow } from "../records-window.js";
 
 function assertRecordKind(value: unknown): asserts value is RecordKind {
@@ -66,14 +65,14 @@ export function registerRecordsHandlers(): void {
     }
   });
 
-  ipcMain.handle(CHANNELS.readRecordsPage, (_event, query: unknown) =>
+  ipcMain.handle(CHANNELS.readRecordsPage, async (_event, query: unknown) =>
     logged(CHANNELS.readRecordsPage, async () => {
       assertRecordsQuery(query);
       return readRecords({ op: "page", query });
     }),
   );
 
-  ipcMain.handle(CHANNELS.readRecordDetail, (_event, kind: unknown, id: unknown) =>
+  ipcMain.handle(CHANNELS.readRecordDetail, async (_event, kind: unknown, id: unknown) =>
     logged(CHANNELS.readRecordDetail, async () => {
       assertRecordKind(kind);
       if (!Number.isInteger(id)) throw new Error("Invalid IPC parameter: id must be an integer.");
@@ -81,11 +80,11 @@ export function registerRecordsHandlers(): void {
     }),
   );
 
-  ipcMain.handle(CHANNELS.readRecordSources, () =>
+  ipcMain.handle(CHANNELS.readRecordSources, async () =>
     logged(CHANNELS.readRecordSources, async (): Promise<RecordSources> => ({
-      currentSession: currentRecordsSession(),
+      currentSession: await currentRecordsSession(),
       sessions: await readRecords({ op: "sessions" }),
-      workspaces: listWorkspaces().map(({ id, name }) => ({ id, name })),
+      workspaces: (await listWorkspaces()).map(({ id, name }) => ({ id, name })),
     })),
   );
 }
