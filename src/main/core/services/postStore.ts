@@ -47,7 +47,7 @@ import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
 import { applyStatusTransition } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
-import { assetDir } from "./assetStore.js";
+import { assetDir, assertAssetDeletionAllowed } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { message, type Message } from "@shared/i18n/translate";
 
@@ -223,8 +223,9 @@ function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
  */
 export function queueContent(dataDir: string, id: string, content: string): void {
   const pending = pendingFor(dataDir, id);
+  const before = pendingAuthorSnapshot(dataDir, id, pending);
   pending.content = content;
-  pending.editedAt = utcNow();
+  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = utcNow();
   scheduleIfSavable(dataDir, id, pending);
 }
 
@@ -247,10 +248,23 @@ export function queueMetadata(dataDir: string, id: string, edits: EditablePostMe
     if (conflict) return conflict;
   }
   const pending = pendingFor(dataDir, id);
+  const before = pendingAuthorSnapshot(dataDir, id, pending);
   Object.assign(pending.frontMatter, edits);
-  pending.editedAt = utcNow();
+  if (before === null || before !== pendingAuthorSnapshot(dataDir, id, pending)) pending.editedAt = utcNow();
   scheduleIfSavable(dataDir, id, pending);
   return null;
+}
+
+function pendingAuthorSnapshot(dataDir: string, id: string, pending: PendingEdit): string | null {
+  try {
+    const post = readFromDisk(dataDir, id);
+    if (!post) return null;
+    overlayPending(post, pending);
+    return contentSnapshot(post);
+  } catch {
+    // A currently unreadable file must not discard the user's buffered edit.
+    return null;
+  }
 }
 
 function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): void {
@@ -649,6 +663,10 @@ export function deletePost(dataDir: string, id: string): boolean {
   const entry = index.getEntry(dataDir, id);
   if (!entry) return false;
 
+  const filePath = filePathFor(dataDir, entry);
+  if (fs.existsSync(filePath)) readPost(filePath);
+  assertAssetDeletionAllowed(dataDir, id);
+
   // Deleting a post deliberately discards its edits, buffered ones included.
   clearPending(dataDir, id);
 
@@ -658,7 +676,6 @@ export function deletePost(dataDir: string, id: string): boolean {
   // — mirroring renameTarget.
   clearSourceReferences(dataDir, id);
 
-  const filePath = filePathFor(dataDir, entry);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   index.removeEntry(dataDir, id);
 

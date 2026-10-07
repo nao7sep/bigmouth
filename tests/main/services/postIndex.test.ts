@@ -601,6 +601,15 @@ describe("post index format version", () => {
     expect(indexBytes()).toBe(current);
   });
 
+  it("preserves an externally replaced future index after its cache was warmed", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const body = JSON.stringify({ formatVersion: 999, entries: { future: true } });
+    fs.writeFileSync(indexFile(), body);
+    changeStatus(dataDir, first.frontMatter.id, "verified");
+    expect(fs.readFileSync(indexFile(), "utf8")).toBe(body);
+    expect(getPost(dataDir, first.frontMatter.id)?.frontMatter.status).toBe("verified");
+  });
+
   it("keeps the index in memory over one a newer version wrote, leaving it byte-identical", () => {
     const first = createPost(dataDir, "blogger", "en");
     const body = JSON.stringify({ formatVersion: 2, entries: { future: true } });

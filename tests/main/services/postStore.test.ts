@@ -46,6 +46,57 @@ function publishableDraft(): string {
   return created.frontMatter.id;
 }
 
+describe("canonical edit admission and committed writes", () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); flushAllPendingEdits(); });
+
+  it("keeps the authored edit time through duplicate and canonical-equivalent packets", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T01:00:00.000Z"));
+    const post = createPost(dataDir, "blogger", "en");
+    vi.setSystemTime(new Date("2026-10-07T01:01:00.000Z"));
+    queueContent(dataDir, post.frontMatter.id, "authored text");
+    queueMetadata(dataDir, post.frontMatter.id, { title: "Authored title" });
+    vi.setSystemTime(new Date("2026-10-07T01:09:00.000Z"));
+    queueContent(dataDir, post.frontMatter.id, "\nauthored text\n\n");
+    queueMetadata(dataDir, post.frontMatter.id, { title: "Authored title", titleEn: "stripped for English" });
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
+    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.updatedAtUtc).toBe("2026-10-07T01:01:00.000Z");
+  });
+
+  it("reports a committed post save when persisting the derived index fails", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "durable body");
+    const original = fs.renameSync;
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(to) === path.join(dataDir, "posts", "index.json")) throw new Error("derived failure");
+      return original(from, to);
+    });
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
+    expect(copyPendingEdits().some((edit) => edit.id === post.frontMatter.id)).toBe(false);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("durable body");
+  });
+
+  it.each(["post", "assets"])("refuses deletion before touching edits or referrers for future %s formats", (kind) => {
+    const source = createPost(dataDir, "blogger", "en");
+    const referrer = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    queueContent(dataDir, source.frontMatter.id, "keep buffered text");
+    const originalPost = fs.readFileSync(source.filePath, "utf8");
+    if (kind === "post") {
+      fs.writeFileSync(source.filePath, fs.readFileSync(source.filePath, "utf8").replace("formatVersion: 1", "formatVersion: 999"));
+    } else {
+      const folder = path.join(dataDir, "assets", source.frontMatter.id);
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(path.join(folder, "meta.json"), JSON.stringify({ formatVersion: 999, assets: [] }));
+    }
+    expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow();
+    expect(fs.existsSync(source.filePath)).toBe(true);
+    expect(copyPendingEdits().some((edit) => edit.id === source.frontMatter.id)).toBe(true);
+    expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
+    fs.writeFileSync(source.filePath, originalPost);
+    flushPostEdits(dataDir, source.frontMatter.id);
+  });
+});
+
 describe("createPost", () => {
   it("creates a draft directly under posts/ and in the index", () => {
     const post = createPost(dataDir, "blogger", "en");

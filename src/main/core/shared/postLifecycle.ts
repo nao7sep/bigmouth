@@ -23,7 +23,7 @@ export function applyStatusTransition(fm: PostFrontMatter, newStatus: PostStatus
   const source = fm.status;
   if (source === newStatus) return;
 
-  const stamp = formatUtcIso(now);
+  const stamp = notBefore(formatUtcIso(now), fm.createdAtUtc);
   // Which times the source status holds, so each is kept rather than re-set.
   const holdsVerified = source === "verified" || holdsPublicationTime(source);
   const holdsPublished = holdsPublicationTime(source);

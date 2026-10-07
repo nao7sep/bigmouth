@@ -72,6 +72,12 @@ function expected(cell: Cell, key: TimeKey): string | undefined {
   return undefined;
 }
 
+it.each(["discarded", "verified", "published", "retired"] as const)("clamps new %s times to Created after a clock reversal", (status) => {
+  const fm = postIn("draft");
+  applyStatusTransition(fm, status, new Date("2025-01-01T00:00:00.000Z"));
+  for (const key of HELD[status]) expect(fm[key]).toBe(fm.createdAtUtc);
+});
+
 describe("POST_STATUSES", () => {
   it("is the five statuses in the conventions' order, and recognizes nothing else", () => {
     expect(POST_STATUSES).toEqual(["draft", "discarded", "verified", "published", "retired"]);
