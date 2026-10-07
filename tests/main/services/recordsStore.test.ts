@@ -76,6 +76,21 @@ describe("stored-record signal", () => {
 
 // store-recovery-conventions: records.sqlite3's format version.
 describe("records database format version", () => {
+  it("falls back when another connection upgrades the marker during the session", () => {
+    const file = path.join(root, "records.sqlite3");
+    openRecords(file, path.join(root, "logs"), new Date());
+    const other = new DatabaseSync(file);
+    other.exec("PRAGMA user_version = 99");
+    const stored = vi.fn();
+    onRecordStored(stored);
+    line();
+    expect(stored).not.toHaveBeenCalled();
+    expect(other.prepare("SELECT COUNT(*) AS n FROM log_records").get()).toEqual({ n: 0 });
+    expect(other.prepare("PRAGMA user_version").get()).toEqual({ user_version: 99 });
+    expect(fs.readdirSync(path.join(root, "logs"))).toHaveLength(1);
+    other.close();
+  });
+
   function userVersion(file: string): number {
     const db = new DatabaseSync(file);
     try {

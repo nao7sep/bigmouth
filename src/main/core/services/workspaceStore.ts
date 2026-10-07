@@ -13,7 +13,7 @@ import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
-import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, assertJsonWritable, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import {
@@ -110,6 +110,7 @@ export function initAppDir(): AppConfig {
 }
 
 function writeAppConfig(): void {
+  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
   // folders themselves survive, so it is exactly the managed text the backup exists to protect.
@@ -249,6 +250,7 @@ function resolveWorkspaceName(name: string | undefined, dataDirectory: string | 
 }
 
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
+  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const id = nanoid();
 
@@ -295,6 +297,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
 }
 
 export function openWorkspace(dataDirectory: string, name?: string): Workspace {
+  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const dir = expandWorkspacePath(dataDirectory);
   const existing = findWorkspaceByDirectory(dir);
@@ -354,6 +357,7 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
  * failure modes, not a field on a rename.
  */
 export function updateWorkspace(id: string, updates: { name: string }): Workspace | null {
+  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const ws = config.workspaces.find((w) => w.id === id);
   if (!ws) return null;
@@ -364,6 +368,7 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
 }
 
 export function deleteWorkspace(id: string): boolean {
+  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const index = config.workspaces.findIndex((w) => w.id === id);
   if (index === -1) return false;

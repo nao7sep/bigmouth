@@ -18,8 +18,6 @@ import { serializeError, warn } from "./logger.js";
 let configPath: string | null = null;
 let current: AppSettings | null = null;
 let notice: Message | null = null;
-// Set when a newer version of BigMouth wrote the file: it is never written.
-let newerFormat: NewerFormatError | null = null;
 
 function requirePath(): string {
   if (!configPath) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
@@ -34,7 +32,6 @@ function requirePath(): string {
 export function initAppSettingsStore(): AppSettings {
   configPath = getAppConfigPath();
   notice = null;
-  newerFormat = null;
 
   const read = readJsonStore("appConfig", configPath);
   switch (read.kind) {
@@ -43,7 +40,6 @@ export function initAppSettingsStore(): AppSettings {
       return current;
     case "newer":
       // Left exactly as it is, so the version that wrote it can still read it.
-      newerFormat = new NewerFormatError(configPath, read.version);
       warn("config.json was written by a newer version of BigMouth; left unchanged, app settings use their built-ins", {
         path: configPath,
         formatVersion: read.version,
@@ -92,7 +88,9 @@ function effectiveSettings(map: Record<string, unknown>): AppSettings {
 
 export function saveAppSettings(next: Partial<AppSettings>): AppSettings {
   if (!current) throw new Error("appSettingsStore not initialized — call initAppSettingsStore() first");
-  if (newerFormat) throw newerFormat;
+  const read = readJsonStore("appConfig", requirePath());
+  if (read.kind === "newer") throw new NewerFormatError(requirePath(), read.version);
+  if (read.kind === "unreadable") recover(requirePath(), read.detail, read.error);
   const normalized = normalizeAppSettings({ ...current, ...next });
   writeSetFile("appConfig", requirePath(), setsDifferingFromBuiltIn(normalized, defaultAppSettings(), APP_SETTINGS_SET_KEYS));
   current = normalized;

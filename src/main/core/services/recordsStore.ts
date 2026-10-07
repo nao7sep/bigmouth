@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilenameMs, formatUtcIso } from "../shared/timestamps.js";
-import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
+import { NewerFormatError, assertSqliteWritable, openSqliteStore } from "../shared/storeFormat.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS log_records (
@@ -86,7 +86,6 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     db = openSqliteStore("records", dbPath, (opened) => {
-      opened.exec("PRAGMA journal_mode = WAL");
       opened.exec(SCHEMA);
     });
   } catch (err) {
@@ -164,7 +163,15 @@ function insertOrFallBack(sql: string, values: (string | null)[], line: () => st
   if (open.db) {
     let stored = false;
     try {
-      open.db.prepare(sql).run(...values);
+      open.db.exec("BEGIN IMMEDIATE");
+      try {
+        assertSqliteWritable("records", open.dbPath, open.db);
+        open.db.prepare(sql).run(...values);
+        open.db.exec("COMMIT");
+      } catch (error) {
+        try { open.db.exec("ROLLBACK"); } catch { /* Preserve the insert failure. */ }
+        throw error;
+      }
       stored = true;
     } catch (err) {
       reportFailure("records database write failed", err);

@@ -65,6 +65,18 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+it("refuses a cached backup connection whose marker was upgraded externally", () => {
+  const file = path.join(root, "document.md");
+  backupStore.record(file, Buffer.from("before"));
+  const other = new DatabaseSync(path.join(root, "backups.sqlite3"));
+  other.exec("PRAGMA user_version = 99");
+  const count = other.prepare("SELECT COUNT(*) AS n FROM backups").get();
+  backupStore.record(file, Buffer.from("after"));
+  expect(other.prepare("SELECT COUNT(*) AS n FROM backups").get()).toEqual(count);
+  expect(other.prepare("PRAGMA user_version").get()).toEqual({ user_version: 99 });
+  other.close();
+});
+
 describe("backup store — BLOB byte-fidelity", () => {
   it("stores the exact bytes written, preserving a CR/LF pair and a non-UTF-8 byte", () => {
     // A CR/LF (0x0D 0x0A) that a text round-trip would risk normalizing, plus a lone 0xFF that is not

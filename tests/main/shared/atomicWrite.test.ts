@@ -19,10 +19,48 @@ describe("writeFileAtomic", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it.runIf(process.platform !== "win32")("tightens explicit permissions even when content is unchanged", () => {
+    const target = path.join(dir, "secret.json");
+    fs.writeFileSync(target, "same", { mode: 0o644 });
+    expect(writeFileAtomic(target, "same", 0o600)).toBe(false);
+    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+  });
+
+  it("does not overwrite or clean up a colliding stage", () => {
+    const target = path.join(dir, "data.json");
+    const realOpen = fs.openSync.bind(fs);
+    let collision = "";
+    const spy = vi.spyOn(fs, "openSync").mockImplementation((file, flags, mode) => {
+      if (flags === "wx") {
+        collision = String(file);
+        fs.writeFileSync(file, "owned by another writer");
+      }
+      return realOpen(file, flags, mode);
+    });
+    try { expect(() => writeFileAtomic(target, "new")).toThrow(); }
+    finally { spy.mockRestore(); }
+    expect(fs.readFileSync(collision, "utf8")).toBe("owned by another writer");
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
   it("writes the content to the target", () => {
     const target = path.join(dir, "data.json");
     writeFileAtomic(target, "hello world");
     expect(fs.readFileSync(target, "utf-8")).toBe("hello world");
+  });
+
+  it.skipIf(process.platform === "win32")("keeps an ordinary stage private until its bytes are complete", () => {
+    const target = path.join(dir, "ordinary.json");
+    fs.writeFileSync(target, "before", { mode: 0o640 });
+    const write = fs.writeFileSync;
+    const during: number[] = [];
+    const spy = vi.spyOn(fs, "writeFileSync").mockImplementation((file, ...args) => {
+      if (typeof file === "number") during.push(fs.fstatSync(file).mode & 0o777);
+      return write(file, ...args);
+    });
+    try { writeFileAtomic(target, "after"); } finally { spy.mockRestore(); }
+    expect(during).toEqual([0o600]);
+    expect(fs.statSync(target).mode & 0o777).toBe(0o640);
   });
 
   it("leaves no orphaned temp file in the target directory", () => {

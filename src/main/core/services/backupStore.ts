@@ -26,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { getBackupsDbPath } from "./storagePaths.js";
-import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
+import { NewerFormatError, assertSqliteWritable, openSqliteStore } from "../shared/storeFormat.js";
 import { warn as logWarn, serializeError } from "./logger.js";
 
 /** The store file under the resolved storage root. Computed lazily (not frozen into a module constant
@@ -85,12 +85,12 @@ function ensureOpen(): DatabaseSync | null {
     // A store a newer version of BigMouth wrote is refused before anything is written to it, and left
     // exactly as it is (store-recovery-conventions).
     db = openSqliteStore("backups", file, (opened) => {
-      opened.exec("PRAGMA journal_mode = WAL");
-      // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
-      // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
-      opened.exec("PRAGMA busy_timeout = 5000");
       opened.exec(SCHEMA);
     });
+    // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
+    // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
+    db.exec("PRAGMA busy_timeout = 5000");
+
   } catch (err) {
     if (err instanceof NewerFormatError) {
       logWarn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", {
@@ -138,6 +138,7 @@ export function record(absolutePath: string, bytes: Buffer): void {
     // wait before it reads, so it sees the first recorder's committed row.
     store.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
+    assertSqliteWritable("backups", storeFile(), store);
     const latest = store
       .prepare("SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1")
       .get(absolutePath) as { h: string } | undefined;

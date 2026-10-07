@@ -126,7 +126,6 @@ function emptyFile(): ApiKeysFile {
  * exactly as it is; a read never throws (api-key-storage-conventions).
  */
 function readFile(filePath: string): { data: ApiKeysFile; refusal: Error | null } {
-  ensureSecureMode(filePath);
   const read = readJsonStore("apiKeys", filePath);
   switch (read.kind) {
     case "absent":
@@ -144,7 +143,10 @@ function readFile(filePath: string): { data: ApiKeysFile; refusal: Error | null 
       return { data: emptyFile(), refusal: setAside(filePath, read.detail, read.error) };
     case "read": {
       const normalized = normalize(read.value);
-      if (normalized) return { data: normalized, refusal: null };
+      if (normalized) {
+        ensureSecureMode(filePath);
+        return { data: normalized, refusal: null };
+      }
       return { data: emptyFile(), refusal: setAside(filePath, "it has the wrong shape", null) };
     }
   }

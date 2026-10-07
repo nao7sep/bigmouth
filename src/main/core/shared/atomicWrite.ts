@@ -14,10 +14,8 @@
  * Replacing an existing file carries its permission mode onto the temp before the rename. Its extended
  * attributes and Finder tags are not carried: Node cannot copy them without a native dependency.
  *
- * An optional `mode` is applied at creation — the temp file is opened with those permissions, so the
- * secret content never touches disk at a looser default for even an instant (a chmod after the write
- * would leave exactly that window). Used for the `0600` secrets file; the umask only clears bits, so
- * `0600` stays `0600`.
+ * Stages stay private while their bytes are written (storage-path-conventions).
+ * The explicit or inherited destination mode is applied only after the write.
  *
  * {@link writeManagedText} is the ONE place a durable managed-text write records to the data-backup
  * store. It writes atomically, and STRICTLY AFTER the rename lands records the exact bytes it just
@@ -39,7 +37,10 @@ import { record } from "../services/backupStore.js";
  * (content-lifecycle-conventions: a write that changes nothing is skipped).
  */
 export function writeFileAtomic(filePath: string, content: string | Buffer, mode?: number): boolean {
-  if (holdsBytes(filePath, content)) return false;
+  if (holdsBytes(filePath, content)) {
+    if (mode !== undefined) fs.chmodSync(filePath, mode);
+    return false;
+  }
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const stem = path.basename(filePath, ext);
@@ -47,17 +48,20 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   // A replace keeps the file's permissions (content-lifecycle-conventions); an
   // explicit mode, the secrets file's, wins over them.
   const keptMode = mode === undefined ? existingMode(filePath) : undefined;
+  let created = false;
+  let fd: number | undefined;
   try {
-    fs.writeFileSync(tempPath, content, mode !== undefined ? { mode } : undefined);
-    if (keptMode !== undefined) fs.chmodSync(tempPath, keptMode);
+    fd = fs.openSync(tempPath, "wx", 0o600);
+    created = true;
+    fs.writeFileSync(fd, content);
+    fs.fchmodSync(fd, mode ?? keptMode ?? (0o666 & ~process.umask()));
+    fs.closeSync(fd);
+    fd = undefined;
     fs.renameSync(tempPath, filePath);
   } catch (err) {
     // A write that fails removes its own temp (storage-path-conventions).
-    try {
-      fs.rmSync(tempPath, { force: true });
-    } catch {
-      // The save's own failure is the one to report.
-    }
+    try { if (fd !== undefined) fs.closeSync(fd); } catch { /* Preserve the save failure. */ }
+    try { if (created) fs.rmSync(tempPath, { force: true }); } catch { /* Preserve the save failure. */ }
     throw err;
   }
   return true;

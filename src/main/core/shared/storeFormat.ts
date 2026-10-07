@@ -7,6 +7,8 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import { nanoid } from "nanoid";
 import { DatabaseSync } from "node:sqlite";
 import { message } from "@shared/i18n/translate";
 import { carryingText } from "@shared/i18n/carriedMessage";
@@ -108,25 +110,65 @@ export function openSqliteStore(
   filePath: string,
   prepare: (db: DatabaseSync) => void,
 ): DatabaseSync {
-  const db = new DatabaseSync(filePath);
+  // Only absence authorizes creation. An existing empty database has no marker.
+  const absent = !fs.existsSync(filePath);
+  const stage = absent
+    ? path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}-${nanoid()}.tmp`)
+    : filePath;
+  let db: DatabaseSync | undefined;
+  let created = false;
   try {
-    const recorded = sqliteUserVersion(db);
-    if (isNewerThanBuild(format, recorded)) throw new NewerFormatError(filePath, recorded);
-    // SQLite starts every database at 0: with no tables yet it is new, and with
-    // tables it is a store without its version.
-    const isNew = recorded === 0 && db.prepare("SELECT 1 FROM sqlite_master LIMIT 1").get() === undefined;
-    if (recorded === 0 && !isNew) throw new Error(`${filePath} has no format version (user_version 0); it was left unchanged.`);
+    if (absent) {
+      fs.closeSync(fs.openSync(stage, "wx"));
+      created = true;
+    } else {
+      // Admission uses a read-only handle before connection setup can mutate bytes.
+      const probe = new DatabaseSync(filePath, { readOnly: true });
+      try { assertSqliteWritable(format, filePath, probe); } finally { probe.close(); }
+    }
+    db = new DatabaseSync(stage);
+    db.exec("BEGIN IMMEDIATE");
+    if (!absent) assertSqliteWritable(format, filePath, db);
     prepare(db);
-    if (isNew) db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);
+    if (absent) db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);
+    db.exec("COMMIT");
+    db.exec("PRAGMA journal_mode = WAL");
+    if (absent) {
+      db.close();
+      db = undefined;
+      // Exclusive publication cannot overwrite a store created by another process.
+      fs.linkSync(stage, filePath);
+      fs.unlinkSync(stage);
+      created = false;
+      db = new DatabaseSync(filePath);
+      assertSqliteWritable(format, filePath, db);
+    }
     return db;
   } catch (error) {
-    try {
-      db.close();
-    } catch {
-      // The failure being thrown is the useful diagnostic.
+    try { db?.close(); } catch { /* Preserve the original diagnostic. */ }
+    if (created) {
+      for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+        try { fs.rmSync(stage + suffix, { force: true }); } catch { /* Best-effort stage cleanup. */ }
+      }
     }
     throw error;
   }
+}
+
+/** Rechecks the current marker under the caller's write transaction. */
+export function assertSqliteWritable(format: StoreFormat, filePath: string, db: DatabaseSync): void {
+  const recorded = sqliteUserVersion(db);
+  if (isNewerThanBuild(format, recorded)) throw new NewerFormatError(filePath, recorded);
+  if (!Number.isInteger(recorded) || recorded < 1) {
+    throw new UnreadableStoreError(filePath, `its user_version ${recorded} is not a whole number from 1`);
+  }
+}
+
+/** Checks the current JSON marker before a cached store can overwrite it. */
+export function assertJsonWritable(format: StoreFormat, filePath: string): void {
+  const read = readJsonStore(format, filePath);
+  if (read.kind === "newer") throw new NewerFormatError(filePath, read.version);
+  if (read.kind === "unreadable") throw new UnreadableStoreError(filePath, read.detail, read.error);
 }
 
 /** A database's `user_version`; SQLite's 0 means none was set. */

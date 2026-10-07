@@ -32,6 +32,15 @@ afterEach(() => {
 });
 
 describe("apiKeys secret store", () => {
+  it.runIf(process.platform !== "win32")("leaves a future secret store permissions and bytes untouched", () => {
+    const bytes = '{"formatVersion":99,"workspaces":{}}';
+    fs.writeFileSync(keyFile, bytes, { mode: 0o644 });
+    expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+    expect(() => writeApiKey(keyFile, W1, "anthropic", "key")).toThrow(NewerFormatError);
+    expect(fs.readFileSync(keyFile, "utf8")).toBe(bytes);
+    expect(fs.statSync(keyFile).mode & 0o777).toBe(0o644);
+  });
+
   it("writes, resolves, and clears a key; stores it obfuscated under the provider id, never plaintext", () => {
     expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);

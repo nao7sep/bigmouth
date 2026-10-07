@@ -49,6 +49,15 @@ afterEach(() => {
 });
 
 describe("appSettingsStore", () => {
+  it("refuses a future store installed after initialization", () => {
+    initAppSettingsStore();
+    const bytes = '{"formatVersion":99,"theme":"future"}';
+    fs.writeFileSync(configPath(), bytes);
+    expect(() => saveAppSettings({ theme: "dark" })).toThrow(NewerFormatError);
+    expect(fs.readFileSync(configPath(), "utf8")).toBe(bytes);
+    expect(getAppSettingsLoad().settings.theme).toBe("system");
+  });
+
   it("keeps defaults in memory on first launch", () => {
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
     expect(fs.existsSync(configPath())).toBe(false);

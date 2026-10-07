@@ -57,6 +57,18 @@ afterEach(() => {
 // it was left in place. A bare JSON.parse used to throw a SyntaxError that
 // reached the user as "Unexpected end of JSON input".
 describe("an unreadable registry names itself", () => {
+  it("refuses registry mutations after a future file replaces its cached store", () => {
+    const workspace = createWorkspace("Original");
+    const file = path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
+    const bytes = '{"formatVersion":99,"workspaces":[]}';
+    fs.writeFileSync(file, bytes);
+    expect(() => updateWorkspace(workspace.id, { name: "Changed" })).toThrow(NewerFormatError);
+    expect(() => deleteWorkspace(workspace.id)).toThrow(NewerFormatError);
+    expect(() => createWorkspace("Another")).toThrow(NewerFormatError);
+    expect(getWorkspace(workspace.id)?.name).toBe("Original");
+    expect(fs.readFileSync(file, "utf8")).toBe(bytes);
+  });
+
   function withRegistry(contents: string): () => void {
     const home = tempDir("halt");
     process.env.BIGMOUTH_DATA_DIR = home;

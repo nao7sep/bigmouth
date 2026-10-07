@@ -48,6 +48,14 @@ describe("stateStore — first run", () => {
 });
 
 describe("stateStore — persistence", () => {
+  it("keeps updates in memory when a future store replaces the loaded file", () => {
+    initStateStore();
+    const bytes = '{"formatVersion":99,"zoomLevel":100}';
+    fs.writeFileSync(statePath(), bytes);
+    expect(updateUiState({ zoomLevel: 2 }).zoomLevel).toBe(2);
+    expect(fs.readFileSync(statePath(), "utf8")).toBe(bytes);
+  });
+
   it("writes state.json on the first update and reads it back on re-init", () => {
     initStateStore();
     const next = updateUiState({ activeWorkspaceId: "ws-42", paneLeftWidth: 500 });

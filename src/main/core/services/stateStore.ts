@@ -30,8 +30,6 @@ import { serializeError, warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
 let uiState: UiState | null = null;
-// Set when a newer version of BigMouth wrote state.json: it is never written.
-let newerFormat = false;
 
 /**
  * Coerces an arbitrary parsed value into a valid UiState, replacing any bad or
@@ -75,7 +73,6 @@ function normalizeUiState(raw: unknown): UiState {
  */
 export function initStateStore(): UiState {
   stateJsonPath = getStateJsonPath();
-  newerFormat = false;
   uiState = defaultUiState();
 
   const read = readJsonStore("state", stateJsonPath);
@@ -84,7 +81,6 @@ export function initStateStore(): UiState {
       // First run (or the user cleared it): defaults, written lazily on first update.
       break;
     case "newer":
-      newerFormat = true;
       warn("state.json was written by a newer version of BigMouth; left unchanged, view state is kept in memory", {
         path: stateJsonPath,
         formatVersion: read.version,
@@ -129,7 +125,8 @@ export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
   const next = normalizeUiState({ ...ensureLoaded(), ...patch });
   uiState = next;
-  if (newerFormat) return next;
+  const read = readJsonStore("state", stateJsonPath);
+  if (read.kind === "newer") return next;
   // not recorded: state.json is volatile state and nothing else (pane widths, zoom,
   // last selections), so the data-backup conventions keep it out of backups.sqlite3.
   // It is still written atomically (temp file, then rename).
