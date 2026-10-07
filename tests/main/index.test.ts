@@ -229,6 +229,21 @@ afterEach(async () => {
 });
 
 describe("quit flushes the write-behind buffer", () => {
+  it("cancels a quit whose confirmation fails and releases its busy claim", async () => {
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "still owned");
+    flush.plan = ["stall"];
+    shell.dialogAnswer = Promise.reject(new Error("dialog could not open"));
+    await quit();
+    expect(shell.exits).toEqual([]);
+    await vi.waitFor(() => expect(JSON.stringify(shell.loggedErrors)).toContain("quit confirmation failed; quit cancelled"));
+    shell.dialogAnswer = null;
+    await quit();
+    expect(shell.exits).toEqual([0]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("still owned");
+  });
+
   it("writes buffered text to disk and exits", async () => {
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");

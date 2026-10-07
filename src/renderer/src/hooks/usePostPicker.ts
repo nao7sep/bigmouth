@@ -27,25 +27,35 @@ export function usePostPicker(
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Message | null>(null);
   const loadingMoreRef = useRef(false);
+  const generationRef = useRef(0);
 
   const keep = (posts: PostSummary[]) =>
     excludeId ? posts.filter((p) => p.frontMatter.id !== excludeId) : posts;
 
   useEffect(() => {
-    loadingMoreRef.current = false;
+    const generation = ++generationRef.current;
+    loadingMoreRef.current = true;
     setLoadingMore(false);
     setError(null);
+    setOffsets(FIRST_PAGES);
+    setTotals(FIRST_PAGES);
+    setAllPosts([]);
     listPosts(FIRST_PAGES, batchSize)
       .then((data) => {
+        if (generation !== generationRef.current) return;
         setAllPosts(keep(POST_STATUSES.flatMap((status) => data[status].posts)));
         setOffsets(pagedValues((status) => data[status].posts.length));
         setTotals(pagedValues((status) => data[status].total));
       })
-      .catch((err) => setError(presentFailure(
-        message("picker.loadFailed"),
-        "renderer: post picker load failed",
-        err,
-      )));
+      .catch((err) => {
+        if (generation !== generationRef.current) return;
+        setError(presentFailure(message("picker.loadFailed"), "renderer: post picker load failed", err));
+      })
+      .finally(() => {
+        if (generation !== generationRef.current) return;
+        loadingMoreRef.current = false;
+      });
+    return () => { generationRef.current += 1; };
   }, [batchSize, excludeId]);
 
   const canLoadMore = PAGED_POST_STATUSES.some((status) => offsets[status] < totals[status]);
@@ -61,9 +71,11 @@ export function usePostPicker(
     // One fetch advances every paged section from its own offset, so the
     // combined picker list keeps growing past the first page.
     const requested = offsets;
+    const generation = generationRef.current;
 
     listPosts(requested, batchSize)
       .then((data) => {
+        if (generation !== generationRef.current) return;
         const incoming = keep(PAGED_POST_STATUSES.flatMap((status) => data[status].posts));
         setAllPosts((prev) => {
           const seen = new Set(prev.map((p) => p.frontMatter.id));
@@ -73,12 +85,12 @@ export function usePostPicker(
           pagedValues((status) => Math.max(current[status], requested[status] + data[status].posts.length)),
         );
       })
-      .catch((err) => setError(presentFailure(
-        message("picker.moreFailed"),
-        "renderer: post picker pagination failed",
-        err,
-      )))
+      .catch((err) => {
+        if (generation !== generationRef.current) return;
+        setError(presentFailure(message("picker.moreFailed"), "renderer: post picker pagination failed", err));
+      })
       .finally(() => {
+        if (generation !== generationRef.current) return;
         loadingMoreRef.current = false;
         setLoadingMore(false);
       });

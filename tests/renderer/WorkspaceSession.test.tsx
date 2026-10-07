@@ -779,6 +779,29 @@ describe("WorkspaceSession modals", () => {
 });
 
 describe("WorkspaceSession load more / log", () => {
+  it("claims a page before waiting and drops it when a newer post mutation changes its basis", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => { fireEvent.click(getByTestId("left-select-a")); });
+    mockListPosts.mockClear();
+    let answer!: (response: PostListResponse) => void;
+    mockListPosts.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    try {
+      act(() => {
+        fireEvent.click(getByTestId("left-more-pub"));
+        fireEvent.click(getByTestId("left-more-pub"));
+      });
+      expect(mockListPosts).toHaveBeenCalledTimes(1);
+      act(() => { fireEvent.click(getByTestId("center-published")); });
+    } finally {
+      await act(async () => {
+        answer({ ...LIST, published: { posts: [summary("p2", "published")], total: 3, offset: 1 } });
+      });
+    }
+    expect(getByTestId("left-published").textContent).toBe("a,p1");
+    expect(getByTestId("left-published-total").textContent).toBe("4");
+    expect(getByTestId("left-drafts").textContent).toBe("b");
+  });
+
   it("loads the next published page, appending it", async () => {
     const { getByTestId } = await mountLoaded();
     mockListPosts.mockClear();

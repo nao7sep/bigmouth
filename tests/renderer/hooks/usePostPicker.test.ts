@@ -60,6 +60,17 @@ afterEach(() => {
 });
 
 describe("usePostPicker", () => {
+  it("ignores a previous picker basis resolving after the replacement load", async () => {
+    let answerOld!: (value: ReturnType<typeof page>) => void;
+    mockListPosts.mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve; }));
+    mockListPosts.mockResolvedValueOnce(page({ draft: [summary("current")] }));
+    const { result, rerender } = renderHook(({ size }) => usePostPicker(size), { initialProps: { size: 1 } });
+    rerender({ size: 2 });
+    await settled();
+    await act(async () => { answerOld(page({ draft: [summary("obsolete")] })); });
+    expect(result.current.posts.map((post) => post.frontMatter.id)).toEqual(["current"]);
+  });
+
   it("combines every section, in status order, on initial load", async () => {
     mockListPosts.mockResolvedValueOnce(
       page({

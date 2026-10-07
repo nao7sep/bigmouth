@@ -157,6 +157,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // Counts the app's own writes to the lists, so a background reread that was
     // out while one happened knows it is older and is dropped.
     const listVersionRef = useRef(0);
+    const listRequestRef = useRef(0);
+    const pageRequestsRef = useRef(new Map<PagedPostStatus, number>());
 
     // Eagerly, because the next mutation may land before React re-renders.
     const commitLists = useCallback((next: PostLists) => {
@@ -206,24 +208,33 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // replaced.
     const loadPosts = useCallback(
       async (append?: PagedPostStatus) => {
+        if (append && pageRequestsRef.current.has(append)) return;
+        const request = ++listRequestRef.current;
+        if (append) pageRequestsRef.current.set(append, request);
+        const version = listVersionRef.current;
         const offsets = append
           ? { ...FIRST_PAGES, [append]: listsRef.current[append].posts.length }
           : FIRST_PAGES;
-        const data = await listPosts(offsets, pubBatchSize);
+        try {
+          const data = await listPosts(offsets, pubBatchSize);
+          if (request !== listRequestRef.current || version !== listVersionRef.current) return;
 
-        listVersionRef.current += 1;
-        setUnreadablePosts(data.unreadable ?? []);
-        const fresh = listsFromResponse(data);
-        if (append) {
-          const current = listsRef.current;
-          for (const status of PAGED_POST_STATUSES) {
-            fresh[status] =
-              status === append
-                ? { posts: [...current[status].posts, ...data[status].posts], total: data[status].total }
-                : current[status];
+          listVersionRef.current += 1;
+          setUnreadablePosts(data.unreadable ?? []);
+          const fresh = listsFromResponse(data);
+          if (append) {
+            const current = listsRef.current;
+            for (const status of PAGED_POST_STATUSES) {
+              fresh[status] =
+                status === append
+                  ? { posts: [...current[status].posts, ...data[status].posts], total: data[status].total }
+                  : current[status];
+            }
           }
+          commitLists(fresh);
+        } finally {
+          if (append && pageRequestsRef.current.get(append) === request) pageRequestsRef.current.delete(append);
         }
-        commitLists(fresh);
       },
       [pubBatchSize, commitLists]
     );
@@ -235,11 +246,12 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      * as it is, unsaved edits and all; only the lists are reread.
      */
     const refreshPosts = useCallback(async () => {
+      const request = ++listRequestRef.current;
       const version = listVersionRef.current;
       const shown = (status: PagedPostStatus) => Math.max(pubBatchSize, listsRef.current[status].posts.length);
       const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)));
       // The app changed the lists while this read was out: they are newer.
-      if (listVersionRef.current !== version) return;
+      if (request !== listRequestRef.current || listVersionRef.current !== version) return;
       setUnreadablePosts(data.unreadable ?? []);
 
       const fresh = listsFromResponse(data);
@@ -248,6 +260,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       }
       commitLists(fresh);
     }, [pubBatchSize, commitLists]);
+
+    useEffect(() => () => {
+      listRequestRef.current += 1;
+      pageRequestsRef.current.clear();
+    }, [pubBatchSize]);
 
     // The window coming back to the front is when edits made elsewhere matter.
     useEffect(() => {

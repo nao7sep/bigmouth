@@ -16,7 +16,6 @@ import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
 import {
   initLogger,
-  closeLogger,
   info,
   error as logError,
   serializeError,
@@ -136,6 +135,8 @@ async function openMainWindow(): Promise<void> {
         if (await confirmCloseWithRefusedMetadata() === "cancel") return;
         forgetRefusedMetadata(ownerId);
         if (!window.isDestroyed()) window.close();
+      } catch (error) {
+        logError("close confirmation failed; window remains open", { error: serializeError(error) });
       } finally {
         askingToClose = false;
       }
@@ -164,9 +165,9 @@ function flushAtQuit(): boolean {
 }
 
 function exitApp(): void {
-  info("app shutting down", { reason: systemShutdown ? "os-shutdown" : "before-quit" });
+  // The bounded flush owns the final durable writes. Process exit releases
+  // database handles without an unbounded synchronous close on the quit path.
   closeRecordsReader();
-  closeLogger();
   app.exit(0);
 }
 
@@ -221,19 +222,25 @@ if (!ownsInstance) {
     holdPendingFlushes();
 
     void (async () => {
-      for (;;) {
-        const writeFailures = !flushAtQuit();
-        const refusedMetadata = anyRefusedMetadata();
-        if (systemShutdown || (!writeFailures && !refusedMetadata)) break;
-        const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
-        if (systemShutdown || choice === "quit-anyway") break;
-        if (choice === "cancel") {
-          shuttingDown = false;
-          resumePendingFlushes();
-          return;
+      try {
+        for (;;) {
+          const writeFailures = !flushAtQuit();
+          const refusedMetadata = anyRefusedMetadata();
+          if (systemShutdown || (!writeFailures && !refusedMetadata)) break;
+          const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
+          if (systemShutdown || choice === "quit-anyway") break;
+          if (choice === "cancel") {
+            shuttingDown = false;
+            resumePendingFlushes();
+            return;
+          }
         }
+        exitApp();
+      } catch (error) {
+        shuttingDown = false;
+        resumePendingFlushes();
+        logError("quit confirmation failed; quit cancelled", { error: serializeError(error) });
       }
-      exitApp();
     })();
   });
 
