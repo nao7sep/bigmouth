@@ -627,3 +627,27 @@ describe("post index format version", () => {
     expect(fs.readFileSync(indexFile(), "utf-8")).toBe(body);
   });
 });
+
+// An interrupted save publishes nothing partial: each file is renamed into place
+// whole, and what an interruption leaves behind heals or is ignored.
+describe("after an interrupted publication", () => {
+  it("lists a post whose file landed but whose index row did not", () => {
+    const first = createPost(dataDir, "blogger", "en");
+    const indexPath = path.join(dataDir, "posts", "index.json");
+    const before = fs.readFileSync(indexPath, "utf8");
+    const second = createPost(dataDir, "blogger", "en");
+    // As if the process ended between the post file and the index.
+    fs.writeFileSync(indexPath, before);
+    clearCache(dataDir);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id).sort()).toEqual([first.frontMatter.id, second.frontMatter.id].sort());
+  });
+
+  it("ignores a temporary file an interrupted write left beside the posts", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const stem = path.basename(post.filePath, ".md");
+    fs.writeFileSync(path.join(dataDir, "posts", `${stem}-V1StGXR8_Z5jdHi6B-myT.tmp`), "half a post");
+    clearCache(dataDir);
+    expect(rebuildIndex(dataDir).skipped).toEqual([]);
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
+  });
+});
