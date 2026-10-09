@@ -208,16 +208,6 @@ function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): str
   }
 }
 
-export function assertAssetDeletionAllowed(dataDir: string, postId: string): void {
-  const metaPath = path.join(assetDir(dataDir, postId), META_FILENAME);
-  const read = readJsonStore("assetMeta", metaPath);
-  if (read.kind === "newer") throw new NewerFormatError(metaPath, read.version);
-  if (read.kind === "unreadable") throw new Error("The asset metadata cannot be read", { cause: read.error });
-  if (read.kind === "read" && (!Array.isArray(read.value.assets) || !read.value.assets.every(isAssetMeta))) {
-    throw new Error("The asset metadata has an invalid shape");
-  }
-}
-
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
   const dir = assetDir(dataDir, postId);
   const filePath = safeResolveUnder(dir, filename);

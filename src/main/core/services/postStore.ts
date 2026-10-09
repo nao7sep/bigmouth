@@ -47,7 +47,7 @@ import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
 import { applyStatusTransition } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
-import { assetDir, assertAssetDeletionAllowed } from "./assetStore.js";
+import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { message, type Message } from "@shared/i18n/translate";
 
@@ -617,10 +617,15 @@ export function deletePost(dataDir: string, id: string): boolean {
 
   const filePath = filePathFor(dataDir, entry);
   if (fs.existsSync(filePath)) readPost(filePath);
-  assertAssetDeletionAllowed(dataDir, id);
 
   // Deleting a post deliberately discards its edits, buffered ones included.
   clearPending(dataDir, id);
+
+  // The post goes first. An interruption after this leaves at worst a link to
+  // a post that no longer exists, which the editor lets the user clear, never
+  // a cleared link to a post that still exists.
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  index.removeEntry(dataDir, id);
 
   // Referential integrity: a post that links the deleted one as its source
   // would otherwise dangle, so clear that link. This is a system operation, not
@@ -628,9 +633,7 @@ export function deletePost(dataDir: string, id: string): boolean {
   // — mirroring renameTarget.
   clearSourceReferences(dataDir, id);
 
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  index.removeEntry(dataDir, id);
-
+  // The attachments go with the post whatever state their meta.json is in.
   const assets = assetDir(dataDir, id);
   if (fs.existsSync(assets)) {
     fs.rmSync(assets, { recursive: true });

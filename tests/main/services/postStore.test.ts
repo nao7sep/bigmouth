@@ -78,18 +78,43 @@ describe("canonical edit admission and committed writes", () => {
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("edited outside");
   });
 
-  it.each(["post", "assets"])("refuses deletion before touching edits or referrers for future %s formats", (kind) => {
+  it.each([
+    ["damaged", "{ not json"],
+    ["written by a newer version", JSON.stringify({ formatVersion: 999, assets: [] })],
+  ])("deletes a post whose attachment details are %s, with its attachments", (_case, body) => {
+    const post = createPost(dataDir, "blogger", "en");
+    const folder = path.join(dataDir, "assets", post.frontMatter.id);
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, "a.png"), "abc");
+    fs.writeFileSync(path.join(folder, "meta.json"), body);
+    expect(deletePost(dataDir, post.frontMatter.id)).toBe(true);
+    expect(fs.existsSync(post.filePath)).toBe(false);
+    expect(fs.existsSync(folder)).toBe(false);
+  });
+
+  it("removes the post before clearing links to it, so an interrupted delete never strips a live post's link", () => {
+    const source = createPost(dataDir, "blogger", "en");
+    const referrer = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
+    });
+    try {
+      expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow("EIO");
+    } finally {
+      rename.mockRestore();
+    }
+    expect(fs.existsSync(source.filePath)).toBe(false);
+    expect(getPost(dataDir, source.frontMatter.id)).toBeNull();
+    // The link now names a post that is gone, which the editor lets the user clear.
+    expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
+  });
+
+  it("refuses deleting a post a newer version wrote before touching edits or referrers", () => {
     const source = createPost(dataDir, "blogger", "en");
     const referrer = createPost(dataDir, "blogger", "en", source.frontMatter.id);
     queueContent(dataDir, source.frontMatter.id, "keep buffered text");
     const originalPost = fs.readFileSync(source.filePath, "utf8");
-    if (kind === "post") {
-      fs.writeFileSync(source.filePath, fs.readFileSync(source.filePath, "utf8").replace("formatVersion: 1", "formatVersion: 999"));
-    } else {
-      const folder = path.join(dataDir, "assets", source.frontMatter.id);
-      fs.mkdirSync(folder, { recursive: true });
-      fs.writeFileSync(path.join(folder, "meta.json"), JSON.stringify({ formatVersion: 999, assets: [] }));
-    }
+    fs.writeFileSync(source.filePath, fs.readFileSync(source.filePath, "utf8").replace("formatVersion: 1", "formatVersion: 999"));
     expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow();
     expect(fs.existsSync(source.filePath)).toBe(true);
     expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
