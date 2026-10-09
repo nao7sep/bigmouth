@@ -1150,8 +1150,9 @@ button:disabled,
 /* Keyboard focus cursor for the roving-tabindex active tab; shown only to
    keyboard users, inset so the tab strip's edges never clip it. The focused tab
    is always the selected one, which already carries accent text and underline,
-   so its ring is a thin neutral one rather than a third accent mark (developer
-   decision). */
+   so its ring is a thin neutral one rather than a third accent mark. An
+   approved exception to the interface-styling-conventions' one focus treatment
+   (developer decision, 2026-10-09). */
 .right-tab:focus-visible,
 .settings-tab:focus-visible {
   outline: 1px solid var(--bm-text-muted);
@@ -1245,8 +1246,9 @@ button:disabled,
 }
 
 /* The focused item is the menu's one cursor: arrows and the pointer both move
-   it (Menu.tsx), so hover needs no fill of its own and never shows a second
-   highlight. A flat menu item takes a background highlight (not a ring): a ring
+   it (Menu.tsx), as native menus do, so hover needs no fill of its own and never
+   shows a second highlight. An approved exception to the composite-control-
+   conventions' separate hover layer (developer decision, 2026-10-09). A flat menu item takes a background highlight (not a ring): a ring
    is clipped into stray edges by the popup's `overflow: hidden`, so suppress
    the default outline and fill instead. */
 .menu-item:focus {
