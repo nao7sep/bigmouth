@@ -70,6 +70,11 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Pr
   return bridge().openOrCreateWorkspace(name, dataDirectory);
 }
 
+/** The folder a workspace named `name` would be created in when no location is given. */
+export function suggestWorkspaceLocation(name?: string): Promise<string> {
+  return bridge().suggestWorkspaceLocation(name);
+}
+
 export function updateWorkspace(id: string, updates: { name: string }): Promise<Workspace> {
   return bridge().updateWorkspace(id, updates);
 }
@@ -242,12 +247,12 @@ export function rebuildPostIndex(): Promise<{
 
 // --- Targets ---
 
-export function listTargets(): Promise<Target[]> {
-  return bridge().listTargets(requireWs());
+export function listTargets(workspaceId?: string): Promise<Target[]> {
+  return bridge().listTargets(requireWs(workspaceId));
 }
 
-export function saveTargets(targets: Target[]): Promise<Target[]> {
-  return bridge().saveTargets(requireWs(), targets);
+export function saveTargets(targets: Target[], workspaceId?: string): Promise<Target[]> {
+  return bridge().saveTargets(requireWs(workspaceId), targets);
 }
 
 export function renameTarget(
@@ -259,8 +264,8 @@ export function renameTarget(
 
 // --- Settings ---
 
-export function getSettings(): Promise<Settings> {
-  return bridge().getSettings(requireWs());
+export function getSettings(workspaceId?: string): Promise<Settings> {
+  return bridge().getSettings(requireWs(workspaceId));
 }
 
 export function saveSettings(settings: Partial<Settings>): Promise<Settings> {
@@ -274,13 +279,16 @@ export function getConfigNotice(): Promise<Message | null> {
 
 // --- The Anthropic section ---
 
-export function getAnthropicSettings(): Promise<AnthropicSettingsView> {
-  return bridge().getAnthropicSettings(requireWs());
+export function getAnthropicSettings(workspaceId?: string): Promise<AnthropicSettingsView> {
+  return bridge().getAnthropicSettings(requireWs(workspaceId));
 }
 
 /** A blank or omitted `apiKey` keeps the stored key. */
-export function saveAnthropicSettings(input: AnthropicSettingsInput): Promise<AnthropicSettingsView> {
-  return bridge().saveAnthropicSettings(requireWs(), input);
+export function saveAnthropicSettings(
+  input: AnthropicSettingsInput,
+  workspaceId?: string,
+): Promise<AnthropicSettingsView> {
+  return bridge().saveAnthropicSettings(requireWs(workspaceId), input);
 }
 
 // --- Generation prompts ---

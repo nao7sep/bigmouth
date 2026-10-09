@@ -26,20 +26,30 @@ export function assetFilenameKey(name: string): string {
 }
 
 /**
+ * Makes one name storable as a file or folder name on every supported
+ * platform, or returns "" when nothing storable is left. A separator is
+ * replaced like any other forbidden character, so the whole name stays one
+ * segment. Asset names and the folder a new workspace is named after share it.
+ */
+export function sanitizeFilenameSegment(raw: string): string {
+  const cleaned = raw.normalize("NFC").replace(FORBIDDEN_IN_FILENAME, "_");
+  const trimmed = cleaned.replace(/[. ]+$/, "");
+  if (trimmed === "") return "";
+
+  // Windows reserves a device stem before any extension, including names with
+  // more than one suffix such as CON.backup.txt.
+  const stem = trimmed.split(".", 1)[0];
+  return WINDOWS_DEVICE_NAMES.has(stem.toLowerCase()) ? `_${trimmed}` : trimmed;
+}
+
+/**
  * Sanitizes an uploaded filename into one storable on every supported platform.
  * This module is shared so the renderer's replacement prompt and the main
  * process always make the same filename decision.
  */
 export function sanitizeAssetFilename(raw: string): string {
   const base = raw.split(/[\\/]/).pop() ?? raw;
-  const cleaned = base.normalize("NFC").replace(FORBIDDEN_IN_FILENAME, "_");
-  const trimmed = cleaned.replace(/[. ]+$/, "");
-  if (trimmed === "") return "asset";
-
-  // Windows reserves a device stem before any extension, including names with
-  // more than one suffix such as CON.backup.txt.
-  const stem = trimmed.split(".", 1)[0];
-  return WINDOWS_DEVICE_NAMES.has(stem.toLowerCase()) ? `_${trimmed}` : trimmed;
+  return sanitizeFilenameSegment(base) || "asset";
 }
 
 /** Stored names produced more than once in the same upload batch. */

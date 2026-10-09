@@ -19,6 +19,7 @@ import {
   getStateJsonPath,
   getWorkspacesJsonPath,
   expandWorkspacePath,
+  getDefaultWorkspacesParentDir,
   initStorageRoot,
 } from "@main/core/services/storagePaths.js";
 
@@ -188,6 +189,24 @@ describe("storage root (BIGMOUTH_DATA_DIR)", () => {
     const before = fs.existsSync(path.join(os.homedir(), "workspaces.json"));
     expect(() => initAppDir()).toThrow();
     expect(fs.existsSync(path.join(os.homedir(), "workspaces.json"))).toBe(before);
+  });
+});
+
+describe("the default workspace folder", () => {
+  it("is Documents/BigMouth in the home directory, whichever root BIGMOUTH_DATA_DIR picks", () => {
+    // A workspace is the user's document: the storage-root override moves the
+    // app's own files, never where new workspaces are kept.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-default-ws-"));
+    try {
+      process.env.BIGMOUTH_DATA_DIR = root;
+      initAppDir();
+      expect(getDefaultWorkspacesParentDir()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
+      const workspace = createWorkspace("Default WS");
+      expect(workspace.dataDirectory).toBe(path.join(fakeHome, "Documents", "BigMouth", "Default WS"));
+      expect(fs.readdirSync(root)).not.toContain("workspaces");
+    } finally {
+      removeTestTree(root);
+    }
   });
 });
 

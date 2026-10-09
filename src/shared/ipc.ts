@@ -62,6 +62,7 @@ export const CHANNELS = {
   // Workspace management
   listWorkspaces: "workspace:list",
   openOrCreateWorkspace: "workspace:openOrCreate",
+  suggestWorkspaceLocation: "workspace:suggestLocation",
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
   openExternal: "shell:openExternal",
@@ -311,6 +312,8 @@ export interface BigMouthApi {
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
   openOrCreateWorkspace(name?: string, dataDirectory?: string): Promise<Workspace>;
+  /** The absolute folder openOrCreateWorkspace would create for `name` with no location given. */
+  suggestWorkspaceLocation(name?: string): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<void>;

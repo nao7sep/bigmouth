@@ -5,6 +5,7 @@ import {
   isImageAssetFilename,
   isReservedAssetName,
   sanitizeAssetFilename,
+  sanitizeFilenameSegment,
 } from "@shared/assetNames";
 
 describe("asset filename rules", () => {
@@ -22,6 +23,15 @@ describe("asset filename rules", () => {
     expect(isReservedAssetName("upload.TMP")).toBe(true);
     expect(isReservedAssetName("meta-20261006-031340-123-utc.INVALID")).toBe(true);
     expect(isReservedAssetName("photo.png")).toBe(false);
+  });
+
+  it("keeps a whole name as one segment, and says when nothing storable is left", () => {
+    // A workspace folder is named after the whole workspace name, so a
+    // separator is replaced rather than taken as a path.
+    expect(sanitizeFilenameSegment("Drafts/Notes")).toBe("Drafts_Notes");
+    expect(sanitizeFilenameSegment("..")).toBe("");
+    expect(sanitizeFilenameSegment("nul")).toBe("_nul");
+    expect(sanitizeAssetFilename("..")).toBe("asset");
   });
 
   it("escapes Windows device names even when they have multiple suffixes", () => {

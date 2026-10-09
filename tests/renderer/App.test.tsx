@@ -92,6 +92,27 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
   ),
 }));
 
+// First-run setup is replaced too: App's part is when it shows, and that its
+// two ways out reach the session and the picker.
+vi.mock("@renderer/components/SetupModal", () => ({
+  SetupModal: (props: {
+    onFinish: (ws: Workspace) => void | Promise<void>;
+    onOpenExisting: () => void;
+  }) => (
+    <div data-testid="setup">
+      <button
+        data-testid="setup-finish"
+        onClick={() => void props.onFinish({ id: "ws9", name: "My Blog", dataDirectory: "/d/my-blog" })}
+      >
+        finish
+      </button>
+      <button data-testid="setup-open-existing" onClick={props.onOpenExisting}>
+        open existing
+      </button>
+    </div>
+  ),
+}));
+
 import { App } from "@renderer/App";
 import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
 
@@ -125,6 +146,8 @@ beforeEach(() => {
   // Default: no remembered workspace. Each test overrides as needed. updateUiState
   // resolves with the merged state so the awaited persist paths settle.
   mockGetUiState.mockResolvedValue(uiState(""));
+  // Default: one workspace is registered, so a launch is not a first run.
+  mockList.mockResolvedValue([WS1]);
   mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
@@ -153,8 +176,10 @@ async function renderApp() {
 describe("App bootstrap — no stored workspace", () => {
   it("opens the workspace picker (non-dismissable) when nothing is stored", async () => {
     const { getByTestId, queryByTestId } = await renderApp();
-    // No stored id: listWorkspaces is never consulted; the picker opens directly.
-    expect(mockList).not.toHaveBeenCalled();
+    // No stored id, but workspaces exist: the registry is read only to tell
+    // this from a first run, and the picker opens.
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(queryByTestId("setup")).toBeNull();
     expect(getByTestId("ws-modal")).toBeTruthy();
     expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
     expect(queryByTestId("session")).toBeNull();
@@ -182,6 +207,69 @@ describe("App bootstrap — no stored workspace", () => {
     const result = getByRole("alert");
     expect(result.textContent).toContain("Defaults are in use for this launch");
     expect(result.textContent).not.toContain("BIGMOUTH-UI-LOAD-SENTINEL");
+  });
+});
+
+describe("App bootstrap — first run", () => {
+  it("shows the setup instead of the picker when no workspace is registered", async () => {
+    mockList.mockResolvedValue([]);
+    const { getByTestId, queryByTestId } = await renderApp();
+
+    expect(getByTestId("setup")).toBeTruthy();
+    expect(queryByTestId("ws-modal")).toBeNull();
+    expect(queryByTestId("session")).toBeNull();
+  });
+
+  it("shows the setup even when a stale id is remembered, leaving it for setup to replace", async () => {
+    mockGetUiState.mockResolvedValue(uiState("gone"));
+    mockList.mockResolvedValue([]);
+    const { getByTestId } = await renderApp();
+
+    expect(getByTestId("setup")).toBeTruthy();
+    expect(mockUpdateUiState).not.toHaveBeenCalled();
+  });
+
+  it("shows the setup when the saved UI state could not be read but nothing is registered", async () => {
+    mockGetUiState.mockRejectedValue(new Error("unreadable"));
+    mockList.mockResolvedValue([]);
+    const { getByTestId } = await renderApp();
+
+    expect(getByTestId("setup")).toBeTruthy();
+  });
+
+  it("opens the finished workspace the way choosing it in the picker does", async () => {
+    mockList.mockResolvedValue([]);
+    const { getByTestId, queryByTestId } = await renderApp();
+
+    await act(async () => {
+      fireEvent.click(getByTestId("setup-finish"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockSetActive).toHaveBeenCalledWith("ws9");
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "ws9" });
+    expect(getByTestId("session-ws").textContent).toBe("ws9");
+    expect(queryByTestId("setup")).toBeNull();
+    expect(queryByTestId("ws-modal")).toBeNull();
+  });
+
+  it("hands over to the non-dismissable picker to open an existing workspace", async () => {
+    mockList.mockResolvedValue([]);
+    const { getByTestId, queryByTestId } = await renderApp();
+
+    fireEvent.click(getByTestId("setup-open-existing"));
+
+    expect(queryByTestId("setup")).toBeNull();
+    expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
+  });
+
+  it("gives the picker its recovery copy, not the setup, when the registry cannot be read", async () => {
+    mockList.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_FIRST_RUN_SENTINEL"));
+    const { getByTestId, queryByTestId } = await renderApp();
+
+    expect(queryByTestId("setup")).toBeNull();
+    expect(getByTestId("ws-modal").getAttribute("data-load-error")).toBe("workspaces.loadFailed");
   });
 });
 

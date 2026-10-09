@@ -11,6 +11,7 @@ vi.mock("@renderer/api", () => ({
   updateWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
   pickWorkspaceDirectory: vi.fn(),
+  suggestWorkspaceLocation: vi.fn(),
 }));
 
 import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
@@ -21,6 +22,7 @@ import {
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
+  suggestWorkspaceLocation,
 } from "@renderer/api";
 
 const mockListWorkspaces = vi.mocked(listWorkspaces);
@@ -28,6 +30,7 @@ const mockOpenOrCreate = vi.mocked(openOrCreateWorkspace);
 const mockUpdateWorkspace = vi.mocked(updateWorkspace);
 const mockDeleteWorkspace = vi.mocked(deleteWorkspace);
 const mockPickDirectory = vi.mocked(pickWorkspaceDirectory);
+const mockSuggestLocation = vi.mocked(suggestWorkspaceLocation);
 const mockWriteRendererLog = vi.fn();
 
 const WORKSPACE: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/data/alpha" };
@@ -40,6 +43,8 @@ beforeEach(() => {
     configurable: true,
     value: { writeRendererLog: mockWriteRendererLog },
   });
+  // What main answers for a blank location: a folder named after the workspace.
+  mockSuggestLocation.mockImplementation(async (name?: string) => `/home/me/Documents/BigMouth/${name ?? "Workspace"}`);
   if (!("scrollIntoView" in HTMLElement.prototype)) {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
@@ -205,12 +210,12 @@ describe("WorkspaceModal — create/open submit", () => {
     const created: Workspace = { id: "ws2", name: "Beta", dataDirectory: "/data/beta" };
     mockOpenOrCreate.mockResolvedValue(created);
     const onSelect = vi.fn();
-    const { getByPlaceholderText, getByText } = await renderWith({ onSelect });
+    const { getByPlaceholderText, getByText, getByLabelText } = await renderWith({ onSelect });
 
     fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
       target: { value: "Beta" },
     });
-    fireEvent.change(getByPlaceholderText("Default location if blank"), {
+    fireEvent.change(getByLabelText(/^Location/), {
       target: { value: "/data/beta" },
     });
 
@@ -278,6 +283,39 @@ describe("WorkspaceModal — create/open submit", () => {
   });
 });
 
+describe("WorkspaceModal — the location a blank field uses", () => {
+  // A blank location used to read "Default location if blank", which named no
+  // folder at all; the placeholder is now the path main would create.
+  it("shows the suggested folder for the typed name as the placeholder", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { getByLabelText } = await renderWith();
+    const location = getByLabelText(/^Location/) as HTMLInputElement;
+
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith(undefined);
+    expect(location.placeholder).toBe("/home/me/Documents/BigMouth/Workspace");
+    expect(location.value).toBe("");
+
+    await act(async () => {
+      fireEvent.change(getByLabelText(/^Name/), { target: { value: "  Beta  " } });
+      await Promise.resolve();
+    });
+
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
+    expect(location.placeholder).toBe("/home/me/Documents/BigMouth/Beta");
+    // Shown, never poured in: the field stays blank and creation resolves it.
+    expect(location.value).toBe("");
+  });
+
+  it("keeps the form usable with no placeholder when the suggestion fails", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockSuggestLocation.mockRejectedValue(new Error("storage busy"));
+    const { getByLabelText, queryByRole } = await renderWith();
+
+    expect((getByLabelText(/^Location/) as HTMLInputElement).placeholder).toBe("");
+    expect(queryByRole("alert")).toBeNull();
+  });
+});
+
 describe("WorkspaceModal — Browse", () => {
   it("fills the location from the directory picker when one is chosen", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
@@ -294,13 +332,13 @@ describe("WorkspaceModal — Browse", () => {
   it("leaves the location unchanged when the picker is cancelled", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue(null);
-    const { getByText, getByPlaceholderText } = await renderWith();
+    const { getByText, getByLabelText } = await renderWith();
 
     await act(async () => {
       fireEvent.click(getByText("Browse"));
       await Promise.resolve();
     });
-    expect((getByPlaceholderText("Default location if blank") as HTMLInputElement).value).toBe("");
+    expect((getByLabelText(/^Location/) as HTMLInputElement).value).toBe("");
   });
 
   it("retains an authored form result when the native picker rejects", async () => {
@@ -308,7 +346,7 @@ describe("WorkspaceModal — Browse", () => {
     mockPickDirectory.mockRejectedValue(
       new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"),
     );
-    const { getByText, getByRole, getByPlaceholderText } = await renderWith();
+    const { getByText, getByRole, getByLabelText } = await renderWith();
 
     await act(async () => {
       fireEvent.click(getByText("Browse"));
@@ -318,7 +356,7 @@ describe("WorkspaceModal — Browse", () => {
     const result = getByRole("alert");
     expect(result.textContent).toContain("location is unchanged");
     expect(result.textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
-    expect((getByPlaceholderText("Default location if blank") as HTMLInputElement).value).toBe("");
+    expect((getByLabelText(/^Location/) as HTMLInputElement).value).toBe("");
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
       message: "renderer: workspace folder picker failed",
     }));

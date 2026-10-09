@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { WorkspaceModal } from "./components/WorkspaceModal";
+import { SetupModal } from "./components/SetupModal";
 import { WorkspaceSession, type WorkspaceSessionHandle } from "./WorkspaceSession";
 import { getAppSettings, getUiState, listWorkspaces, reportProblem, setActiveWorkspace, updateUiState } from "./api";
 import {
@@ -47,6 +48,9 @@ const RIGHT_MAX = 960;
 export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+  // First run: no workspace is registered at all, so the guided setup stands in
+  // for the picker until it opens one or the user asks for the picker.
+  const [setupOpen, setSetupOpen] = useState(false);
   const [wsChecked, setWsChecked] = useState(false);
   const { text } = useI18n();
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<Message | null>(null);
@@ -148,49 +152,50 @@ export function App() {
       // Hydrate view state (pane intents + last workspace) from state.json before
       // the app renders. The whole tree is gated on wsChecked, flipped true only at
       // the end, so nothing paints with the seed pane widths or a stale workspace.
-      let state: UiState;
+      let storedId = "";
       try {
-        state = await getUiState();
+        const state: UiState = await getUiState();
+        if (cancelled) return;
+        setLeftIntent(clamp(state.paneLeftWidth, LEFT_MIN, LEFT_MAX));
+        setRightIntent(clamp(state.paneRightWidth, RIGHT_MIN, RIGHT_MAX));
+        storedId = state.activeWorkspaceId;
       } catch (err) {
-        // A failed state read is non-fatal: fall back to defaults and the picker.
+        // A failed state read is non-fatal: fall back to defaults and no
+        // remembered workspace.
         reportProblem("could not read the saved UI state", err);
-        if (!cancelled) {
-          reportShellResult(
-            "ui-state-load",
-            message("app.uiStateLoadFailed"),
-          );
-          setWorkspaceModalOpen(true);
-          setWsChecked(true);
-        }
-        return;
-      }
-      if (cancelled) return;
-      setLeftIntent(clamp(state.paneLeftWidth, LEFT_MIN, LEFT_MAX));
-      setRightIntent(clamp(state.paneRightWidth, RIGHT_MIN, RIGHT_MAX));
-
-      const storedId = state.activeWorkspaceId;
-      if (!storedId) {
-        setWorkspaceModalOpen(true);
-        setWsChecked(true);
-        return;
+        if (cancelled) return;
+        reportShellResult(
+          "ui-state-load",
+          message("app.uiStateLoadFailed"),
+        );
       }
 
+      // The registry is read even with nothing remembered: an empty one is a
+      // first run, which gets the guided setup rather than the picker.
       try {
         const workspaces = await listWorkspaces();
         if (cancelled) return;
         setWorkspaceRegistryError(null);
-        const ws = workspaces.find((workspace) => workspace.id === storedId);
+        if (workspaces.length === 0) {
+          // A remembered id that names nothing is left alone: finishing setup
+          // replaces it, and nothing reads it before then.
+          setSetupOpen(true);
+          return;
+        }
+        const ws = storedId ? workspaces.find((workspace) => workspace.id === storedId) : undefined;
         if (ws) {
           setActiveWorkspace(ws.id);
           setActiveWorkspaceState(ws);
         } else {
-          await updateUiState({ activeWorkspaceId: "" });
-          if (cancelled) return;
+          if (storedId) {
+            await updateUiState({ activeWorkspaceId: "" });
+            if (cancelled) return;
+          }
           setWorkspaceModalOpen(true);
         }
       } catch (err) {
         const failure = presentFailure(
-          message("app.workspacesLoadFailed"),
+          message(storedId ? "app.workspacesLoadFailed" : "workspaces.loadFailed"),
           "renderer: workspace registry startup load failed",
           err,
           { storedId },
@@ -226,6 +231,7 @@ export function App() {
       ));
     }
     setWorkspaceModalOpen(false);
+    setSetupOpen(false);
   }, [reportShellResult, resolveShellResult]);
 
   const handleActiveWorkspaceDeleted = useCallback(
@@ -353,7 +359,16 @@ export function App() {
   ) : null;
 
   if (!activeWorkspace) {
-    return <>{workspaceModal}{shellResultStack}</>;
+    const gate = setupOpen ? (
+      <SetupModal
+        onFinish={handleSelectWorkspace}
+        onOpenExisting={() => {
+          setSetupOpen(false);
+          setWorkspaceModalOpen(true);
+        }}
+      />
+    ) : workspaceModal;
+    return <>{gate}{shellResultStack}</>;
   }
 
   return (

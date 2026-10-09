@@ -57,6 +57,7 @@ export const storageTasks = {
   listWorkspaces: workspaceStore.listWorkspaces,
   getWorkspace: workspaceStore.getWorkspace,
   openOrCreateWorkspace: workspaceStore.openOrCreateWorkspace,
+  suggestWorkspaceLocation: workspaceStore.suggestWorkspaceLocation,
   updateWorkspace: workspaceStore.updateWorkspace,
   deleteWorkspace: workspaceStore.deleteWorkspace,
   getSettings: configStore.getSettings,

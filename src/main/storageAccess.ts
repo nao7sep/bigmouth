@@ -14,6 +14,7 @@ export const readSourceMetadata = command("readSourceMetadata");
 export const listWorkspaces = command("listWorkspaces");
 export const getWorkspace = command("getWorkspace");
 export const openOrCreateWorkspace = command("openOrCreateWorkspace");
+export const suggestWorkspaceLocation = command("suggestWorkspaceLocation");
 export const updateWorkspace = command("updateWorkspace");
 export const deleteWorkspace = command("deleteWorkspace");
 export const getSettings = command("getSettings");

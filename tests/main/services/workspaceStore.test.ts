@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
@@ -354,6 +354,98 @@ describe("openWorkspace gating", () => {
   });
 });
 
+/** Where a workspace created without a location goes, under the per-test home tests/main/setup.ts sets. */
+function documentsBigMouth(): string {
+  return path.join(os.homedir(), "Documents", "BigMouth");
+}
+
+// A workspace is the user's own document, so one created without a location
+// goes to <home>/Documents/BigMouth/<name> — never into the storage root, which
+// is the app's (storage-path conventions, "Ownership decides location").
+describe("the default workspace location", () => {
+  it("runs against a throwaway home, never the developer's", () => {
+    expect(os.homedir()).toBe(process.env[process.platform === "win32" ? "USERPROFILE" : "HOME"]);
+    expect(path.basename(os.homedir())).toMatch(/^bigmouth-test-home-/);
+  });
+
+  it("creates the workspace in a folder named after it under Documents/BigMouth", () => {
+    const ws = createWorkspace("My Blog");
+
+    expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), "My Blog"));
+    expect(fs.statSync(path.join(ws.dataDirectory, "posts")).isDirectory()).toBe(true);
+    expect(fs.statSync(path.join(ws.dataDirectory, "assets")).isDirectory()).toBe(true);
+    // Nothing of it lands in the storage root.
+    expect(fs.existsSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces"))).toBe(false);
+  });
+
+  it("names the folder with the asset-name sanitizer, falling back to Workspace", () => {
+    expect(createWorkspace("Drafts/Notes: 2026?").dataDirectory).toBe(
+      path.join(documentsBigMouth(), "Drafts_Notes_ 2026_"),
+    );
+    expect(createWorkspace("...").dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace"));
+  });
+
+  it("numbers the folder when one of that name is already a workspace", () => {
+    const first = createWorkspace("Blog");
+    const second = createWorkspace("Blog");
+    const third = createWorkspace("blog");
+
+    expect(first.dataDirectory).toBe(path.join(documentsBigMouth(), "Blog"));
+    expect(second.dataDirectory).toBe(path.join(documentsBigMouth(), "Blog (2)"));
+    // On a case-insensitive volume "blog" is the same folder as "Blog".
+    const caseFolds = fs.existsSync(path.join(documentsBigMouth(), "BLOG"));
+    expect(third.dataDirectory).toBe(path.join(documentsBigMouth(), caseFolds ? "blog (3)" : "blog"));
+  });
+
+  it("numbers past a folder holding content a new workspace would take over", () => {
+    const taken = path.join(documentsBigMouth(), "Blog");
+    fs.mkdirSync(taken, { recursive: true });
+    const foreign = JSON.stringify({ title: "Someone else's site" });
+    fs.writeFileSync(path.join(taken, "config.json"), foreign);
+    // An unregistered workspace folder is taken too: creating there would adopt it.
+    initializeWorkspaceData(path.join(documentsBigMouth(), "Blog (2)"));
+
+    expect(createWorkspace("Blog").dataDirectory).toBe(path.join(documentsBigMouth(), "Blog (3)"));
+    expect(fs.readFileSync(path.join(taken, "config.json"), "utf-8")).toBe(foreign);
+  });
+
+  it("uses an existing folder a new workspace can take, rather than numbering past it", () => {
+    const existing = path.join(documentsBigMouth(), "Blog");
+    fs.mkdirSync(existing, { recursive: true });
+    fs.writeFileSync(path.join(existing, ".DS_Store"), "finder");
+
+    expect(createWorkspace("Blog").dataDirectory).toBe(existing);
+  });
+
+  it("suggests exactly the folder creation then uses", () => {
+    fs.mkdirSync(path.join(documentsBigMouth(), "Blog", "posts"), { recursive: true });
+    fs.writeFileSync(path.join(documentsBigMouth(), "Blog", "posts", "a.md"), "# taken");
+
+    const suggested = suggestWorkspaceLocation("Blog");
+    expect(suggested).toBe(path.join(documentsBigMouth(), "Blog (2)"));
+    // Asking writes nothing.
+    expect(fs.existsSync(suggested)).toBe(false);
+    expect(listWorkspaces()).toHaveLength(0);
+    expect(openOrCreateWorkspace("Blog").dataDirectory).toBe(suggested);
+  });
+
+  it("suggests the default name's folder for a blank name, as creation resolves it", () => {
+    createWorkspace("Workspace", tempDir("elsewhere"));
+    const suggested = suggestWorkspaceLocation(undefined);
+
+    expect(suggested).toBe(path.join(documentsBigMouth(), "Workspace 2"));
+    expect(openOrCreateWorkspace().dataDirectory).toBe(suggested);
+  });
+
+  it("stops at the first name when a workspace holds the whole default folder, and creation says why", () => {
+    createWorkspace("Everything", documentsBigMouth());
+
+    expect(suggestWorkspaceLocation("Blog")).toBe(path.join(documentsBigMouth(), "Blog"));
+    expect(() => createWorkspace("Blog")).toThrow(/inside workspace "Everything"/);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+});
+
 describe("updateWorkspace renames, and only renames", () => {
   it("leaves the folder where it is", () => {
     // It used to take a dataDirectory and re-point the registry entry without
@@ -380,9 +472,12 @@ describe("openOrCreateWorkspace", () => {
   it("creates a default-named workspace when no directory is given", () => {
     const ws = openOrCreateWorkspace();
     expect(ws.name).toBe("Workspace");
+    expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace"));
     expect(listWorkspaces()).toHaveLength(1);
-    // A second nameless create resolves the next free default name.
-    expect(openOrCreateWorkspace().name).toBe("Workspace 2");
+    // A second nameless create resolves the next free default name, and its folder.
+    const second = openOrCreateWorkspace();
+    expect(second.name).toBe("Workspace 2");
+    expect(second.dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace 2"));
   });
 
   it("opens an existing workspace directory instead of recreating it", () => {

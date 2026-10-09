@@ -35,7 +35,6 @@ let appDir: string | null = null;
 let workspacesJsonPath: string | null = null;
 let logsDir: string | null = null;
 let apiKeysPath: string | null = null;
-let defaultWorkspacesDir: string | null = null;
 
 /**
  * Expands `$VAR` / `%VAR%` environment references against the current
@@ -173,7 +172,6 @@ export function initStorageRoot(): void {
   workspacesJsonPath = path.join(appDir, "workspaces.json");
   logsDir = path.join(appDir, "logs");
   apiKeysPath = path.join(appDir, "api-keys.json");
-  defaultWorkspacesDir = path.join(appDir, "workspaces");
 
   try {
     fs.mkdirSync(appDir, { recursive: true, mode: 0o700 });
@@ -235,9 +233,16 @@ export function getApiKeysPath(): string {
   return required(apiKeysPath);
 }
 
-/** Where an internally-managed workspace's folder is created. */
-export function getDefaultWorkspacesDir(): string {
-  return required(defaultWorkspacesDir);
+/**
+ * The folder a workspace created without a chosen location goes into:
+ * `<home>/Documents/BigMouth`. A workspace is the user's own document, so it
+ * never defaults into the storage root (storage-path conventions, "Ownership
+ * decides location"). Resolved from the home directory on each call rather than
+ * at initStorageRoot, because it is not under the root and BIGMOUTH_DATA_DIR
+ * does not move it.
+ */
+export function getDefaultWorkspacesParentDir(): string {
+  return path.join(os.homedir(), "Documents", "BigMouth");
 }
 
 /** The app-wide settings store — the storage root's config.json, distinct from

@@ -5,6 +5,7 @@ import {
   listWorkspaces,
   getWorkspace,
   openOrCreateWorkspace,
+  suggestWorkspaceLocation,
   updateWorkspace,
   deleteWorkspace,
   clearCache,
@@ -32,6 +33,12 @@ export function registerWorkspaceHandlers(): void {
       throw err instanceof Error ? err : new Error("Failed to open or create workspace");
     }
   });
+
+  // Read-only: what a blank location would use for this name, so the window can
+  // show the real path instead of "default". Nothing is created or logged.
+  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown) =>
+    suggestWorkspaceLocation(typeof name === "string" ? name.trim() : undefined),
+  );
 
   ipcMain.handle(CHANNELS.updateWorkspace, async (_event, id: string, updates: { name?: string }) => {
     const name = updates?.name?.trim();

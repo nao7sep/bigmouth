@@ -13,13 +13,15 @@
  * With a workspace already open it is an ordinary dismissable modal.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   listWorkspaces,
   openOrCreateWorkspace,
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
+  reportProblem,
+  suggestWorkspaceLocation,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import type { Workspace } from "@shared/types";
@@ -60,6 +62,10 @@ export function WorkspaceModal({
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
+  // The folder a blank location creates for the typed name, shown as the
+  // location's placeholder so "blank" names a real path (config-sets
+  // conventions: a derived default is shown, never poured into the field).
+  const [suggestedLocation, setSuggestedLocation] = useState("");
   const [error, setError] = useState<Message | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -71,6 +77,8 @@ export function WorkspaceModal({
   const renameComposing = useComposing();
   const nameComposing = useComposing();
   const locationComposing = useComposing();
+  const nameId = useId();
+  const locationId = useId();
 
   const isDirty = name.trim() !== "" || location !== "";
 
@@ -148,6 +156,22 @@ export function WorkspaceModal({
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    let current = true;
+    suggestWorkspaceLocation(name.trim() || undefined)
+      .then((path) => {
+        if (current) setSuggestedLocation(path);
+      })
+      .catch((err: unknown) => {
+        // Only the preview is lost: creation still resolves the default itself.
+        if (current) setSuggestedLocation("");
+        reportProblem("renderer: workspace location suggestion failed", err);
+      });
+    return () => {
+      current = false;
+    };
+  }, [name]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -389,10 +413,11 @@ export function WorkspaceModal({
       <div className="workspace-create">
         <div className="workspace-create-heading">{t("workspaces.createHeading")}</div>
         <div className="form-field">
-          <label className="form-label">
+          <label className="form-label" htmlFor={nameId}>
             {t("workspaces.name")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
           </label>
           <input
+            id={nameId}
             className="form-input"
             value={name}
             onChange={(e) => {
@@ -410,11 +435,12 @@ export function WorkspaceModal({
           />
         </div>
         <div className="form-field">
-          <label className="form-label">
+          <label className="form-label" htmlFor={locationId}>
             {t("workspaces.location")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
+              id={locationId}
               className="form-input"
               style={{ flex: 1 }}
               value={location}
@@ -422,7 +448,7 @@ export function WorkspaceModal({
                 setError(null);
                 setLocation(e.target.value);
               }}
-              placeholder={t("workspaces.locationPlaceholder")}
+              placeholder={suggestedLocation}
               onCompositionStart={locationComposing.handlers.onCompositionStart}
               onCompositionEnd={locationComposing.handlers.onCompositionEnd}
               onKeyDown={(e) => {

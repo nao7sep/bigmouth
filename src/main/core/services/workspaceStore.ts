@@ -16,11 +16,12 @@ import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } 
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
+import { sanitizeFilenameSegment } from "@shared/assetNames";
 import {
   containsDirectory,
   expandWorkspacePath,
   getApiKeysPath,
-  getDefaultWorkspacesDir,
+  getDefaultWorkspacesParentDir,
   getWorkspacesJsonPath,
   initStorageRoot,
   sameDirectory,
@@ -251,36 +252,80 @@ function resolveWorkspaceName(name: string | undefined, dataDirectory: string | 
   return nextWorkspaceName();
 }
 
+/**
+ * Throws the reason a new workspace cannot be created at `dir` as it stands, or
+ * returns when nothing stops it. One gate for a chosen location and the default
+ * one, so both refuse for the same reasons in the same words.
+ */
+function assertCanCreateAt(dir: string): void {
+  const existing = findWorkspaceByDirectory(dir);
+  if (existing) {
+    throw new Error(`That folder is already registered as workspace "${existing.name}".`);
+  }
+  if (fs.existsSync(dir)) {
+    const stat = fs.statSync(dir);
+    if (!stat.isDirectory()) {
+      throw new Error("Location must be a directory.");
+    }
+    if (isWorkspaceDirectory(dir)) {
+      // The UI has one "Open or Create" control, so there is no "Open" to
+      // point at — and openOrCreateWorkspace routes this case to openWorkspace,
+      // so this is reached only by a direct createWorkspace call.
+      throw new Error("That folder already contains a workspace.");
+    }
+    assertCreatable(dir);
+  }
+  assertNoWorkspaceOverlap(dir);
+}
+
+function canCreateAt(dir: string): boolean {
+  try {
+    assertCanCreateAt(dir);
+    return true;
+  } catch {
+    // Any refusal, a damaged config.json in the folder included, makes the
+    // folder unusable as a default; the next name is tried instead.
+    return false;
+  }
+}
+
+/**
+ * Where a workspace created without a chosen location goes:
+ * `<home>/Documents/BigMouth/<folder named after the workspace>`, or
+ * `<name> (2)`, `(3)`… when that folder exists and cannot take a new
+ * workspace. The UI shows this before creating, so the name it resolves is the
+ * one creation would use.
+ *
+ * A workspace is the user's own document, so it never defaults into the storage
+ * root (storage-path conventions, "Ownership decides location").
+ */
+export function suggestWorkspaceLocation(name?: string): string {
+  const parent = getDefaultWorkspacesParentDir();
+  const base = sanitizeFilenameSegment(resolveWorkspaceName(name, undefined)) || "Workspace";
+  const first = path.join(parent, base);
+
+  // A registered workspace at or above the parent holds every candidate, so no
+  // suffix can help; the first name lets creation say which workspace is in the
+  // way. Otherwise each refused candidate exists on disk or holds a registered
+  // workspace, and there are finitely many of those, so the search ends.
+  const parentTaken = ensureLoaded().workspaces.some(
+    (workspace) =>
+      sameDirectory(workspace.dataDirectory, parent) || containsDirectory(workspace.dataDirectory, parent),
+  );
+  if (parentTaken || canCreateAt(first)) return first;
+
+  for (let index = 2; ; index += 1) {
+    const candidate = path.join(parent, `${base} (${index})`);
+    if (canCreateAt(candidate)) return candidate;
+  }
+}
+
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
   const config = ensureLoaded();
-  const id = nanoid();
+  const dir = dataDirectory ? expandWorkspacePath(dataDirectory) : suggestWorkspaceLocation(name);
+  assertCanCreateAt(dir);
 
-  let dir: string;
-  if (dataDirectory) {
-    dir = expandWorkspacePath(dataDirectory);
-    const existing = findWorkspaceByDirectory(dir);
-    if (existing) {
-      throw new Error(`That folder is already registered as workspace "${existing.name}".`);
-    }
-    if (fs.existsSync(dir)) {
-      const stat = fs.statSync(dir);
-      if (!stat.isDirectory()) {
-        throw new Error("Location must be a directory.");
-      }
-      if (isWorkspaceDirectory(dir)) {
-        // The UI has one "Open or Create" control, so there is no "Open" to
-        // point at — and openOrCreateWorkspace routes this case to openWorkspace,
-        // so this is reached only by a direct createWorkspace call.
-        throw new Error("That folder already contains a workspace.");
-      }
-      assertCreatable(dir);
-    }
-    assertNoWorkspaceOverlap(dir);
-  } else {
-    dir = path.join(getDefaultWorkspacesDir(), id);
-  }
-
-  const workspace: Workspace = { id, name, dataDirectory: dir };
+  const workspace: Workspace = { id: nanoid(), name, dataDirectory: dir };
 
   try {
     initializeWorkspaceData(dir);

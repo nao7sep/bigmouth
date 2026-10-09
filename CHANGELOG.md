@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The first launch, with no workspace yet, opens a short setup instead of the workspace window. It creates the workspace, then its first target, then stores an Anthropic API key if you enter one; the key can be skipped, and every choice can be changed later in Settings. "Open Existing Workspace" switches to the workspace window instead.
+
 ### Changed
+
+- A workspace created without a location goes to `Documents/BigMouth/<workspace name>` in the home folder, numbered `(2)`, `(3)`… when that folder is taken, instead of `~/.bigmouth/workspaces/<id>`. The workspace window shows that path in the empty Location field. Existing workspaces stay where they are.
 
 - A post's lifecycle is draft, discarded, verified, published and retired. Verified replaces Ready, Retired replaces Expired, and Discarded keeps a draft that is not wanted without deleting it.
 - The Posts list has a section per status. Discarded, Published and Retired load a page at a time, and the "Posts per load" setting sets the page size of all three; a workspace's `config.json` stores it as `postsPerLoad` in place of `publishedPostsPerLoad`.

@@ -21,6 +21,7 @@ vi.mock("@main/storageAccess.js", async () => {
     listWorkspaces: async (...args: Parameters<typeof workspaceStore.listWorkspaces>) => workspaceStore.listWorkspaces(...args),
     getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
     openOrCreateWorkspace: async (...args: Parameters<typeof workspaceStore.openOrCreateWorkspace>) => workspaceStore.openOrCreateWorkspace(...args),
+    suggestWorkspaceLocation: async (...args: Parameters<typeof workspaceStore.suggestWorkspaceLocation>) => workspaceStore.suggestWorkspaceLocation(...args),
     updateWorkspace: async (...args: Parameters<typeof workspaceStore.updateWorkspace>) => workspaceStore.updateWorkspace(...args),
     deleteWorkspace: async (...args: Parameters<typeof workspaceStore.deleteWorkspace>) => workspaceStore.deleteWorkspace(...args),
     clearCache: async (...args: Parameters<typeof postStore.clearCache>) => postStore.clearCache(...args),
@@ -86,11 +87,26 @@ describe("workspace IPC handlers", () => {
     const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "My WS"));
     expect(ws.name).toBe("My WS");
     expect(ws.id).toBeTruthy();
+    expect(ws.dataDirectory).toBe(path.join(os.homedir(), "Documents", "BigMouth", "My WS"));
     expect(fs.existsSync(path.join(ws.dataDirectory, "config.json"))).toBe(false);
 
     const list = (await invoke<Workspace[]>(CHANNELS.listWorkspaces));
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(ws.id);
+  });
+
+  it("suggests the folder a blank location would use, trimming the name and creating nothing", async () => {
+    const parent = path.join(os.homedir(), "Documents", "BigMouth");
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "  Blog  ")).toBe(path.join(parent, "Blog"));
+    // A blank or non-text name asks for the default name's folder.
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "")).toBe(path.join(parent, "Workspace"));
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, 42)).toBe(path.join(parent, "Workspace"));
+    expect(fs.existsSync(parent)).toBe(false);
+    expect(listWorkspaces()).toHaveLength(0);
+
+    const ws = await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Blog");
+    expect(ws.dataDirectory).toBe(path.join(parent, "Blog"));
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Blog")).toBe(path.join(parent, "Blog (2)"));
   });
 
   it("trims the name when opening-or-creating, then opens the same directory idempotently", async () => {

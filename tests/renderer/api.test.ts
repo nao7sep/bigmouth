@@ -9,6 +9,7 @@ import {
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
+  suggestWorkspaceLocation,
   getPost,
   createPost,
   updatePost,
@@ -157,6 +158,13 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.deleteWorkspace).toHaveBeenCalledWith("w1");
     });
 
+    it("suggestWorkspaceLocation forwards the name", () => {
+      const b = bridge();
+      installBridge(b);
+      void suggestWorkspaceLocation("Blog");
+      expect(b.suggestWorkspaceLocation).toHaveBeenCalledWith("Blog");
+    });
+
     it("pickWorkspaceDirectory forwards to the bridge's pickDirectory", () => {
       const b = bridge();
       installBridge(b);
@@ -260,6 +268,19 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.saveTargets).toHaveBeenCalledWith("w1", targets);
     });
 
+    it("lists and saves a named workspace's targets, before any is active", () => {
+      // First-run setup writes to the workspace it just created, which is not
+      // yet the active one.
+      setActiveWorkspace("");
+      const b = bridge();
+      installBridge(b);
+      const targets = [{ name: "Blog", defaultLanguage: "en", requiresMetadata: true }];
+      void listTargets("w9");
+      void saveTargets(targets, "w9");
+      expect(b.listTargets).toHaveBeenCalledWith("w9");
+      expect(b.saveTargets).toHaveBeenCalledWith("w9", targets);
+    });
+
     it("renameTarget forwards ws + old/new names", () => {
       const b = bridge();
       installBridge(b);
@@ -333,6 +354,12 @@ describe("api wrappers — call-through and argument shape", () => {
       };
       void saveAnthropicSettings(input);
       expect(b.saveAnthropicSettings).toHaveBeenCalledWith("w1", input);
+      void getAnthropicSettings("w9");
+      void saveAnthropicSettings(input, "w9");
+      void getSettings("w9");
+      expect(b.getAnthropicSettings).toHaveBeenCalledWith("w9");
+      expect(b.saveAnthropicSettings).toHaveBeenCalledWith("w9", input);
+      expect(b.getSettings).toHaveBeenCalledWith("w9");
     });
   });
 

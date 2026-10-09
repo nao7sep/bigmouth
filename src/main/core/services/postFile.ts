@@ -190,8 +190,8 @@ function contentKeys(frontMatter: PostFrontMatter): PostFrontMatter {
 export function writePost(filePath: string, frontMatter: PostFrontMatter, content: string): void {
   const output = serializePost(frontMatter, content);
   // recorded: a post .md file is the primary user-authored durable text this app owns — the very thing
-  // the backup exists for. `filePath` is the full absolute path whether the workspace lives internally
-  // under ~/.bigmouth/workspaces/ or at a user-chosen external location; either way the same managed-
+  // the backup exists for. `filePath` is the full absolute path wherever the workspace lives — the default
+  // ~/Documents/BigMouth/<name> or a location the user chose; either way the same managed-
   // text choke point records the exact bytes just written (data-backup conventions: every authored .md
   // is recorded, external managed locations included).
   writeManagedText(filePath, output);

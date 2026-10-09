@@ -2291,6 +2291,21 @@ select:is(.form-select, .prompt-select) {
   margin-top: 12px;
 }
 
+/* First-run setup: each step opens by naming the one thing it asks. */
+.setup-heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--bm-text);
+}
+
+.setup-intro {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bm-text-soft);
+}
+
 /* The error boundary's last-resort screen. Deliberately plain: it renders when
    the app could not, so it leans on nothing the failure might have taken with
    it. */
