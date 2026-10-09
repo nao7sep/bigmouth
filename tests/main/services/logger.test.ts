@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -46,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   closeLogger();
+  vi.useRealTimers();
   delete process.env.BIGMOUTH_DEBUG;
   fs.rmSync(rootDir, { recursive: true, force: true });
 });
@@ -66,14 +67,20 @@ describe("records", () => {
     expect(fs.existsSync(logsDir)).toBe(false);
   });
 
-  it("names a new session at each launch", async () => {
+  it("names a new session at each launch", () => {
+    // Each launch is named by its start instant; two explicit instants stand in
+    // for two launches instead of waiting on the real clock.
+    closeLogger();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T01:00:00.000Z"));
+    initLogger(dbPath, logsDir);
     info("first");
     closeLogger();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    vi.setSystemTime(new Date("2026-10-09T01:00:00.001Z"));
     initLogger(dbPath, logsDir);
     info("second");
     const sessions = query<{ session: string }>("SELECT session FROM log_records ORDER BY id");
-    expect(sessions[0]!.session).not.toBe(sessions[1]!.session);
+    expect(sessions.map((row) => row.session)).toEqual(["2026-10-09T01:00:00.000Z", "2026-10-09T01:00:00.001Z"]);
   });
 
   it("records a provider call whole", () => {
