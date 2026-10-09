@@ -1,185 +1,124 @@
 /**
- * The write-through data-backup store (data-backup conventions). It owns one add-only SQLite file,
- * `backups.sqlite3`, directly under bigmouth's storage root (`BIGMOUTH_DATA_DIR` or `~/.bigmouth`, resolved
- * in one place by {@link getAppRoot} — never a hardcoded path). Every managed *text* save records the
- * exact bytes it just wrote here, strictly AFTER its atomic rename lands, so the history is always as
- * current as the last save. There is no startup scan, no periodic pass, no restore path.
+ * The data-backup history (data-backup-conventions): `backups.sqlite3` directly under BigMouth's
+ * storage root (`BIGMOUTH_DATA_DIR` or `~/.bigmouth`, resolved in one place by {@link getAppRoot}),
+ * holding the last version of each protected file saved in each session. What is protected is decided
+ * at each write boundary: post files, the workspace registry, both settings files, and attachments with
+ * their `meta.json` call {@link record} after their write lands; the post index, view state, secrets and
+ * records never do. There is no capture at launch, on a timer or at exit, and no restore path.
  *
- * SQLite binding: Node's built-in `node:sqlite` (`DatabaseSync`), not better-sqlite3. In an Electron
- * main process better-sqlite3 is a native addon that must be rebuilt against Electron's Node ABI on
- * every Electron bump — real, recurring packaging drag. `node:sqlite` is built into Node 22.5+ (bigmouth
- * targets Node >=22 and runs on 26), needs no native build, no `node-gyp`, no `electron-rebuild`, and is
- * synchronous exactly like better-sqlite3 — which is what a record-after-rename hook wants. It returns a
- * BLOB as a `Uint8Array`, wrapped in a Buffer here for byte-identical hashing and compare.
+ * Recording runs on its own thread (backupWorker.ts), which applies writes in save order, so a slow or
+ * locked store never holds up the save that called it or the storage work behind it. `record` hands the
+ * thread a copy of the exact bytes written and returns. Failures are the thread's to report: one warn,
+ * never a failed save. At an ordinary quit the pending writes get a short bound; at OS session end they
+ * are skipped.
  *
- * Two absolute musts drive every line below (they are not best-effort aspirations):
- *
- *  - It never breaks a save and never crashes the app. The save has already succeeded — the file is on
- *    disk before {@link record} is called — so any failure here (the DB is locked, the disk is full, an
- *    insert throws) is caught, logged once at `warn`, and swallowed. A lost record self-heals on the
- *    next save of that file, whose content will differ from the last recorded row.
- *  - It logs only failures. A successful record logs NOTHING; a line per save would flood the log.
+ * SQLite binding: Node's built-in `node:sqlite`, which needs no native rebuild against Electron's Node ABI.
  */
 
-import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 import { getBackupsDbPath } from "./storagePaths.js";
-import { NewerFormatError, assertSqliteWritable, openSqliteStore } from "../shared/storeFormat.js";
+import { formatUtcIso } from "../shared/timestamps.js";
 import { warn as logWarn, serializeError } from "./logger.js";
+import type { BackupWorkerNotice, BackupWorkerRequest } from "./backupWorker.js";
 
-/** The store file under the resolved storage root. Computed lazily (not frozen into a module constant
- *  at import time) so `BIGMOUTH_DATA_DIR` is read after initAppDir() has resolved the root, per the
- *  storage-path convention's caution against import-time resolution. */
-function storeFile(): string {
-  return getBackupsDbPath();
+// One session per process launch: every row this launch writes carries it.
+const SESSION_ID = formatUtcIso(new Date());
+
+// The recorder's module. Tests run this file from source beside backupWorker.ts; in the build this
+// module lands in a shared chunk, so the storage worker's entry names backup-worker.js beside itself.
+let recorderModule: URL | null = import.meta.url?.endsWith(".ts") ? new URL("./backupWorker.ts", import.meta.url) : null;
+
+/** Where the recorder's module is; the storage worker's entry sets it in the build. */
+export function useBackupRecorderModule(url: URL): void {
+  recorderModule = url;
 }
 
-/**
- * The one add-only table. `content` is a BLOB of the exact bytes written — never decoded text, so
- * CR/LF, a BOM, and non-UTF-8 bytes are stored byte-identically. `written_at_utc` is the serialized
- * ISO-8601-ms form (`2026-07-06T04:05:12.345Z`), a data value — NEVER the `yyyymmdd-hhmmss-fff-utc`
- * filename stamp. The `(path, id)` index serves the latest-row-per-path dedup lookup.
- */
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS backups (
-  id             INTEGER PRIMARY KEY,
-  path           TEXT NOT NULL,
-  content        BLOB NOT NULL,
-  content_sha256 TEXT NOT NULL,
-  byte_size      INTEGER NOT NULL,
-  written_at_utc TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_backups_path_id ON backups (path, id);
-`;
+let recorder: Worker | null = null;
+// The recorder failing to start or dying is reported once; recording then stays off.
+let recorderFailed = false;
 
-/** Module-level singleton, resolved once. `null` DB means recording is disabled for this session
- *  because the store could not be opened — a single warn was already logged; every later `record`
- *  becomes a no-op rather than retrying (and re-logging) a broken open on every save. */
-let db: DatabaseSync | null = null;
-let initialized = false;
-
-/**
- * Open and initialize the store once (create the table if absent, switch on WAL). Best-effort: on any
- * failure it logs ONE warn, leaves recording disabled for the session, and never throws. WAL is what
- * lets the tolerated two-instance case (two bigmouth windows writing at once) serialize safely without a
- * cross-process lock.
- */
-function ensureOpen(): DatabaseSync | null {
-  if (initialized) return db;
-  initialized = true;
-  // Resolve the store path once, up front, and reuse it in the catch — never re-invoke the resolver in
-  // the failure handler. getAppRoot() itself throws when the app is not initialized (a save reaching the
-  // hook before initAppDir, as a unit test can), and a resolver that threw once will throw again; calling
-  // it inside the catch would let that second throw escape the whole best-effort wrapper.
-  let file = "<unresolved>";
+function ensureRecorder(): Worker | null {
+  if (recorder) return recorder;
+  if (recorderFailed) return null;
   try {
-    file = storeFile();
-    // not recorded: backups.sqlite3 is the store itself — binary, and written by this backup layer, not
-    // through the managed-text atomic-write path — so it never records itself. No recursion, no special
-    // case (data-backup conventions: "A binary store, excluded from itself").
-    // The storage root already exists (initAppDir mkdir's it at startup); this mkdir is a cheap guard so
-    // the store can still open under a root a test relocated to.
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    // A store a newer version of BigMouth wrote is refused before anything is written to it, and left
-    // exactly as it is (store-recovery-conventions).
-    db = openSqliteStore("backups", file, (opened) => {
-      opened.exec(SCHEMA);
-    });
-    // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
-    // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
-    db.exec("PRAGMA busy_timeout = 5000");
-
-  } catch (err) {
-    if (err instanceof NewerFormatError) {
-      logWarn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", {
-        file,
-        formatVersion: err.version,
-      });
-    } else {
-      logWarn("backup store: could not open; recording disabled for this session", {
-        file,
-        error: serializeError(err),
-      });
-    }
-    db = null;
+    if (!recorderModule) throw new Error("The backup recorder's module is not known.");
+    const created = new Worker(recorderModule);
+    created.unref();
+    created.on("message", (notice: BackupWorkerNotice) => logWarn(notice.text, notice.fields));
+    const lost = (error: unknown) => {
+      if (recorder !== created) return;
+      recorder = null;
+      recorderFailed = true;
+      logWarn("backup recorder stopped; recording disabled for this session", { error: serializeError(error) });
+    };
+    created.on("error", lost);
+    created.on("exit", (code) => lost(new Error(`The backup recorder exited with code ${code}.`)));
+    recorder = created;
+  } catch (error) {
+    recorderFailed = true;
+    logWarn("backup recorder could not start; recording disabled for this session", { error: serializeError(error) });
   }
-  return db;
-}
-
-/** SHA-256 of the exact bytes, lowercase hex. */
-function sha256(bytes: Buffer): string {
-  return createHash("sha256").update(bytes).digest("hex");
+  return recorder;
 }
 
 /**
- * Record one managed-text write: `absolutePath` is the FULL absolute path of the file as written;
- * `bytes` is the exact raw bytes just written (the caller already holds them — never re-read the file).
- *
- * Dedup by content hash per path: the new content's SHA-256 is compared against the latest row for the
- * same `path`, and the insert is SKIPPED when they are equal. This collapses consecutive identical
- * saves (an autosave with no real change writes no row) while still recording every genuinely distinct
- * version — including a revert, whose content differs from the immediately preceding row.
- *
- * Best-effort and silent on success; any failure is caught, logged once at `warn` (file + reason), and
- * swallowed. It never throws, never crashes the app, and never breaks the save.
+ * Records one protected write: `absolutePath` is the full absolute path of the file as written, and
+ * `bytes` the exact bytes just written, never a re-read of the file. Returns at once; never throws.
  */
-export function record(absolutePath: string, bytes: Buffer): void {
-  const store = ensureOpen();
-  if (!store) return; // open failed earlier; disabled for the session (already warned once)
-  let transactionOpen = false;
+export function record(absolutePath: string, bytes: Uint8Array): void {
   try {
-    const hash = sha256(bytes);
-    // The latest-row read and its conditional insert are one write decision. WAL
-    // and busy_timeout serialize individual writes, but without acquiring the
-    // write lock before the SELECT two processes can both observe the old hash
-    // and append the same successor. BEGIN IMMEDIATE makes the second recorder
-    // wait before it reads, so it sees the first recorder's committed row.
-    store.exec("BEGIN IMMEDIATE");
-    transactionOpen = true;
-    assertSqliteWritable("backups", storeFile(), store);
-    const latest = store
-      .prepare("SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1")
-      .get(absolutePath) as { h: string } | undefined;
-    if (latest?.h === hash) {
-      store.exec("COMMIT");
-      transactionOpen = false;
-      return; // unchanged since the last recorded version — dedup skip
-    }
-
-    store
-      .prepare(
-        "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)",
-      )
-      .run(absolutePath, bytes, hash, bytes.byteLength, new Date().toISOString());
-    store.exec("COMMIT");
-    transactionOpen = false;
-  } catch (err) {
-    if (transactionOpen) {
-      try {
-        store.exec("ROLLBACK");
-      } catch {
-        // The original record failure is the useful diagnostic. Rollback is
-        // best-effort because the transaction may already have been aborted.
-      }
-    }
-    logWarn("backup store: failed to record a managed write", {
-      file: absolutePath,
-      error: serializeError(err),
-    });
+    const worker = ensureRecorder();
+    if (!worker) return;
+    // A copy the thread owns: the caller keeps using its own buffer.
+    const copy = new Uint8Array(bytes);
+    worker.postMessage(
+      {
+        kind: "record",
+        file: getBackupsDbPath(),
+        sessionId: SESSION_ID,
+        path: absolutePath,
+        bytes: copy,
+        writtenAt: new Date().toISOString(),
+      } satisfies BackupWorkerRequest,
+      [copy.buffer],
+    );
+  } catch (error) {
+    logWarn("backup store: failed to hand a write to the recorder", { file: absolutePath, error: serializeError(error) });
   }
 }
 
-/** Close the store (best-effort). For tests that need to release the file handle between throwaway
- *  roots; the app itself lets the process exit close it. Resets the singleton so the next
- *  {@link record} re-opens against the current `BIGMOUTH_DATA_DIR`. */
+// Asks the recorder to answer once every earlier write is applied, and waits up to `boundMs`.
+function settle(kind: "drain" | "close", boundMs: number): boolean {
+  const worker = recorder;
+  if (!worker) return true;
+  const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  worker.postMessage({ kind, signal } satisfies BackupWorkerRequest);
+  return Atomics.wait(signal, 0, 0, boundMs) !== "timed-out";
+}
+
+/** Waits up to `boundMs` for the writes already handed over; true when all were applied. */
+export function drainBackups(boundMs: number): boolean {
+  return settle("drain", boundMs);
+}
+
+/**
+ * Ends recording for the process: the pending writes get `boundMs` (0 skips them, as at OS session
+ * end), then the recorder is let go without waiting.
+ */
+export function stopBackups(boundMs: number): void {
+  const worker = recorder;
+  if (!worker) return;
+  // Closing the store with the drain releases its file before the thread goes.
+  if (boundMs > 0) settle("close", boundMs);
+  recorder = null;
+  void worker.terminate();
+}
+
+/**
+ * Applies the pending writes and releases the store file, keeping the recorder for the next write.
+ * For tests that relocate the storage root between cases; the next write opens the store under the
+ * current root.
+ */
 export function closeBackupStore(): void {
-  try {
-    db?.close();
-  } catch {
-    // best-effort: a close failure on shutdown/teardown is harmless
-  }
-  db = null;
-  initialized = false;
+  settle("close", 5000);
 }

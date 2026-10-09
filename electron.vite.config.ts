@@ -33,6 +33,7 @@ export default defineConfig({
           index: resolve("src/main/index.ts"),
           "records-reader-worker": resolve("src/main/core/services/recordsReaderWorker.ts"),
           "storage-worker": resolve("src/main/storageWorker.ts"),
+          "backup-worker": resolve("src/main/core/services/backupWorker.ts"),
         },
         output: {
           entryFileNames: "[name].js",

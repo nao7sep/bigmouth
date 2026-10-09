@@ -2,10 +2,14 @@ import { parentPort } from "node:worker_threads";
 import { storageTasks } from "./storageTasks.js";
 import { setContentSaveListener } from "./core/services/postStore.js";
 import { onRecordStored } from "./core/services/recordsStore.js";
+import { useBackupRecorderModule } from "./core/services/backupStore.js";
 import { serializeError } from "./core/services/logger.js";
 import type { StorageRequest, StorageReply, StorageFlushRequest, StorageFinishRequest } from "./storageOwner.js";
 
 const port = parentPort!;
+// electron-vite builds the backup recorder as backup-worker.js beside this entry.
+const here = import.meta.url;
+if (here && !here.endsWith(".ts")) useBackupRecorderModule(new URL("./backup-worker.js", here));
 function apply(request: StorageRequest) {
   const value = (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
   port.postMessage({ id: request.id, ok: true, value } satisfies StorageReply);
@@ -29,7 +33,7 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
       // typed while the quit question was open, get one more write attempt
       // within the finish bound; a quit flush already held the debounce.
       try { storageTasks.flush(); }
-      finally { storageTasks.finish(); }
+      finally { storageTasks.finish(request.backupBoundMs); }
     }
     finally {
       request.port.postMessage({ finished: true });

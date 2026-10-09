@@ -20,8 +20,8 @@ export const FORMAT_VERSIONS = {
   apiKeys: 1,
   /** `records.sqlite3`. */
   records: 1,
-  /** `backups.sqlite3`. */
-  backups: 1,
+  /** `backups.sqlite3`; 2 added the session column. */
+  backups: 2,
 } as const;
 
 export type StoreFormat = keyof typeof FORMAT_VERSIONS;

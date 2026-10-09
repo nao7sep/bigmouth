@@ -9,6 +9,8 @@ import {
 import { initialize, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
 import { storageOwner } from "./storageOwner.js";
 const QUIT_FLUSH_BOUND_MS = 2000;
+// The part of the 1 s finish bound that pending backup writes may use at an ordinary quit.
+const BACKUP_DRAIN_MS = 300;
 import { cancelOpenMessageDialogs } from "./plain-message-dialog.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
 import {
@@ -191,7 +193,9 @@ function terminateApp(storageSettled: boolean): void {
 
 async function exitApp(): Promise<void> {
   let settled = false;
-  try { settled = await storageOwner.finishAsync(1000); }
+  // Pending backup writes get a short part of the bound at an ordinary quit
+  // and none while the OS session ends (data-backup-conventions).
+  try { settled = await storageOwner.finishAsync(1000, systemShutdown() ? 0 : BACKUP_DRAIN_MS); }
   finally { terminateApp(settled); }
 }
 

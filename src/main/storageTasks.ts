@@ -11,7 +11,7 @@ import { initAppDir } from "./core/services/workspaceStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath } from "./core/services/logger.js";
-import { closeBackupStore } from "./core/services/backupStore.js";
+import { stopBackups } from "./core/services/backupStore.js";
 import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
@@ -36,8 +36,9 @@ export const storageTasks = {
     postStore.holdPendingFlushes();
     return postStore.flushAllPendingEdits();
   },
-  finish() {
-    try { closeBackupStore(); }
+  /** Ends storage for the process; pending backup writes get `backupBoundMs`, 0 at OS session end. */
+  finish(backupBoundMs: number) {
+    try { stopBackups(backupBoundMs); }
     finally { closeLogger(); }
   },
   log(level: "debug" | "info" | "warn" | "error", message: string, fields?: Record<string, unknown>) {

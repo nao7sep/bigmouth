@@ -274,11 +274,11 @@ describe("storage mutation ownership", () => {
       const started = owner.run("getUiState", []);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       await started;
-      const finishing = owner.finishAsync(1000);
+      const finishing = owner.finishAsync(1000, 0);
       await vi.advanceTimersByTimeAsync(1000);
       expect(await finishing).toBe(false);
     } finally { await owner.stop(); }
-    expect(await new StorageOwner(() => new HeldWorker() as unknown as Worker).finishAsync(1000)).toBe(true);
+    expect(await new StorageOwner(() => new HeldWorker() as unknown as Worker).finishAsync(1000, 0)).toBe(true);
   });
 });
 
@@ -312,7 +312,7 @@ it("runs real store writes and quit flush on the persistent worker", async () =>
     // is open, is written by the finish step.
     const late = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
     await owner.run("queueContent", [workspace.dataDirectory, late.frontMatter.id, "typed during the question"]);
-    expect(await owner.finishAsync(1000)).toBe(true);
+    expect(await owner.finishAsync(1000, 0)).toBe(true);
     expect(fs.readFileSync(late.filePath, "utf8")).toContain("typed during the question");
   } finally { await owner?.stop(); fs.rmSync(root, { recursive: true, force: true }); }
 });

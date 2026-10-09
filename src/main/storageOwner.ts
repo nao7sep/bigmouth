@@ -11,7 +11,7 @@ const isContent = (name: StorageCommand) => name === "queueContent" || name === 
 // authored edits, and a cancelled quit's resumption of debounced writes.
 const mustReachWorker = (name: StorageCommand) => isAuthored(name) || name === "resumePendingFlushes";
 export interface StorageRequest { id: number; name: StorageCommand; args: unknown[] }
-export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; signal: Int32Array; port: MessagePort }
+export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; backupBoundMs: number; signal: Int32Array; port: MessagePort }
 export interface StorageFlushRequest { flush: true; edits: StorageRequest[]; signal: Int32Array; port: MessagePort }
 export type StorageReply =
   | { id: number; ok: true; value: unknown }
@@ -219,7 +219,7 @@ export class StorageOwner {
     } catch (error) { return { kind: "crashed", error: error instanceof Error ? error.message : String(error) }; }
   }
 
-  private beginFinish() {
+  private beginFinish(backupBoundMs: number) {
     if (!this.worker || this.failed) return null;
     this.closing = true;
     const queued = this.queued.splice(0);
@@ -228,7 +228,7 @@ export class StorageOwner {
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
-      this.worker.postMessage({ finish: true, queued: requests, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
+      this.worker.postMessage({ finish: true, queued: requests, backupBoundMs, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
     } catch (error) {
       port1.close();
       port2.close();
@@ -239,9 +239,12 @@ export class StorageOwner {
     return { port: port1, signal };
   }
 
-  /** Resolves true when the worker finished within the bound, false when it is still busy. */
-  async finishAsync(boundMs: number): Promise<boolean> {
-    const result = this.beginFinish();
+  /**
+   * Resolves true when the worker finished within the bound, false when it is still busy. Pending
+   * backup writes get `backupBoundMs` of it; 0 skips them.
+   */
+  async finishAsync(boundMs: number, backupBoundMs: number): Promise<boolean> {
+    const result = this.beginFinish(backupBoundMs);
     if (!result) return true;
     return await new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => { result.port.close(); resolve(false); }, boundMs);
@@ -249,9 +252,12 @@ export class StorageOwner {
     });
   }
 
-  /** Returns true when the worker finished within the bound, false when it is still busy. */
+  /**
+   * Returns true when the worker finished within the bound, false when it is still busy. Only an
+   * ending OS session finishes this way, so pending backup writes are skipped.
+   */
   finishWithin(boundMs: number): boolean {
-    const result = this.beginFinish();
+    const result = this.beginFinish(0);
     if (!result) return true;
     try { return Atomics.wait(result.signal, 0, 0, boundMs) !== "timed-out"; } finally { result.port.close(); }
   }

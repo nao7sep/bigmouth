@@ -10,11 +10,12 @@
  * `post-A.md` file and a `post-B/` directory to sit side by side in one workspace folder —
  * a file and a per-post directory mixed together, inconsistent and awkward. Keeping posts
  * and assets as two flat, parallel collections linked by post id makes the layout uniform.
- * Assets are binary and are not backed up (see the record-hook notes below); only the
- * posts' text is recorded by the write-through data-backup store.
+ * Assets are files the user added, so each is recorded in the data-backup history when it is
+ * saved, and so is meta.json each time it is written (data-backup-conventions).
  *
- * A sidecar file {dataDir}/assets/{postId}/meta.json holds cached metadata
- * (size, dimensions, metadata warning flag) so list requests are fast.
+ * A sidecar file {dataDir}/assets/{postId}/meta.json holds each asset's upload time, size,
+ * dimensions and metadata warning flag. The upload time is a recorded fact: a file missing from
+ * meta.json is listed with its size only, so the backup is what can bring the rest back.
  *
  * All public functions take a dataDir parameter (the workspace data directory).
  */
@@ -26,7 +27,8 @@ import {
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
-import { holdsBytes, writeFileAtomic } from "../shared/atomicWrite.js";
+import { holdsBytes, writeFileAtomic, writeManagedText } from "../shared/atomicWrite.js";
+import { record } from "./backupStore.js";
 import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
 import type { AssetListing } from "@shared/types";
@@ -156,11 +158,8 @@ export function saveAssetFile(
   // keeping its permissions), then commit the metadata. If a crash lands between
   // the two, the orphaned file is reconciled back into the list on the next read
   // — no data is lost.
-  // not recorded: an uploaded asset is BINARY (an image/attachment), copied in and re-acquirable from
-  // its source. Binaries are written by code paths that never call the record hook — they carry no
-  // text-recovery value and would bloat the text history (data-backup conventions: binary and
-  // binary-ish writes are excluded). This is the bare atomic write, not the managed-text choke point.
-  writeFileAtomic(destPath, buffer);
+  // recorded: an uploaded asset is a file the user added; deleting its post would otherwise lose it.
+  if (writeFileAtomic(destPath, buffer)) record(destPath, buffer);
   if (source) keepSourceMetadata(destPath, source);
   try {
     writeAssetMeta(metaPath, [...existing, finalMeta]);
@@ -370,11 +369,8 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
 }
 
 function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
-  // not recorded: meta.json is a sidecar colocated in the binary-bearing assets/<postId>/ directory.
-  // A directory that holds binaries is excluded wholesale, sidecars included — this cache is meaningless
-  // without the images (which are excluded) and is regenerable from them (reconcileAssets rebuilds it),
-  // so it rides along into exclusion rather than being recorded orphaned (data-backup conventions:
-  // anything colocated in a binary-bearing directory is excluded). Kept on the bare atomic write.
-  writeFileAtomic(metaPath, jsonStoreText("assetMeta", { assets }));
+  // recorded: meta.json holds upload times and dimensions that reconcileAssets cannot rebuild from
+  // the files, so it is protected with the assets it describes.
+  writeManagedText(metaPath, jsonStoreText("assetMeta", { assets }));
 }
 
