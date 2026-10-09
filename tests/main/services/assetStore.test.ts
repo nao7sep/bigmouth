@@ -183,6 +183,66 @@ describe("saveAssetFile disambiguates case-only filename collisions", () => {
   });
 });
 
+// --- Windows filesystem: the sanitized names hold on a real NTFS disk -------
+// Elsewhere these run against a filesystem that accepts every name, so they
+// would prove nothing; they run on the Windows PC.
+
+describe("asset names on Windows", () => {
+  const onWindows = it.runIf(process.platform === "win32");
+
+  onWindows("stores names Windows reserves or trims under their sanitized names, and reads them back", () => {
+    const cases: [raw: string, stored: string][] = [
+      ["CON.backup.txt", "_CON.backup.txt"],
+      ["aux", "_aux"],
+      ["lpt1.png", "_lpt1.png"],
+      ["name.", "name"],
+      ["trailing space ", "trailing space"],
+      ['a:b?"c.png', "a_b__c.png"],
+    ];
+    const dir = assetDir(dataDir, POST);
+    for (const [index, [raw, stored]] of cases.entries()) {
+      const name = sanitizeFilename(raw);
+      expect(name).toBe(stored);
+      const bytes = Buffer.from(`bytes ${index}`);
+      expect(saveAssetFile(dataDir, POST, name, bytes, meta(name, bytes.length)).asset.filename).toBe(stored);
+      expect(fs.readFileSync(path.join(dir, stored)).equals(bytes)).toBe(true);
+    }
+
+    // The directory lists each file under exactly the stored spelling, and the list matches it.
+    const onDisk = fs.readdirSync(dir).filter((f) => f !== "meta.json");
+    expect(onDisk.sort()).toEqual(cases.map(([, stored]) => stored).sort());
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename).sort()).toEqual(onDisk.sort());
+
+    deleteAsset(dataDir, POST, "_CON.backup.txt");
+    expect(fs.existsSync(path.join(dir, "_CON.backup.txt"))).toBe(false);
+    expect(listAssets(dataDir, POST).assets).toHaveLength(cases.length - 1);
+  });
+
+  onWindows("keeps both files when a re-upload differs only in case", () => {
+    const dir = assetDir(dataDir, POST);
+    saveAssetFile(dataDir, POST, "Photo.png", Buffer.from("abc"), meta("Photo.png"));
+    // NTFS resolves either spelling to the one file, so writing the second
+    // spelling as-is would replace the first.
+    expect(fs.readFileSync(path.join(dir, "photo.png"), "utf8")).toBe("abc");
+
+    expect(saveAssetFile(dataDir, POST, "photo.png", Buffer.from("de"), meta("photo.png", 2)).asset.filename)
+      .toBe("photo (1).png");
+    expect(saveAssetFile(dataDir, POST, "PHOTO.PNG", Buffer.from("f"), meta("PHOTO.PNG", 1)).asset.filename)
+      .toBe("PHOTO (2).PNG");
+
+    expect(fs.readFileSync(path.join(dir, "Photo.png"), "utf8")).toBe("abc");
+    expect(fs.readFileSync(path.join(dir, "photo (1).png"), "utf8")).toBe("de");
+    expect(fs.readFileSync(path.join(dir, "PHOTO (2).PNG"), "utf8")).toBe("f");
+    expect(fs.readdirSync(dir).filter((f) => f !== "meta.json").sort())
+      .toEqual(["PHOTO (2).PNG", "Photo.png", "photo (1).png"]);
+
+    // The same spelling again replaces its own file in place.
+    saveAssetFile(dataDir, POST, "Photo.png", Buffer.from("xyz"), meta("Photo.png"));
+    expect(fs.readFileSync(path.join(dir, "Photo.png"), "utf8")).toBe("xyz");
+    expect(listAssets(dataDir, POST).assets).toHaveLength(3);
+  });
+});
+
 // --- Crash recovery: a derived cache reconciled against the files -----------
 
 describe("listAssets self-heals against the files on disk", () => {

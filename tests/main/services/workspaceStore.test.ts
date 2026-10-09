@@ -385,6 +385,17 @@ describe("the default workspace location", () => {
     expect(createWorkspace("...").dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace"));
   });
 
+  // Elsewhere any name makes a folder, so this proves something only on the Windows PC.
+  it.runIf(process.platform === "win32")("makes a usable folder on Windows from a name Windows reserves", () => {
+    for (const [name, folder] of [["CON", "_CON"], ["nul.notes", "_nul.notes"], ["Blog.", "Blog"]]) {
+      const ws = createWorkspace(name);
+      expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), folder));
+      expect(fs.readdirSync(documentsBigMouth())).toContain(folder);
+      expect(fs.statSync(path.join(ws.dataDirectory, "posts")).isDirectory()).toBe(true);
+      expect(openWorkspace(ws.dataDirectory).id).toBe(ws.id);
+    }
+  });
+
   it("numbers the folder when one of that name is already a workspace", () => {
     const first = createWorkspace("Blog");
     const second = createWorkspace("Blog");
