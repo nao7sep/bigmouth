@@ -3,10 +3,18 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import { createRef } from "react";
 
 // MetadataTab only talks to the main process through these api calls.
+// A held edit's late refusal arrives as an event; tests play main's part.
+const refusedListeners = vi.hoisted(
+  () => new Set<(e: { postId: string; edits: Record<string, unknown>; refusal: unknown }) => void>()
+);
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   queuePostMetadata: vi.fn(),
   reportMetadataRefusal: vi.fn(),
+  onPostMetadataRefused: (cb: (e: { postId: string; edits: Record<string, unknown>; refusal: unknown }) => void) => {
+    refusedListeners.add(cb);
+    return () => refusedListeners.delete(cb);
+  },
   generateMetadataField: vi.fn(),
   generateMetadataFields: vi.fn(),
 }));
@@ -184,6 +192,51 @@ describe("MetadataTab edits stream to the store", () => {
 
   // A refused value was never buffered, so quitting or closing the window must
   // ask before it goes. Main can only ask if the tab says so, without a blur.
+  // Held while storage was busy, the edit was answered as buffered; the store
+  // refused it once storage took it, so the field must say so and quit must ask.
+  it("records a held edit's late refusal for the field still showing that value", async () => {
+    mockQueue.mockResolvedValue(null);
+    const { container, ref } = renderTab();
+    const slug = slugInput(container);
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "taken" } });
+    });
+    expect(mockReportRefusal).not.toHaveBeenCalled();
+
+    const refusal = { key: "metadata.refusedSlugTaken", values: { slug: "taken" } };
+    act(() => {
+      refusedListeners.forEach((cb) => cb({ postId: "other", edits: { slug: "taken" }, refusal }));
+    });
+    expect(mockReportRefusal).not.toHaveBeenCalled();
+    act(() => {
+      refusedListeners.forEach((cb) => cb({ postId: "p1", edits: { slug: "taken" }, refusal }));
+    });
+    expect(mockReportRefusal.mock.calls).toEqual([["p1", true]]);
+    expect(container.querySelector(".metadata-error")?.textContent).toContain("already uses the slug");
+    let flushed: boolean | undefined;
+    await act(async () => {
+      flushed = await ref.current!.flushPendingChanges();
+    });
+    expect(flushed).toBe(false);
+  });
+
+  it("ignores a late refusal for a value the field no longer shows", async () => {
+    mockQueue.mockResolvedValue(null);
+    const { container } = renderTab();
+    const slug = slugInput(container);
+    await act(async () => {
+      fireEvent.change(slug, { target: { value: "taken" } });
+      fireEvent.change(slug, { target: { value: "taken-2" } });
+    });
+    act(() => {
+      refusedListeners.forEach((cb) =>
+        cb({ postId: "p1", edits: { slug: "taken" }, refusal: { key: "metadata.refusedSlugTaken", values: { slug: "taken" } } })
+      );
+    });
+    expect(mockReportRefusal).not.toHaveBeenCalled();
+    expect(container.querySelector(".metadata-error")).toBeNull();
+  });
+
   it("tells main while a field shows a refused value, and when it no longer does", async () => {
     mockQueue.mockImplementation(async (_id, edits) =>
       (edits as { slug?: string }).slug === "my-post.v2" ? { key: "metadata.refusedInvalidSlug", values: { max: 200 } } : null

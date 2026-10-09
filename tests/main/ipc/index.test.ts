@@ -30,6 +30,7 @@ describe("registerIpcHandlers", () => {
     const outbound = new Set<string>([
       CHANNELS.postContentSaved,
       CHANNELS.postContentSaveFailed,
+      CHANNELS.postMetadataRefused,
       CHANNELS.windowActivityChanged,
       CHANNELS.interfaceLanguageChanged,
       CHANNELS.recordsChanged,

@@ -61,4 +61,5 @@ export const writeProviderCall = command("writeProviderCall");
 
 export const setContentSaveListener = storageOwner.onContentSave.bind(storageOwner);
 export const setHeldEditFailureListener = storageOwner.onHeldEditFailed.bind(storageOwner);
+export const holdsContentFor = (postId: string) => storageOwner.holdsContentFor(postId);
 export const deletePost = command("deletePost");

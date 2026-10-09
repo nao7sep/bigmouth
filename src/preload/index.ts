@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
+  type PostMetadataRefusedEvent,
   CHANNELS,
   analysisStreamChannel,
   type AiRequestHandle,
@@ -170,6 +171,11 @@ const api = {
     const wrapped = (_event: unknown, payload: PostContentSaveFailedEvent): void => listener(payload);
     ipcRenderer.on(CHANNELS.postContentSaveFailed, wrapped);
     return () => ipcRenderer.removeListener(CHANNELS.postContentSaveFailed, wrapped);
+  },
+  onPostMetadataRefused: (listener: (event: PostMetadataRefusedEvent) => void) => {
+    const wrapped = (_event: unknown, payload: PostMetadataRefusedEvent): void => listener(payload);
+    ipcRenderer.on(CHANNELS.postMetadataRefused, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.postMetadataRefused, wrapped);
   },
 
   // --- Targets ---

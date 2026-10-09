@@ -31,6 +31,8 @@ vi.mock("@main/storageAccess.js", async () => {
     getTargets: async (...args: Parameters<typeof config.getTargets>) => config.getTargets(...args),
     setContentSaveListener: post.setContentSaveListener,
     setHeldEditFailureListener: () => {},
+    // Storage here runs in-process, so no text is ever held behind a save.
+    holdsContentFor: () => false,
     refreshIndex: async (...args: Parameters<typeof post.refreshIndex>) => post.refreshIndex(...args),
     listByStatus: async (...args: Parameters<typeof post.listByStatus>) => post.listByStatus(...args),
     countByStatus: async (...args: Parameters<typeof post.countByStatus>) => post.countByStatus(...args),
@@ -490,6 +492,7 @@ describe("queuePostContent (the content stream)", () => {
       expect(saved).toHaveLength(1);
       expect(saved[0].postId).toBe(id);
       expect(saved[0].summary.id).toBe(id);
+      expect(saved[0].newerEditHeld).toBe(false);
       expect(saved[0].summary.fileName).toBe(path.basename(file));
       // The payload is the index projection, which excludes updatedAtUtc — a
       // consumer must never be able to read an edit time off it.
@@ -512,7 +515,7 @@ describe("queuePostContent (the content stream)", () => {
 
       expect(sends(CHANNELS.postContentSaved)).toEqual([]);
       expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
-        { postId: id, kind: "unsaveable", message: expect.stringContaining("file is missing") },
+        { postId: id, kind: "unsaveable" },
       ]);
       // The store did not quietly recreate the file the user's sync client removed.
       expect(fs.existsSync(file)).toBe(false);
@@ -525,7 +528,7 @@ describe("queuePostContent (the content stream)", () => {
     (await invoke(CHANNELS.queuePostContent, "nope", "p1", "text with nowhere to go"));
     expect(sends(CHANNELS.postContentSaved)).toEqual([]);
     expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
-      { postId: "p1", kind: "unsaveable", message: expect.stringContaining("workspace") },
+      { postId: "p1", kind: "unsaveable" },
     ]);
   });
 

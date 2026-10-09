@@ -11,6 +11,7 @@ import type { EditablePostMetadata, PostFrontMatter } from "@shared/types";
 import {
   queuePostMetadata,
   reportMetadataRefusal,
+  onPostMetadataRefused,
   generateMetadataField,
   generateMetadataFields,
 } from "../api";
@@ -174,6 +175,28 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         return round;
       },
       [postId, workspaceId, syncRefusalReport]
+    );
+
+    // A held edit refused once storage took it: its field was told it was
+    // buffered, so the refusal is recorded now, as a direct one would have been,
+    // for each field that still shows the refused value. A field changed since
+    // has sent a newer edit, which carries its own outcome.
+    useEffect(
+      () =>
+        onPostMetadataRefused((event) => {
+          if (event.postId !== postId) return;
+          const keys = Object.keys(event.edits).filter((key) => {
+            const raw = fieldsRef.current[key] ?? "";
+            return JSON.stringify(parseFieldValue(key, raw)) === JSON.stringify(event.edits[key as keyof EditablePostMetadata]);
+          });
+          if (keys.length === 0) return;
+          for (const key of keys) refusedRef.current[key] = { raw: fieldsRef.current[key] ?? "", message: event.refusal };
+          syncRefusalReport();
+          showFirstRefusal(keys);
+        }),
+      // showFirstRefusal reads refs and sets state, so the subscription need not follow it.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [postId, syncRefusalReport],
     );
 
     // Leaving the tab takes its fields with it; the value is no longer on screen.

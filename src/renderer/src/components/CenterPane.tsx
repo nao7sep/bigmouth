@@ -126,8 +126,9 @@ export function CenterPane({
     const offSaved = onPostContentSaved((event) => {
       if (event.postId !== postId) return;
       // The event carries only the list projection (no updatedAtUtc — the index
-      // excludes it), so there is nothing here to fold into the open post.
-      setSaveError(null);
+      // excludes it), so there is nothing here to fold into the open post. Newer
+      // text still held for storage keeps the notice: this save is not the latest.
+      if (!event.newerEditHeld) setSaveError(null);
     });
     const offFailed = onPostContentSaveFailed((event) => {
       if (event.postId !== postId) return;

@@ -30,6 +30,7 @@ import {
   type AssetUploadAdmission,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
+  type PostMetadataRefusedEvent,
   assetUrl as buildAssetUrl,
   type AiRequestHandle,
   type MetadataGenerationResults,
@@ -183,6 +184,13 @@ export function onPostContentSaveFailed(
   listener: (event: PostContentSaveFailedEvent) => void,
 ): () => void {
   return bridge().onPostContentSaveFailed(listener);
+}
+
+/** A held metadata edit the store refused once storage took it. */
+export function onPostMetadataRefused(
+  listener: (event: PostMetadataRefusedEvent) => void,
+): () => void {
+  return bridge().onPostMetadataRefused(listener);
 }
 
 export function updatePost(

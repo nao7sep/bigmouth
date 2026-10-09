@@ -4,9 +4,10 @@ import {
   CHANNELS,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
+  type PostMetadataRefusedEvent,
   type PostUpdate,
 } from "@shared/ipc";
-import type { PostListResponse, PostStatus } from "@shared/types";
+import type { EditablePostMetadata, PostListResponse, PostStatus } from "@shared/types";
 import {
   refreshIndex,
   listByStatus,
@@ -25,6 +26,7 @@ import {
   queueWorkspaceMetadata,
   setContentSaveListener,
   setHeldEditFailureListener,
+  holdsContentFor,
 } from "../storageAccess.js";
 import { EditPendingError } from "../storageOwner.js";
 import type { RebuildResult } from "../core/services/postIndex.js";
@@ -34,20 +36,13 @@ import { POST_STATUSES, isPostStatus } from "../core/shared/postLifecycle.js";
 import { isPagedPostStatus } from "@shared/postStatus";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-import { message } from "@shared/i18n/translate";
+import { message, type Message } from "@shared/i18n/translate";
 
 
 
-
-// The terminal save failures, worded as complete sentences: the renderer
-// prefixes them to its "your text is still here" line, so what the user reads
-// is why the save is impossible, not a retry that will never happen.
-const POST_MISSING_DETAIL = "This post's file is missing.";
-const WORKSPACE_UNRESOLVED_DETAIL = "This post's workspace could not be opened.";
-const LOCKED_DETAIL = "This post is locked against edits.";
 
 /** Sends a main -> renderer event to every live window. */
-function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent): void {
+function broadcast(channel: string, payload: PostContentSavedEvent | PostContentSaveFailedEvent | PostMetadataRefusedEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload);
   }
@@ -58,24 +53,24 @@ export function registerPostHandlers(): void {
   // are unique nanoids, so the renderer matches by post id alone.
   setContentSaveListener((event) => {
     if (event.kind === "saved") {
-      const saved: PostContentSavedEvent = { postId: event.id, summary: event.summary };
+      // Text held behind this save, waiting for storage, is newer than what
+      // was written, so the post must keep showing that it is not saved yet.
+      const saved: PostContentSavedEvent = { postId: event.id, summary: event.summary, newerEditHeld: holdsContentFor(event.id) };
       broadcast(CHANNELS.postContentSaved, saved);
       return;
     }
     // Every failure rides the one failure channel, told apart by `kind`: a
     // write failure is retried from the buffer, while a missing post and a
     // locked one never can be.
-    const failure: PostContentSaveFailedEvent =
-      event.kind === "post-missing"
-        ? { postId: event.id, kind: "unsaveable", message: POST_MISSING_DETAIL }
-        : event.kind === "locked"
-          ? { postId: event.id, kind: "unsaveable", message: LOCKED_DETAIL }
-          : { postId: event.id, kind: "retrying", message: event.message };
+    const failure: PostContentSaveFailedEvent = {
+      postId: event.id,
+      kind: event.kind === "save-failed" ? "retrying" : "unsaveable",
+    };
     logError("post content save failed", {
       postId: failure.postId,
       kind: failure.kind,
-      message: failure.message,
-      ...(event.kind === "save-failed" ? { error: serializeError(event.error) } : {}),
+      reason: event.kind,
+      ...(event.kind === "save-failed" ? { message: event.message, error: serializeError(event.error) } : {}),
     });
     broadcast(CHANNELS.postContentSaveFailed, failure);
   });
@@ -84,13 +79,14 @@ export function registerPostHandlers(): void {
   // delivered when storage takes work again; until a save event arrives the
   // post shows the retrying state, the same as a write that will be retried.
   const reportHeld = (id: string) => {
-    const pending: PostContentSaveFailedEvent = { postId: id, kind: "retrying", message: "Storage is busy; the edit is held." };
+    const pending: PostContentSaveFailedEvent = { postId: id, kind: "retrying" };
     broadcast(CHANNELS.postContentSaveFailed, pending);
   };
 
   // A held edit that failed once delivered. Its caller was answered when it
-  // was held, so a content edit whose workspace no longer resolves is reported
-  // like any other unsaveable text, and a refused metadata value is logged.
+  // was held, so the failure is reported here instead: an edit storage could
+  // not take is unsaveable text, and a metadata value the store refused goes
+  // back to its field, which then shows why and makes quit ask before it is lost.
   setHeldEditFailureListener((request, failure) => {
     const id = String(request.args[1]);
     logError("held post edit failed on delivery", {
@@ -99,9 +95,16 @@ export function registerPostHandlers(): void {
       ...(failure instanceof Error ? { error: serializeError(failure) } : { refusal: failure }),
     });
     if (failure instanceof Error) {
-      const unsaveable: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable", message: WORKSPACE_UNRESOLVED_DETAIL };
+      const unsaveable: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable" };
       broadcast(CHANNELS.postContentSaveFailed, unsaveable);
+      return;
     }
+    const refused: PostMetadataRefusedEvent = {
+      postId: id,
+      edits: request.args[2] as EditablePostMetadata,
+      refusal: failure as Message,
+    };
+    broadcast(CHANNELS.postMetadataRefused, refused);
   });
 
   // One-way: buffer a content edit. Never throws back to the renderer — the
@@ -124,11 +127,7 @@ export function registerPostHandlers(): void {
         return;
       }
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
-      const failure: PostContentSaveFailedEvent = {
-        postId: id,
-        kind: "unsaveable",
-        message: WORKSPACE_UNRESOLVED_DETAIL,
-      };
+      const failure: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable" };
       broadcast(CHANNELS.postContentSaveFailed, failure);
     }
   });

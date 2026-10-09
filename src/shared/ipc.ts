@@ -115,6 +115,9 @@ export const CHANNELS = {
   reportMetadataRefusal: "post:metadataRefusal",
   postContentSaved: "post:contentSaved",
   postContentSaveFailed: "post:contentSaveFailed",
+  // A metadata edit held while storage was busy, which the store refused once
+  // it was delivered. Its field was told it was buffered; this reports otherwise.
+  postMetadataRefused: "post:metadataRefused",
 
   // Targets
   listTargets: "target:list",
@@ -162,6 +165,11 @@ export interface PostContentSavedEvent {
    * source for the post's edit time.
    */
   summary: PostIndexEntry;
+  /**
+   * Newer text for this post is still held in the main process, waiting for
+   * storage, so this save is not the post's latest and its retrying notice stays.
+   */
+  newerEditHeld: boolean;
 }
 
 export interface PostContentSaveFailedEvent {
@@ -173,8 +181,13 @@ export interface PostContentSaveFailedEvent {
    * and the only copies left are the buffer and what the editor shows.
    */
   kind: "retrying" | "unsaveable";
-  /** Why the save failed; a complete sentence for the terminal kind. */
-  message: string;
+}
+
+/** A held metadata edit the store refused on delivery: the edits it carried and why. */
+export interface PostMetadataRefusedEvent {
+  postId: string;
+  edits: EditablePostMetadata;
+  refusal: Message;
 }
 
 /** The per-request event channel main pushes analysis-stream frames on. */
@@ -345,6 +358,7 @@ export interface BigMouthApi {
   reportMetadataRefusal(id: string, refused: boolean): void;
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
   onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
+  onPostMetadataRefused(listener: (event: PostMetadataRefusedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   setPostLocked(wsId: string, id: string, locked: boolean): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<void>;

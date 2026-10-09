@@ -144,6 +144,13 @@ export class StorageOwner {
     }, STORAGE_WAIT_MS);
   }
 
+  /** Whether content for this post is still on this side of the worker: held, queued, or sent without a reply. */
+  holdsContentFor(postId: string): boolean {
+    const ours = (request: StorageRequest) => isContent(request.name) && request.args[1] === postId;
+    for (const post of this.held.values()) if (post.content && ours(post.content)) return true;
+    return [this.active, ...this.queued, ...this.delivering.values()].some((waiting) => waiting !== null && ours(waiting.request));
+  }
+
   private undeliveredEdits(): boolean {
     return this.held.size > 0
       || this.queued.some((waiting) => isAuthored(waiting.request.name))

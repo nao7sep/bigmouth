@@ -6,9 +6,11 @@ import { DEFAULT_CONTENT_FONT } from "@shared/types";
 // CenterPane's only backend seam is these api calls; mock the lot. Content
 // saves stream through queuePostContent (fire-and-forget) and come back as
 // events; the captured listeners let tests play the main process's part.
-const savedListeners = vi.hoisted(() => new Set<(e: { postId: string; summary: PostIndexEntry }) => void>());
+const savedListeners = vi.hoisted(
+  () => new Set<(e: { postId: string; summary: PostIndexEntry; newerEditHeld: boolean }) => void>()
+);
 const failedListeners = vi.hoisted(
-  () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable"; message: string }) => void>()
+  () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable" }) => void>()
 );
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
@@ -19,12 +21,12 @@ vi.mock("@renderer/api", () => ({
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
   queuePostContent: vi.fn(),
-  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry }) => void) => {
+  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry; newerEditHeld: boolean }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
   },
   onPostContentSaveFailed: (
-    cb: (e: { postId: string; kind: "retrying" | "unsaveable"; message: string }) => void
+    cb: (e: { postId: string; kind: "retrying" | "unsaveable" }) => void
   ) => {
     failedListeners.add(cb);
     return () => failedListeners.delete(cb);
@@ -253,7 +255,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("shows the save error when the saver reports a failure for this post", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying" }));
     });
     await waitFor(() =>
       expect(container.querySelector(".toolbar-error")?.textContent).toContain(
@@ -265,7 +267,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("ignores save events for other posts", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "other", kind: "retrying", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "other", kind: "retrying" }));
     });
     expect(container.querySelector(".toolbar-error")).toBeFalsy();
   });
@@ -273,11 +275,27 @@ describe("CenterPane content saves (streamed to the main process)", () => {
   it("clears the save error once a save lands", async () => {
     const { container } = await renderPane();
     act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying", message: "disk broke" }));
+      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying" }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
     act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry() }));
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: false }));
+    });
+    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
+  });
+
+  it("keeps the retrying notice when newer text is still held behind the save", async () => {
+    const { container } = await renderPane();
+    act(() => {
+      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying" }));
+    });
+    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
+    act(() => {
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: true }));
+    });
+    expect(container.querySelector(".toolbar-error")?.textContent).toContain("Autosave failed and will retry.");
+    act(() => {
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: false }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
   });
@@ -289,7 +307,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
 
     act(() => {
       failedListeners.forEach((cb) =>
-        cb({ postId: "p1", kind: "unsaveable", message: "This post's file is missing." })
+        cb({ postId: "p1", kind: "unsaveable" })
       );
     });
 

@@ -168,6 +168,77 @@ describe("storage mutation ownership", () => {
     } finally { spy.mockRestore(); await owner.stop(); }
   });
 
+  it("knows when content for a post has not reached the worker yet", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    try {
+      const slow = owner.run("getUiState", [], 10).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(10);
+      await slow;
+      await expect(owner.run("queueContent", ["/workspace", "post", "held"])).rejects.toBeInstanceOf(EditPendingError);
+      expect(owner.holdsContentFor("post")).toBe(true);
+      expect(owner.holdsContentFor("other")).toBe(false);
+      worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
+      // Sent, but the worker has not replied: still on this side.
+      expect(worker.requests[1].name).toBe("queueContent");
+      expect(owner.holdsContentFor("post")).toBe(true);
+      worker.emit("message", { id: worker.requests[1].id, ok: true, value: undefined });
+      expect(owner.holdsContentFor("post")).toBe(false);
+    } finally { await owner.stop(); }
+  });
+
+  it("marks a save as not the latest while newer text for the post is held", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const run = vi.spyOn(storageOwner, "run").mockImplementation((name, args) => owner.run(name, args));
+    const holds = vi.spyOn(storageOwner, "holdsContentFor").mockImplementation((id) => owner.holdsContentFor(id));
+    sent.length = 0;
+    try {
+      const { registerPostHandlers } = await import("@main/ipc/posts.js");
+      const { CHANNELS } = await import("@shared/ipc");
+      registerPostHandlers();
+      owner.onContentSave((storageOwner as unknown as { contentListener: Parameters<StorageOwner["onContentSave"]>[0] }).contentListener);
+      const slow = owner.run("getUiState", [], 10).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(10);
+      await slow;
+      await handlers.get(CHANNELS.queuePostContent)!({}, "workspace-id", "post", "newer text");
+      const summary = { id: "post" };
+      // An older buffered save lands while the newer text waits.
+      worker.emit("message", { event: "content-save", value: { kind: "saved", dataDir: "/d", id: "post", summary } });
+      worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
+      worker.emit("message", { id: worker.requests[1].id, ok: true, value: undefined });
+      worker.emit("message", { event: "content-save", value: { kind: "saved", dataDir: "/d", id: "post", summary } });
+      expect(sent.filter((item) => item.channel === CHANNELS.postContentSaved).map((item) => item.payload))
+        .toEqual([{ postId: "post", summary, newerEditHeld: true }, { postId: "post", summary, newerEditHeld: false }]);
+    } finally { run.mockRestore(); holds.mockRestore(); await owner.stop(); }
+  });
+
+  it("sends a held metadata edit the store refused on delivery back to its field", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const run = vi.spyOn(storageOwner, "run").mockImplementation((name, args) => owner.run(name, args));
+    sent.length = 0;
+    try {
+      const { registerPostHandlers } = await import("@main/ipc/posts.js");
+      const { CHANNELS } = await import("@shared/ipc");
+      registerPostHandlers();
+      owner.onHeldEditFailed((storageOwner as unknown as { heldFailureListener: Parameters<StorageOwner["onHeldEditFailed"]>[0] }).heldFailureListener);
+      const slow = owner.run("getUiState", [], 10).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(10);
+      await slow;
+      // Answered as buffered while held.
+      expect(await handlers.get(CHANNELS.queuePostMetadata)!({}, "workspace-id", "post", { slug: "taken" })).toBeNull();
+      worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
+      const refusal = { key: "metadata.refusedSlugTaken", values: { slug: "taken" } };
+      worker.emit("message", { id: worker.requests[1].id, ok: true, value: refusal });
+      expect(sent.filter((item) => item.channel === CHANNELS.postMetadataRefused).map((item) => item.payload))
+        .toEqual([{ postId: "post", edits: { slug: "taken" }, refusal }]);
+    } finally { run.mockRestore(); await owner.stop(); }
+  });
+
   it("flushes a newer edit arriving during the first quit flush within the same deadline", async () => {
     const worker = new HeldWorker();
     const owner = new StorageOwner(() => worker as unknown as Worker);
