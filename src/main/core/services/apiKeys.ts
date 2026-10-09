@@ -148,10 +148,10 @@ function readFile(filePath: string): KeysRead {
       });
       return { ...empty(), damaged: null, refusal: new UnreadableStoreError(filePath, read.detail, read.error) };
     case "unreadable":
+      // Only the detail: a parse error quotes the file's text, which holds the keys.
       warnOnce("damaged", "api-keys.json is damaged; left unchanged, its keys read as absent", {
         path: filePath,
         detail: read.detail,
-        ...(read.error ? { error: serializeError(read.error) } : {}),
       });
       return { ...empty(), damaged: { detail: read.detail, error: read.error }, refusal: null };
     case "read": {

@@ -10,6 +10,7 @@ import { MAX_ATTEMPTS, isRetryable, retryDelayMs, waitFor } from "./retryPolicy.
 import { utcNow } from "../shared/timestamps.js";
 import { serializeError } from "../services/logger.js";
 import { writeProviderCall } from "../../storageAccess.js";
+import { maskCredentials } from "./maskCredentials.js";
 
 /**
  * How long a stream may go with NO output at all before it is abandoned.
@@ -68,9 +69,9 @@ export interface ClaudeRequest {
 }
 
 /**
- * One call's request as it leaves the client, headers and API key included
- * (data-lifecycle-conventions, Nothing is cut). Until something is sent, it is the
- * parameters the call was given.
+ * One call's request as it leaves the client, headers included (data-lifecycle-conventions,
+ * Records); the record masks its credentials. Until something is sent, it is the parameters the
+ * call was given.
  */
 function requestCapture(params: unknown): { middleware: Middleware[]; request: () => unknown } {
   let sent: unknown;
@@ -90,8 +91,11 @@ export class ClaudeProvider implements AiProvider {
   private client: Anthropic;
   private request: ClaudeRequest;
   private call: ProviderCallContext;
+  // What the records must never hold: the key this provider sends.
+  private secrets: string[];
 
   constructor(apiKey: string, request: ClaudeRequest, call: ProviderCallContext) {
+    this.secrets = [apiKey];
     // Every call here is paid, so the SDK never retries on its own: the app's
     // retryPolicy is the only loop, and each attempt is recorded.
     this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0 });
@@ -99,16 +103,16 @@ export class ClaudeProvider implements AiProvider {
     this.call = call;
   }
 
-  /** Records one attempt with what came back (data-lifecycle-conventions, Records). */
+  /** Records one attempt with what came back, credentials masked (data-lifecycle-conventions, Records). */
   private record(startedAt: Date, request: unknown, outcome: { response: unknown } | { error: unknown }): void {
     void writeProviderCall({
       ...this.call,
       provider: "anthropic",
       startedAt,
       finishedAt: utcNow(),
-      request,
-      response: "response" in outcome ? outcome.response : undefined,
-      error: "error" in outcome ? serializeError(outcome.error) : undefined,
+      request: maskCredentials(request, this.secrets),
+      response: "response" in outcome ? maskCredentials(outcome.response, this.secrets) : undefined,
+      error: "error" in outcome ? maskCredentials(serializeError(outcome.error), this.secrets) : undefined,
     }).catch((error) => console.error("[bigmouth] Provider record could not reach storage", error));
   }
 

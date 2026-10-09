@@ -137,7 +137,7 @@ describe("provider call records", () => {
     ]);
   });
 
-  it("records the request as it was sent, headers and API key included", async () => {
+  it("records the request as it was sent, its API key masked", async () => {
     const reply = message({ parsed_output: { a: "b" } });
     sdk.stream.mockImplementation((params: unknown, options: { middleware: Middleware[] }) => {
       const sent = {
@@ -158,7 +158,7 @@ describe("provider call records", () => {
         request: {
           method: "POST",
           url: "https://api.anthropic.com/v1/messages",
-          headers: { "x-api-key": "sk-secret", "anthropic-version": "2023-06-01" },
+          headers: { "x-api-key": "[REDACTED]", "anthropic-version": "2023-06-01" },
           body: JSON.parse(JSON.stringify(sdk.stream.mock.calls[0][0])),
         },
       }),
