@@ -34,26 +34,6 @@ export function formatForFilename(date: Date): string {
 }
 
 /**
- * Formats a UTC Date for a filename whose supported creation needs subsecond
- * distinction. Output: "yyyymmdd-hhmmss-fff-utc".
- *
- * timestamp-conventions make it an exception that needs a proven need, kept
- * beside the naming code; milliseconds shrink a collision window but never
- * close it.
- *
- * Example: 2026-06-10T03:15:42.123Z -> "20260610-031542-123-utc"
- */
-export function formatForFilenameMs(date: Date): string {
-  return date
-    .toISOString()
-    .slice(0, 23)
-    .replaceAll("-", "")
-    .replaceAll(":", "")
-    .replace(".", "-")
-    .replace("T", "-") + "-utc";
-}
-
-/**
  * Serializes a UTC Date to the canonical internal/stored form: ISO 8601
  * extended, always exactly 3 fractional digits and a Z suffix. Used for front
  * matter, asset metadata, and log lines. `toISOString()` emits exactly this.

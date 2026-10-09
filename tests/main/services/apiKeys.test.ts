@@ -152,7 +152,7 @@ describe("apiKeys secret store", () => {
       const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
       // Preserved aside under the derived-filename grammar: <stem>-<millisecond UTC
       // stamp>.invalid — never the full "api-keys.json" name with ".invalid" dot-appended.
-      expect(path.basename(movedTo!)).toMatch(/^api-keys-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
+      expect(path.basename(movedTo!)).toMatch(/^api-keys-\d{8}-\d{6}-utc\.invalid$/);
       expect(fs.readFileSync(movedTo!, "utf8")).toBe("{ not json");
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
       expect(keyFileProblem(keyFile)).toBeNull();

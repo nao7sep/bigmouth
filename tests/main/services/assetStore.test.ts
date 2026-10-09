@@ -267,7 +267,7 @@ describe("an unusable meta.json is moved aside", () => {
     expect(listing.assets).toEqual([{ filename: "a.png", size: 3 }]);
     expect(invalidFiles()).toHaveLength(1);
     const [moved] = invalidFiles();
-    expect(moved).toMatch(/^meta-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
+    expect(moved).toMatch(/^meta-\d{8}-\d{6}-utc\.invalid$/);
     expect(fs.readFileSync(path.join(dir(), moved), "utf8")).toBe(body);
     expect(listing.movedAside).toEqual({ path: path.join(dir(), "meta.json"), movedTo: path.join(dir(), moved) });
     // Absent now, so nothing is written until the next upload or delete.

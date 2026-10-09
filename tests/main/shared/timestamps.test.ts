@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   formatForFilename,
-  formatForFilenameMs,
   formatUtcIso,
 } from "@main/core/shared/timestamps.js";
 
@@ -22,23 +21,6 @@ describe("formatForFilename", () => {
     expect(formatForFilename(d)).toBe("20261231-235959-utc");
   });
 });
-describe("formatForFilenameMs", () => {
-  it("formats a UTC date as yyyymmdd-hhmmss-fff-utc", () => {
-    const d = new Date("2026-06-10T03:15:42.123Z");
-    expect(formatForFilenameMs(d)).toBe("20260610-031542-123-utc");
-  });
-
-  it("zero-pads a single/double-digit millisecond component", () => {
-    expect(formatForFilenameMs(new Date("2026-01-02T03:04:05.007Z"))).toBe("20260102-030405-007-utc");
-    expect(formatForFilenameMs(new Date("2026-01-02T03:04:05.070Z"))).toBe("20260102-030405-070-utc");
-  });
-
-  it("uses UTC fields, not local time", () => {
-    const d = new Date("2026-12-31T23:59:59.999Z");
-    expect(formatForFilenameMs(d)).toBe("20261231-235959-999-utc");
-  });
-});
-
 describe("formatUtcIso", () => {
   it("emits canonical ISO 8601 UTC with exactly three fractional digits", () => {
     const d = new Date("2026-04-05T14:30:22Z");
