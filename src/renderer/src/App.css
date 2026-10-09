@@ -1148,10 +1148,13 @@ button:disabled,
 }
 
 /* Keyboard focus cursor for the roving-tabindex active tab; shown only to
-   keyboard users, inset so the tab strip's edges never clip it. */
+   keyboard users, inset so the tab strip's edges never clip it. The focused tab
+   is always the selected one, which already carries accent text and underline,
+   so its ring is a thin neutral one rather than a third accent mark (developer
+   decision). */
 .right-tab:focus-visible,
 .settings-tab:focus-visible {
-  outline: 2px solid var(--bm-accent-fg);
+  outline: 1px solid var(--bm-text-muted);
   outline-offset: -4px;
   border-radius: var(--bm-radius-md);
 }
@@ -1241,10 +1244,11 @@ button:disabled,
   text-overflow: ellipsis;
 }
 
-/* The arrow-focused item is the menu's cursor. A flat menu item takes a
-   background highlight (not a ring): a ring is clipped into stray edges by the
-   popup's `overflow: hidden`, so suppress the default outline and fill instead. */
-.menu-item:hover,
+/* The focused item is the menu's one cursor: arrows and the pointer both move
+   it (Menu.tsx), so hover needs no fill of its own and never shows a second
+   highlight. A flat menu item takes a background highlight (not a ring): a ring
+   is clipped into stray edges by the popup's `overflow: hidden`, so suppress
+   the default outline and fill instead. */
 .menu-item:focus {
   background: var(--bm-panel);
 }
@@ -1839,7 +1843,8 @@ select:is(.form-select, .prompt-select) {
   margin-bottom: 2px;
 }
 
-.post-picker-item:hover,
+/* One highlight: the pointer moves the cursor (pointerMovesCursor), so the
+   active row is both where the pointer is and what Enter picks. */
 .post-picker-item.active {
   background: var(--bm-accent-subtle);
 }
@@ -2195,13 +2200,13 @@ select:is(.form-select, .prompt-select) {
 }
 
 .workspace-item:hover {
-  border-color: var(--bm-accent-fg);
-  background: var(--bm-accent-subtle);
+  background: var(--bm-control-hover);
 }
 
-/* Committed selection: the workspace currently open. */
+/* Committed selection: the workspace currently open, stronger than hover. */
 .workspace-item[aria-selected="true"] {
-  background: var(--bm-accent-subtle);
+  border-color: var(--bm-accent-fg);
+  background: var(--bm-accent-soft);
 }
 
 /* Keyboard cursor, distinct from the persistent selection above; shown while

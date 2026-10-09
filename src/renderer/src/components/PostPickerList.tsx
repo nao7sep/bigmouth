@@ -54,6 +54,7 @@ export function PostPickerList({
     pageSize: PAGE_SIZE,
     composingRef,
     autoActivateFirst: true,
+    pointerMovesCursor: true,
   });
 
   return (

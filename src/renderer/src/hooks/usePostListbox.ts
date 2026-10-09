@@ -73,6 +73,8 @@ export interface PostRowProps {
   id: string;
   ref: (el: HTMLElement | null) => void;
   onClick: () => void;
+  /** Present when the pointer moves the cursor, so a list shows one highlight. */
+  onMouseMove?: () => void;
 }
 
 export interface UsePostListboxResult {
@@ -106,6 +108,7 @@ export function usePostListbox({
   composingRef,
   autoActivateFirst = false,
   followFocus = false,
+  pointerMovesCursor = false,
 }: {
   rows: readonly PostListRow[];
   selectedId: string | null;
@@ -122,6 +125,12 @@ export function usePostListbox({
    * selection is, and an unselected one rests on the container.
    */
   autoActivateFirst?: boolean;
+  /**
+   * The pointer moves the cursor, so a list with no committed selection shows
+   * one highlight wherever the pointer or the keyboard last was. Suits a
+   * picker; a list with a real selection keeps hover separate from its cursor.
+   */
+  pointerMovesCursor?: boolean;
   /**
    * Activation follows focus: every cursor move also commits the row it lands
    * on. Only for a list whose commit is cheap and discards nothing.
@@ -348,10 +357,11 @@ export function usePostListbox({
         if (expandedById.has(id)) onToggleRow?.(id);
         else onActivate(id);
       },
+      ...(pointerMovesCursor ? { onMouseMove: () => setActiveId((current) => (current === id ? current : id)) } : {}),
       // Key handling lives on the container (listboxProps.onKeyDown), which is
       // the focus holder; rows are not focusable.
     }),
-    [selectedId, rowDomId, onActivate, onToggleRow, expandedById],
+    [selectedId, rowDomId, onActivate, onToggleRow, expandedById, pointerMovesCursor],
   );
 
   return {

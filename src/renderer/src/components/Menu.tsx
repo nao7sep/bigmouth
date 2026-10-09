@@ -150,6 +150,12 @@ export function Menu({ label, trigger, children }: MenuProps) {
           aria-label={label}
           className="menu-popup"
           onKeyDown={onKeyDown}
+          // One highlight: the pointer moves the same cursor the arrows move, so
+          // the item under the pointer is the one Enter runs (developer decision).
+          onMouseMove={(e) => {
+            const item = (e.target as HTMLElement).closest<HTMLElement>('[role="menuitem"]');
+            if (item && item !== document.activeElement) item.focus();
+          }}
           onCompositionStart={handlers.onCompositionStart}
           onCompositionEnd={handlers.onCompositionEnd}
         >

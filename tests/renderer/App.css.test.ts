@@ -155,3 +155,36 @@ describe("App.css focus ring on a selected segment", () => {
     },
   );
 });
+
+// One highlight per list or menu, and focus or hover never louder than what is
+// committed (developer decision on the selection/focus/hover pilot).
+describe("App.css selection, focus and hover", () => {
+  function rules(): CSSStyleRule[] {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    try {
+      return Array.from(style.sheet!.cssRules) as CSSStyleRule[];
+    } finally {
+      style.remove();
+    }
+  }
+  const selectors = (rule: CSSStyleRule) => rule.selectorText?.split(",").map((part) => part.trim()) ?? [];
+  const ruleFor = (selector: string) => rules().find((rule) => selectors(rule).includes(selector));
+
+  it("gives menu items and picker rows no hover fill of their own", () => {
+    expect(ruleFor(".menu-item:hover")).toBeUndefined();
+    expect(ruleFor(".post-picker-item:hover")).toBeUndefined();
+    expect(ruleFor(".menu-item:focus")?.style.getPropertyValue("background")).toBe("var(--bm-panel)");
+  });
+
+  it("marks a focused tab with a thin neutral ring, not a third accent mark", () => {
+    const rule = ruleFor(".settings-tab:focus-visible");
+    expect(rule?.style.getPropertyValue("outline")).toBe("1px solid var(--bm-text-muted)");
+  });
+
+  it("keeps workspace hover quieter than the open workspace", () => {
+    expect(ruleFor(".workspace-item:hover")?.style.getPropertyValue("border-color")).toBe("");
+    expect(ruleFor('.workspace-item[aria-selected="true"]')?.style.getPropertyValue("border-color")).toBe("var(--bm-accent-fg)");
+  });
+});

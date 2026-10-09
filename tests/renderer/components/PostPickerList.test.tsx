@@ -106,6 +106,17 @@ describe("PostPickerList — filtering", () => {
 });
 
 describe("PostPickerList — selection", () => {
+  it("moves its one highlight with the pointer, so Enter picks the row under it", () => {
+    const onSelect = vi.fn();
+    const posts = [summary({ id: "p1", title: "Alpha" }), summary({ id: "p2", title: "Beta" })];
+    const { getByLabelText, getByText, container } = render(<PostPickerList {...state({ posts })} onSelect={onSelect} />);
+    fireEvent.mouseMove(getByText("Beta"));
+    const active = container.querySelectorAll(".post-picker-item.active");
+    expect(Array.from(active).map((row) => row.textContent)).toEqual([expect.stringContaining("Beta")]);
+    fireEvent.keyDown(getByLabelText("Posts"), { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p2", "Beta");
+  });
+
   it("calls onSelect with the id and resolved title when a row is clicked", () => {
     const onSelect = vi.fn();
     const posts = [summary({ id: "p1", title: "Pick me" })];

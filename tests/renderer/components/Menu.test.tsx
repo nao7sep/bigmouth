@@ -221,3 +221,21 @@ beforeEach(() => {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
 });
+
+// One highlight: the pointer moves the same cursor the arrows move, so the item
+// under the pointer is the one Enter runs, never the first item opened on.
+describe("Menu pointer and keyboard share one cursor", () => {
+  it("moves focus to the item under the pointer, and Enter runs that item", async () => {
+    const onThird = vi.fn();
+    const { trigger } = renderMenu(vi.fn(), { onThird });
+    fireEvent.click(trigger);
+    await flushRaf();
+    const [first, , third] = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(first);
+    fireEvent.mouseMove(third!);
+    expect(document.activeElement).toBe(third);
+    fireEvent.keyDown(third!, { key: "Enter" });
+    fireEvent.click(document.activeElement as HTMLElement);
+    expect(onThird).toHaveBeenCalled();
+  });
+});
