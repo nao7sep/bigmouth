@@ -84,7 +84,7 @@
   /* The hover and pressed tints of the OUTLINED destructive trigger, which
      keeps the ordinary surface and only deepens a wash of the danger colour. */
   --bm-danger-soft: #fff0ec;
-  --bm-danger-border: #eea79a;
+  --bm-danger-border: #e08b7b;
   --bm-danger-soft-pressed: #fbdcd5;
   --bm-backdrop: rgba(42, 33, 25, 0.42);
   --bm-shadow-popover: 0 12px 30px rgba(70, 48, 30, 0.14);
@@ -134,7 +134,7 @@
     --bm-surface-raised: #2d2721;
     --bm-panel: #181512;
     --bm-panel-hover: #221d18;
-    --bm-border: #3e352d;
+    --bm-border: #4a4036;
     --bm-border-subtle: #383129;
     --bm-border-subtle-on-raised: #3b342c;
     --bm-border-strong: #56493d;
@@ -162,7 +162,7 @@
     --bm-danger-fill-pressed: #8f2f23;
     --bm-on-danger: #fff8f0;
     --bm-danger-soft: #3a1f1b;
-    --bm-danger-border: #7d3a31;
+    --bm-danger-border: #9c4a3e;
     --bm-danger-soft-pressed: #4a2621;
     --bm-backdrop: rgba(0, 0, 0, 0.55);
     --bm-shadow-popover: 0 12px 30px rgba(0, 0, 0, 0.45);
@@ -170,7 +170,7 @@
     --bm-control-bg: #342d27;
     --bm-control-hover: #3d352e;
     --bm-control-pressed: #473d35;
-    --bm-control-border: #776b5f;
+    --bm-control-border: #6b6054;
     --bm-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     --bm-accent-pressed: #7a3b1e;
     --bm-track: #1a1613;
@@ -1363,6 +1363,11 @@ button:disabled,
 .preview-content pre code {
   background: none;
   padding: 0;
+}
+
+.preview-content hr {
+  border: 0;
+  border-top: 1px solid var(--bm-border);
 }
 
 .preview-content blockquote {
