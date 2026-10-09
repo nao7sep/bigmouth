@@ -172,6 +172,29 @@ afterAll(() => {
   processOnSpy.mockRestore();
 });
 
+// The first boot transforms index.ts and its whole module graph, several times
+// the cost of a later one. It is paid once here, inside the hook's own timeout,
+// so no test pays it inside its own (fleet-metadata-code-review checklist, Tests).
+beforeAll(async () => {
+  const warmHome = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-warm-"));
+  const warmData = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-warm-ws-"));
+  const savedData = dataDir;
+  process.env.BIGMOUTH_DATA_DIR = warmHome;
+  dataDir = warmData;
+  try {
+    await bootApp();
+  } finally {
+    flush.store?.resumePendingFlushes();
+    const { closeBackupStore } = await import("@main/core/services/backupStore.js");
+    closeBackupStore();
+    if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+    else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+    dataDir = savedData;
+    fs.rmSync(warmHome, { recursive: true, force: true });
+    fs.rmSync(warmData, { recursive: true, force: true });
+  }
+}, 30_000);
+
 /**
  * Boots a fresh copy of the app entry against a fresh workspace directory and
  * returns the same post-store instance index.ts flushes at quit.
