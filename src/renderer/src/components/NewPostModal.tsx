@@ -56,8 +56,8 @@ export function NewPostModal({
       return;
     }
     const ok = await confirm({
-      title: t("newPost.discardTitle"),
-      message: t("newPost.discardMessage"),
+      title: t("common.discardTitle"),
+      message: t("common.discardMessage"),
       confirmLabel: t("common.discard"),
       cancelLabel: t("common.keepEditing"),
       danger: true,

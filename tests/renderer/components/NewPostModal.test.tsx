@@ -223,7 +223,7 @@ describe("NewPostModal — dirty-close confirmation", () => {
 
     fireEvent.click(getByText("Cancel"));
     // The dirty-close confirmation appears; the modal is still open.
-    const confirmDialog = await within(document.body).findByText("Discard new post?");
+    const confirmDialog = await within(document.body).findByText("Discard changes?");
     expect(confirmDialog).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
@@ -239,8 +239,8 @@ describe("NewPostModal — dirty-close confirmation", () => {
     fireEvent.change(container.querySelectorAll("select")[0], { target: { value: "social" } });
 
     fireEvent.click(getByText("Cancel"));
-    await within(document.body).findByText("Discard new post?");
-    fireEvent.click(getByRole("button", { name: "Keep Editing" }));
+    await within(document.body).findByText("Discard changes?");
+    fireEvent.click(getByRole("button", { name: "Keep editing" }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -251,7 +251,7 @@ describe("NewPostModal — dirty-close confirmation", () => {
     const { onClose, container } = await renderModal();
     fireEvent.change(container.querySelectorAll("select")[0], { target: { value: "social" } });
     fireEvent.keyDown(document, { key: "Escape" });
-    await within(document.body).findByText("Discard new post?");
+    await within(document.body).findByText("Discard changes?");
     expect(onClose).not.toHaveBeenCalled();
   });
 });

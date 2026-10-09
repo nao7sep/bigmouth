@@ -548,7 +548,7 @@ describe("WorkspaceModal — dirty-close confirmation", () => {
     });
     fireEvent.keyDown(document, { key: "Escape" });
     await findByText("Discard changes?");
-    fireEvent.click(getByRole("button", { name: "Keep Editing" }));
+    fireEvent.click(getByRole("button", { name: "Keep editing" }));
     await act(async () => {
       await Promise.resolve();
     });

@@ -113,8 +113,8 @@ export function WorkspaceModal({
     }
     void (async () => {
       const ok = await confirm({
-        title: t("workspaces.discardTitle"),
-        message: t("workspaces.discardMessage"),
+        title: t("common.discardTitle"),
+        message: t("common.discardMessage"),
         confirmLabel: t("common.discard"),
         cancelLabel: t("common.keepEditing"),
         danger: true,

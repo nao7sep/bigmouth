@@ -189,8 +189,8 @@ export function SettingsModal({
     if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
     if (!isDirty) { onClose(); return; }
     const ok = await confirm({
-      title: t("settings.discardTitle"),
-      message: t("settings.discardMessage"),
+      title: t("common.discardTitle"),
+      message: t("common.discardMessage"),
       confirmLabel: t("common.discard"),
       cancelLabel: t("common.keepEditing"),
       danger: true,

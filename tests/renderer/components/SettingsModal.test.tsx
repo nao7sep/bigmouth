@@ -1009,7 +1009,7 @@ describe("SettingsModal — dirty-close confirmation", () => {
     fireEvent.change(getByDisplayValue("UTC"), { target: { value: "Asia/Tokyo" } });
 
     fireEvent.keyDown(document, { key: "Escape" });
-    const discard = await within(document.body).findByText("Discard Changes");
+    const discard = await within(document.body).findByText("Discard changes?");
     expect(discard).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
@@ -1024,8 +1024,8 @@ describe("SettingsModal — dirty-close confirmation", () => {
     const { getByRole, getByDisplayValue, onClose } = await renderModal();
     fireEvent.change(getByDisplayValue("UTC"), { target: { value: "Asia/Tokyo" } });
     fireEvent.keyDown(document, { key: "Escape" });
-    await within(document.body).findByText("Discard Changes");
-    fireEvent.click(getByRole("button", { name: "Keep Editing" }));
+    await within(document.body).findByText("Discard changes?");
+    fireEvent.click(getByRole("button", { name: "Keep editing" }));
     await act(async () => {
       await Promise.resolve();
     });
