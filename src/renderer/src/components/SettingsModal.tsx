@@ -269,8 +269,10 @@ export function SettingsModal({
       setPrompts(savedPrompts);
       initialPrompts.current = savedPrompts;
       onSettingsChanged();
+      // Where this save moved a damaged key file stays on screen, like a rename
+      // that skipped posts.
       if (skips.length > 0) setRenameSkips(skips);
-      else onClose();
+      else if (savedAnthropic.keyNotice?.key !== "settings.keyFileMovedAside") onClose();
     } catch (err) {
       setSaveError(presentFailure(
         message("settings.saveFailed"),
@@ -905,6 +907,7 @@ function AiTab({
         {draft.usingEnvKey && (
           <p className="settings-hint">{t("settings.envKey", { variable: "ANTHROPIC_API_KEY" })}</p>
         )}
+        {draft.keyNotice && <FieldError msg={draft.keyNotice} />}
       </div>
       {AI_ROLE_IDS.map((role) => (
         <ModelField

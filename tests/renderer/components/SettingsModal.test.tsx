@@ -98,6 +98,7 @@ function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSetting
     thinking: { analysis: "adaptive", metadata: "off", imagingPrompts: "adaptive" },
     hasApiKey: false,
     usingEnvKey: false,
+    keyNotice: null,
     ...overrides,
   };
 }
@@ -416,6 +417,29 @@ describe("SettingsModal — Save flow (Anthropic section)", () => {
     });
 
     expect(mock.saveAnthropicSettings).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-new" }));
+  });
+
+  it("says why stored keys cannot be used beside the key field", async () => {
+    const { getByRole } = await renderModal(anthropic({ keyNotice: { key: "settings.keyFileDamaged", values: { path: "/k/api-keys.json" } } }));
+    const panel = openAiTab(getByRole);
+    expect(within(panel).getByText(/The API key file \/k\/api-keys.json is damaged/)).toBeTruthy();
+  });
+
+  it("stays open to say where a damaged key file was moved by the save", async () => {
+    const { getByRole, onClose } = await renderModal(anthropic({ keyNotice: { key: "settings.keyFileDamaged", values: { path: "/k/api-keys.json" } } }));
+    mock.saveAnthropicSettings.mockResolvedValue(anthropic({
+      hasApiKey: true,
+      keyNotice: { key: "settings.keyFileMovedAside", values: { path: "/k/api-keys-moved.invalid" } },
+    }));
+    const panel = openAiTab(getByRole);
+    fireEvent.change(within(panel).getByLabelText("API Key"), { target: { value: "sk-new" } });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(within(openAiTab(getByRole)).getByText(/moved to \/k\/api-keys-moved.invalid/)).toBeTruthy();
   });
 
   it("surfaces a save error and keeps the modal open", async () => {

@@ -13,6 +13,7 @@ import {
   getPost,
   listTargets,
   getSettings,
+  getConfigNotice,
   openRecordsWindow,
   onPostContentSaved,
   onWindowActivated,
@@ -131,6 +132,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // set stays hidden until the set changes.
     const [unreadablePosts, setUnreadablePosts] = useState<UnreadablePostFile[]>([]);
     const [dismissedUnreadable, setDismissedUnreadable] = useState<string | null>(null);
+    // Stored settings that could not be used and read as their built-ins; the
+    // file keeps them until the user changes those settings.
+    const [configNotice, setConfigNotice] = useState<Message | null>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
     const rightPaneRef = useRef<RightPaneHandle>(null);
     /**
@@ -315,9 +319,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [uiFontFamily]);
 
     const loadConfig = useCallback(async () => {
-      const [nextTargets, settings] = await Promise.all([listTargets(), getSettings()]);
+      const [nextTargets, settings, notice] = await Promise.all([listTargets(), getSettings(), getConfigNotice()]);
       setTargets(nextTargets);
       applySettings(settings);
+      setConfigNotice(notice);
     }, [applySettings]);
 
     useEffect(() => {
@@ -644,6 +649,15 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 {text(message(file.newer ? "store.newerFormat" : "store.unreadable", { path: file.path }))}
               </div>
             ))}
+          </OperationalResult>
+        )}
+        {configNotice && (
+          <OperationalResult
+            severity="warning"
+            className="toolbar-warning"
+            onDismiss={() => setConfigNotice(null)}
+          >
+            {text(configNotice)}
           </OperationalResult>
         )}
         <div

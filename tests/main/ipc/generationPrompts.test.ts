@@ -88,19 +88,24 @@ describe("generation-prompt IPC handlers", () => {
 
   it("validates the save payload before reaching the store", async () => {
     const full = DEFAULT_GENERATION_PROMPTS_DATA.prompts;
-    const { title: _title, ...partial } = full;
     for (const body of [
       null,
       {},
       { prompts: [] },
       { prompts: "x" },
       { prompts: { ...full, title: 5 } },
-      { prompts: partial },
-      { prompts: { ...full, bogus: "unknown key" } },
     ]) {
-      await expect(invoke(CHANNELS.saveGenerationPrompts, wsId, body)).rejects.toThrow(/prompts must map every/);
+      await expect(invoke(CHANNELS.saveGenerationPrompts, wsId, body)).rejects.toThrow(/prompts must map/);
     }
     expect(fs.existsSync(path.join(wsDir, "config.json"))).toBe(false);
+  });
+
+  it("reads a prompt a save left out as its built-in, and stores no prompt this build does not have", async () => {
+    const full = DEFAULT_GENERATION_PROMPTS_DATA.prompts;
+    const { title: _title, ...partial } = full;
+    await invoke(CHANNELS.saveGenerationPrompts, wsId, { prompts: { ...partial, slug: "Custom", bogus: "unknown key" } });
+    expect(await invoke(CHANNELS.getGenerationPrompts, wsId)).toEqual({ prompts: { ...full, slug: "Custom" } });
+    expect(JSON.parse(fs.readFileSync(path.join(wsDir, "config.json"), "utf8")).generationPrompts).toEqual({ prompts: { slug: "Custom" } });
   });
 
   it("surfaces an unknown workspace as a thrown Error", async () => {

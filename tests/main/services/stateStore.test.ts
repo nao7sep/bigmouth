@@ -48,12 +48,12 @@ describe("stateStore — first run", () => {
 });
 
 describe("stateStore — persistence", () => {
-  it("keeps updates in memory when a future store replaces the loaded file", () => {
-    initStateStore();
-    const bytes = '{"formatVersion":99,"zoomLevel":100}';
-    fs.writeFileSync(statePath(), bytes);
+  it("keeps updates in memory over a state.json it could not read, never writing over it", () => {
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.mkdirSync(statePath());
+    expect(initStateStore()).toEqual(defaultUiState());
     expect(updateUiState({ zoomLevel: 2 }).zoomLevel).toBe(2);
-    expect(fs.readFileSync(statePath(), "utf8")).toBe(bytes);
+    expect(fs.statSync(statePath()).isDirectory()).toBe(true);
   });
 
   it("writes state.json on the first update and reads it back on re-init", () => {
@@ -151,9 +151,9 @@ describe("stateStore — format version", () => {
     expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 2 });
   });
 
-  it("reads a state.json without its format version as unreadable: defaults", () => {
+  it("reads a state.json without its format version as this build's format", () => {
     fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: 3 }));
-    expect(initStateStore()).toEqual(defaultUiState());
+    expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 3 });
   });
 
   it("keeps view state in memory over a state.json a newer version wrote, leaving it byte-identical", () => {

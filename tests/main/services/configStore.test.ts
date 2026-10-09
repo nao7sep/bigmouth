@@ -23,6 +23,7 @@ import {
   getRoleCall,
   saveAnthropicSettings,
   effectiveConfig,
+  getConfigNotice,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
@@ -80,13 +81,13 @@ describe("time zone", () => {
     expect(getSettings(dataDir).timezone).toBe("system");
   });
 
-  it("keeps a stored timezone unchanged regardless of the retired version key", () => {
+  it("keeps a stored timezone, and a key this build does not know, through a save", () => {
     writeConfig({ schemaVersion: 1, timezone: "Asia/Tokyo" });
     expect(getSettings(dataDir).timezone).toBe("Asia/Tokyo");
 
     saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
     const saved = setsIn(path.join(dataDir, "config.json"));
-    expect(saved).toEqual({ timezone: "Asia/Tokyo", uiFontFamily: "Inter" });
+    expect(saved).toEqual({ timezone: "Asia/Tokyo", uiFontFamily: "Inter", schemaVersion: 1 });
   });
 
   it("keeps any other zone a version-1 file names, because the user typed it", () => {
@@ -131,23 +132,31 @@ describe("corrupt config files", () => {
 
     expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
     expect(getTargets(dataDir)).toEqual(authoredTargets);
+    expect(getConfigNotice(dataDir)).toEqual({ key: "session.settingsInvalid", values: { path: configPath } });
     saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
 
-    // The save writes what the store holds: the invalid set and every built-in copy lose their keys.
-    const afterwards = setsIn(configPath);
-    expect(afterwards).toEqual({ targets: authoredTargets, uiFontFamily: "Inter" });
+    // The invalid set is kept as stored, since the save did not change it; built-in copies lose their keys.
+    expect(setsIn(configPath)).toEqual({ targets: authoredTargets, uiFontFamily: "Inter", analysisPrompts: "not an array" });
+    expect(getConfigNotice(dataDir)).not.toBeNull();
+
+    // Changing that setting replaces it, and the notice goes.
+    const prompts = [{ name: "Mine", text: "Check it." }];
+    saveAnalysisPrompts(dataDir, prompts);
+    expect(setsIn(configPath)).toEqual({ targets: authoredTargets, uiFontFamily: "Inter", analysisPrompts: prompts });
+    expect(getConfigNotice(dataDir)).toBeNull();
   });
 
-  it("ignores a retired version key and drops it at the next write", () => {
+  it("ignores a key this build does not know and keeps it through a write", () => {
     const configPath = path.join(dataDir, "config.json");
     const healthy = makeDefaultConfig();
-    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...healthy, schemaVersion: 99 }), "utf-8");
+    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...healthy, aiConfigs: [{ id: "c1" }] }), "utf-8");
 
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
+    expect(getConfigNotice(dataDir)).toBeNull();
     saveTargets(dataDir, []);
 
     const afterwards = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    expect(afterwards.schemaVersion).toBeUndefined();
+    expect(afterwards.aiConfigs).toEqual([{ id: "c1" }]);
   });
 
   it.each([
@@ -228,6 +237,7 @@ describe("the Anthropic section", () => {
       thinking: { analysis: "adaptive", metadata: "off", imagingPrompts: "adaptive" },
       hasApiKey: false,
       usingEnvKey: false,
+      keyNotice: null,
     });
     expect(getRoleCall(ws, "metadata")).toEqual({
       endpoint: "https://api.anthropic.com",
@@ -402,22 +412,21 @@ describe("settings stored by set", () => {
     expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
   });
 
-  it("preserves other known copies and removes unknown keys on write", () => {
+  it("keeps other known copies and unknown keys on write, and stores only the prompts the user changed", () => {
     fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, version: 7, timezone: "UTC", targets: [] }));
     const generationPrompts = { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } };
     saveGenerationPrompts(dataDir, generationPrompts);
-    expect(saved()).toEqual({ timezone: "UTC", generationPrompts });
+    expect(saved()).toEqual({ timezone: "UTC", generationPrompts: { prompts: { title: "Custom" } }, version: 7 });
     expect(getGenerationPrompts(dataDir)).toEqual(generationPrompts);
   });
 
-  it("reads a partial generation prompt map as absent and warns without changing the file", () => {
-    const partial = { formatVersion: 1, generationPrompts: { prompts: { title: "Custom" } } };
+  it("reads a prompt the file does not hold as its built-in, and ignores one this build does not have", () => {
+    const partial = { formatVersion: 1, generationPrompts: { prompts: { title: "Custom", retiredPrompt: "Old" } } };
     fs.writeFileSync(file(), JSON.stringify(partial));
     const warning = vi.spyOn(logger, "warn");
     try {
-      expect(getGenerationPrompts(dataDir)).toEqual(DEFAULT_GENERATION_PROMPTS_DATA);
-      expect(warning).toHaveBeenCalledOnce();
-      expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ key: "generationPrompts" }));
+      expect(getGenerationPrompts(dataDir)).toEqual({ prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } });
+      expect(warning).not.toHaveBeenCalled();
       expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual(partial);
     } finally { warning.mockRestore(); }
   });
@@ -502,14 +511,31 @@ it("a settings save writes every set from what the store holds", () => {
   });
 });
 
+describe("a registered workspace's config.json", () => {
+  const file = () => path.join(dataDir, "config.json");
+
+  it("opens with built-ins when it holds only sets this build does not know, and keeps them", () => {
+    fs.writeFileSync(file(), JSON.stringify({ aiConfigs: [{ id: "c1" }] }));
+    expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
+    expect(getConfigNotice(dataDir)).toBeNull();
+    saveSettings(dataDir, { ...DEFAULT_SETTINGS, uiFontFamily: "Inter" });
+    expect(setsIn(file())).toEqual({ uiFontFamily: "Inter", aiConfigs: [{ id: "c1" }] });
+  });
+
+  it("names a file it could not read and leaves it in place", () => {
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.mkdirSync(file());
+    expect(() => getSettings(dataDir)).toThrow(UnreadableStoreError);
+    expect(fs.statSync(file()).isDirectory()).toBe(true);
+  });
+});
+
 describe("workspace config format version", () => {
   const file = () => path.join(dataDir, "config.json");
 
-  it("refuses a file without its format version as unreadable, leaving it unchanged", () => {
-    const body = JSON.stringify({ timezone: "UTC" });
-    fs.writeFileSync(file(), body);
-    expect(() => getSettings(dataDir)).toThrow(expect.objectContaining({ filePath: file(), detail: "it has no formatVersion" }));
-    expect(fs.readFileSync(file(), "utf8")).toBe(body);
+  it("reads a file without its format version as this build's format", () => {
+    fs.writeFileSync(file(), JSON.stringify({ timezone: "UTC" }));
+    expect(getSettings(dataDir).timezone).toBe("UTC");
   });
 
   it("writes this build's format version and reads it back", () => {

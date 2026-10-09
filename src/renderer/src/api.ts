@@ -267,6 +267,11 @@ export function saveSettings(settings: Partial<Settings>): Promise<Settings> {
   return bridge().saveSettings(requireWs(), settings);
 }
 
+/** Null, or why some of the workspace's stored settings are not in use. */
+export function getConfigNotice(): Promise<Message | null> {
+  return bridge().getConfigNotice(requireWs());
+}
+
 // --- The Anthropic section ---
 
 export function getAnthropicSettings(): Promise<AnthropicSettingsView> {

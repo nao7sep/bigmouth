@@ -19,13 +19,15 @@
  *   - The stored value is lightly obfuscated (NOT encryption); the real
  *     protection is the file's 0600 mode. On POSIX the file is created 0600 and a
  *     group/world-readable file is tightened on read (warned once per process).
- *   - A corrupt/unreadable file is moved aside to a timestamped neighbour and
- *     treated as empty rather than throwing; one that cannot be moved aside is
- *     left in place, read as empty, and never written over. A non-string or
- *     non-conforming entry is ignored, so a hand-edited file never bricks key
- *     resolution.
- *   - A file a newer version of BigMouth wrote (store-recovery-conventions) is
- *     left in place and read as empty; storing a key into it is refused.
+ *   - A lookup never moves or rewrites the file. A file whose content is
+ *     damaged reads as holding no key; saving a key then moves it aside to a
+ *     timestamped neighbour and starts a new file, so other workspaces' keys
+ *     are entered again (developer decision). A file that could not be read at
+ *     all, or that a newer version of BigMouth wrote, also reads as holding no
+ *     key, and storing a key into it is refused.
+ *   - A workspace entry, key id or value that is not the expected shape is
+ *     ignored for lookups and kept as it is when another workspace's key is
+ *     written, so a hand-edited entry never takes the other keys with it.
  *   - A stored value whose `obf:` payload fails strict base64 validation (a
  *     hand-edited or truncated file) resolves as absent rather than the
  *     garbage a tolerant base64 decoder would silently produce; resolveApiKey
@@ -37,8 +39,9 @@ import fs from "node:fs";
 import type { AiProvider } from "@shared/aiModels";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
-import { QuarantineError, moveAsideInvalid } from "../shared/quarantine.js";
-import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { message, type Message } from "@shared/i18n/translate";
+import { moveAsideInvalid } from "../shared/quarantine.js";
+import { FORMAT_VERSION_KEY, NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 const SECRETS_FILE_MODE = 0o600;
@@ -57,8 +60,6 @@ interface ApiKeysFile {
 // Warn at most once per process about an insecure file mode, so a key read on
 // every AI call does not spam the log. The tightening itself is never suppressed.
 let modeWarned = false;
-// A file a newer version wrote is read on every key lookup; it is reported once.
-let newerWarned = false;
 
 function apiKeyEnvVar(provider: AiProvider): string {
   return `${provider.toUpperCase()}_API_KEY`;
@@ -94,19 +95,14 @@ function ensureSecureMode(filePath: string): void {
   }
 }
 
-// Validate and canonicalize the on-disk tree, dropping anything that is not the
-// expected shape: workspace -> keys -> { <key id>: string }.
-function normalize(raw: unknown): ApiKeysFile | null {
+// The usable keys in the file: workspace -> keys -> { <key id>: string }. A
+// workspace entry, key id or value of another shape is skipped, not fatal.
+function usableKeys(raw: Record<string, unknown>): ApiKeysFile {
   const out: ApiKeysFile = { workspaces: {} };
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const workspaces = (raw as { workspaces?: unknown }).workspaces;
-  if (!workspaces || typeof workspaces !== "object" || Array.isArray(workspaces)) return null;
-  for (const [wsId, wsNode] of Object.entries(workspaces as Record<string, unknown>)) {
-    if (!wsNode || typeof wsNode !== "object" || Array.isArray(wsNode)) return null;
-    const keys = (wsNode as { keys?: unknown }).keys;
-    if (!keys || typeof keys !== "object" || Array.isArray(keys)) return null;
+  for (const [wsId, wsNode] of Object.entries(raw.workspaces as Record<string, unknown>)) {
+    if (!isObject(wsNode) || !isObject(wsNode.keys)) continue;
     const outKeys: Record<string, string> = {};
-    for (const [id, value] of Object.entries(keys as Record<string, unknown>)) {
+    for (const [id, value] of Object.entries(wsNode.keys)) {
       const canonical = id.toLowerCase();
       if (typeof value === "string" && KEY_ID_RE.test(canonical)) outKeys[canonical] = value;
     }
@@ -115,99 +111,132 @@ function normalize(raw: unknown): ApiKeysFile | null {
   return out;
 }
 
-function emptyFile(): ApiKeysFile {
-  return { workspaces: {} };
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
- * The stored keys, and the refusal any write must raise when the file must not
- * be written over: a newer version of BigMouth wrote it, or it was unusable and
- * could not be moved aside. Its keys then read as absent and the file is left
- * exactly as it is; a read never throws (api-key-storage-conventions).
+ * The file as one load decides it. `raw` is its parsed content, kept so a write
+ * changes only the workspace it is about. `damaged` is content this build cannot
+ * use, which a key save may set aside; `refusal` is why no write may touch the
+ * file at all (a newer version wrote it, or it could not be read).
  */
-function readFile(filePath: string): { data: ApiKeysFile; refusal: Error | null } {
+type KeysRead = {
+  raw: Record<string, unknown>;
+  keys: ApiKeysFile;
+  damaged: { detail: string; error: unknown } | null;
+  refusal: NewerFormatError | UnreadableStoreError | null;
+};
+
+function readFile(filePath: string): KeysRead {
+  const empty = (): Pick<KeysRead, "raw" | "keys"> => ({ raw: { workspaces: {} }, keys: { workspaces: {} } });
   const read = readJsonStore("apiKeys", filePath);
   switch (read.kind) {
     case "absent":
-      return { data: emptyFile(), refusal: null };
+      return { ...empty(), damaged: null, refusal: null };
     case "newer":
-      if (!newerWarned) {
-        newerWarned = true;
-        logWarn("api-keys.json was written by a newer version of BigMouth; left unchanged, its keys read as absent", {
-          path: filePath,
-          formatVersion: read.version,
-        });
-      }
-      return { data: emptyFile(), refusal: new NewerFormatError(filePath, read.version) };
+      warnOnce("newer", "api-keys.json was written by a newer version of BigMouth; left unchanged, its keys read as absent", {
+        path: filePath,
+        formatVersion: read.version,
+      });
+      return { ...empty(), damaged: null, refusal: new NewerFormatError(filePath, read.version) };
+    case "inaccessible":
+      warnOnce("inaccessible", "api-keys.json could not be read; left unchanged, its keys read as absent", {
+        path: filePath,
+        detail: read.detail,
+        error: serializeError(read.error),
+      });
+      return { ...empty(), damaged: null, refusal: new UnreadableStoreError(filePath, read.detail, read.error) };
     case "unreadable":
-      return { data: emptyFile(), refusal: setAside(filePath, read.detail, read.error) };
+      warnOnce("damaged", "api-keys.json is damaged; left unchanged, its keys read as absent", {
+        path: filePath,
+        detail: read.detail,
+        ...(read.error ? { error: serializeError(read.error) } : {}),
+      });
+      return { ...empty(), damaged: { detail: read.detail, error: read.error }, refusal: null };
     case "read": {
-      const normalized = normalize(read.value);
-      if (normalized) {
-        ensureSecureMode(filePath);
-        return { data: normalized, refusal: null };
+      if (!isObject(read.value.workspaces)) {
+        warnOnce("damaged", "api-keys.json is damaged; left unchanged, its keys read as absent", {
+          path: filePath,
+          detail: "its workspaces key is not an object",
+        });
+        return { ...empty(), damaged: { detail: "its workspaces key is not an object", error: null }, refusal: null };
       }
-      return { data: emptyFile(), refusal: setAside(filePath, "it has the wrong shape", null) };
+      ensureSecureMode(filePath);
+      return { raw: read.value, keys: usableKeys(read.value), damaged: null, refusal: null };
     }
   }
 }
 
-// Moves an unusable file aside; a failed move degrades to "no key" and is
-// returned as the refusal for writes, so its bytes are never written over.
-function setAside(filePath: string, detail: string, error: unknown): QuarantineError | null {
-  try {
-    const movedTo = moveAsideInvalid(filePath);
-    logWarn("api-keys.json unusable; set aside and treating as empty", {
-      path: filePath,
-      detail,
-      movedTo,
-      ...(error ? { error: serializeError(error) } : {}),
-    });
-    return null;
-  } catch (failure) {
-    if (!(failure instanceof QuarantineError)) throw failure;
-    logWarn("api-keys.json unusable and could not be set aside; left unchanged, treating as empty", {
-      path: filePath,
-      detail,
-      ...(error ? { error: serializeError(error) } : {}),
-      moveError: serializeError(failure.cause),
-    });
-    return failure;
-  }
+// A file in one of these states is read on every key lookup; each is reported once.
+const warned = new Set<string>();
+function warnOnce(state: string, text: string, fields: Record<string, unknown>): void {
+  if (warned.has(state)) return;
+  warned.add(state);
+  logWarn(text, fields);
 }
 
-function writeFile(filePath: string, data: ApiKeysFile): void {
+function writeFile(filePath: string, raw: Record<string, unknown>): void {
   // not recorded: api-keys.json is the SECRET store. Secrets are never written through the managed-text
   // choke point — a backup history containing a credential would become sensitive-at-rest in its
   // entirety and would have to be guarded as the secret is. Keeping keys out is what lets
   // backups.sqlite3 stay no more sensitive than ordinary user text (data-backup conventions: secrets are
   // never recorded). A key lost to a wipe is re-entered by the user; the live file keeps its own 0600
   // protection below, which is where a secret is guarded — not here.
+  const body = { ...raw };
+  delete body[FORMAT_VERSION_KEY];
   writeFileAtomic(
     filePath,
-    jsonStoreText("apiKeys", { ...data }),
+    jsonStoreText("apiKeys", body),
     ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined,
   );
 }
 
-// Apply a mutation and persist only if it changed the stored content, pruning
-// emptied workspace buckets so a cleared scope leaves no trace. A file a newer
-// version wrote, or one that could not be set aside, is refused before anything
-// is changed.
-function update(filePath: string, mutate: (data: ApiKeysFile) => void): void {
-  const { data, refusal } = readFile(filePath);
-  if (refusal) throw refusal;
-  const before = JSON.stringify(data);
-  mutate(data);
-  for (const [wsId, wsNode] of Object.entries(data.workspaces)) {
-    if (Object.keys(wsNode.keys).length === 0) delete data.workspaces[wsId];
+/**
+ * Changes one workspace's keys and persists only if that changed the file,
+ * dropping an emptied workspace so a cleared scope leaves no trace. Every other
+ * entry is written back as it was read. A file that must not be written is
+ * refused before anything changes. A damaged file is set aside first, and the
+ * path it went to is returned.
+ */
+function update(filePath: string, workspaceId: string, mutate: (keys: Record<string, string>) => void): string | null {
+  const read = readFile(filePath);
+  if (read.refusal) throw read.refusal;
+  const workspaces = read.raw.workspaces as Record<string, unknown>;
+  const keys = { ...(read.keys.workspaces[workspaceId]?.keys ?? {}) };
+  const before = JSON.stringify(keys);
+  mutate(keys);
+  if (JSON.stringify(keys) === before) return null;
+  let movedTo: string | null = null;
+  if (read.damaged) {
+    // A failed move throws, so the damaged bytes are never written over.
+    movedTo = moveAsideInvalid(filePath);
+    logWarn("api-keys.json was damaged; set aside to save a key, starting a new file", {
+      path: filePath,
+      movedTo,
+      detail: read.damaged.detail,
+    });
+    warned.delete("damaged");
   }
-  if (JSON.stringify(data) !== before) writeFile(filePath, data);
+  const next = { ...workspaces };
+  if (Object.keys(keys).length > 0) next[workspaceId] = { keys };
+  else delete next[workspaceId];
+  writeFile(filePath, { ...read.raw, workspaces: next });
+  return movedTo;
+}
+
+/** What the user should be told about the key file, or null when it can be used. */
+export function keyFileProblem(filePath: string): Message | null {
+  const read = readFile(filePath);
+  if (read.refusal instanceof NewerFormatError) return message("store.newerFormat", { path: filePath });
+  if (read.refusal) return message("settings.keyFileInaccessible", { path: filePath });
+  if (read.damaged) return message("settings.keyFileDamaged", { path: filePath });
+  return null;
 }
 
 /** The stored key for a workspace, decoded and trimmed, or null. */
 function storedKey(filePath: string, workspaceId: string, provider: AiProvider): string | null {
-  const stored = readFile(filePath).data.workspaces[workspaceId]?.keys[provider];
+  const stored = readFile(filePath).keys.workspaces[workspaceId]?.keys[provider];
   if (!stored) return null;
   const decoded = deobfuscate(stored);
   if (decoded === null) {
@@ -246,28 +275,27 @@ export function hasEnvApiKey(provider: AiProvider): boolean {
   return envApiKey(provider) !== null;
 }
 
-/** Store (obfuscated, trimmed) or, for a blank key, remove the workspace's key. */
-export function writeApiKey(filePath: string, workspaceId: string, provider: AiProvider, key: string): void {
+/**
+ * Store (obfuscated, trimmed) or, for a blank key, remove the workspace's key.
+ * Returns where a damaged key file was moved to make room, or null.
+ */
+export function writeApiKey(filePath: string, workspaceId: string, provider: AiProvider, key: string): string | null {
   const trimmed = key.trim();
-  update(filePath, (data) => {
-    if (trimmed.length > 0) {
-      const ws = (data.workspaces[workspaceId] ??= { keys: {} });
-      ws.keys[provider] = obfuscate(trimmed);
-    } else {
-      const ws = data.workspaces[workspaceId];
-      if (ws) delete ws.keys[provider];
-    }
+  return update(filePath, workspaceId, (keys) => {
+    if (trimmed.length > 0) keys[provider] = obfuscate(trimmed);
+    else delete keys[provider];
   });
 }
 
 /**
  * Remove every stored key for a workspace — used when the workspace is deleted.
- * A file that must not be written over is left as it is, its key with it,
- * rather than failing the deletion.
+ * A file that cannot be written, or whose content is damaged, is left as it is,
+ * its key with it, rather than failing the deletion or setting the file aside.
  */
 export function clearWorkspaceKeys(filePath: string, workspaceId: string): void {
-  if (readFile(filePath).refusal) return;
-  update(filePath, (data) => {
-    delete data.workspaces[workspaceId];
+  const read = readFile(filePath);
+  if (read.refusal || read.damaged) return;
+  update(filePath, workspaceId, (keys) => {
+    for (const id of Object.keys(keys)) delete keys[id];
   });
 }

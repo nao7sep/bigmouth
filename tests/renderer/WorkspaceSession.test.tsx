@@ -25,6 +25,7 @@ vi.mock("@renderer/api", () => ({
   createPost: vi.fn(),
   listTargets: vi.fn(),
   getSettings: vi.fn(),
+  getConfigNotice: vi.fn(),
   getPost: vi.fn(),
   openRecordsWindow: vi.fn(),
   onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
@@ -253,7 +254,7 @@ vi.mock("@renderer/components/ShortcutsModal", () => ({
 vi.mock("@renderer/components/AboutModal", () => ({ AboutModal: modalMock("about-modal") }));
 
 import { WorkspaceSession, type WorkspaceSessionHandle } from "@renderer/WorkspaceSession";
-import { listPosts, createPost, listTargets, getSettings, getPost, openRecordsWindow } from "@renderer/api";
+import { listPosts, createPost, listTargets, getSettings, getConfigNotice, getPost, openRecordsWindow } from "@renderer/api";
 
 const mockListPosts = vi.mocked(listPosts);
 const mockCreatePost = vi.mocked(createPost);
@@ -261,6 +262,7 @@ const mockListTargets = vi.mocked(listTargets);
 const mockGetSettings = vi.mocked(getSettings);
 const mockOpenRecords = vi.mocked(openRecordsWindow);
 const mockGetPost = vi.mocked(getPost);
+const mockGetConfigNotice = vi.mocked(getConfigNotice);
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -361,6 +363,7 @@ beforeEach(() => {
   mockCreatePost.mockReset().mockResolvedValue(POST_B_CREATED);
   mockListTargets.mockReset().mockResolvedValue(TARGETS);
   mockGetSettings.mockReset().mockResolvedValue(SETTINGS);
+  mockGetConfigNotice.mockReset().mockResolvedValue(null);
   mockOpenRecords.mockReset().mockResolvedValue();
   rightFlush.mockReset().mockResolvedValue(true);
   insertAtCursor.mockReset();
@@ -393,6 +396,15 @@ describe("WorkspaceSession initial load", () => {
     expect(getByTestId("left-ws-name").textContent).toBe("Alpha");
     // The settings timezone is valid, so it overrides the default.
     expect(getByTestId("left-timezone").textContent).toBe("America/New_York");
+  });
+
+  it("says when stored settings could not be used, until dismissed", async () => {
+    mockGetConfigNotice.mockResolvedValue({ key: "session.settingsInvalid", values: { path: "/d/a/config.json" } });
+    const { container, getByText } = await mountLoaded();
+    const notice = getByText(/Some settings saved in \/d\/a\/config.json could not be used/);
+    expect(notice).toBeTruthy();
+    fireEvent.click(container.querySelector(".toolbar-warning button")!);
+    expect(container.querySelector(".toolbar-warning")).toBeNull();
   });
 
   it("shows times in the computer's zone when the workspace follows System", async () => {

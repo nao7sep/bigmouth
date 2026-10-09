@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isWorkspaceConfig } from "@main/core/shared/workspaceConfigShape.js";
 
 describe("isWorkspaceConfig", () => {
-  it("accepts an empty map and any object holding a known set key", () => {
-    for (const value of [{}, { timezone: "UTC" }, { targets: "invalid set" }, { schemaVersion: 99, targets: [] }]) {
+  it("accepts an empty map, a file BigMouth marked, and any object holding a known set key", () => {
+    for (const value of [{}, { timezone: "UTC" }, { targets: "invalid set" }, { schemaVersion: 99, targets: [] }, { formatVersion: 1, aiConfigs: [] }]) {
       expect(isWorkspaceConfig(value)).toBe(true);
     }
   });

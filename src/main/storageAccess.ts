@@ -17,6 +17,7 @@ export const openOrCreateWorkspace = command("openOrCreateWorkspace");
 export const updateWorkspace = command("updateWorkspace");
 export const deleteWorkspace = command("deleteWorkspace");
 export const getSettings = command("getSettings");
+export const getConfigNotice = command("getConfigNotice");
 export const saveSettings = command("saveSettings");
 export const getRoleCall = command("getRoleCall");
 export const getAnthropicSettingsForClient = command("getAnthropicSettingsForClient");

@@ -189,6 +189,7 @@ const api = {
   getSettings: (wsId: string) => ipcRenderer.invoke(CHANNELS.getSettings, wsId) as Promise<Settings>,
   saveSettings: (wsId: string, settings: Partial<Settings>) =>
     ipcRenderer.invoke(CHANNELS.saveSettings, wsId, settings) as Promise<Settings>,
+  getConfigNotice: (wsId: string) => ipcRenderer.invoke(CHANNELS.getConfigNotice, wsId) as Promise<Message | null>,
 
   // --- The Anthropic section ---
   getAnthropicSettings: (wsId: string) =>

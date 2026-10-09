@@ -85,11 +85,12 @@ function shapeIssue(key: WorkspaceSetKey, value: unknown): string | null {
       }
       return null;
     case "generationPrompts": {
+      // A prompt this build does not have yet reads as its built-in, and one it
+      // no longer has is ignored, so a version that adds or removes a prompt
+      // never invalidates the prompts the user wrote.
       const prompts = object(value) && object(value.prompts) ? value.prompts : null;
-      const valid = prompts !== null &&
-        Object.keys(prompts).length === GENERATION_PROMPT_KEYS.length &&
-        GENERATION_PROMPT_KEYS.every((k) => typeof prompts[k] === "string");
-      return valid ? null : "prompts must map every generation prompt key, and no other, to a string";
+      const valid = prompts !== null && GENERATION_PROMPT_KEYS.every((k) => prompts[k] === undefined || typeof prompts[k] === "string");
+      return valid ? null : "prompts must map generation prompt keys to strings";
     }
     case "anthropic.endpoint":
       return isEndpoint(value) ? null : "anthropic.endpoint must be an http or https URL";
@@ -130,6 +131,25 @@ function equalsBuiltIn(key: string, values: Record<string, unknown>, builtIn: Re
     return typeof value === "string" && value.trim().toLowerCase() === String(builtIn[key]).toLowerCase();
   }
   return JSON.stringify(canonical(value)) === JSON.stringify(canonical(builtIn[key]));
+}
+
+/**
+ * Stored sets a save must keep as they are (config-sets-conventions): keys this
+ * build does not know, such as a newer version's sets, and known sets it cannot
+ * use that the save did not change. Each stays until the user edits that set.
+ */
+export function keptStoredSets(
+  stored: Record<string, unknown>,
+  knownKeys: readonly string[],
+  isUsable: (key: string, value: unknown) => boolean,
+  edited: (key: string) => boolean,
+): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    if (key === "formatVersion") continue;
+    if (!knownKeys.includes(key) || (!isUsable(key, value) && !edited(key))) kept[key] = value;
+  }
+  return kept;
 }
 
 /** The file content per config-sets-conventions: each set that differs from its built-in, whole. */

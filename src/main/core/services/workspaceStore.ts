@@ -12,8 +12,8 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
+import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
-import { NewerFormatError, UnreadableStoreError, assertJsonWritable, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import {
@@ -96,6 +96,7 @@ export function initAppDir(): AppConfig {
     case "newer":
       // Left exactly as it is, so the version that wrote it can still read it.
       throw new NewerFormatError(registryPath, read.version);
+    case "inaccessible":
     case "unreadable":
       // A halt has to name the store AND its path and say the file was left in
       // place, because halting only makes sense when there is a way back, and
@@ -110,7 +111,6 @@ export function initAppDir(): AppConfig {
 }
 
 function writeAppConfig(): void {
-  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
   // folders themselves survive, so it is exactly the managed text the backup exists to protect.
@@ -154,11 +154,13 @@ function isWorkspaceDirectory(dir: string): boolean {
     case "absent":
     case "newer":
       return true;
+    case "inaccessible":
+      throw new UnreadableStoreError(path.join(dir, "config.json"), read.detail, read.error);
     case "unreadable":
       // JSON that parses but is not ours belongs to another tool's folder. A file
-      // that cannot be read or parsed beside posts/ and assets/ is a workspace
-      // config that is damaged: saying so, with its path, beats calling the
-      // folder no workspace at all.
+      // that cannot be parsed beside posts/ and assets/ is a workspace config
+      // that is damaged: saying so, with its path, beats calling the folder no
+      // workspace at all.
       if (read.error === null) return false;
       throw new UnreadableStoreError(path.join(dir, "config.json"), read.detail, read.error);
     case "read":
@@ -250,7 +252,6 @@ function resolveWorkspaceName(name: string | undefined, dataDirectory: string | 
 }
 
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
-  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const id = nanoid();
 
@@ -297,7 +298,6 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
 }
 
 export function openWorkspace(dataDirectory: string, name?: string): Workspace {
-  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const dir = expandWorkspacePath(dataDirectory);
   const existing = findWorkspaceByDirectory(dir);
@@ -357,7 +357,6 @@ export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Wo
  * failure modes, not a field on a rename.
  */
 export function updateWorkspace(id: string, updates: { name: string }): Workspace | null {
-  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const ws = config.workspaces.find((w) => w.id === id);
   if (!ws) return null;
@@ -368,7 +367,6 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
 }
 
 export function deleteWorkspace(id: string): boolean {
-  assertJsonWritable("workspaces", getWorkspacesJsonPath());
   const config = ensureLoaded();
   const index = config.workspaces.findIndex((w) => w.id === id);
   if (index === -1) return false;

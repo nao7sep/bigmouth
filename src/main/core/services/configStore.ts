@@ -13,6 +13,7 @@ import type { AnthropicSettings, AnthropicSettingsInput, AnthropicSettingsView }
 import {
   SETTINGS_SET_KEYS,
   WORKSPACE_SET_KEYS,
+  keptStoredSets,
   modelSetKey,
   setsDifferingFromBuiltIn,
   thinkingSetKey,
@@ -20,7 +21,7 @@ import {
   type WorkspaceSetKey,
 } from "@shared/configSets";
 import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "@shared/aiModels";
-import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
+import { message, type Message } from "@shared/i18n/translate";
 import { writeSetFile } from "../shared/setFile.js";
 import { NewerFormatError, UnreadableStoreError, readJsonStore } from "../shared/storeFormat.js";
 import { anthropicSets, makeDefaultConfig } from "../shared/defaults.js";
@@ -38,12 +39,11 @@ function readMap(dataDir: string): Record<string, unknown> {
       return {};
     case "newer":
       throw new NewerFormatError(filePath, read.version);
+    case "inaccessible":
     case "unreadable":
       throw new UnreadableStoreError(filePath, read.detail, read.error);
     case "read":
-      if (!isWorkspaceConfig(read.value)) {
-        throw new UnreadableStoreError(filePath, "it is not a BigMouth workspace config");
-      }
+      // Every key is kept: sets this build does not know survive each save.
       return read.value;
   }
 }
@@ -60,6 +60,15 @@ export function effectiveConfig(map: Record<string, unknown>): { config: Workspa
       Object.assign(config, { [key]: map[key] });
       stored.add(key);
     } else issues.push({ key, issue });
+  }
+  // The stored prompts are those the user changed; every other prompt, such as
+  // one a later version added, reads as its built-in.
+  if (stored.has("generationPrompts")) {
+    const builtIn = makeDefaultConfig().generationPrompts.prompts;
+    const own = config.generationPrompts.prompts as Record<string, unknown>;
+    config.generationPrompts = {
+      prompts: Object.fromEntries(Object.entries(builtIn).map(([key, text]) => [key, typeof own[key] === "string" ? own[key] : text])),
+    } as GenerationPromptsData;
   }
   // A thinking is stored only while it differs from the selected model's own default,
   // so one the file does not hold is that row's default, not the role's built-in
@@ -79,9 +88,39 @@ function readConfig(dataDir: string): WorkspaceConfig {
   return config;
 }
 
+/**
+ * Writes the sets that differ from their built-ins (config-sets-conventions),
+ * keeping as stored every set this build cannot use that the save did not
+ * change: an invalid set, read as its built-in, and a set another version wrote.
+ */
 function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>): void {
-  const config = { ...readConfig(dataDir), ...changes };
-  writeSetFile("workspaceConfig", path.join(dataDir, CONFIG_FILE), setsDifferingFromBuiltIn(config, makeDefaultConfig(), WORKSPACE_SET_KEYS));
+  const stored = readMap(dataDir);
+  const current = readConfig(dataDir);
+  const builtIn = makeDefaultConfig();
+  const sets = setsDifferingFromBuiltIn({ ...current, ...changes }, builtIn, WORKSPACE_SET_KEYS);
+  // Prompts are stored sparse, only those the user changed, so a later
+  // version's improved built-in reaches every prompt the user left alone.
+  const prompts = (sets.generationPrompts as GenerationPromptsData | undefined)?.prompts;
+  if (prompts) {
+    sets.generationPrompts = {
+      prompts: Object.fromEntries(Object.entries(prompts).filter(([key, text]) =>
+        Object.hasOwn(builtIn.generationPrompts.prompts, key) && builtIn.generationPrompts.prompts[key] !== text)),
+    };
+  }
+  const kept = keptStoredSets(
+    stored,
+    WORKSPACE_SET_KEYS,
+    (key, value) => workspaceSetIssue(key as WorkspaceSetKey, value) === null,
+    (key) => Object.hasOwn(changes, key) &&
+      JSON.stringify(changes[key as keyof WorkspaceConfig]) !== JSON.stringify(current[key as keyof WorkspaceConfig]),
+  );
+  writeSetFile("workspaceConfig", path.join(dataDir, CONFIG_FILE), { ...sets, ...kept });
+}
+
+/** Where a workspace's stored settings could not all be used, or null when they could. */
+export function getConfigNotice(dataDir: string): Message | null {
+  const { issues } = effectiveConfig(readMap(dataDir));
+  return issues.length > 0 ? message("session.settingsInvalid", { path: path.join(dataDir, CONFIG_FILE) }) : null;
 }
 
 function normalizeSettings(settings: Settings): Settings {
@@ -175,20 +214,23 @@ export function getAnthropicSettingsForClient(workspace: Workspace): AnthropicSe
     thinking,
     hasApiKey: apiKeys.hasStoredApiKey(getApiKeysPath(), workspace.id, "anthropic"),
     usingEnvKey: apiKeys.hasEnvApiKey("anthropic"),
+    keyNotice: apiKeys.keyFileProblem(getApiKeysPath()),
   };
 }
 
 /**
  * Saves the section's sets, trimmed, and a key the user typed. The key goes to
  * the secrets file first, so a failure there leaves the workspace file untouched;
- * a blank key keeps the stored one.
+ * a blank key keeps the stored one. When saving the key set a damaged key file
+ * aside, the returned notice says where it went.
  */
 export function saveAnthropicSettings(workspace: Workspace, input: AnthropicSettingsInput): AnthropicSettingsView {
-  if (input.apiKey?.trim()) apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey);
+  const movedTo = input.apiKey?.trim() ? apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey) : null;
   const models = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) models[role] = input.models[role].trim();
   writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
-  return getAnthropicSettingsForClient(workspace);
+  const view = getAnthropicSettingsForClient(workspace);
+  return movedTo ? { ...view, keyNotice: message("settings.keyFileMovedAside", { path: movedTo }) } : view;
 }
 
 // --- Targets ------------------------------------------------------------------

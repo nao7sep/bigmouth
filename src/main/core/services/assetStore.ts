@@ -29,7 +29,7 @@ import {
 } from "@shared/assetNames";
 import { holdsBytes, writeFileAtomic, writeManagedText } from "../shared/atomicWrite.js";
 import { record } from "./backupStore.js";
-import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
 import type { AssetListing } from "@shared/types";
 import { isPostId } from "../shared/filenames.js";
@@ -144,8 +144,8 @@ export function saveAssetFile(
   }
 
   const dir = ensureAssetDir(dataDir, postId);
-  const { assets: siblings, newer } = reconcileAssets(dir);
-  if (newer) throw newer;
+  const { assets: siblings, refusal } = reconcileAssets(dir);
+  if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
@@ -222,8 +222,8 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
   const dir = assetDir(dataDir, postId);
   const filePath = safeResolveUnder(dir, filename);
   const metaPath = path.join(dir, META_FILENAME);
-  const { assets, newer } = reconcileAssets(dir);
-  if (newer) throw newer;
+  const { assets, refusal } = reconcileAssets(dir);
+  if (refusal) throw refusal;
   const remaining = assets.filter((a) => a.filename !== filename);
 
   // Remove the file (the durable data) first, then update the cache. A crash
@@ -250,19 +250,20 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * name for determinism). The names the directory reserves for itself are
  * ignored — see isReservedAssetName, which saveAssetFile refuses to store.
  *
- * A `meta.json` a newer version of BigMouth wrote is not read, and `newer` is
- * the refusal every write to this folder raises, so the file stays exactly as it is.
+ * A `meta.json` a newer version of BigMouth wrote, or one that could not be
+ * read at all, is not used, and `refusal` is what every write to this folder
+ * raises, so the file stays exactly as it is.
  */
 function reconcileAssets(dir: string): {
   assets: AssetMeta[];
-  newer: NewerFormatError | null;
+  refusal: Error | null;
   movedAside?: { path: string; movedTo: string };
 } {
-  if (!fs.existsSync(dir)) return { assets: [], newer: null };
+  if (!fs.existsSync(dir)) return { assets: [], refusal: null };
 
   const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, newer, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
+  const { cached, refusal, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
   const result: AssetMeta[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
@@ -275,7 +276,7 @@ function reconcileAssets(dir: string): {
     if (accountedFor.has(filename)) continue;
     result.push(projectAssetFile(dir, filename));
   }
-  return { assets: result, newer, movedAside };
+  return { assets: result, refusal, movedAside };
 }
 
 /**
@@ -288,26 +289,35 @@ function reconcileAssets(dir: string): {
  */
 function readAssetMeta(metaPath: string): {
   cached: AssetMeta[];
-  newer: NewerFormatError | null;
+  refusal: Error | null;
   movedAside?: { path: string; movedTo: string };
 } {
   const read = readJsonStore("assetMeta", metaPath);
   switch (read.kind) {
     case "absent":
-      return { cached: [], newer: null };
+      return { cached: [], refusal: null };
     case "newer":
       logWarn("asset metadata was written by a newer version of BigMouth; left unchanged, assets listed from the files on disk", {
         path: metaPath,
         formatVersion: read.version,
       });
-      return { cached: [], newer: new NewerFormatError(metaPath, read.version) };
+      return { cached: [], refusal: new NewerFormatError(metaPath, read.version) };
+    case "inaccessible":
+      // A failed read says nothing about the bytes: the file is left as it is,
+      // the assets are listed from the folder, and writes to it are refused.
+      logWarn("asset metadata could not be read; left unchanged, assets listed from the files on disk", {
+        path: metaPath,
+        detail: read.detail,
+        error: serializeError(read.error),
+      });
+      return { cached: [], refusal: new UnreadableStoreError(metaPath, read.detail, read.error) };
     case "unreadable":
       return moveAsideUnreadableMeta(metaPath, read.detail, read.error);
     case "read": {
       const assets = read.value.assets;
       if (!Array.isArray(assets)) return moveAsideUnreadableMeta(metaPath, "its assets key is not an array", null);
       if (!assets.every(isAssetMeta)) return moveAsideUnreadableMeta(metaPath, "one of its assets is not an asset record", null);
-      return { cached: assets, newer: null };
+      return { cached: assets, refusal: null };
     }
   }
 }
@@ -316,7 +326,7 @@ function moveAsideUnreadableMeta(
   metaPath: string,
   detail: string,
   error: unknown,
-): { cached: AssetMeta[]; newer: null; movedAside: { path: string; movedTo: string } } {
+): { cached: AssetMeta[]; refusal: null; movedAside: { path: string; movedTo: string } } {
   const movedTo = moveAsideInvalid(metaPath);
   logWarn("asset metadata unreadable; moved aside, assets listed from the files on disk", {
     path: metaPath,
@@ -324,7 +334,7 @@ function moveAsideUnreadableMeta(
     detail,
     ...(error ? { error: serializeError(error) } : {}),
   });
-  return { cached: [], newer: null, movedAside: { path: metaPath, movedTo } };
+  return { cached: [], refusal: null, movedAside: { path: metaPath, movedTo } };
 }
 
 function isAssetMeta(value: unknown): value is AssetMeta {

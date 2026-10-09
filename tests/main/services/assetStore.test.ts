@@ -11,7 +11,7 @@ import {
   assetDir,
   type AssetMeta,
 } from "@main/core/services/assetStore.js";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let dataDir: string;
@@ -255,7 +255,6 @@ describe("an unusable meta.json is moved aside", () => {
 
   it.each([
     ["is not JSON", "{ not json"],
-    ["has no format version", JSON.stringify({ assets: [] })],
     ["has an assets key that is not a list", JSON.stringify({ formatVersion: 1, assets: {} })],
     ["holds an entry that is not an asset record", JSON.stringify({ formatVersion: 1, assets: [null] })],
     ["holds an entry with a wrong field", JSON.stringify({ formatVersion: 1, assets: [{ filename: "a.png", size: "3" }] })],
@@ -305,10 +304,23 @@ describe("asset metadata format version", () => {
     expect(listAssets(dataDir, POST).assets).toEqual([meta("a.png")]);
   });
 
-  it("reads a meta.json without its format version as unreadable: listed from the files", () => {
+  it("reads a meta.json without its format version as this build's format", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...meta("a.png"), width: 7 }] }));
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 7 }]);
+  });
+
+  it("lists from the files over a meta.json it could not read, refuses writes, and never moves it", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.rmSync(metaFile());
+    fs.mkdirSync(metaFile());
+
+    expect(listAssets(dataDir, POST)).toEqual({ assets: [{ filename: "a.png", size: 3 }] });
+    expect(() => saveAssetFile(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(UnreadableStoreError);
+    expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(UnreadableStoreError);
+    expect(fs.statSync(metaFile()).isDirectory()).toBe(true);
+    expect(fs.readdirSync(assetDir(dataDir, POST)).sort()).toEqual(["a.png", "meta.json"]);
   });
 
   it("lists from the files over a meta.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {

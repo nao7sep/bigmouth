@@ -58,6 +58,7 @@
   "dialog.startupFailure.detail": "没有更改任何文章或工作区文档。请查看会话日志，然后重新启动 BigMouth。",
   "app.settingsRecovered": "无法读取应用设置文件，因此已将其移到 {path}。主题和界面语言已恢复为“跟随系统”。",
   "app.settingsNewer": "应用设置文件 {path} 由较新版本的 BigMouth 保存，因此没有更改。在你用该版本打开它之前，主题和界面语言会保持“跟随系统”，对它们的更改也不会保存。",
+  "app.settingsInaccessible": "BigMouth 无法打开应用设置文件 {path}，因此该文件没有更改。在能够打开它之前，主题和界面语言会保持“跟随系统”，对它们的更改也不会保存。",
   "store.newerFormat": "{path} 由较新版本的 BigMouth 保存，此版本无法使用。该文件没有更改，请用该版本打开。",
   "store.quarantineFailed": "BigMouth 无法读取 {path}，也无法将其移开，因此该文件没有更改，也没有被覆盖。请修复或移走该文件，然后重试。",
   "store.unreadable": "BigMouth 无法读取 {path}，因此该文件没有更改。请修复或移走该文件，然后重试。",
@@ -121,6 +122,7 @@
   "session.unreadablePosts": {
     "other": "BigMouth 无法读取 {count} 个文章文件，因此它们不在列表中："
   },
+  "session.settingsInvalid": "{path} 中保存的部分设置无法使用，因此 BigMouth 正在使用这些设置的默认值。在你更改这些设置之前，已保存的值会一直保留。",
   "session.morePublishedFailed": "无法加载更多已发布的文章。已显示的文章没有改变；请重试。",
   "session.moreDiscardedFailed": "无法加载更多已弃用的文章。已显示的文章没有改变；请重试。",
   "session.moreRetiredFailed": "无法加载更多已下线的文章。已显示的文章没有改变；请重试。",
@@ -435,6 +437,9 @@
   "settings.apiKeyKeep": "留空则保留当前密钥",
   "settings.apiKeyOptional": "可选",
   "settings.envKey": "正在使用 {variable}；它优先于任何已保存的密钥。",
+  "settings.keyFileDamaged": "API 密钥文件 {path} 已损坏，因此没有使用任何已保存的密钥。保存密钥时会将该文件移开并新建一个文件；之后需要重新输入其他工作区的密钥。",
+  "settings.keyFileInaccessible": "BigMouth 无法打开 API 密钥文件 {path}，因此没有使用任何已保存的密钥，并且在能够打开该文件之前无法保存密钥。",
+  "settings.keyFileMovedAside": "损坏的 API 密钥文件已移到 {path}，并已用此密钥新建了一个文件。其他工作区的密钥需要重新输入。",
   "settings.targetsNeedLanguage": "创建发布目标前，请先在“通用”中至少添加一种支持的语言。",
   "settings.targetNameTaken": "此名称已被另一个发布目标使用。",
   "settings.requiresMetadata": "需要元数据",

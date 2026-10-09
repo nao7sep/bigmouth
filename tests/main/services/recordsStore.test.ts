@@ -76,21 +76,6 @@ describe("stored-record signal", () => {
 
 // store-recovery-conventions: records.sqlite3's format version.
 describe("records database format version", () => {
-  it("falls back when another connection upgrades the marker during the session", () => {
-    const file = path.join(root, "records.sqlite3");
-    openRecords(file, path.join(root, "logs"), new Date());
-    const other = new DatabaseSync(file);
-    other.exec("PRAGMA user_version = 99");
-    const stored = vi.fn();
-    onRecordStored(stored);
-    line();
-    expect(stored).not.toHaveBeenCalled();
-    expect(other.prepare("SELECT COUNT(*) AS n FROM log_records").get()).toEqual({ n: 0 });
-    expect(other.prepare("PRAGMA user_version").get()).toEqual({ user_version: 99 });
-    expect(fs.readdirSync(path.join(root, "logs"))).toHaveLength(1);
-    other.close();
-  });
-
   function userVersion(file: string): number {
     const db = new DatabaseSync(file);
     try {
@@ -112,22 +97,19 @@ describe("records database format version", () => {
     expect(stored).toHaveBeenCalledOnce();
   });
 
-  it("writes to the fallback file over a database with tables but no format version, leaving it byte-identical", () => {
+  it("reads a database without its format version as this build's, completing its schema", () => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec("CREATE TABLE earlier (id INTEGER)");
     db.close();
-    const bytes = fs.readFileSync(file);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
-      line();
-      closeRecords();
-    } finally {
-      consoleError.mockRestore();
-    }
-    expect(fs.readdirSync(path.join(root, "logs"))).toHaveLength(1);
-    expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    const stored = vi.fn();
+    onRecordStored(stored);
+    line();
+    closeRecords();
+    expect(stored).toHaveBeenCalledOnce();
+    expect(userVersion(file)).toBe(1);
+    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
   });
 
   it("writes to the fallback file over a database a newer version wrote, leaving it byte-identical", () => {

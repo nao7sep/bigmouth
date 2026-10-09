@@ -57,18 +57,6 @@ afterEach(() => {
 // it was left in place. A bare JSON.parse used to throw a SyntaxError that
 // reached the user as "Unexpected end of JSON input".
 describe("an unreadable registry names itself", () => {
-  it("refuses registry mutations after a future file replaces its cached store", () => {
-    const workspace = createWorkspace("Original");
-    const file = path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
-    const bytes = '{"formatVersion":99,"workspaces":[]}';
-    fs.writeFileSync(file, bytes);
-    expect(() => updateWorkspace(workspace.id, { name: "Changed" })).toThrow(NewerFormatError);
-    expect(() => deleteWorkspace(workspace.id)).toThrow(NewerFormatError);
-    expect(() => createWorkspace("Another")).toThrow(NewerFormatError);
-    expect(getWorkspace(workspace.id)?.name).toBe("Original");
-    expect(fs.readFileSync(file, "utf8")).toBe(bytes);
-  });
-
   function withRegistry(contents: string): () => void {
     const home = tempDir("halt");
     process.env.BIGMOUTH_DATA_DIR = home;
@@ -470,13 +458,18 @@ describe("workspace registry format version", () => {
     expect(initAppDir().workspaces).toEqual([ws]);
   });
 
-  it("halts on a registry without its format version as unreadable, leaving it unchanged", () => {
-    const body = JSON.stringify({ workspaces: [{ id: "a", name: "A", dataDirectory: tempDir("fmt") }] });
-    fs.writeFileSync(registry(), body);
-    const failure = unreadable(() => initAppDir());
-    expect(failure.filePath).toBe(registry());
-    expect(failure.detail).toBe("it has no formatVersion");
-    expect(fs.readFileSync(registry(), "utf8")).toBe(body);
+  it("reads a registry without its format version as this build's format", () => {
+    const workspaces = [{ id: "a", name: "A", dataDirectory: tempDir("fmt") }];
+    fs.writeFileSync(registry(), JSON.stringify({ workspaces }));
+    expect(initAppDir().workspaces).toEqual(workspaces);
+  });
+
+  it("halts on a registry it could not read, naming it, and leaves it in place", () => {
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.rmSync(registry());
+    fs.mkdirSync(registry());
+    expect(unreadable(() => initAppDir()).filePath).toBe(registry());
+    expect(fs.statSync(registry()).isDirectory()).toBe(true);
   });
 
   it("halts on a registry a newer version wrote, naming it, and leaves it byte-identical", () => {

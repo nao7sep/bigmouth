@@ -8,9 +8,10 @@ import {
   hasEnvApiKey,
   writeApiKey,
   clearWorkspaceKeys,
+  keyFileProblem,
 } from "@main/core/services/apiKeys.js";
 import * as logger from "@main/core/services/logger.js";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let dir: string;
@@ -137,17 +138,41 @@ describe("apiKeys secret store", () => {
   });
 
   describe("corrupt / hand-edited file tolerance", () => {
-    it("moves an unparseable file aside and treats it as empty rather than throwing", () => {
+    it("reads a damaged file as holding no key and never moves it during a lookup", () => {
       fs.writeFileSync(keyFile, "{ not json");
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
+      expect(keyFileProblem(keyFile)).toEqual({ key: "settings.keyFileDamaged", values: { path: keyFile } });
+      expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
+      expect(fs.readFileSync(keyFile, "utf8")).toBe("{ not json");
+    });
+
+    it("sets a damaged file aside when a key is saved, starts a new one and says where the old one went", () => {
+      fs.writeFileSync(keyFile, "{ not json");
+      const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
       // Preserved aside under the derived-filename grammar: <stem>-<millisecond UTC
       // stamp>.invalid — never the full "api-keys.json" name with ".invalid" dot-appended.
-      const entries = fs.readdirSync(dir);
-      const quarantined = entries.find((e) => e.startsWith("api-keys-") && e.endsWith(".invalid"));
-      expect(quarantined).toMatch(/^api-keys-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
-      expect(entries).not.toContain("api-keys.json");
-      expect(entries.some((e) => e.startsWith("api-keys.json."))).toBe(false);
+      expect(path.basename(movedTo!)).toMatch(/^api-keys-\d{8}-\d{6}-\d{3}-utc\.invalid$/);
+      expect(fs.readFileSync(movedTo!, "utf8")).toBe("{ not json");
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
+      expect(keyFileProblem(keyFile)).toBeNull();
+    });
+
+    it("leaves a damaged file in place when a workspace is removed", () => {
+      fs.writeFileSync(keyFile, "{ not json");
+      clearWorkspaceKeys(keyFile, W1);
+      expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
+    });
+
+    it("never moves or writes a file it could not read, and refuses saving into it", () => {
+      // A directory where the file should be fails the read itself, as a permission error does.
+      fs.mkdirSync(keyFile);
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+      expect(keyFileProblem(keyFile)).toEqual({ key: "settings.keyFileInaccessible", values: { path: keyFile } });
+      expect(() => writeApiKey(keyFile, W1, "anthropic", "new-key")).toThrow(UnreadableStoreError);
+      clearWorkspaceKeys(keyFile, W1);
+      expect(fs.statSync(keyFile).isDirectory()).toBe(true);
+      expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
     });
 
     it("ignores a non-string entry and treats an untagged value as plaintext", () => {
@@ -165,35 +190,27 @@ describe("apiKeys secret store", () => {
       expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("real-pasted"); // untagged → plaintext
     });
 
-    it("preserves valid JSON with the wrong container shape before a key write", () => {
+    it("treats a workspaces key of the wrong shape as a damaged file", () => {
       const wrongShape = '{"formatVersion":1,"workspaces":[],"future":"keep me"}\n';
       fs.writeFileSync(keyFile, wrongShape);
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
-
-      writeApiKey(keyFile, W1, "anthropic", "new-key");
-
-      const quarantined = fs
-        .readdirSync(dir)
-        .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
-      expect(quarantined).toBeDefined();
-      expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
+      expect(keyFileProblem(keyFile)).toMatchObject({ key: "settings.keyFileDamaged" });
+      const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
+      expect(fs.readFileSync(movedTo!, "utf8")).toBe(wrongShape);
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/set aside/),
-        expect.objectContaining({ path: keyFile, detail: expect.stringMatching(/wrong shape/), movedTo: path.join(dir, quarantined!) }),
-      );
-      warnSpy.mockRestore();
     });
 
-    // The earlier per-config shape is development data, reset rather than migrated.
-    it("preserves a store whose workspace node has the wrong shape", () => {
-      const wrongShape = JSON.stringify({ formatVersion: 1, workspaces: { [W1]: { configs: { c1: { keys: { anthropic: "obf:x" } } } } } });
-      fs.writeFileSync(keyFile, wrongShape);
+    it("ignores a workspace entry of another shape and keeps it when another workspace's key is written", () => {
+      const other = { configs: { c1: { keys: { anthropic: "obf:x" } } } };
+      fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: { [W1]: other, [W2]: { keys: { anthropic: "kept" } } } }));
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
-      const quarantined = fs
-        .readdirSync(dir)
-        .find((entry) => entry.startsWith("api-keys-") && entry.endsWith(".invalid"));
-      expect(fs.readFileSync(path.join(dir, quarantined!), "utf8")).toBe(wrongShape);
+      expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("kept");
+      expect(keyFileProblem(keyFile)).toBeNull();
+
+      expect(writeApiKey(keyFile, W2, "anthropic", "changed")).toBeNull();
+      const stored = JSON.parse(fs.readFileSync(keyFile, "utf8"));
+      expect(stored.workspaces[W1]).toEqual(other);
+      expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("changed");
+      expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
     });
 
     it("resolves a malformed obf: value as absent and warns naming the key, rather than passing decoded garbage to the provider", () => {
@@ -248,22 +265,10 @@ describe("file permissions (POSIX only)", () => {
   });
 
   describe("format version", () => {
-    it("sets a file without its format version aside as unusable and reads it as no key", () => {
-      const body = JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } });
-      fs.writeFileSync(keyFile, body);
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
-      try {
-        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringMatching(/set aside/),
-          expect.objectContaining({ detail: expect.stringMatching(/no formatVersion/) }),
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
-      const quarantined = fs.readdirSync(dir).find((entry) => entry.endsWith(".invalid"));
-      expect(fs.readFileSync(path.join(dir, quarantined!), "utf-8")).toBe(body);
-      expect(fs.existsSync(keyFile)).toBe(false);
+    it("reads a file without its format version as this build's format", () => {
+      fs.writeFileSync(keyFile, JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
+      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-plain");
+      expect(keyFileProblem(keyFile)).toBeNull();
     });
 
     it("writes this build's format version first and reads the key back", () => {
@@ -290,25 +295,17 @@ describe("file permissions (POSIX only)", () => {
     });
   });
 
-  describe("an unusable file that cannot be moved aside", () => {
-    it("reads as no key, refuses writes, and is never written over", () => {
+  describe("a damaged file that cannot be moved aside", () => {
+    it("refuses the key save and is never written over", () => {
       const body = "{ not json";
       fs.writeFileSync(keyFile, body);
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
         throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
       });
       try {
-        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
         expect(() => writeApiKey(keyFile, W1, "anthropic", "sk-new")).toThrow(QuarantineError);
-        clearWorkspaceKeys(keyFile, W1);
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringMatching(/could not be set aside/),
-          expect.objectContaining({ path: keyFile }),
-        );
       } finally {
         rename.mockRestore();
-        warnSpy.mockRestore();
       }
       expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
     });

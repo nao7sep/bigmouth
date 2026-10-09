@@ -30,6 +30,8 @@ import { serializeError, warn } from "./logger.js";
 
 let stateJsonPath: string | null = null;
 let uiState: UiState | null = null;
+// False when this launch must leave state.json as it is: a newer build wrote it, or it could not be read.
+let writable = true;
 
 /**
  * Coerces an arbitrary parsed value into a valid UiState, replacing any bad or
@@ -66,14 +68,15 @@ function normalizeUiState(raw: unknown): UiState {
 /**
  * Resolves state.json under the storage root and loads it. Must run after
  * initAppDir() (it derives the path from getAppRoot()). A missing file leaves
- * defaults in memory without writing; an unreadable/invalid one self-heals to
- * defaults; the next deliberate view-state update replaces it. One a newer
- * version of BigMouth wrote is left exactly as it is: this launch keeps its view
- * state in memory only.
+ * defaults in memory without writing; an invalid one is view state only, so it
+ * falls back to defaults and the next deliberate view-state update replaces it.
+ * One a newer version of BigMouth wrote, or one that could not be read at all,
+ * is left exactly as it is: this launch keeps its view state in memory only.
  */
 export function initStateStore(): UiState {
   stateJsonPath = getStateJsonPath();
   uiState = defaultUiState();
+  writable = true;
 
   const read = readJsonStore("state", stateJsonPath);
   switch (read.kind) {
@@ -81,14 +84,23 @@ export function initStateStore(): UiState {
       // First run (or the user cleared it): defaults, written lazily on first update.
       break;
     case "newer":
+      writable = false;
       warn("state.json was written by a newer version of BigMouth; left unchanged, view state is kept in memory", {
         path: stateJsonPath,
         formatVersion: read.version,
       });
       break;
+    case "inaccessible":
+      writable = false;
+      warn("state.json could not be read; left unchanged, view state is kept in memory", {
+        detail: read.detail,
+        error: serializeError(read.error),
+        path: stateJsonPath,
+      });
+      break;
     case "unreadable":
-      // Parsing but not fitting its shape is corrupt, same branch as bad JSON —
-      // never coerced and then overwritten by the first pane drag.
+      // Parsing but not fitting its shape is corrupt, same branch as bad JSON:
+      // never coerced, and replaced by the next view-state update.
       warn("state.json unreadable; using defaults", {
         detail: read.detail,
         ...(read.error ? { error: serializeError(read.error) } : {}),
@@ -125,8 +137,7 @@ export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
   const next = normalizeUiState({ ...ensureLoaded(), ...patch });
   uiState = next;
-  const read = readJsonStore("state", stateJsonPath);
-  if (read.kind === "newer") return next;
+  if (!writable) return next;
   // not recorded: state.json is volatile state and nothing else (pane widths, zoom,
   // last selections), so the data-backup conventions keep it out of backups.sqlite3.
   // It is still written atomically (temp file, then rename).

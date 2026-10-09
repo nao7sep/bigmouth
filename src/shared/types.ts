@@ -260,6 +260,8 @@ export interface AnthropicSettings {
 export interface AnthropicSettingsView extends AnthropicSettings {
   hasApiKey: boolean; // a key is stored for this workspace (env-independent)
   usingEnvKey: boolean; // ANTHROPIC_API_KEY is set, so it overrides any stored key
+  /** Why stored keys cannot be used or saved, or where a damaged key file was moved by this save. */
+  keyNotice: Message | null;
 }
 
 /** What Save sends: an omitted or blank `apiKey` keeps the stored key. */

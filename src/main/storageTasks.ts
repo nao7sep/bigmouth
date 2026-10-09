@@ -60,6 +60,7 @@ export const storageTasks = {
   updateWorkspace: workspaceStore.updateWorkspace,
   deleteWorkspace: workspaceStore.deleteWorkspace,
   getSettings: configStore.getSettings,
+  getConfigNotice: configStore.getConfigNotice,
   saveSettings: configStore.saveSettings,
   getRoleCall: configStore.getRoleCall,
   getAnthropicSettingsForClient: configStore.getAnthropicSettingsForClient,

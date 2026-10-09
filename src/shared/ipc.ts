@@ -127,6 +127,7 @@ export const CHANNELS = {
   // Settings
   getSettings: "settings:get",
   saveSettings: "settings:save",
+  getConfigNotice: "settings:configNotice",
 
   // The Anthropic section
   getAnthropicSettings: "anthropic:get",
@@ -383,6 +384,8 @@ export interface BigMouthApi {
   // Settings
   getSettings(wsId: string): Promise<Settings>;
   saveSettings(wsId: string, settings: Partial<Settings>): Promise<Settings>;
+  /** Null, or why some stored settings are not in use; the file keeps them. */
+  getConfigNotice(wsId: string): Promise<Message | null>;
 
   // The Anthropic section
   getAnthropicSettings(wsId: string): Promise<AnthropicSettingsView>;

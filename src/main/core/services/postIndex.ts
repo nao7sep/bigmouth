@@ -30,6 +30,9 @@ import { isPostId } from "../shared/filenames.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
+// Workspaces whose index.json is left as it is while their index is loaded: a
+// newer build wrote it, or it could not be read. Their index lives in memory only.
+const leftAsIs = new Set<string>();
 
 function postsDir(dataDir: string): string {
   return path.join(dataDir, "posts");
@@ -52,6 +55,7 @@ function modifiedAt(filePath: string): number {
 
 export function clearCache(dataDir: string): void {
   indexes.delete(dataDir);
+  leftAsIs.delete(dataDir);
 }
 
 export function getEntry(dataDir: string, id: string): PostIndexEntry | null {
@@ -196,9 +200,18 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
     case "newer":
       // Left exactly as it is, so the version that wrote it can still read it:
       // this session's index is built from the post files and kept in memory.
+      leftAsIs.add(dataDir);
       logWarn("post index was written by a newer version of BigMouth; left unchanged, the index is kept in memory", {
         path: filePath,
         formatVersion: read.version,
+      });
+      return null;
+    case "inaccessible":
+      leftAsIs.add(dataDir);
+      logWarn("post index could not be read; left unchanged, the index is built from the post files and kept in memory", {
+        path: filePath,
+        detail: read.detail,
+        error: serializeError(read.error),
       });
       return null;
     case "unreadable":
@@ -443,11 +456,7 @@ function findDuplicateSlugGroups(entries: Iterable<PostIndexEntry>): DuplicateSl
 }
 
 function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
-  const admission = readJsonStore("postIndex", indexPath(dataDir));
-  if (admission.kind === "newer") {
-    logWarn("post index was written by a newer version; left unchanged", { path: indexPath(dataDir), formatVersion: admission.version });
-    return;
-  }
+  if (leftAsIs.has(dataDir)) return;
   // not recorded: posts/index.json is a cache rebuilt from the post files (data-backup conventions).
   try {
     writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()]));

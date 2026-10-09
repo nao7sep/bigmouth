@@ -539,17 +539,14 @@ describe("post file format version", () => {
     expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.formatVersion).toBe(1);
   });
 
-  it("skips a post file without its format version as unreadable, leaving it unchanged", () => {
+  it("reads a post file without its format version as this build's format", () => {
     const post = createPost(dataDir, "blogger", "en");
     const body = fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1\n", "");
     fs.writeFileSync(post.filePath, body);
     clearCache(dataDir);
 
-    expect(rebuildIndex(dataDir).skipped).toEqual([
-      { fileName: path.basename(post.filePath), reason: expect.stringMatching(/no formatVersion/) },
-    ]);
-    expect(getPost(dataDir, post.frontMatter.id)).toBeNull();
-    expect(fs.readFileSync(post.filePath, "utf-8")).toBe(body);
+    expect(rebuildIndex(dataDir).skipped).toEqual([]);
+    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.id).toBe(post.frontMatter.id);
   });
 
   it("skips a post file a newer version wrote and leaves it byte-identical", () => {
@@ -590,24 +587,29 @@ describe("post index format version", () => {
     expect(indexBytes()).toBe(before);
   });
 
-  it("rebuilds an index without its format version as unreadable", () => {
+  it("reads an index without its format version as this build's format", () => {
     const post = createPost(dataDir, "blogger", "en");
-    const current = indexBytes();
-    const { posts } = JSON.parse(current) as { posts: PostIndexEntry[] };
-    fs.writeFileSync(indexFile(), JSON.stringify({ posts }));
+    const { posts } = JSON.parse(indexBytes()) as { posts: PostIndexEntry[] };
+    const unmarked = JSON.stringify({ posts });
+    fs.writeFileSync(indexFile(), unmarked);
     clearCache(dataDir);
 
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
-    expect(indexBytes()).toBe(current);
+    // Nothing drifted, so the index is not rewritten.
+    expect(indexBytes()).toBe(unmarked);
   });
 
-  it("preserves an externally replaced future index after its cache was warmed", () => {
+  it("builds the index from the post files over one it could not read, and never writes over it", () => {
     const first = createPost(dataDir, "blogger", "en");
-    const body = JSON.stringify({ formatVersion: 999, entries: { future: true } });
-    fs.writeFileSync(indexFile(), body);
-    changeStatus(dataDir, first.frontMatter.id, "verified");
-    expect(fs.readFileSync(indexFile(), "utf8")).toBe(body);
-    expect(getPost(dataDir, first.frontMatter.id)?.frontMatter.status).toBe("verified");
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.rmSync(indexFile());
+    fs.mkdirSync(indexFile());
+    clearCache(dataDir);
+
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([first.frontMatter.id]);
+    const second = createPost(dataDir, "blogger", "en");
+    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id).sort()).toEqual([first.frontMatter.id, second.frontMatter.id].sort());
+    expect(fs.statSync(indexFile()).isDirectory()).toBe(true);
   });
 
   it("keeps the index in memory over one a newer version wrote, leaving it byte-identical", () => {

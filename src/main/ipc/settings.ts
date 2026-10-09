@@ -3,7 +3,7 @@ import { ipcMain } from "electron";
 import { CHANNELS } from "@shared/ipc";
 import type { Settings } from "@shared/types";
 import { SETTINGS_SET_KEYS, workspaceSetIssue } from "@shared/configSets";
-import { getSettings, saveSettings } from "../storageAccess.js";
+import { getConfigNotice, getSettings, saveSettings } from "../storageAccess.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
@@ -13,6 +13,12 @@ export function registerSettingsHandlers(): void {
     const settings = await getSettings(ws.dataDirectory);
     info("settings loaded", { workspace: ws.id });
     return settings;
+  });
+
+  // Whether stored sets could not all be used, so the workspace can say so.
+  ipcMain.handle(CHANNELS.getConfigNotice, async (_event, wsId: string) => {
+    const ws = await resolveWorkspace(wsId);
+    return getConfigNotice(ws.dataDirectory);
   });
 
   ipcMain.handle(CHANNELS.saveSettings, async (_event, wsId: string, body: unknown) => {

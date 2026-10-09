@@ -82,7 +82,7 @@ afterEach(() => {
 describe("Anthropic section IPC", () => {
   it("saves the section and its key, and answers with the section, never the key", async () => {
     const view = (await invoke(CHANNELS.saveAnthropicSettings, wsId, section({ apiKey: "sk-ant-secret" })));
-    expect(view).toEqual({ ...section(), hasApiKey: true, usingEnvKey: false });
+    expect(view).toEqual({ ...section(), hasApiKey: true, usingEnvKey: false, keyNotice: null });
     expect(JSON.stringify(view)).not.toContain("sk-ant-secret");
     expect((await invoke(CHANNELS.getAnthropicSettings, wsId))).toEqual(view);
     expect(fs.readFileSync(getApiKeysPath(), "utf8")).not.toContain("sk-ant-secret");

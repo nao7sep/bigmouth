@@ -40,15 +40,17 @@ describe("config sets", () => {
     // A value the row does not list sends the default, so it equals the built-in.
     expect(setsDifferingFromBuiltIn({ ...builtIn, "anthropic.thinking.analysis": "off" }, builtIn, keys)).toEqual({});
   });
-  it("requires every generation prompt and no other key", () => {
+  it("accepts any subset of the generation prompts and ignores keys this build does not have", () => {
     const prompts = Object.fromEntries(GENERATION_PROMPT_KEYS.map((key) => [key, ""]));
     expect(workspaceSetIssue("generationPrompts", { prompts })).toBeNull();
-    expect(workspaceSetIssue("generationPrompts", { prompts: { ...prompts, extra: "Custom" } })).not.toBeNull();
-    expect(workspaceSetIssue("generationPrompts", { prompts: { ...prompts, title: 1 } })).not.toBeNull();
+    expect(workspaceSetIssue("generationPrompts", { prompts: { ...prompts, extra: "Custom" } })).toBeNull();
+    expect(workspaceSetIssue("generationPrompts", { prompts: {} })).toBeNull();
     for (const key of GENERATION_PROMPT_KEYS) {
       const partial = { ...prompts };
       delete partial[key];
-      expect(workspaceSetIssue("generationPrompts", { prompts: partial })).not.toBeNull();
+      expect(workspaceSetIssue("generationPrompts", { prompts: partial })).toBeNull();
     }
+    expect(workspaceSetIssue("generationPrompts", { prompts: { ...prompts, title: 1 } })).not.toBeNull();
+    expect(workspaceSetIssue("generationPrompts", { prompts: [] })).not.toBeNull();
   });
 });

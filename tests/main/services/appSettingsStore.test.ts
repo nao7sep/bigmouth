@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { QuarantineError } from "@main/core/shared/quarantine.js";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
@@ -49,13 +49,14 @@ afterEach(() => {
 });
 
 describe("appSettingsStore", () => {
-  it("refuses a future store installed after initialization", () => {
-    initAppSettingsStore();
-    const bytes = '{"formatVersion":99,"theme":"future"}';
-    fs.writeFileSync(configPath(), bytes);
-    expect(() => saveAppSettings({ theme: "dark" })).toThrow(NewerFormatError);
-    expect(fs.readFileSync(configPath(), "utf8")).toBe(bytes);
-    expect(getAppSettingsLoad().settings.theme).toBe("system");
+  it("leaves a file it could not read in place, uses built-ins, tells the user, and refuses saves", () => {
+    // A directory where the file should be fails the read itself, as a permission error does.
+    fs.mkdirSync(configPath());
+    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
+    expect(getAppSettingsLoad().notice).toEqual(message("app.settingsInaccessible", { path: configPath() }));
+    expect(() => saveAppSettings({ theme: "dark" })).toThrow(UnreadableStoreError);
+    expect(fs.statSync(configPath()).isDirectory()).toBe(true);
+    expect(quarantined()).toEqual([]);
   });
 
   it("keeps defaults in memory on first launch", () => {
@@ -114,11 +115,11 @@ it("ignores invalid set shapes without quarantining valid neighbours", () => {
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: true, language: "ja" });
 });
 
-it("changing one set preserves another known copy and drops version metadata", () => {
-  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, schemaVersion: 1, theme: "dark" }));
+it("changing one set keeps another known copy and a key this build does not know", () => {
+  fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, laterSet: 1, theme: "dark" }));
   initAppSettingsStore();
   saveAppSettings({ theme: "dark", language: "ja" });
-  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: "dark", language: "ja" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: "dark", language: "ja", laterSet: 1 });
 });
 
 it("a save removes each set equal to its built-in and keeps the file", () => {
@@ -130,11 +131,13 @@ it("a save removes each set equal to its built-in and keeps the file", () => {
   expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1 });
 });
 
-it("an invalid set loses its key at the next save", () => {
+it("an invalid set is kept as stored until the user changes it", () => {
   fs.writeFileSync(configPath(), JSON.stringify({ formatVersion: 1, theme: true, language: "ja" }));
   initAppSettingsStore();
-  saveAppSettings({ theme: "system", language: "ja" });
-  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, language: "ja" });
+  saveAppSettings({ theme: "system", language: "en" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, language: "en", theme: true });
+  saveAppSettings({ theme: "dark", language: "en" });
+  expect(JSON.parse(fs.readFileSync(configPath(), "utf8"))).toEqual({ formatVersion: 1, theme: "dark", language: "en" });
 });
 
 it("saving built-ins on a fresh install creates no file", () => {
@@ -155,11 +158,17 @@ it("warns on each load of an invalid app set and names its key", () => {
 });
 
 describe("appSettingsStore format version", () => {
-  it("moves a file without its format version aside as unreadable, and reports where it went", () => {
-    const body = '{ "theme": "dark" }';
+  it("reads a file without its format version as this build's format", () => {
+    fs.writeFileSync(configPath(), '{ "theme": "dark" }');
+    expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "system" });
+    expect(getAppSettingsLoad().notice).toBeNull();
+    expect(quarantined()).toEqual([]);
+  });
+
+  it("moves damaged content aside and reports where it went", () => {
+    const body = '{ "theme": ';
     fs.writeFileSync(configPath(), body);
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-
     const moved = quarantined();
     expect(moved).toHaveLength(1);
     expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);

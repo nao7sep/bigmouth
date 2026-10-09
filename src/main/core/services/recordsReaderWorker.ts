@@ -24,14 +24,14 @@ const { databasePath } = workerData as { databasePath: string };
 let db: DatabaseSync | null = null;
 
 // A lock the writer holds is waited on for a bounded time, well inside the
-// reader's own timeout. A database in any format but this build's, newer or
-// without its version, is not read (store-recovery-conventions).
+// reader's own timeout. A database a newer build wrote is not read
+// (store-recovery-conventions); one without its version is this build's format.
 function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true });
   try {
     opened.exec("PRAGMA busy_timeout = 2000");
     const { user_version: version } = opened.prepare("PRAGMA user_version").get() as { user_version: number };
-    if (version !== FORMAT_VERSIONS.records) {
+    if (version > FORMAT_VERSIONS.records) {
       throw new Error(`${databasePath} is in format ${version}, which this build cannot read; it was left unchanged.`);
     }
   } catch (error: unknown) {
