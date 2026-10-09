@@ -6,7 +6,7 @@ import { closeRecords, currentRecordsPath, openRecords, writeLogRecord } from ".
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
 
-const DEBUG_LOG_FLAG = "--debug-logs";
+export const DEBUG_LOG_FLAG = "--debug-logs";
 
 type DebugLogEnv = Readonly<Record<string, string | undefined>>;
 
