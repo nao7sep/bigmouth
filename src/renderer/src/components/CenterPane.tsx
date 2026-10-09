@@ -36,6 +36,8 @@ interface CenterPaneProps {
   onSelectPost: (id: string) => void;
   onGoBack?: () => void;
   onBeforeStatusChange?: () => Promise<boolean>;
+  /** This post as the session reread it after Settings closed; see the effect that applies it. */
+  rereadPost?: Post | null;
   pubBatchSize: number;
   watermark: string;
   contentFont: ContentFont;
@@ -59,6 +61,7 @@ export function CenterPane({
   onSelectPost,
   onGoBack,
   onBeforeStatusChange,
+  rereadPost,
   pubBatchSize,
   watermark,
   contentFont,
@@ -115,6 +118,19 @@ export function CenterPane({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Renaming a target in Settings rewrites `target` in every post file, and the
+  // session rereads the open post when Settings closes. Its front matter replaces
+  // this pane's copy so the toolbar never names the old target; the editor text
+  // is left alone, since this pane already holds the newest content. Only a
+  // reread arriving after this pane mounted applies: a pane mounted later loads
+  // the post itself, and an older reread must not overwrite that load.
+  const mountedRereadRef = useRef(rereadPost);
+  useEffect(() => {
+    if (!rereadPost || rereadPost === mountedRereadRef.current) return;
+    if (rereadPost.frontMatter.id !== postId) return;
+    setPost((current) => (current ? { ...current, frontMatter: rereadPost.frontMatter } : current));
+  }, [rereadPost, postId]);
 
   // Content saves are owned by the main-process post store (write-behind):
   // every edit streams there immediately, so navigating away, switching

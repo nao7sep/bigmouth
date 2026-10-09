@@ -25,6 +25,7 @@ vi.mock("@renderer/api", () => ({
   createPost: vi.fn(),
   listTargets: vi.fn(),
   getSettings: vi.fn(),
+  getPost: vi.fn(),
   openRecordsWindow: vi.fn(),
   onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
     savedListeners.add(cb);
@@ -252,13 +253,14 @@ vi.mock("@renderer/components/ShortcutsModal", () => ({
 vi.mock("@renderer/components/AboutModal", () => ({ AboutModal: modalMock("about-modal") }));
 
 import { WorkspaceSession, type WorkspaceSessionHandle } from "@renderer/WorkspaceSession";
-import { listPosts, createPost, listTargets, getSettings, openRecordsWindow } from "@renderer/api";
+import { listPosts, createPost, listTargets, getSettings, getPost, openRecordsWindow } from "@renderer/api";
 
 const mockListPosts = vi.mocked(listPosts);
 const mockCreatePost = vi.mocked(createPost);
 const mockListTargets = vi.mocked(listTargets);
 const mockGetSettings = vi.mocked(getSettings);
 const mockOpenRecords = vi.mocked(openRecordsWindow);
+const mockGetPost = vi.mocked(getPost);
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -705,6 +707,30 @@ describe("WorkspaceSession modals", () => {
     // is only mounted with a post open, so we just assert the modal cycle here.)
     fireEvent.click(getByTestId("settings-modal-close"));
     expect(queryByTestId("settings-modal")).toBeNull();
+  });
+
+  it("hands the open post, reread after a settings change, to the centre pane", async () => {
+    // A target rename rewrites `target` in every post file; the centre toolbar
+    // shows the pane's own copy, so the reread must reach the pane too.
+    const reread: Post = { frontMatter: fm("a", "draft", { target: "renamed" }), content: "on disk" };
+    mockGetPost.mockReset().mockResolvedValue(reread);
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    expect(props.center!.rereadPost).toBeNull();
+
+    fireEvent.click(getByTestId("left-settings"));
+    await act(async () => {
+      fireEvent.click(getByTestId("settings-modal-changed"));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockGetPost).toHaveBeenCalledWith("a");
+    expect(props.center!.rereadPost).toBe(reread);
   });
 
   it("flushes pending metadata edits before a settings change lands", async () => {

@@ -133,6 +133,7 @@ function baseProps() {
     // Optional props, declared here so the override type accepts them.
     onGoBack: undefined as (() => void) | undefined,
     onBeforeStatusChange: undefined as (() => Promise<boolean>) | undefined,
+    rereadPost: undefined as Post | null | undefined,
   };
 }
 
@@ -231,6 +232,30 @@ describe("CenterPane toolbar metadata", () => {
       "Published",
       "Retired",
     ]);
+  });
+
+  it("names a renamed target from the session's reread, keeping the editor text", async () => {
+    const { props, rerender, container } = await renderPane();
+    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "typed since load" } });
+
+    rerender(
+      <ConfirmProvider>
+        <CenterPane {...props} rereadPost={post({ target: "renamed" }, "older text on disk")} />
+      </ConfirmProvider>
+    );
+    const labels = [...container.querySelectorAll(".toolbar-label")].map((e) => e.textContent);
+    expect(labels).toContain("renamed");
+    expect(labels).not.toContain("blog");
+    expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("typed since load");
+  });
+
+  it("ignores a reread that predates the pane", async () => {
+    const stale = post({ target: "stale" });
+    const { container } = await renderPane({ rereadPost: stale });
+    const labels = [...container.querySelectorAll(".toolbar-label")].map((e) => e.textContent);
+    expect(labels).toContain("blog");
+    expect(labels).not.toContain("stale");
   });
 
   it("marks the current status radio as checked/active", async () => {

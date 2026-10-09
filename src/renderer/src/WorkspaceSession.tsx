@@ -115,6 +115,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [timezone, setTimezone] = useState(systemTimeZone);
     const [editorContent, setEditorContent] = useState("");
     const [currentPost, setCurrentPost] = useState<Post | null>(null);
+    // The open post as last reread after Settings closed, for the centre pane's own copy.
+    const [rereadPost, setRereadPost] = useState<Post | null>(null);
     const [exportOpen, setExportOpen] = useState(false);
     const [newPostOpen, setNewPostOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -342,8 +344,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      * The posts are not optional here. Renaming a target rewrites the `target`
      * field in every post file, so reloading only the targets left the open post
      * carrying a name that matched nothing: `currentTarget` went null and the
-     * Metadata tab vanished from the strip. The left list and the centre toolbar
-     * kept showing the old name too.
+     * Metadata tab vanished from the strip. The reread open post goes to the
+     * session and to the centre pane, whose toolbar shows its own copy.
      */
     const reloadConfig = useCallback(() => {
       setLoadError(null);
@@ -364,7 +366,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           // the copy in memory is stale and would match no target at all.
           const openId = selectedPostIdRef.current;
           if (openId) {
-            setCurrentPost(await getPost(openId));
+            const reread = await getPost(openId);
+            setCurrentPost(reread);
+            setRereadPost(reread);
           }
         } catch (err) {
           setLoadError(presentFailure(
@@ -681,6 +685,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 onSelectPost={handleNavigateToPost}
                 onGoBack={navHistory.length > 0 ? handleGoBack : undefined}
                 onBeforeStatusChange={flushRightPaneChanges}
+                rereadPost={rereadPost}
                 pubBatchSize={pubBatchSize}
                 watermark={watermark}
                 contentFont={contentFont}
