@@ -428,6 +428,13 @@ describe("an asset change whose record could not be saved", () => {
     });
   }
 
+  /** Moves the clock a second ahead until vi.useRealTimers(). Timers stay real. */
+  function laterClock() {
+    const next = Date.now() + 1000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(next);
+  }
+
   it("keeps an added file and says its details were not saved", async () => {
     const id = (await createDraft());
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("first.png", PNG_1x1));
@@ -445,12 +452,15 @@ describe("an asset change whose record could not be saved", () => {
   it("keeps an added file and says the post's modified time was not updated", async () => {
     const id = (await createDraft());
     const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+    // A later instant, so the modified-time write is a real change that the failing rename meets.
+    laterClock();
     const spy = failRenamesOnto(".md");
     let result: AssetUploadResult;
     try {
       result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
     } finally {
       spy.mockRestore();
+      vi.useRealTimers();
     }
     expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png" }), unsaved: ["modifiedTime"] });
     expect(fs.existsSync(path.join(dataDir, "assets", id, "a.png"))).toBe(true);
@@ -461,12 +471,15 @@ describe("an asset change whose record could not be saved", () => {
     const id = (await createDraft());
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
     await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+    // A later instant, so the modified-time write is a real change that the failing rename meets.
+    laterClock();
     const spy = failRenamesOnto(".md");
     let result: AssetDeleteResult;
     try {
       result = (await invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png"));
     } finally {
       spy.mockRestore();
+      vi.useRealTimers();
     }
     expect(result).toEqual({ unsaved: ["modifiedTime"] });
     expect(fs.existsSync(path.join(dataDir, "assets", id, "a.png"))).toBe(false);
