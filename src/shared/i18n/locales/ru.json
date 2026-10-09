@@ -507,6 +507,7 @@
   "records.levelWarn": "Предупреждение",
   "records.levelInfo": "Информация",
   "records.levelDebug": "Отладка",
+  "records.stopped": "Остановлен",
   "records.launch": "Запуск",
   "records.allLaunches": "Все запуски",
   "records.thisLaunch": "{time} (этот запуск)",

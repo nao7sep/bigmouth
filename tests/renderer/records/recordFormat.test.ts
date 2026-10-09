@@ -12,7 +12,7 @@ import {
 import type { LogRecordDetail, RecordSummary } from "@shared/records";
 
 const row = (id: number, time: string, title = `row ${id}`): RecordSummary => ({
-  kind: "log", id, session: "s", time, level: "info", title, text: null,
+  kind: "log", id, session: "s", time, level: "info", title, text: null, stopped: false,
 });
 
 const a = row(1, "2026-10-02T08:00:01.000Z");

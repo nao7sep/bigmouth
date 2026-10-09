@@ -64,7 +64,7 @@ describe("credentials in provider-call records", () => {
     const record = await onlyRecord();
     expect((record.request as { headers: Record<string, string> }).headers["x-api-key"]).toBe("[REDACTED]");
     expect(JSON.stringify(record)).not.toContain(KEY);
-    expect(record.error).toBeUndefined();
+    expect(record).toMatchObject({ stopped: false, error: undefined });
   });
 
   it("masks the key where a failure echoes it", async () => {
@@ -78,5 +78,41 @@ describe("credentials in provider-call records", () => {
     expect(record.error).toBeDefined();
     expect(JSON.stringify(record)).not.toContain(KEY);
     expect(JSON.stringify(record.error)).toContain("[REDACTED]");
+  });
+});
+
+describe("call outcomes in provider-call records", () => {
+  it.each([
+    ["refused", "refusal", /refused/],
+    ["cut off at the token limit", "max_tokens", /output token limit/],
+  ])("records a reply %s with its response and as failed", async (_case, stopReason, reason) => {
+    fetchMock.mockImplementation(async () => stream(stopReason));
+    await expect(provider().generateJson("sys", "usr", SCHEMA)).rejects.toThrow(reason);
+
+    const record = await onlyRecord();
+    expect(record.response).toMatchObject({ stop_reason: stopReason });
+    expect(record.error).toMatchObject({ message: expect.stringMatching(reason) });
+    expect(record.stopped).toBe(false);
+  });
+
+  it("records a call the user stopped as stopped, not as an error", async () => {
+    // A stream that opens and then waits, until the user stops it.
+    fetchMock.mockImplementation(async (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(events("end_turn", "partial").split("event: content_block_stop")[0]!));
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+    let received = false;
+    const call = provider().generateTextStream("sys", "usr", () => { received = true; });
+    await vi.waitFor(() => expect(received).toBe(true));
+    call.abort();
+    await expect(call.finished).rejects.toThrow();
+
+    const record = await onlyRecord();
+    expect(record).toMatchObject({ stopped: true, error: undefined });
   });
 });

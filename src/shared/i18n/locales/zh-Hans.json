@@ -465,6 +465,7 @@
   "records.levelWarn": "警告",
   "records.levelInfo": "信息",
   "records.levelDebug": "调试",
+  "records.stopped": "已停止",
   "records.launch": "启动",
   "records.allLaunches": "所有启动",
   "records.thisLaunch": "{time}（本次启动）",

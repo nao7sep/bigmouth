@@ -479,6 +479,7 @@
   "records.levelWarn": "Warning",
   "records.levelInfo": "Info",
   "records.levelDebug": "Debug",
+  "records.stopped": "Stopped",
   "records.launch": "Launch",
   "records.allLaunches": "All launches",
   "records.thisLaunch": "{time} (this launch)",

@@ -43,7 +43,7 @@ describe("stored-record signal", () => {
     expect(stored).toHaveBeenCalledOnce();
     writeProviderCall({
       workspaceId: "ws", postId: "p", purpose: "analysis", provider: "anthropic",
-      startedAt: new Date(), finishedAt: new Date(), request: {}, response: {}, error: undefined,
+      startedAt: new Date(), finishedAt: new Date(), request: {}, response: {}, error: undefined, stopped: false,
     });
     expect(stored).toHaveBeenCalledTimes(2);
   });
@@ -95,6 +95,27 @@ describe("records database format version", () => {
     onRecordStored(stored);
     line();
     expect(stored).toHaveBeenCalledOnce();
+  });
+
+  it("gives provider calls in an older database the stopped column, its rows read as not stopped", () => {
+    const file = path.join(root, "records.sqlite3");
+    const db = new DatabaseSync(file);
+    db.exec(`CREATE TABLE provider_calls (id INTEGER PRIMARY KEY, session TEXT NOT NULL, workspace_id TEXT NOT NULL,
+      post_id TEXT NOT NULL, purpose TEXT NOT NULL, provider TEXT NOT NULL, started_at TEXT NOT NULL,
+      finished_at TEXT NOT NULL, request TEXT NOT NULL, response TEXT, error TEXT); PRAGMA user_version = 1`);
+    db.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
+      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}')`);
+    db.close();
+
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    writeProviderCall({
+      workspaceId: "ws", postId: "p", purpose: "analysis", provider: "anthropic",
+      startedAt: new Date(), finishedAt: new Date(), request: {}, response: undefined, error: undefined, stopped: true,
+    });
+    closeRecords();
+    const check = new DatabaseSync(file);
+    expect(check.prepare("SELECT stopped FROM provider_calls ORDER BY id").all()).toEqual([{ stopped: 0 }, { stopped: 1 }]);
+    check.close();
   });
 
   it("reads a database without its format version as this build's, completing its schema", () => {

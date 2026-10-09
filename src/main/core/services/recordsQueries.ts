@@ -67,14 +67,14 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
   };
   if (query.kind !== "provider-call") {
     table(
-      "SELECT 'log' AS kind, id, session, time, level, message AS title, NULL AS text",
+      "SELECT 'log' AS kind, id, session, time, level, message AS title, NULL AS text, 0 AS stopped",
       "log_records", "level", LOG_SEARCHED,
     );
   }
   if (query.kind !== "log") {
     table(
       `SELECT 'provider-call' AS kind, id, session, started_at AS time, ${CALL_LEVEL} AS level,
-        provider || ' ' || purpose AS title, ${CALL_MODEL} AS text`,
+        provider || ' ' || purpose AS title, ${CALL_MODEL} AS text, stopped`,
       "provider_calls", CALL_LEVEL, CALL_SEARCHED,
     );
   }
@@ -87,8 +87,9 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
   params.push(RECORDS_PAGE_SIZE + 1);
   const rows = db.prepare(
     `SELECT * FROM (${parts.join(" UNION ALL ")}) ${after} ORDER BY time DESC, kind DESC, id DESC LIMIT ?`,
-  ).all(...params) as unknown as RecordSummary[];
-  return { records: rows.slice(0, RECORDS_PAGE_SIZE), more: rows.length > RECORDS_PAGE_SIZE };
+  ).all(...params) as unknown as (Omit<RecordSummary, "stopped"> & { stopped: number })[];
+  const records = rows.slice(0, RECORDS_PAGE_SIZE).map((row) => ({ ...row, stopped: row.stopped === 1 }));
+  return { records, more: rows.length > RECORDS_PAGE_SIZE };
 }
 
 export function readSessions(db: DatabaseSync): string[] {
@@ -108,8 +109,8 @@ export function readDetail(db: DatabaseSync, kind: RecordKind, id: number): Reco
   }
   const row = db.prepare(
     `SELECT 'provider-call' AS kind, id, session, workspace_id AS workspaceId, post_id AS postId, purpose, provider,
-      started_at AS startedAt, finished_at AS finishedAt, request, response, error
+      started_at AS startedAt, finished_at AS finishedAt, request, response, error, stopped
       FROM provider_calls WHERE id = ?`,
-  ).get(id);
-  return (row as unknown as RecordDetail | undefined) ?? null;
+  ).get(id) as (Omit<RecordDetail, "stopped"> & { stopped: number }) | undefined;
+  return row ? ({ ...row, stopped: row.stopped === 1 } as RecordDetail) : null;
 }

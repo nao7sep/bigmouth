@@ -43,6 +43,8 @@ export interface RecordSummary {
   title: string;
   // A provider call's model; a log line has none.
   text: string | null;
+  // A provider call the user stopped; it is neither a failure nor a result.
+  stopped: boolean;
 }
 
 export interface RecordsPage {
@@ -76,6 +78,7 @@ export interface ProviderCallRecordDetail {
   request: string;
   response: string | null;
   error: string | null;
+  stopped: boolean;
 }
 
 export type RecordDetail = LogRecordDetail | ProviderCallRecordDetail;

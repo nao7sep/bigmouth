@@ -493,6 +493,7 @@
   "records.levelWarn": "Advertencia",
   "records.levelInfo": "Información",
   "records.levelDebug": "Depuración",
+  "records.stopped": "Detenida",
   "records.launch": "Inicio",
   "records.allLaunches": "Todos los inicios",
   "records.thisLaunch": "{time} (este inicio)",

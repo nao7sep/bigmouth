@@ -93,6 +93,7 @@ describe("records", () => {
       finishedAt: new Date("2026-10-02T00:00:01.500Z"),
       request: { model: "m", system: "s", messages: [{ role: "user", content: "u" }] },
       response: { content: [{ type: "text", text: "r" }], usage: { input_tokens: 1 } },
+      stopped: false,
       error: undefined,
     });
     const [row] = query<Record<string, string | null>>("SELECT * FROM provider_calls");

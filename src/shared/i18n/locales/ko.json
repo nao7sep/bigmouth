@@ -465,6 +465,7 @@
   "records.levelWarn": "경고",
   "records.levelInfo": "정보",
   "records.levelDebug": "디버그",
+  "records.stopped": "중지됨",
   "records.launch": "실행",
   "records.allLaunches": "모든 실행",
   "records.thisLaunch": "{time}(이번 실행)",

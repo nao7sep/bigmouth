@@ -38,7 +38,7 @@ function line(time: string, level: string, message: string, fields: Record<strin
   });
 }
 
-function call(startedAt: string, error: unknown, model = "claude-x"): void {
+function call(startedAt: string, error: unknown, model = "claude-x", stopped = false): void {
   writeProviderCall({
     workspaceId: "ws-1",
     postId: "post-1",
@@ -49,6 +49,7 @@ function call(startedAt: string, error: unknown, model = "claude-x"): void {
     request: { method: "POST", url: "https://api.anthropic.com/v1/messages", headers: { "x-api-key": "sk-test" }, body: { model } },
     response: error === undefined ? { content: [] } : undefined,
     error,
+    stopped,
   });
 }
 
@@ -122,6 +123,20 @@ describe("readPage", () => {
     const page = readPage(reader(), query({ level: "attention" }));
     expect(page.records.map((record) => record.text ?? record.title)).toEqual(["failed", "broken", "careful"]);
     expect(titles({ level: "debug" })).toEqual(["detail"]);
+  });
+
+  it("lists a call the user stopped as stopped, not among warnings and errors", () => {
+    openRecords(dbPath, path.join(root, "logs"), LATER);
+    call("2026-10-02T08:00:01.000Z", undefined, "stopped", true);
+    call("2026-10-02T08:00:02.000Z", undefined, "finished");
+
+    const all = readPage(reader(), query()).records;
+    expect(all.map((record) => [record.text, record.level, record.stopped])).toEqual([
+      ["finished", "info", false],
+      ["stopped", "info", true],
+    ]);
+    expect(readPage(reader(), query({ level: "attention" })).records).toEqual([]);
+    expect(readDetail(reader(), "provider-call", all[1]!.id)).toMatchObject({ stopped: true, error: null });
   });
 
   it("continues a long list from the last record of the page before", () => {

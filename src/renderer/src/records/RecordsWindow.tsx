@@ -474,7 +474,9 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
               >
                 <div className="records-row-meta">
                   <span>{rowTime.format(new Date(record.time))}</span>
-                  <span className={LEVEL_CLASSES[record.level]}>{t(LEVEL_LABELS[record.level])}</span>
+                  <span className={LEVEL_CLASSES[record.level]}>
+                    {record.stopped ? t("records.stopped") : t(LEVEL_LABELS[record.level])}
+                  </span>
                   {record.kind === "provider-call" ? <span>{t(KIND_LABELS[record.kind])}</span> : null}
                 </div>
                 <div className="records-row-title">{record.title}</div>
@@ -634,7 +636,9 @@ function RecordDetailView({
           {record.kind === "log" ? record.message : `${record.provider} ${record.purpose}`}
         </h2>
         <div className="records-detail-labels">
-          <span className={LEVEL_CLASSES[level]}>{t(LEVEL_LABELS[level])}</span>
+          <span className={LEVEL_CLASSES[level]}>
+            {record.kind === "provider-call" && record.stopped ? t("records.stopped") : t(LEVEL_LABELS[level])}
+          </span>
           <span>{t(KIND_LABELS[record.kind])}</span>
         </div>
       </div>

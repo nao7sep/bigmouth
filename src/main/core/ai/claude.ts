@@ -103,8 +103,19 @@ export class ClaudeProvider implements AiProvider {
     this.call = call;
   }
 
-  /** Records one attempt with what came back, credentials masked (data-lifecycle-conventions, Records). */
-  private record(startedAt: Date, request: unknown, outcome: { response: unknown } | { error: unknown }): void {
+  /**
+   * Records one attempt with what came back, credentials masked (data-lifecycle-conventions,
+   * Records). A reply that is not whole, refused or cut off at the token limit, is recorded with its
+   * response and the failure, so Records counts it as failed; a call the user stopped is recorded
+   * as stopped, not as an error (developer decision).
+   */
+  private record(
+    startedAt: Date,
+    request: unknown,
+    outcome: { response: Anthropic.Message } | { error: unknown } | { stopped: true },
+  ): void {
+    const incomplete = "response" in outcome ? incompleteStop(outcome.response) : null;
+    const error = "error" in outcome ? outcome.error : incomplete;
     void writeProviderCall({
       ...this.call,
       provider: "anthropic",
@@ -112,22 +123,24 @@ export class ClaudeProvider implements AiProvider {
       finishedAt: utcNow(),
       request: maskCredentials(request, this.secrets),
       response: "response" in outcome ? maskCredentials(outcome.response, this.secrets) : undefined,
-      error: "error" in outcome ? maskCredentials(serializeError(outcome.error), this.secrets) : undefined,
+      error: error ? maskCredentials(serializeError(error), this.secrets) : undefined,
+      stopped: "stopped" in outcome,
     }).catch((error) => console.error("[bigmouth] Provider record could not reach storage", error));
   }
 
-  /** Settles `pending` after recording it. */
-  private async recorded<T>(
+  /** Settles `pending` after recording it; `stoppedByUser` tells a user's stop from a failure. */
+  private async recorded(
     startedAt: Date,
     capture: ReturnType<typeof requestCapture>,
-    pending: Promise<T>,
-  ): Promise<T> {
+    pending: Promise<Anthropic.Message>,
+    stoppedByUser: () => boolean,
+  ): Promise<Anthropic.Message> {
     try {
       const response = await pending;
       this.record(startedAt, capture.request(), { response });
       return response;
     } catch (error) {
-      this.record(startedAt, capture.request(), { error });
+      this.record(startedAt, capture.request(), stoppedByUser() ? { stopped: true } : { error });
       throw error;
     }
   }
@@ -226,7 +239,7 @@ export class ClaudeProvider implements AiProvider {
     stream.on("text", watchdog.progress);
     stream.on("thinking", watchdog.progress);
     try {
-      return await this.recorded(startedAt, capture, stream.finalMessage());
+      return await this.recorded(startedAt, capture, stream.finalMessage(), () => outer.aborted);
     } catch (err) {
       if (watchdog.tripped()) throw new Error(idleMessage("request"));
       throw err;
@@ -283,7 +296,7 @@ export class ClaudeProvider implements AiProvider {
       });
 
       try {
-        return await this.recorded(startedAt, capture, stream.finalMessage());
+        return await this.recorded(startedAt, capture, stream.finalMessage(), () => stop.signal.aborted);
       } catch (err) {
         // The SDK reports the watchdog's abort the same way it reports the
         // user's, so say which one it was — otherwise a stall reads to the user
@@ -329,18 +342,24 @@ function textOf(message: Anthropic.Message): string {
  * than returned as a complete answer.
  */
 function assertCompleteStop(message: Anthropic.Message): void {
+  const incomplete = incompleteStop(message);
+  if (incomplete) throw incomplete;
+}
+
+/** Why a completion is not whole, or null when the model finished. */
+function incompleteStop(message: Anthropic.Message): Error | null {
   const { stop_reason: stopReason } = message;
-  if (stopReason === "end_turn" || stopReason === "stop_sequence") return;
+  if (stopReason === "end_turn" || stopReason === "stop_sequence") return null;
 
   if (stopReason === "max_tokens") {
     // Reached with thinking on and a tight budget too: reasoning shares the output
     // budget, so a hard task can consume all of it and leave no answer behind.
-    throw new Error("Claude stopped before completing the response (hit the output token limit).");
+    return new Error("Claude stopped before completing the response (hit the output token limit).");
   }
   if (stopReason === "refusal") {
-    throw new Error(refusalMessage(message));
+    return new Error(refusalMessage(message));
   }
-  throw new Error(`Claude stopped before completing the response (${stopReason}).`);
+  return new Error(`Claude stopped before completing the response (${stopReason}).`);
 }
 
 /**

@@ -33,15 +33,15 @@ const SESSION = "2026-10-02T08:00:00.000Z";
 
 const call: RecordSummary = {
   kind: "provider-call", id: 4, session: SESSION, time: "2026-10-02T08:01:00.000Z", level: "error",
-  title: "anthropic metadata", text: "claude-x",
+  title: "anthropic metadata", text: "claude-x", stopped: false,
 };
 const line: RecordSummary = {
   kind: "log", id: 9, session: SESSION, time: "2026-10-02T08:00:30.000Z", level: "warn",
-  title: "post save failed", text: null,
+  title: "post save failed", text: null, stopped: false,
 };
 const newer: RecordSummary = {
   kind: "log", id: 12, session: SESSION, time: "2026-10-02T08:02:00.000Z", level: "info",
-  title: "arrived while open", text: null,
+  title: "arrived while open", text: null, stopped: false,
 };
 const callDetail: RecordDetail = {
   kind: "provider-call", id: 4, session: SESSION, workspaceId: "ws-1", postId: "post-1", purpose: "metadata",
@@ -49,6 +49,7 @@ const callDetail: RecordDetail = {
   request: JSON.stringify({ headers: { "x-api-key": "sk-test" }, body: { model: "claude-x" } }),
   response: "null",
   error: JSON.stringify({ name: "Error", message: "quota" }),
+  stopped: false,
 };
 const lineDetail: RecordDetail = {
   kind: "log", id: 9, session: SESSION, time: "2026-10-02T08:00:30.000Z", level: "warn",
@@ -171,6 +172,15 @@ describe("RecordsWindow", () => {
     // One tab stop: the listbox holds focus, and its rows are not focusable.
     expect(listbox().tabIndex).toBe(0);
     expect(options().every((option) => !option.hasAttribute("tabindex"))).toBe(true);
+  });
+
+  it("shows a call the user stopped as stopped, in the list and its details", async () => {
+    api.readRecordsPage.mockResolvedValue({ records: [{ ...call, level: "info", stopped: true }], more: false });
+    api.readRecordDetail.mockResolvedValue({ ...callDetail, error: null, stopped: true });
+    await mount();
+    expect(options()[0]!.querySelector(".records-level")!.textContent).toBe("Stopped");
+    await click(options()[0]!);
+    expect(document.querySelector(".records-detail-labels .records-level")!.textContent).toBe("Stopped");
   });
 
   it("shows everything a selected provider call holds", async () => {

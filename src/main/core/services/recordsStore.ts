@@ -29,10 +29,20 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   finished_at  TEXT NOT NULL,
   request      TEXT NOT NULL,
   response     TEXT,
-  error        TEXT
+  error        TEXT,
+  stopped      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_provider_calls_session ON provider_calls (session);
 `;
+
+// A store from before stopped calls were told apart gains the column; its rows read as not stopped.
+// Older builds name their columns, so the added one leaves the format readable by them.
+function addStoppedColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(provider_calls)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "stopped")) {
+    db.exec("ALTER TABLE provider_calls ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
+  }
+}
 
 /** A log line as emitted: its envelope, and the whole JSON object it serializes to. */
 export type LogRecord = {
@@ -44,7 +54,10 @@ export type LogRecord = {
   event: string;
 };
 
-/** One request to an AI provider, recorded whole with its credentials masked: the request as sent, and the response or error received. */
+/**
+ * One request to an AI provider, recorded whole with its credentials masked: the request as sent,
+ * the response or error received, and whether the user stopped it.
+ */
 export type ProviderCallRecord = {
   workspaceId: string;
   postId: string;
@@ -55,6 +68,7 @@ export type ProviderCallRecord = {
   request: unknown;
   response: unknown;
   error: unknown;
+  stopped: boolean;
 };
 
 type OpenRecords = {
@@ -87,6 +101,7 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     db = openSqliteStore("records", dbPath, (opened) => {
       opened.exec(SCHEMA);
+      addStoppedColumn(opened);
     });
   } catch (err) {
     if (err instanceof NewerFormatError) newer = err;
@@ -140,8 +155,8 @@ export function writeProviderCall(call: ProviderCallRecord): void {
   const response = call.response === undefined ? null : JSON.stringify(call.response);
   const error = call.error === undefined ? null : JSON.stringify(call.error);
   insertOrFallBack(
-    "INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request, response, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [session, call.workspaceId, call.postId, call.purpose, call.provider, startedAt, finishedAt, request, response, error],
+    "INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request, response, error, stopped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [session, call.workspaceId, call.postId, call.purpose, call.provider, startedAt, finishedAt, request, response, error, call.stopped ? 1 : 0],
     () => JSON.stringify({
       record: "provider-call",
       session,
@@ -154,11 +169,12 @@ export function writeProviderCall(call: ProviderCallRecord): void {
       request: call.request,
       response: call.response ?? null,
       error: call.error ?? null,
+      stopped: call.stopped,
     }),
   );
 }
 
-function insertOrFallBack(sql: string, values: (string | null)[], line: () => string): void {
+function insertOrFallBack(sql: string, values: (string | number | null)[], line: () => string): void {
   const open = records!;
   if (open.db) {
     let stored = false;
