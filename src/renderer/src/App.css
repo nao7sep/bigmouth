@@ -820,6 +820,14 @@ button:disabled,
   box-shadow: var(--bm-control-shadow);
 }
 
+/* On the committed fill the ring takes the fill's own ink: --bm-accent-fg can
+   equal --bm-accent (it does in the light theme), and the keyboard cursor must
+   stay visible on the selected segment (composite-control-conventions). */
+.status-radio.active:focus-visible,
+.export-format-radio.active:has(input:focus-visible) {
+  outline-color: var(--bm-on-accent);
+}
+
 .settings-checkbox {
   display: flex;
   align-items: center;

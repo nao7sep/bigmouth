@@ -131,3 +131,27 @@ describe("App.css button states", () => {
     }
   });
 });
+
+// The keyboard ring on a selected segment sits on the accent fill, and in the
+// light theme the ordinary ring colour equals that fill, so it vanished.
+describe("App.css focus ring on a selected segment", () => {
+  function ruleFor(selector: string): string {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    try {
+      const rules = Array.from(style.sheet!.cssRules) as CSSStyleRule[];
+      const rule = rules.find((candidate) => candidate.selectorText?.split(",").map((part) => part.trim()).includes(selector));
+      return rule?.style.getPropertyValue("outline-color") ?? "";
+    } finally {
+      style.remove();
+    }
+  }
+
+  it.each([".status-radio.active:focus-visible", ".export-format-radio.active:has(input:focus-visible)"])(
+    "%s draws its ring in the fill's own ink",
+    (selector) => {
+      expect(ruleFor(selector)).toBe("var(--bm-on-accent)");
+    },
+  );
+});

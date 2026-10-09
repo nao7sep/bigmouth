@@ -84,6 +84,8 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
 
 const BOUNDARY_PAIRS: ReadonlyArray<[string, string]> = [
   ...SURFACES.map((surface): [string, string] => ["--bm-input-border", surface]),
+  // The keyboard ring on a selected segment is drawn in the fill's own ink.
+  ["--bm-on-accent", "--bm-accent"],
 ];
 
 describe("theme token contrast", () => {
@@ -96,7 +98,7 @@ describe("theme token contrast", () => {
       }
     });
 
-    it(`keeps form-field outlines at 3:1 or more in the ${theme} theme`, () => {
+    it(`keeps form-field outlines and focus rings at 3:1 or more in the ${theme} theme`, () => {
       const block = themeBlock(theme);
       for (const [foreground, background] of BOUNDARY_PAIRS) {
         expect(contrast(hexOf(block, foreground), hexOf(block, background)), `${foreground} on ${background}`)
