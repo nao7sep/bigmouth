@@ -502,7 +502,7 @@
   "records.kindProviderCall": "Вызов поставщика",
   "records.level": "Уровень",
   "records.allLevels": "Все уровни",
-  "records.levelAttention": "Требует внимания",
+  "records.levelAttention": "Предупреждения и ошибки",
   "records.levelError": "Ошибка",
   "records.levelWarn": "Предупреждение",
   "records.levelInfo": "Информация",

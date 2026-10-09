@@ -274,11 +274,11 @@ describe("RecordsWindow", () => {
     expect(lastQuery().search).toBe("quota");
   });
 
-  it("offers Needs attention first among the levels, and both kinds", async () => {
+  it("offers Warnings and errors first among the levels, and both kinds", async () => {
     await mount();
     const [kind, level] = selects();
     expect(Array.from(level!.options).map((option) => option.textContent)).toEqual([
-      "All levels", "Needs attention", "Error", "Warning", "Info", "Debug",
+      "All levels", "Warnings and errors", "Error", "Warning", "Info", "Debug",
     ]);
     expect(Array.from(kind!.options).map((option) => option.textContent)).toEqual([
       "All kinds", "Log line", "Provider call",

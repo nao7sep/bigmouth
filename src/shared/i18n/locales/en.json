@@ -474,7 +474,7 @@
   "records.kindProviderCall": "Provider call",
   "records.level": "Level",
   "records.allLevels": "All levels",
-  "records.levelAttention": "Needs attention",
+  "records.levelAttention": "Warnings and errors",
   "records.levelError": "Error",
   "records.levelWarn": "Warning",
   "records.levelInfo": "Info",
