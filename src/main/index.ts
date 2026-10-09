@@ -45,9 +45,19 @@ let shuttingDown = false;
 // on Windows and Linux, and on macOS the Dock reopens it.
 let mainWindow: BrowserWindow | null = null;
 
-// Set when the OS itself is going down: quit must then never block on a dialog
-// (modal-dialog-conventions) — flush within the bound and let the shutdown proceed.
-let systemShutdown = false;
+// When the OS itself is going down, quit must never block on a dialog
+// (modal-dialog-conventions): flush within the bound and let the shutdown
+// proceed. Windows' session-end ends the process itself. macOS and Linux raise
+// powerMonitor "shutdown", and Electron reports no cancelled logout, so that
+// signal covers only a quit within SHUTDOWN_SIGNAL_WINDOW_MS of it; a later quit
+// is the user's again and asks about a failed save. A window too short could
+// show a question during a real logout and block it; one too long only skips
+// the question for a quit soon after a cancelled logout.
+const SHUTDOWN_SIGNAL_WINDOW_MS = 60_000;
+let sessionEnding = false;
+let shutdownSignalAt: number | null = null;
+const systemShutdown = () =>
+  sessionEnding || (shutdownSignalAt !== null && Date.now() - shutdownSignalAt <= SHUTDOWN_SIGNAL_WINDOW_MS);
 
 // Startup sequence: resolve the storage root, bring up logging, register the
 // asset protocol and the IPC handlers the renderer calls, install the application
@@ -103,7 +113,7 @@ async function openMainWindow(): Promise<void> {
     if (process.platform !== "darwin") app.quit();
   });
   window.on("session-end", () => {
-    systemShutdown = true;
+    sessionEnding = true;
     shuttingDown = true;
     logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS));
     exitAppWithin();
@@ -111,7 +121,7 @@ async function openMainWindow(): Promise<void> {
   const ownerId = window.webContents.id;
   let askingToClose = false;
   window.on("close", (event) => {
-    if (systemShutdown) return;
+    if (systemShutdown()) return;
     if (process.platform !== "darwin") {
       event.preventDefault();
       app.quit();
@@ -158,20 +168,34 @@ function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAs
   }
 }
 
-function terminateApp(): void {
+// Electron's app.exit never returns while a worker thread is blocked in a native
+// filesystem call, such as the storage worker on a stalled network or removable
+// volume: neither worker.terminate() nor a timer armed beforehand gets it out.
+// When the storage worker has not settled by the finish bound, the process is
+// killed instead, so quit and logout always end. A kill cannot tear a post:
+// atomic writes rename only complete files into place, at worst leaving an
+// inert .tmp. Records go through that same worker, so only the console hears.
+function terminateApp(storageSettled: boolean): void {
   closeRecordsReader();
+  if (!storageSettled) {
+    console.error("[bigmouth] Storage did not settle within the exit bound; ending the process.");
+    process.kill(process.pid, "SIGKILL");
+    return;
+  }
   void storageOwner.stop();
   app.exit(0);
 }
 
 async function exitApp(): Promise<void> {
-  try { await storageOwner.finishAsync(1000); }
-  finally { terminateApp(); }
+  let settled = false;
+  try { settled = await storageOwner.finishAsync(1000); }
+  finally { terminateApp(settled); }
 }
 
 function exitAppWithin(): void {
-  try { storageOwner.finishWithin(1000); }
-  finally { terminateApp(); }
+  let settled = false;
+  try { settled = storageOwner.finishWithin(1000); }
+  finally { terminateApp(settled); }
 }
 
 let handlingStartupFailure = false;
@@ -228,9 +252,9 @@ if (!ownsInstance) {
         for (;;) {
           const writeFailures = !await flushAtQuit();
           const refusedMetadata = anyRefusedMetadata();
-          if (systemShutdown || (!writeFailures && !refusedMetadata)) break;
+          if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
           const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
-          if (systemShutdown || choice === "quit-anyway") break;
+          if (systemShutdown() || choice === "quit-anyway") break;
           if (choice === "cancel") {
             shuttingDown = false;
             void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
@@ -251,7 +275,7 @@ if (!ownsInstance) {
   // macOS and Linux only — Windows has no powerMonitor "shutdown"; its signal is
   // the window's "session-end", wired in openMainWindow.
   powerMonitor.on("shutdown", () => {
-    systemShutdown = true;
+    shutdownSignalAt = Date.now();
     cancelOpenMessageDialogs();
   });
 

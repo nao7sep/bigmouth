@@ -44,6 +44,8 @@ const shell = vi.hoisted(() => ({
   windowLoadFailure: null as Error | null,
   windowCloses: 0,
   loggedErrors: [] as unknown[][],
+  // Signals the app sent to its own process: a forced exit, never a real kill here.
+  kills: [] as (string | number | undefined)[],
 }));
 
 vi.mock("electron", () => ({
@@ -81,6 +83,8 @@ vi.mock("@main/plain-message-dialog.js", () => ({
 const flush = vi.hoisted(() => ({
   plan: [] as ("store" | "stall")[],
   calls: 0,
+  // Whether the storage worker finishes within the exit bound.
+  finishSettles: true,
   store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes" | "holdPendingFlushes">,
 }));
 vi.mock("@main/storageOwner.js", () => {
@@ -92,7 +96,7 @@ vi.mock("@main/storageOwner.js", () => {
   };
   return { storageOwner: {
     onRecordStored: () => {}, flushAsync: async () => flushNow(), flushWithin: flushNow,
-    finishAsync: async () => {}, finishWithin: () => {}, stop: async () => {},
+    finishAsync: async () => flush.finishSettles, finishWithin: () => flush.finishSettles, stop: async () => {},
   } };
 });
 vi.mock("@main/storageAccess.js", async () => ({
@@ -189,6 +193,8 @@ async function bootApp(): Promise<PostStore> {
   shell.cancelOpenDialog = null;
   flush.plan = [];
   flush.calls = 0;
+  flush.finishSettles = true;
+  shell.kills.length = 0;
   shell.windowLoadFailure = null;
   shell.windowCloses = 0;
   shell.loggedErrors.length = 0;
@@ -222,7 +228,12 @@ function onPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, "platform", { value: platform });
 }
 
+let killSpy: MockInstance<typeof process.kill>;
+let consoleErrorSpy: MockInstance<typeof console.error>;
+
 beforeEach(() => {
+  killSpy = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => { shell.kills.push(signal); return true; });
+  consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   processHandlers.clear();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
   process.env.BIGMOUTH_DATA_DIR = home;
@@ -230,6 +241,9 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  killSpy.mockRestore();
+  consoleErrorSpy.mockRestore();
+  vi.useRealTimers();
   Object.defineProperty(process, "platform", { value: PLATFORM });
   // A quit the test left unfinished holds the store's writes.
   flush.store?.resumePendingFlushes();
@@ -446,6 +460,74 @@ describe("an ending OS session", () => {
     // The logout's own quit, held while the first one finishes.
     appHandlers.get("before-quit")!({ preventDefault: () => {} });
     expect(shell.dialogs).toHaveLength(1);
+    expect(shell.exits).toEqual([0]);
+  });
+});
+
+// Electron's app.exit never returns while the storage worker is blocked in
+// native I/O, so an unsettled worker at the exit bound ends the process instead.
+describe("a storage worker still blocked at the exit bound", () => {
+  it("ends the process instead of calling app.exit after a user quit", async () => {
+    await bootApp();
+    flush.finishSettles = false;
+
+    appHandlers.get("before-quit")!({ preventDefault: () => {} });
+    await vi.waitFor(() => expect(shell.kills).toEqual(["SIGKILL"]));
+
+    expect(shell.exits).toEqual([]);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Storage did not settle"));
+  });
+
+  it("ends the process instead of calling app.exit at Windows' session-end", async () => {
+    await bootApp();
+    flush.finishSettles = false;
+
+    windowHandlers.get("session-end")!({ reasons: ["logoff"] });
+
+    expect(shell.kills).toEqual(["SIGKILL"]);
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("keeps app.exit when the worker settled", async () => {
+    await bootApp();
+    await quit();
+    expect(shell.kills).toEqual([]);
+    expect(shell.exits).toEqual([0]);
+  });
+});
+
+// Electron reports no cancelled logout, so the shutdown signal covers only a
+// quit within 60 seconds of it.
+describe("a macOS or Linux shutdown signal with no quit after it", () => {
+  it("asks about a failed save again once its window has passed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T01:00:00.000Z"));
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+
+    powerHandlers.get("shutdown")!(); // another app then cancels the logout
+    vi.setSystemTime(Date.now() + 60_001);
+    await quit();
+
+    expect(shell.dialogs).toHaveLength(1);
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("still never asks for a quit inside its window", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T01:00:00.000Z"));
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+
+    powerHandlers.get("shutdown")!();
+    vi.setSystemTime(Date.now() + 59_000);
+    await quit();
+
+    expect(shell.dialogs).toEqual([]);
     expect(shell.exits).toEqual([0]);
   });
 });
