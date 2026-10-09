@@ -297,7 +297,7 @@ describe("App workspace selection", () => {
     expect(queryByTestId("ws-modal")).toBeTruthy();
   });
 
-  it("keeps the picker recovery visible when clearing a deleted active preference fails", async () => {
+  it("says the next launch asks which workspace to open when clearing a removed active preference fails", async () => {
     mockGetUiState.mockResolvedValue(uiState("ws1"));
     mockList.mockResolvedValue([WS1]);
     mockUpdateUiState.mockRejectedValueOnce(new Error("EACCES /private/tmp/BIGMOUTH_DELETE_SENTINEL"));
@@ -311,7 +311,7 @@ describe("App workspace selection", () => {
     });
 
     expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
-    expect(getByRole("alert").textContent).toContain("picker will recover it next time")
+    expect(getByRole("alert").textContent).toContain("At the next launch, BigMouth asks which workspace to open.")
     expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_DELETE_SENTINEL")
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
       message: "renderer: cleared active workspace preference save failed",

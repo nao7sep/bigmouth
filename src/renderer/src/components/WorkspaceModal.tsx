@@ -196,7 +196,7 @@ export function WorkspaceModal({
     void confirm({
       title: t("workspaces.deleteTitle"),
       message: t("workspaces.deleteMessage", { name: ws.name }),
-      confirmLabel: t("common.delete"),
+      confirmLabel: t("workspaces.remove"),
       danger: true,
       // The whole deletion runs inside onConfirm so the host keeps the dialog
       // busy while it runs and, on failure, holds it open with the reason shown.
@@ -374,7 +374,7 @@ export function WorkspaceModal({
                             handleDelete(ws);
                           }}
                         >
-                          {t("common.delete")}
+                          {t("workspaces.remove")}
                         </button>
                       </div>
                     </>

@@ -102,17 +102,17 @@ async function renderWith(over: ModalOverrides = {}) {
 }
 
 // The delete-confirmation dialog (a ConfirmModal) carries its own role="dialog"
-// titled "Delete workspace"; its CTA shares the label "Delete" with the row
+// titled "Remove workspace"; its CTA shares the label "Remove" with the row
 // button, so scope to that dialog to click the confirm CTA unambiguously.
 function clickDeleteConfirm() {
-  const dialog = screen.getByRole("dialog", { name: "Delete workspace" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+  const dialog = screen.getByRole("dialog", { name: "Remove workspace" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 }
 
 // The confirmation's "Cancel" shares its label with the modal's footer dismiss
 // button, so scope to the confirmation dialog to click the right one.
 function clickDeleteCancel() {
-  const dialog = screen.getByRole("dialog", { name: "Delete workspace" });
+  const dialog = screen.getByRole("dialog", { name: "Remove workspace" });
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 }
 
@@ -438,7 +438,7 @@ describe("WorkspaceModal — delete", () => {
     const { getAllByText } = await renderWith({ onWorkspaceDeleted });
 
     // Two rows, two Delete buttons; remove the non-active "Bravo" (second row).
-    fireEvent.click(getAllByText("Delete")[1]);
+    fireEvent.click(getAllByText("Remove")[1]);
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -456,7 +456,7 @@ describe("WorkspaceModal — delete", () => {
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
     const { getByText } = await renderWith({ onWorkspaceDeleted });
 
-    fireEvent.click(getByText("Delete")); // the row's Delete (active workspace)
+    fireEvent.click(getByText("Remove")); // the row's Remove (active workspace)
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -472,7 +472,7 @@ describe("WorkspaceModal — delete", () => {
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(false); // veto
     const { getByText, findByText } = await renderWith({ onWorkspaceDeleted });
 
-    fireEvent.click(getByText("Delete"));
+    fireEvent.click(getByText("Remove"));
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -493,7 +493,7 @@ describe("WorkspaceModal — delete", () => {
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
     const { getByText, findByText } = await renderWith({ onSelect, onWorkspaceDeleted });
 
-    fireEvent.click(getByText("Delete"));
+    fireEvent.click(getByText("Remove"));
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -509,7 +509,7 @@ describe("WorkspaceModal — delete", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText } = await renderWith();
 
-    fireEvent.click(getByText("Delete"));
+    fireEvent.click(getByText("Remove"));
     clickDeleteCancel();
     await act(async () => {
       await Promise.resolve();
