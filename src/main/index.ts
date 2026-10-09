@@ -175,6 +175,9 @@ function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAs
 // killed instead, so quit and logout always end. A kill cannot tear a post:
 // atomic writes rename only complete files into place, at worst leaving an
 // inert .tmp. Records go through that same worker, so only the console hears.
+// The records window's reader is let go without waiting and never forces a kill:
+// records.sqlite3 lives in the storage root on the local disk, outside the
+// stalled volumes this path exists for.
 function terminateApp(storageSettled: boolean): void {
   closeRecordsReader();
   if (!storageSettled) {
