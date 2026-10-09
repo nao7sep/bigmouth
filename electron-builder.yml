@@ -18,9 +18,9 @@ files:
   - "!**/*.d.mts"
   - "!**/*.d.cts"
 
-# Tahoe "Liquid Glass" icon: the liquid-glass-icon tool deploys build/Assets.car (committed in
-# company/assets) here. macOS 26 reads CFBundleIconName below → this catalog; older macOS reads
-# CFBundleIconFile → build/icon.icns. Building does NOT need Xcode — the Assets.car is prebuilt.
+# Tahoe "Liquid Glass" icon: build/Assets.car is a prebuilt catalog tracked here.
+# macOS 26 reads CFBundleIconName below → this catalog; older macOS reads
+# CFBundleIconFile → build/icon.icns. Building does NOT need Xcode.
 extraResources:
   - from: build/Assets.car
     to: Assets.car
