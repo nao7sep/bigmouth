@@ -19,7 +19,7 @@ export interface ClaudeFeatureRequest {
 }
 
 type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
-type ThinkingParams = { thinking: unknown; effort?: Effort };
+type ThinkingParams = { thinking: Anthropic.ThinkingConfigParam; effort?: Effort };
 
 // `summarized` lets a caller show the reasoning while it happens; the default
 // omits the text, which reads as a dead pause before any output.
@@ -43,7 +43,7 @@ function branchFor(model: string, thinking: string): ThinkingParams | undefined 
     case "claude-opus-5-5":
       return adaptiveAt(thinking);
     // `between_tools` is its lowest setting, valid at effort `high` or below, and
-    // takes no other thinking field. The SDK's types do not list it yet.
+    // takes no other thinking field.
     case "claude-sonnet-5-5":
       return thinking === "between_tools" ? { thinking: { type: "between_tools" } } : adaptiveAt(thinking);
     // Thinks only with a token budget the app would have to invent, so it lists only `off`.
@@ -75,7 +75,7 @@ export function buildClaudeParams(
     // A supported id is sent as its row spells it; any other as typed.
     model: rowFor(request.model)?.id ?? request.model.trim(),
     max_tokens: MAX_TOKENS,
-    ...(branch ? { thinking: branch.thinking as Anthropic.ThinkingConfigParam } : {}),
+    ...(branch ? { thinking: branch.thinking } : {}),
     messages: [{ role: "user", content: request.userContent }],
     ...(request.system ? { system: request.system } : {}),
     ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
