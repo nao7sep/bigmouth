@@ -20,10 +20,8 @@ export function utcNow(): Date {
  *
  * Example: 2026-04-05T14:30:22Z -> "20260405-143022-utc"
  *
- * Second precision is for human-paced names — a filename produced once per user
- * action (a post file, a one-off export) can never collide within the same
- * second. A name a machine stamps on its own schedule uses
- * {@link formatForFilenameMs} instead.
+ * Second precision is the default for every filename, the ones the app stamps
+ * on its own included, such as the session's fallback log (timestamp-conventions).
  */
 export function formatForFilename(date: Date): string {
   const y = date.getUTCFullYear().toString();
@@ -36,14 +34,12 @@ export function formatForFilename(date: Date): string {
 }
 
 /**
- * Formats a UTC Date for use in a machine-paced filename.
- * Output: "yyyymmdd-hhmmss-fff-utc" (timestamp-conventions' machine-paced form).
+ * Formats a UTC Date for a filename whose supported creation needs subsecond
+ * distinction. Output: "yyyymmdd-hhmmss-fff-utc".
  *
- * Use this — never {@link formatForFilename} — for a name the app stamps on its
- * own as part of its own operation rather than once per user action: a session
- * log, a quarantine name, and their peers. Millisecond precision shrinks (but
- * does not abolish) the same-instant collision window that second precision
- * leaves open for these.
+ * timestamp-conventions make it an exception that needs a proven need, kept
+ * beside the naming code; milliseconds shrink a collision window but never
+ * close it.
  *
  * Example: 2026-06-10T03:15:42.123Z -> "20260610-031542-123-utc"
  */

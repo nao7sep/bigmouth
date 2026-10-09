@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { formatForFilenameMs, formatUtcIso } from "../shared/timestamps.js";
+import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
 
 const SCHEMA = `
@@ -111,7 +111,7 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
     session: formatUtcIso(sessionStart),
     dbPath,
     db,
-    fallbackPath: path.join(logsDir, `${formatForFilenameMs(sessionStart)}.log`),
+    fallbackPath: path.join(logsDir, `${formatForFilename(sessionStart)}.log`),
   };
   return newer;
 }

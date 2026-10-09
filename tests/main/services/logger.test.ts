@@ -117,7 +117,7 @@ describe("records", () => {
     info("kept anyway", { count: 1 });
     const fallback = getRecordsPath()!;
     expect(path.dirname(fallback)).toBe(logsDir);
-    expect(path.basename(fallback)).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/);
+    expect(path.basename(fallback)).toMatch(/^\d{8}-\d{6}-utc\.log$/);
     const [line] = fs.readFileSync(fallback, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     expect(line).toMatchObject({ level: "info", message: "kept anyway", count: 1 });
   });
