@@ -60,4 +60,5 @@ export const currentRecordsSession = command("currentRecordsSession");
 export const writeProviderCall = command("writeProviderCall");
 
 export const setContentSaveListener = storageOwner.onContentSave.bind(storageOwner);
+export const setHeldEditFailureListener = storageOwner.onHeldEditFailed.bind(storageOwner);
 export const deletePost = command("deletePost");

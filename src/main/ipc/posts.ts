@@ -24,7 +24,9 @@ import {
   queueWorkspaceContent,
   queueWorkspaceMetadata,
   setContentSaveListener,
+  setHeldEditFailureListener,
 } from "../storageAccess.js";
+import { EditPendingError } from "../storageOwner.js";
 import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../storageAccess.js";
 import { validatePostUpdate } from "../core/shared/postUpdate.js";
@@ -78,6 +80,30 @@ export function registerPostHandlers(): void {
     broadcast(CHANNELS.postContentSaveFailed, failure);
   });
 
+  // An edit storage could not take yet is held by the storage owner and
+  // delivered when storage takes work again; until a save event arrives the
+  // post shows the retrying state, the same as a write that will be retried.
+  const reportHeld = (id: string) => {
+    const pending: PostContentSaveFailedEvent = { postId: id, kind: "retrying", message: "Storage is busy; the edit is held." };
+    broadcast(CHANNELS.postContentSaveFailed, pending);
+  };
+
+  // A held edit that failed once delivered. Its caller was answered when it
+  // was held, so a content edit whose workspace no longer resolves is reported
+  // like any other unsaveable text, and a refused metadata value is logged.
+  setHeldEditFailureListener((request, failure) => {
+    const id = String(request.args[1]);
+    logError("held post edit failed on delivery", {
+      postId: id,
+      command: request.name,
+      ...(failure instanceof Error ? { error: serializeError(failure) } : { refusal: failure }),
+    });
+    if (failure instanceof Error) {
+      const unsaveable: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable", message: WORKSPACE_UNRESOLVED_DETAIL };
+      broadcast(CHANNELS.postContentSaveFailed, unsaveable);
+    }
+  });
+
   // One-way: buffer a content edit. Never throws back to the renderer — the
   // channel is fire-and-forget, and failures surface through the save events.
   // A workspace that no longer resolves is one of those failures: the text
@@ -93,6 +119,10 @@ export function registerPostHandlers(): void {
       logDebug("post content queued", { workspace: wsId, postId: id, length: content.length });
       await pending;
     } catch (err) {
+      if (err instanceof EditPendingError) {
+        reportHeld(id);
+        return;
+      }
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
       const failure: PostContentSaveFailedEvent = {
         postId: id,
@@ -109,7 +139,13 @@ export function registerPostHandlers(): void {
   // save outcomes after that ride the same events as content.
   ipcMain.handle(CHANNELS.queuePostMetadata, async (_event, wsId: string, id: string, edits: unknown) => {
     if (typeof wsId !== "string" || typeof id !== "string") return message("metadata.refusedInvalid");
-    return await queueWorkspaceMetadata(wsId, id, edits);
+    try {
+      return await queueWorkspaceMetadata(wsId, id, edits);
+    } catch (err) {
+      if (!(err instanceof EditPendingError)) throw err;
+      reportHeld(id);
+      return null;
+    }
   });
 
   ipcMain.handle(CHANNELS.listPosts, async (_event, wsId: string, offsets: unknown, limit: number) => {

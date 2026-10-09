@@ -6,25 +6,14 @@ import { serializeError } from "./core/services/logger.js";
 import type { StorageRequest, StorageReply, StorageFlushRequest, StorageFinishRequest } from "./storageOwner.js";
 
 const port = parentPort!;
-const sequences = new Map<string, number>();
 function apply(request: StorageRequest) {
-  let dataDir: string | undefined;
-  if (request.name === "queueWorkspaceContent" || request.name === "queueWorkspaceMetadata") {
-    const workspace = storageTasks.getWorkspace(String(request.args[0]));
-    if (!workspace) throw new Error("Workspace not found");
-    dataDir = workspace.dataDirectory;
-  }
   const value = (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
-  const metadata = request.name === "queueMetadata" || request.name === "queueWorkspaceMetadata";
-  const content = request.name === "queueContent" || request.name === "queueWorkspaceContent";
-  if (content || (metadata && value === null)) sequences.set(key(dataDir ?? request.args[0], request.args[1]), request.id);
-  port.postMessage({ id: request.id, ok: true, value, dataDir } satisfies StorageReply);
+  port.postMessage({ id: request.id, ok: true, value } satisfies StorageReply);
   return value;
 }
-const key = (dir: unknown, id: unknown) => JSON.stringify([dir, id]);
 setContentSaveListener((value) => {
   const event = value.kind === "save-failed" ? { ...value, error: serializeError(value.error) } : value;
-  port.postMessage({ event: "content-save", value: event, sequence: sequences.get(key(value.dataDir, value.id)) ?? 0 } satisfies StorageReply);
+  port.postMessage({ event: "content-save", value: event } satisfies StorageReply);
 });
 onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies StorageReply));
 port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinishRequest) => {
@@ -36,7 +25,11 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
           port.postMessage({ id: queued.id, ok: true, value } satisfies StorageReply);
         } catch (error) { port.postMessage({ id: queued.id, ok: false, error: serializeError(error) } as StorageReply); }
       }
-      storageTasks.finish();
+      // Edits that reached the buffer after the last quit flush, such as those
+      // typed while the quit question was open, get one more write attempt
+      // within the finish bound; a quit flush already held the debounce.
+      try { storageTasks.flush(); }
+      finally { storageTasks.finish(); }
     }
     finally {
       request.port.postMessage({ finished: true });
@@ -68,12 +61,6 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
     return;
   }
   try {
-    if (request.name === "resumePendingFlushes") {
-      for (const edit of request.edits ?? []) {
-        if (edit.id <= (sequences.get(key(edit.args[0], edit.args[1])) ?? 0)) continue;
-        apply(edit);
-      }
-    }
     apply(request);
   } catch (error) {
     port.postMessage({ id: request.id, ok: false, error: serializeError(error) } as StorageReply);

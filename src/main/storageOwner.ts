@@ -6,13 +6,17 @@ import { AssetRecordError } from "./core/services/assetStore.js";
 export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
 export const isAuthored = (name: StorageCommand) => ["queueContent", "queueMetadata", "queueWorkspaceContent", "queueWorkspaceMetadata"].includes(name);
-export interface StorageRequest { id: number; name: StorageCommand; args: unknown[]; edits?: StorageRequest[] }
+const isContent = (name: StorageCommand) => name === "queueContent" || name === "queueWorkspaceContent";
+// Requests that must still reach the worker after their caller stops waiting:
+// authored edits, and a cancelled quit's resumption of debounced writes.
+const mustReachWorker = (name: StorageCommand) => isAuthored(name) || name === "resumePendingFlushes";
+export interface StorageRequest { id: number; name: StorageCommand; args: unknown[] }
 export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; signal: Int32Array; port: MessagePort }
 export interface StorageFlushRequest { flush: true; edits: StorageRequest[]; signal: Int32Array; port: MessagePort }
 export type StorageReply =
-  | { id: number; ok: true; value: unknown; dataDir?: string }
+  | { id: number; ok: true; value: unknown }
   | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown; asset?: unknown } }
-  | { event: "content-save"; value: ContentSaveEvent; sequence: number }
+  | { event: "content-save"; value: ContentSaveEvent }
   | { event: "record-stored" }
   | { event: "flush-settled" };
 
@@ -20,6 +24,20 @@ export type StorageFlushOutcome =
   | { kind: "flushed"; failures: { id: string; message: string }[] }
   | { kind: "expired" }
   | { kind: "crashed"; error: string };
+
+/**
+ * An authored edit storage has not accepted yet: it arrived while storage was
+ * settling a flush or an operation whose wait expired, or its own wait expired.
+ * The edit is not lost. The owner holds it, keeps it in its queue position, or
+ * the worker already has it, and it reaches the post store's buffer as soon as
+ * storage takes work again.
+ */
+export class EditPendingError extends Error {
+  constructor() {
+    super("Storage has not accepted this edit yet; it is held and will be delivered.");
+    this.name = "EditPendingError";
+  }
+}
 
 interface Waiting {
   request: StorageRequest;
@@ -29,7 +47,20 @@ interface Waiting {
   expired: boolean;
 }
 
-/** The app's one storage owner (transaction-and-external-effect-conventions). */
+// One post's held edits: its newest content, which replaces the whole text,
+// and every metadata edit, each validated on its own as when it was typed.
+interface HeldEdits { content?: StorageRequest; metadata: StorageRequest[] }
+
+/**
+ * The app's one storage owner (transaction-and-external-effect-conventions).
+ *
+ * Pending post edits have one owner at a time. Once the worker accepts an edit,
+ * the post store's write-behind buffer owns it until it is written or reported
+ * terminal. This owner holds only edits the worker has not accepted, by post,
+ * and delivers them as soon as storage takes work again, so an edit typed while
+ * storage is stalled is neither refused nor replayed after it saved. Edits are
+ * held only as they arrive, so they keep their order against other requests.
+ */
 export class StorageOwner {
   private worker: Worker | null = null;
   private active: Waiting | null = null;
@@ -38,11 +69,13 @@ export class StorageOwner {
   private failed = false;
   private flushing = false;
   private closing = false;
-  private replayed = new Map<number, Waiting>();
-  private edits = new Map<number, StorageRequest>();
+  // Requests taken out of the queue by a flush or finish, awaiting their replies.
+  private delivering = new Map<number, Waiting>();
+  private held = new Map<string, HeldEdits>();
   private contentListener: ((event: ContentSaveEvent) => void) | null = null;
   private flushSettled: (() => void) | null = null;
   private recordListener: (() => void) | null = null;
+  private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
 
   constructor(private readonly createWorker = () => {
     const module = import.meta.url.endsWith(".ts") ? "./storageWorker.ts" : "./storage-worker.js";
@@ -51,41 +84,84 @@ export class StorageOwner {
 
   onContentSave(listener: ((event: ContentSaveEvent) => void) | null): void { this.contentListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
+  /** A held edit the store refused or could not take once delivered: its caller has already been answered. */
+  onHeldEditFailed(listener: ((request: StorageRequest, failure: unknown) => void) | null): void { this.heldFailureListener = listener; }
 
   run<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>, boundMs = STORAGE_WAIT_MS): Promise<ReturnType<StorageTasks[K]>> {
     const request: StorageRequest = { id: ++this.sequence, name, args: structuredClone(args) };
     if (this.closing) return Promise.reject(new Error("Storage is closing."));
-    if (isAuthored(name)) this.edits.set(request.id, request);
-    if (name === "resumePendingFlushes") request.edits = [...this.edits.values()];
-    if (this.failed || this.closing || (name !== "resumePendingFlushes" && (this.flushing || this.active?.expired))) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
+    if (this.failed) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
+    if (name !== "resumePendingFlushes" && (this.flushing || this.active?.expired)) {
+      if (!isAuthored(name)) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
+      this.hold(request);
+      return Promise.reject(new EditPendingError());
+    }
     return new Promise((resolve, reject) => {
-      const waiting: Waiting = {
-        request, resolve: resolve as (value: unknown) => void, reject, expired: false,
-        timer: setTimeout(() => {
-          waiting.expired = true;
-          // Timeout ends the caller's wait. An active mutation still belongs to
-          // this worker until its actual result settles; no successor runs.
-          if (this.active !== waiting) this.queued = this.queued.filter((item) => item !== waiting);
-          reject(new Error("Storage did not finish within its wait bound. Its outcome is still pending."));
-        }, boundMs),
-      };
-      this.queued.push(waiting);
+      this.queued.push(this.wait(request, resolve as (value: unknown) => void, reject, boundMs));
       this.dispatch();
     });
+  }
+
+  private wait(request: StorageRequest, resolve: (value: unknown) => void, reject: (error: Error) => void, boundMs: number): Waiting {
+    const waiting: Waiting = {
+      request, resolve, reject, expired: false,
+      timer: setTimeout(() => {
+        waiting.expired = true;
+        // Timeout ends the caller's wait. An active mutation still belongs to
+        // this worker until its actual result settles; no successor runs. An
+        // edit, or a cancelled quit's resumption, keeps its queue position so it
+        // still runs in order; other queued work is dropped.
+        if (!mustReachWorker(request.name)) this.queued = this.queued.filter((item) => item !== waiting);
+        reject(isAuthored(request.name)
+          ? new EditPendingError()
+          : new Error("Storage did not finish within its wait bound. Its outcome is still pending."));
+      }, boundMs),
+    };
+    return waiting;
+  }
+
+  private hold(request: StorageRequest): void {
+    const key = JSON.stringify([request.args[0], request.args[1]]);
+    const post = this.held.get(key) ?? { metadata: [] };
+    if (isContent(request.name)) post.content = request;
+    else post.metadata.push(request);
+    this.held.set(key, post);
+  }
+
+  private takeHeld(): StorageRequest[] {
+    const requests = [...this.held.values()].flatMap((post) => [...(post.content ? [post.content] : []), ...post.metadata]);
+    this.held.clear();
+    return requests.sort((a, b) => a.id - b.id);
+  }
+
+  // A held edit's own caller was answered when it was held, so its delivery
+  // reports a failure to the listener instead of to anyone waiting.
+  private delivery(request: StorageRequest): Waiting {
+    return this.wait(request, (value) => {
+      if (!isContent(request.name) && value !== null) this.heldFailureListener?.(request, value);
+    }, (error) => {
+      if (!(error instanceof EditPendingError)) this.heldFailureListener?.(request, error);
+    }, STORAGE_WAIT_MS);
+  }
+
+  private undeliveredEdits(): boolean {
+    return this.held.size > 0
+      || this.queued.some((waiting) => isAuthored(waiting.request.name))
+      || (this.active !== null && isAuthored(this.active.request.name));
   }
 
   private beginFlush() {
     if (!this.worker || this.failed) throw new Error("Storage is unavailable.");
     if (this.flushing) throw new Error("The previous storage flush is still running.");
     this.flushing = true;
-    for (const waiting of this.queued) {
-      if (isAuthored(waiting.request.name)) this.replayed.set(waiting.request.id, waiting);
-    }
-    this.queued = this.queued.filter((waiting) => !this.replayed.has(waiting.request.id));
+    const queuedEdits = this.queued.filter((waiting) => isAuthored(waiting.request.name));
+    this.queued = this.queued.filter((waiting) => !isAuthored(waiting.request.name));
+    for (const waiting of queuedEdits) this.delivering.set(waiting.request.id, waiting);
+    const edits = [...this.takeHeld(), ...queuedEdits.map((waiting) => waiting.request)].sort((a, b) => a.id - b.id);
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
-      this.worker.postMessage({ flush: true, edits: [...this.edits.values()], signal, port: port2 } satisfies StorageFlushRequest, [port2]);
+      this.worker.postMessage({ flush: true, edits, signal, port: port2 } satisfies StorageFlushRequest, [port2]);
     } catch (error) {
       port1.close();
       port2.close();
@@ -114,11 +190,12 @@ export class StorageOwner {
     } catch (error) { return { kind: "crashed", error: error instanceof Error ? error.message : String(error) }; }
   }
 
+  /** Flushes until no edit remains undelivered: edits arriving during a flush are held and written by the next. */
   async flushAsync(boundMs: number): Promise<StorageFlushOutcome> {
     const deadline = Date.now() + boundMs;
     for (;;) {
       const result = await this.flushOnce(Math.max(0, deadline - Date.now()));
-      if (result.kind !== "flushed" || result.failures.length || !this.edits.size) return result;
+      if (result.kind !== "flushed" || result.failures.length || !this.undeliveredEdits()) return result;
       if (Date.now() >= deadline) return { kind: "expired" };
     }
   }
@@ -139,11 +216,12 @@ export class StorageOwner {
     if (!this.worker || this.failed) return null;
     this.closing = true;
     const queued = this.queued.splice(0);
-    for (const waiting of queued) this.replayed.set(waiting.request.id, waiting);
+    for (const waiting of queued) this.delivering.set(waiting.request.id, waiting);
+    const requests = [...this.takeHeld(), ...queued.map((item) => item.request)].sort((a, b) => a.id - b.id);
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
-      this.worker.postMessage({ finish: true, queued: queued.map((item) => item.request), signal, port: port2 } satisfies StorageFinishRequest, [port2]);
+      this.worker.postMessage({ finish: true, queued: requests, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
     } catch (error) {
       port1.close();
       port2.close();
@@ -154,22 +232,22 @@ export class StorageOwner {
     return { port: port1, signal };
   }
 
-  async finishAsync(boundMs: number): Promise<void> {
+  /** Resolves true when the worker finished within the bound, false when it is still busy. */
+  async finishAsync(boundMs: number): Promise<boolean> {
     const result = this.beginFinish();
-    if (!result) return;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => { result.port.close(); resolve(); }, boundMs);
-      result.port.once("message", () => { clearTimeout(timer); result.port.close(); resolve(); });
+    if (!result) return true;
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => { result.port.close(); resolve(false); }, boundMs);
+      result.port.once("message", () => { clearTimeout(timer); result.port.close(); resolve(true); });
     });
   }
 
-  finishWithin(boundMs: number): void {
+  /** Returns true when the worker finished within the bound, false when it is still busy. */
+  finishWithin(boundMs: number): boolean {
     const result = this.beginFinish();
-    if (!result) return;
-    try { Atomics.wait(result.signal, 0, 0, boundMs); } finally { result.port.close(); }
+    if (!result) return true;
+    try { return Atomics.wait(result.signal, 0, 0, boundMs) !== "timed-out"; } finally { result.port.close(); }
   }
-
-  pendingEditIds(): string[] { return [...new Set([...this.edits.values()].map((item) => String(item.args[1])))]; }
 
   async stop(): Promise<void> {
     this.failed = true;
@@ -181,6 +259,9 @@ export class StorageOwner {
 
   private dispatch(): void {
     if (this.active || this.failed || this.flushing || this.closing) return;
+    // Held edits arrived while storage could take nothing, after everything
+    // already queued, so they are delivered after it.
+    if (this.held.size) this.queued.push(...this.takeHeld().map((request) => this.delivery(request)));
     const waiting = this.queued.shift();
     if (!waiting) return;
     this.active = waiting;
@@ -208,35 +289,15 @@ export class StorageOwner {
     if ("event" in reply) {
       if (reply.event === "record-stored") this.recordListener?.();
       else if (reply.event === "flush-settled") { this.flushing = false; this.flushSettled?.(); this.flushSettled = null; this.dispatch(); }
-      else {
-        if (reply.value.kind === "saved") {
-          for (const [id, request] of this.edits) {
-            if (id <= reply.sequence && request.args[0] === reply.value.dataDir && request.args[1] === reply.value.id) this.edits.delete(id);
-          }
-        }
-        this.contentListener?.(reply.value);
-      }
+      else this.contentListener?.(reply.value);
       return;
     }
-    const edit = this.edits.get(reply.id);
-    if (edit && reply.ok && reply.dataDir) {
-      edit.args[0] = reply.dataDir;
-      if (edit.name === "queueWorkspaceContent") edit.name = "queueContent";
-      if (edit.name === "queueWorkspaceMetadata") edit.name = "queueMetadata";
-    }
-    if (edit?.name === "queueMetadata" && reply.ok && reply.value !== null) this.edits.delete(reply.id);
-    const replayed = this.replayed.get(reply.id);
-    const waiting = replayed ?? this.active;
+    const delivered = this.delivering.get(reply.id);
+    const waiting = delivered ?? this.active;
     if (!waiting || reply.id !== waiting.request.id) return;
     clearTimeout(waiting.timer);
-    if (replayed) this.replayed.delete(reply.id);
+    if (delivered) this.delivering.delete(reply.id);
     else this.active = null;
-    if (waiting.request.name === "queueMetadata" && reply.ok && reply.value !== null) this.edits.delete(reply.id);
-    if (waiting.request.name === "deletePost" && reply.ok && reply.value === true) {
-      for (const [id, request] of this.edits) {
-        if (request.args[0] === waiting.request.args[0] && request.args[1] === waiting.request.args[1]) this.edits.delete(id);
-      }
-    }
     if (!waiting.expired) {
       if (reply.ok) waiting.resolve(reply.value);
       else {
@@ -253,8 +314,8 @@ export class StorageOwner {
   }
 
   private failWaiting(error: Error): void {
-    const waiting = [this.active, ...this.queued, ...this.replayed.values()];
-    this.replayed.clear();
+    const waiting = [this.active, ...this.queued, ...this.delivering.values()];
+    this.delivering.clear();
     this.active = null;
     this.queued = [];
     for (const item of waiting) {

@@ -22,10 +22,8 @@ import {
   clearCache,
   rebuildIndex,
   renameTarget,
-  copyPendingEdits,
   holdPendingFlushes,
   resumePendingFlushes,
-  announceContentSaveEvents,
 } from "@main/core/services/postStore.js";
 
 let dataDir: string;
@@ -67,13 +65,17 @@ describe("canonical edit admission and committed writes", () => {
     const post = createPost(dataDir, "blogger", "en");
     queueContent(dataDir, post.frontMatter.id, "durable body");
     const original = fs.renameSync;
-    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
       if (String(to) === path.join(dataDir, "posts", "index.json")) throw new Error("derived failure");
       return original(from, to);
     });
     expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
-    expect(copyPendingEdits().some((edit) => edit.id === post.frontMatter.id)).toBe(false);
+    rename.mockRestore();
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("durable body");
+    // The buffer was cleared: a later flush has nothing to write over an outside edit.
+    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf8").replace("durable body", "edited outside"));
+    expect(flushAllPendingEdits()).toEqual([]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("edited outside");
   });
 
   it.each(["post", "assets"])("refuses deletion before touching edits or referrers for future %s formats", (kind) => {
@@ -90,10 +92,11 @@ describe("canonical edit admission and committed writes", () => {
     }
     expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow();
     expect(fs.existsSync(source.filePath)).toBe(true);
-    expect(copyPendingEdits().some((edit) => edit.id === source.frontMatter.id)).toBe(true);
     expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
+    // The buffered text survived the refusal and is written once the file is readable again.
     fs.writeFileSync(source.filePath, originalPost);
-    flushPostEdits(dataDir, source.frontMatter.id);
+    expect(flushPostEdits(dataDir, source.frontMatter.id)).toBe(true);
+    expect(fs.readFileSync(source.filePath, "utf8")).toContain("keep buffered text");
   });
 });
 
@@ -941,41 +944,14 @@ describe("pending content (write-behind buffer)", () => {
   });
 });
 
-// Buffer copies retain authored times when adopted by a fresh store:
-// the edits are copied across, the copy is written by a fresh store, and this
-// thread writes nothing on its own until the quit is over.
-describe("the quit's flush on another thread", () => {
+// A quit owns the buffer while it runs: the store writes nothing on its own
+// until the quit flushes it or the user cancels.
+describe("a quit's hold on the buffer", () => {
   afterEach(() => {
     vi.useRealTimers();
     resumePendingFlushes();
     setContentSaveListener(null);
     flushAllPendingEdits();
-  });
-
-  it("writes the copied edits from a fresh store, with the time they were made", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-06T01:00:00.000Z"));
-    const post = createPost(dataDir, "blogger", "en");
-    const id = post.frontMatter.id;
-    vi.setSystemTime(new Date("2026-10-06T01:05:00.000Z"));
-    queueContent(dataDir, id, "typed a moment before quitting");
-    expect(queueMetadata(dataDir, id, { title: "Last Title" })).toBeNull();
-    const copies = copyPendingEdits().filter((copy) => copy.id === id);
-
-    vi.resetModules();
-    const thread = await import("@main/core/services/postStore.js");
-    thread.adoptPendingEdits(copies);
-    vi.setSystemTime(new Date("2026-10-06T01:09:00.000Z"));
-    expect(thread.flushAllPendingEdits()).toEqual([]);
-
-    const written = fs.readFileSync(post.filePath, "utf8");
-    expect(written).toContain("typed a moment before quitting");
-    expect(written).toContain("Last Title");
-    expect(written).toContain("2026-10-06T01:05:00.000Z");
-
-    // This thread kept its copy; writing it again changes nothing on disk.
-    expect(flushPostEdits(dataDir, id)).toBe(true);
-    expect(fs.readFileSync(post.filePath, "utf8")).toBe(written);
   });
 
   it("holds the debounce and the retry while a quit owns the buffer, and resumes them after", () => {
@@ -991,13 +967,5 @@ describe("the quit's flush on another thread", () => {
     resumePendingFlushes();
     vi.advanceTimersByTime(1_000);
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed while the quit runs");
-  });
-
-  it("tells this thread's listener what became of edits another thread wrote", () => {
-    const events: ContentSaveEvent[] = [];
-    setContentSaveListener((event) => events.push(event));
-    const missing: ContentSaveEvent = { kind: "post-missing", dataDir, id: "p1" };
-    announceContentSaveEvents([missing]);
-    expect(events).toEqual([missing]);
   });
 });

@@ -352,46 +352,6 @@ export function flushAllPendingEdits(): { id: string; message: string }[] {
   return failures;
 }
 
-/** A buffered edit as it crosses to the thread that flushes it at quit. */
-export interface PendingEditCopy {
-  dataDir: string;
-  id: string;
-  content?: string;
-  frontMatter: EditablePostMetadata;
-  editedAt: Date;
-}
-
-/** Every buffered edit, copied for the quit's flush; the buffer keeps its own. */
-export function copyPendingEdits(): PendingEditCopy[] {
-  const copies: PendingEditCopy[] = [];
-  for (const [dataDir, posts] of pendingEdits) {
-    for (const [id, pending] of posts) {
-      copies.push({
-        dataDir,
-        id,
-        ...(pending.content !== undefined ? { content: pending.content } : {}),
-        frontMatter: { ...pending.frontMatter },
-        editedAt: pending.editedAt,
-      });
-    }
-  }
-  return copies;
-}
-
-/**
- * Buffers edits copied from another thread, as they were made and without
- * scheduling a write: the quit's flush worker writes them with
- * flushAllPendingEdits.
- */
-export function adoptPendingEdits(copies: readonly PendingEditCopy[]): void {
-  for (const copy of copies) {
-    const pending = pendingFor(copy.dataDir, copy.id);
-    if (copy.content !== undefined) pending.content = copy.content;
-    Object.assign(pending.frontMatter, copy.frontMatter);
-    pending.editedAt = copy.editedAt;
-  }
-}
-
 /** Stops every debounce and retry write until resumePendingFlushes. Called when a quit starts. */
 export function holdPendingFlushes(): void {
   flushesHeld = true;
@@ -409,14 +369,6 @@ export function resumePendingFlushes(): void {
       if (pending.terminal === null) scheduleFlush(dataDir, id, PENDING_FLUSH_DELAY_MS);
     }
   }
-}
-
-/**
- * Tells this thread's listener what became of edits another thread wrote: the
- * quit's flush worker has no window to tell.
- */
-export function announceContentSaveEvents(events: readonly ContentSaveEvent[]): void {
-  for (const event of events) contentSaveListener?.(event);
 }
 
 // --- List ---

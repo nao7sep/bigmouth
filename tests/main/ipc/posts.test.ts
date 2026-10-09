@@ -30,6 +30,7 @@ vi.mock("@main/storageAccess.js", async () => {
     getSettings: async (...args: Parameters<typeof config.getSettings>) => config.getSettings(...args),
     getTargets: async (...args: Parameters<typeof config.getTargets>) => config.getTargets(...args),
     setContentSaveListener: post.setContentSaveListener,
+    setHeldEditFailureListener: () => {},
     refreshIndex: async (...args: Parameters<typeof post.refreshIndex>) => post.refreshIndex(...args),
     listByStatus: async (...args: Parameters<typeof post.listByStatus>) => post.listByStatus(...args),
     countByStatus: async (...args: Parameters<typeof post.countByStatus>) => post.countByStatus(...args),
