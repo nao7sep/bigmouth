@@ -87,7 +87,7 @@
   "workspaces.openFailed": "无法打开或创建工作区。请检查所选文件夹后重试。",
   "workspaces.renameFailed": "无法保存工作区名称。当前名称没有改变；请重试。",
   "workspaces.deleteTitle": "删除工作区",
-  "workspaces.deleteMessage": "要从工作区列表中移除“{name}”吗？磁盘上的数据文件不会被删除。",
+  "workspaces.deleteMessage": "要从工作区列表中移除“{name}”吗？磁盘上的数据文件不会被删除，但为该工作区保存的 API 密钥会被删除。",
   "workspaces.createHeading": "打开或创建工作区",
   "workspaces.name": "名称",
   "workspaces.namePlaceholder": "如有文件夹名称，则使用它",

@@ -87,7 +87,7 @@
   "workspaces.openFailed": "ワークスペースを開くことも作成することもできませんでした。選択したフォルダを確認して、もう一度お試しください。",
   "workspaces.renameFailed": "ワークスペースの名前を保存できませんでした。現在の名前は変わっていません。もう一度お試しください。",
   "workspaces.deleteTitle": "ワークスペースを削除",
-  "workspaces.deleteMessage": "「{name}」をワークスペースの一覧から外しますか？ディスク上のデータファイルは削除されません。",
+  "workspaces.deleteMessage": "「{name}」をワークスペースの一覧から外しますか？ディスク上のデータファイルは削除されませんが、このワークスペース用に保存されている API キーは削除されます。",
   "workspaces.createHeading": "ワークスペースを開く／作成",
   "workspaces.name": "名前",
   "workspaces.namePlaceholder": "あればフォルダ名を使います",

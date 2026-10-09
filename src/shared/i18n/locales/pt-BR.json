@@ -87,7 +87,7 @@
   "workspaces.openFailed": "Não foi possível abrir nem criar o espaço de trabalho. Verifique a pasta selecionada e tente novamente.",
   "workspaces.renameFailed": "Não foi possível salvar o nome do espaço de trabalho. O nome atual não mudou; tente novamente.",
   "workspaces.deleteTitle": "Apagar espaço de trabalho",
-  "workspaces.deleteMessage": "Remover “{name}” da lista de espaços de trabalho? Os arquivos de dados no disco não serão apagados.",
+  "workspaces.deleteMessage": "Remover “{name}” da lista de espaços de trabalho? Os arquivos de dados no disco não serão apagados, mas a chave de API salva para este espaço de trabalho será apagada.",
   "workspaces.createHeading": "Abrir ou criar espaço de trabalho",
   "workspaces.name": "Nome",
   "workspaces.namePlaceholder": "Usa o nome da pasta, se houver",

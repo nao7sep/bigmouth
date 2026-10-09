@@ -87,7 +87,7 @@
   "workspaces.openFailed": "Der Arbeitsbereich konnte nicht geöffnet oder erstellt werden. Prüfen Sie den gewählten Ordner und versuchen Sie es erneut.",
   "workspaces.renameFailed": "Der Name des Arbeitsbereichs konnte nicht gespeichert werden. Der aktuelle Name bleibt unverändert; versuchen Sie es erneut.",
   "workspaces.deleteTitle": "Arbeitsbereich löschen",
-  "workspaces.deleteMessage": "„{name}“ aus der Liste der Arbeitsbereiche entfernen? Die Datendateien auf dem Datenträger werden nicht gelöscht.",
+  "workspaces.deleteMessage": "„{name}“ aus der Liste der Arbeitsbereiche entfernen? Die Datendateien auf dem Datenträger werden nicht gelöscht, der gespeicherte API-Schlüssel des Arbeitsbereichs jedoch schon.",
   "workspaces.createHeading": "Arbeitsbereich öffnen oder erstellen",
   "workspaces.name": "Name",
   "workspaces.namePlaceholder": "Verwendet den Ordnernamen, falls vorhanden",

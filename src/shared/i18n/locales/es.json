@@ -87,7 +87,7 @@
   "workspaces.openFailed": "No se pudo abrir ni crear el espacio de trabajo. Revisa la carpeta seleccionada e inténtalo de nuevo.",
   "workspaces.renameFailed": "No se pudo guardar el nombre del espacio de trabajo. El nombre actual no cambió; inténtalo de nuevo.",
   "workspaces.deleteTitle": "Eliminar espacio de trabajo",
-  "workspaces.deleteMessage": "¿Quitar «{name}» de la lista de espacios de trabajo? Los archivos de datos del disco no se eliminarán.",
+  "workspaces.deleteMessage": "¿Quitar «{name}» de la lista de espacios de trabajo? Los archivos de datos del disco no se eliminarán, pero la clave de API guardada para este espacio de trabajo sí.",
   "workspaces.createHeading": "Abrir o crear un espacio de trabajo",
   "workspaces.name": "Nombre",
   "workspaces.namePlaceholder": "Usa el nombre de la carpeta si está disponible",

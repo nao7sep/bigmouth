@@ -87,7 +87,7 @@
   "workspaces.openFailed": "L’espace de travail n’a pas pu être ouvert ni créé. Vérifiez le dossier choisi et réessayez.",
   "workspaces.renameFailed": "Le nom de l’espace de travail n’a pas pu être enregistré. Le nom actuel est inchangé\u00a0; réessayez.",
   "workspaces.deleteTitle": "Supprimer l’espace de travail",
-  "workspaces.deleteMessage": "Retirer «\u00a0{name}\u00a0» de la liste des espaces de travail\u00a0? Les fichiers de données sur le disque ne seront pas supprimés.",
+  "workspaces.deleteMessage": "Retirer «\u00a0{name}\u00a0» de la liste des espaces de travail\u00a0? Les fichiers de données sur le disque ne seront pas supprimés, mais la clé d’API enregistrée pour cet espace de travail le sera.",
   "workspaces.createHeading": "Ouvrir ou créer un espace de travail",
   "workspaces.name": "Nom",
   "workspaces.namePlaceholder": "Utilise le nom du dossier s’il est disponible",

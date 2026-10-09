@@ -87,7 +87,7 @@
   "workspaces.openFailed": "작업 공간을 열거나 만들 수 없습니다. 선택한 폴더를 확인하고 다시 시도하십시오.",
   "workspaces.renameFailed": "작업 공간 이름을 저장할 수 없습니다. 현재 이름은 바뀌지 않았습니다. 다시 시도하십시오.",
   "workspaces.deleteTitle": "작업 공간 삭제",
-  "workspaces.deleteMessage": "“{name}”을(를) 작업 공간 목록에서 제거하시겠습니까? 디스크의 데이터 파일은 삭제되지 않습니다.",
+  "workspaces.deleteMessage": "“{name}”을(를) 작업 공간 목록에서 제거하시겠습니까? 디스크의 데이터 파일은 삭제되지 않지만, 이 작업 공간에 저장된 API 키는 삭제됩니다.",
   "workspaces.createHeading": "작업 공간 열기 또는 만들기",
   "workspaces.name": "이름",
   "workspaces.namePlaceholder": "가능하면 폴더 이름을 사용합니다",

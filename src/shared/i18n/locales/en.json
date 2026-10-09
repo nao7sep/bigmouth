@@ -87,7 +87,7 @@
   "workspaces.openFailed": "The workspace could not be opened or created. Check the selected folder and try again.",
   "workspaces.renameFailed": "The workspace name could not be saved. The current name is unchanged; try again.",
   "workspaces.deleteTitle": "Delete workspace",
-  "workspaces.deleteMessage": "Remove \"{name}\" from the workspace list? The data files on disk will not be deleted.",
+  "workspaces.deleteMessage": "Remove \"{name}\" from the workspace list? The data files on disk will not be deleted, but its stored API key will be.",
   "workspaces.createHeading": "Open or Create Workspace",
   "workspaces.name": "Name",
   "workspaces.namePlaceholder": "Uses the folder name if available",
