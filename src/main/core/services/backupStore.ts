@@ -33,6 +33,15 @@ export function useBackupRecorderModule(url: URL): void {
   recorderModule = url;
 }
 
+// The largest file kept in one value; a larger one is kept in parts of this size. Well under
+// SQLite's limit of about 1 GB per value, since an attachment's size is a user setting.
+let partSize = 256 * 1024 * 1024;
+
+/** For tests: the part size, so a small file can exercise the parts. */
+export function useBackupPartSize(bytes: number): void {
+  partSize = bytes;
+}
+
 let recorder: Worker | null = null;
 // The recorder failing to start or dying is reported once; recording then stays off.
 let recorderFailed = false;
@@ -79,6 +88,7 @@ export function record(absolutePath: string, bytes: Uint8Array): void {
         path: absolutePath,
         bytes: copy,
         writtenAt: new Date().toISOString(),
+        partSize,
       } satisfies BackupWorkerRequest,
       [copy.buffer],
     );

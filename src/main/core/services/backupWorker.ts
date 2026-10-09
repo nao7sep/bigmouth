@@ -11,7 +11,7 @@ import { parentPort } from "node:worker_threads";
 import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
 export type BackupWorkerRequest =
-  | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string }
+  | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string; partSize: number }
   // Answers through `signal` once every earlier request is applied; "close" also releases the store.
   | { kind: "drain" | "close"; signal: Int32Array };
 
@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS backups (
   content_sha256 TEXT NOT NULL,
   byte_size      INTEGER NOT NULL,
   written_at_utc TEXT NOT NULL
+);
+`;
+// A file larger than the part size is kept in parts: its row holds the path, session, size and
+// hash of the whole file with empty content, and its parts joined in order are its exact bytes.
+// SQLite holds at most about 1 GB in one value, and an attachment's size is a user setting.
+const PARTS = `
+CREATE TABLE IF NOT EXISTS backup_parts (
+  backup_id INTEGER NOT NULL,
+  part      INTEGER NOT NULL,
+  content   BLOB NOT NULL,
+  PRIMARY KEY (backup_id, part)
 );
 `;
 const INDEXES = `
@@ -83,6 +94,7 @@ function open(file: string): DatabaseSync | null {
       const columns = opened.prepare("PRAGMA table_info(backups)").all() as { name: string }[];
       if (!columns.some((column) => column.name === "session_id")) opened.exec("ALTER TABLE backups ADD COLUMN session_id TEXT");
       opened.exec(INDEXES);
+      opened.exec(PARTS);
       opened.exec(`PRAGMA user_version = ${FORMAT_VERSIONS.backups}`);
       opened.exec("COMMIT");
     } catch (error) {
@@ -103,29 +115,51 @@ function open(file: string): DatabaseSync | null {
 
 // One row per path per session: the session's first save of a path inserts it,
 // unless it equals the path's latest row from an earlier session, and later
-// saves replace its content.
+// saves replace its content, a large file's parts with it in one transaction.
 function record(request: Extract<BackupWorkerRequest, { kind: "record" }>): void {
   const store = open(request.file);
   if (!store) return;
   try {
-    const hash = createHash("sha256").update(request.bytes).digest("hex");
+    const { bytes } = request;
+    const hash = createHash("sha256").update(bytes).digest("hex");
     const own = store
       .prepare("SELECT id, content_sha256 AS h FROM backups WHERE path = ? AND session_id = ?")
       .get(request.path, request.sessionId) as { id: number; h: string } | undefined;
-    if (own) {
-      if (own.h === hash) return;
-      store
-        .prepare("UPDATE backups SET content = ?, content_sha256 = ?, byte_size = ?, written_at_utc = ? WHERE id = ?")
-        .run(request.bytes, hash, request.bytes.byteLength, request.writtenAt, own.id);
-      return;
+    if (own?.h === hash) return;
+    if (!own) {
+      const latest = store
+        .prepare("SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1")
+        .get(request.path) as { h: string } | undefined;
+      if (latest?.h === hash) return;
     }
-    const latest = store
-      .prepare("SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1")
-      .get(request.path) as { h: string } | undefined;
-    if (latest?.h === hash) return;
-    store
-      .prepare("INSERT INTO backups (session_id, path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(request.sessionId, request.path, request.bytes, hash, request.bytes.byteLength, request.writtenAt);
+    const parted = bytes.byteLength > request.partSize;
+    const content = parted ? new Uint8Array(0) : bytes;
+    store.exec("BEGIN IMMEDIATE");
+    try {
+      let id: number;
+      if (own) {
+        store
+          .prepare("UPDATE backups SET content = ?, content_sha256 = ?, byte_size = ?, written_at_utc = ? WHERE id = ?")
+          .run(content, hash, bytes.byteLength, request.writtenAt, own.id);
+        store.prepare("DELETE FROM backup_parts WHERE backup_id = ?").run(own.id);
+        id = own.id;
+      } else {
+        const inserted = store
+          .prepare("INSERT INTO backups (session_id, path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(request.sessionId, request.path, content, hash, bytes.byteLength, request.writtenAt);
+        id = Number(inserted.lastInsertRowid);
+      }
+      if (parted) {
+        const insertPart = store.prepare("INSERT INTO backup_parts (backup_id, part, content) VALUES (?, ?, ?)");
+        for (let part = 0, offset = 0; offset < bytes.byteLength; part += 1, offset += request.partSize) {
+          insertPart.run(id, part, bytes.subarray(offset, offset + request.partSize));
+        }
+      }
+      store.exec("COMMIT");
+    } catch (error) {
+      try { store.exec("ROLLBACK"); } catch { /* Preserve the original diagnostic. */ }
+      throw error;
+    }
   } catch (error) {
     warn("backup store: failed to record a write", { file: request.path, error: describe(error) });
   }

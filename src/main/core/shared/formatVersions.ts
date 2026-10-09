@@ -20,7 +20,7 @@ export const FORMAT_VERSIONS = {
   apiKeys: 1,
   /** `records.sqlite3`. */
   records: 1,
-  /** `backups.sqlite3`; 2 added the session column. */
+  /** `backups.sqlite3`; 2 added the session column and the parts table, before any release used 2. */
   backups: 2,
 } as const;
 

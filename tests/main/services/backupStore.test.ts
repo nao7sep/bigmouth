@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot, getStateJsonPath } from "@main/core/services/storagePaths.js";
 import { writeManagedText } from "@main/core/shared/atomicWrite.js";
-import { closeBackupStore, drainBackups, record, stopBackups } from "@main/core/services/backupStore.js";
+import { closeBackupStore, drainBackups, record, stopBackups, useBackupPartSize } from "@main/core/services/backupStore.js";
 import * as logger from "@main/core/services/logger.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
@@ -155,6 +155,35 @@ describe("one row per path per session", () => {
     const check = new DatabaseSync(storeFile());
     expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
     check.close();
+  });
+});
+
+describe("files larger than one value", () => {
+  afterEach(() => useBackupPartSize(256 * 1024 * 1024));
+
+  it("keeps a large file in parts that join to its exact bytes, and replaces them on a later save", () => {
+    useBackupPartSize(4);
+    const file = path.join(root, "big.bin");
+    const first = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    record(file, first);
+    const [row] = rows(file);
+    expect(Buffer.from(row!.content).byteLength).toBe(0);
+    expect(row!.byte_size).toBe(10);
+    expect(row!.content_sha256).toBe(createHash("sha256").update(first).digest("hex"));
+    const parts = () => {
+      const db = new DatabaseSync(storeFile());
+      try {
+        return db.prepare("SELECT part, content FROM backup_parts WHERE backup_id = ? ORDER BY part").all(row!.id) as { part: number; content: Uint8Array }[];
+      } finally { db.close(); }
+    };
+    expect(Buffer.concat(parts().map((part) => Buffer.from(part.content))).equals(first)).toBe(true);
+    expect(parts().map((part) => part.part)).toEqual([0, 1, 2]);
+
+    // A later save in the session that fits one value drops the parts.
+    record(file, Buffer.from("tiny"));
+    const [after] = rows(file);
+    expect(Buffer.from(after!.content).toString()).toBe("tiny");
+    expect(parts()).toEqual([]);
   });
 });
 
