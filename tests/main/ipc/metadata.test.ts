@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 // Integration test for the metadata-generation IPC handler. Real services run
 // against a throwaway BIGMOUTH_DATA_DIR + a registered workspace + a real post; only
 // `electron` (ipcMain), the logger, and the AI factory are mocked. The fake
@@ -83,7 +84,8 @@ function invoke(channel: string, ...args: unknown[]): Promise<MetadataGeneration
 }
 
 // The window the request comes from, as the AI request registry sees it.
-const fakeEvent = { sender: { id: 1, once: () => {}, on: () => {} } };
+let nextOwnerId = 1000;
+let fakeEvent: { sender: EventEmitter & { id: number } };
 
 /** The renderer's abort for request "req-1", as it arrives on the shared channel. */
 function sendAbort(): void {
@@ -91,6 +93,7 @@ function sendAbort(): void {
 }
 
 beforeEach(() => {
+  fakeEvent = { sender: Object.assign(new EventEmitter(), { id: nextOwnerId++ }) };
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-meta-"));
   process.env.BIGMOUTH_DATA_DIR = home;
   delete process.env.ANTHROPIC_API_KEY;
@@ -125,7 +128,7 @@ afterEach(() => {
 describe("metadata generation IPC handler", () => {
   // The renderer's abort must reach the paid call itself, not only
   // stop the renderer waiting for it.
-  it("cancels the paid call when the renderer aborts the request", async () => {
+  it.each(["abort", "reload"])("cancels the paid call on renderer %s", async (cause) => {
     let signal: AbortSignal | undefined;
     ai.generateJsonImpl = (_s, _u, _schema, opts) => {
       signal = (opts as { signal?: AbortSignal }).signal;
@@ -136,17 +139,19 @@ describe("metadata generation IPC handler", () => {
 
     const pending = invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
     await vi.waitFor(() => expect(signal).toBeDefined());
-    sendAbort();
+    if (cause === "abort") sendAbort();
+    else fakeEvent.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
 
     expect(signal?.aborted).toBe(true);
     await expect(pending).rejects.toThrow(/cancelled/);
   });
 
-  it("cancels during storage lookup before starting a paid call", async () => {
+  it.each(["abort", "reload"])("cancels during storage lookup on renderer %s before starting a paid call", async (cause) => {
     const generate = vi.fn(() => ({}));
     ai.generateJsonImpl = generate;
     const pending = invoke(CHANNELS.generateMetadata, wsId, postId, ["title"], "");
-    sendAbort();
+    if (cause === "abort") sendAbort();
+    else fakeEvent.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
     await expect(pending).rejects.toThrow(/cancelled/);
     expect(generate).not.toHaveBeenCalled();
   });

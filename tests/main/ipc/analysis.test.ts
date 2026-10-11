@@ -99,22 +99,22 @@ interface FakeEvent {
     id: number;
     isDestroyed: () => boolean;
     send: ReturnType<typeof vi.fn>;
-    once: (name: string, cb: () => void) => unknown;
-    on: (name: string, cb: () => void) => unknown;
-    emit: (name: string) => void;
+    once: (name: string, cb: (...args: unknown[]) => void) => unknown;
+    on: (name: string, cb: (...args: unknown[]) => void) => unknown;
+    emit: (name: string, ...args: unknown[]) => void;
   };
 }
 
 /** A fake window: its id, and the teardown events the request registry listens to. */
 function makeEvent(): FakeEvent {
-  const listeners = new Map<string, () => void>();
+  const listeners = new Map<string, (...args: unknown[]) => void>();
   const sender = {
     id: nextSenderId++,
     isDestroyed: () => false,
     send: vi.fn(),
-    once: (name: string, cb: () => void) => listeners.set(name, cb),
-    on: (name: string, cb: () => void) => listeners.set(name, cb),
-    emit: (name: string) => listeners.get(name)?.(),
+    once: (name: string, cb: (...args: unknown[]) => void) => listeners.set(name, cb),
+    on: (name: string, cb: (...args: unknown[]) => void) => listeners.set(name, cb),
+    emit: (name: string, ...args: unknown[]) => listeners.get(name)?.(...args),
   };
   lastEvent = { sender };
   return lastEvent;
@@ -151,16 +151,53 @@ beforeEach(() => {
 });
 
 describe("analysis stream handlers", () => {
-  it("does not start a provider call when Stop arrives during storage preparation", async () => {
+  it.each(["stop", "reload"])("does not start a provider call when %s arrives during storage preparation", async (cause) => {
     let ready!: (value: { dataDirectory: string }) => void;
     provider.preflight = new Promise((resolve) => { ready = resolve; });
     const event = makeEvent();
     const starting = start(event, "preflight-stop", params);
-    abort(undefined, "preflight-stop");
+    if (cause === "stop") abort(undefined, "preflight-stop");
+    else event.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
     ready({ dataDirectory: "/ws" });
     await starting;
     expect(provider.onText).toBeNull();
     expect(event.sender.send).not.toHaveBeenCalled();
+  });
+
+  it("retires an old analysis on reload without releasing a same-id successor", async () => {
+    const event = makeEvent();
+    const channel = analysisStreamChannel("ai-1");
+    await start(event, "ai-1", params);
+    const oldText = provider.onText!;
+    const oldFinish = provider.resolveFinished!;
+    const oldAbort = provider.abort!;
+    event.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+    expect(oldAbort).toHaveBeenCalledOnce();
+    await start(event, "ai-1", params);
+    const newAbort = provider.abort!;
+    oldText("obsolete");
+    oldFinish("obsolete");
+    await tick();
+    expect(framesFor(event, channel)).toEqual([]);
+    abort(event, "ai-1");
+    expect(newAbort).toHaveBeenCalledOnce();
+    provider.resolveFinished!("stopped");
+    await tick();
+  });
+
+  it.each([
+    { isMainFrame: true, isSameDocument: true },
+    { isMainFrame: false, isSameDocument: false },
+  ])("keeps analysis owned across navigation that preserves its document: %j", async (navigation) => {
+    const event = makeEvent();
+    const channel = analysisStreamChannel("preserved");
+    await start(event, "preserved", params);
+    event.sender.emit("did-start-navigation", navigation);
+    expect(provider.abort).not.toHaveBeenCalled();
+    provider.onText!("current");
+    provider.resolveFinished!("current");
+    await tick();
+    expect(framesFor(event, channel)).toEqual([{ type: "delta", text: "current" }, { type: "done" }]);
   });
 
   it("forwards deltas then a done frame on normal completion", async () => {

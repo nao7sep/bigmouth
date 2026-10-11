@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, type WebContentsDidStartNavigationEventParams } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 
@@ -10,6 +10,7 @@ export interface AiRequestOwner {
   id: number;
   once(event: "destroyed", listener: () => void): unknown;
   on(event: "render-process-gone", listener: () => void): unknown;
+  on(event: "did-start-navigation", listener: (details: Pick<WebContentsDidStartNavigationEventParams, "isMainFrame" | "isSameDocument">) => void): unknown;
 }
 
 // Every in-flight paid AI call (analysis stream, metadata, imaging), keyed by the
@@ -47,6 +48,12 @@ export function trackAiRequest(owner: AiRequestOwner, requestId: string, abort: 
       byOwner.delete(ownerId);
     });
     owner.on("render-process-gone", () => abortAll(ownerId));
+    // Reload replaces the requesting document without destroying WebContents.
+    // Retire its calls before the new preload reuses its request-id counter;
+    // same-document and subframe navigation leave that owner intact.
+    owner.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
+      if (isMainFrame && !isSameDocument) abortAll(ownerId);
+    });
   }
   const tracked = requests;
   tracked.set(requestId, abort);
