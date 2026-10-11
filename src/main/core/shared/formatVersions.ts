@@ -7,7 +7,7 @@ export const FORMAT_VERSIONS = {
   /** `posts/index.json`. */
   postIndex: 1,
   /** An asset folder's `meta.json`. */
-  assetMeta: 1,
+  assetMeta: 2, // Recorded upload details are bound to the installed content hash.
   /** The storage root's `workspaces.json`. */
   workspaces: 1,
   /** The storage root's `config.json`. */

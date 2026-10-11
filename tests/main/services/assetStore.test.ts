@@ -68,6 +68,45 @@ describe("sanitizeFilename", () => {
 // --- Save / list / delete round-trip ----------------------------------------
 
 describe("saveAssetFile / listAssets / deleteAsset", () => {
+  it("keeps an unreadable sibling independent from accessible uploads and deletion", () => {
+    const recorded = { ...meta("blocked.png"), width: 100, height: 200, hasMetadata: true };
+    saveAssetFile(dataDir, POST, "blocked.png", Buffer.from("abc"), recorded);
+    saveAssetFile(dataDir, POST, "accessible.png", Buffer.from("abc"), meta("accessible.png"));
+    const blocked = path.join(assetDir(dataDir, POST), "blocked.png");
+    const open = fs.openSync;
+    const fail = vi.spyOn(fs, "openSync").mockImplementation((file, flags, mode) => {
+      if (String(file) === blocked) throw new Error("injected unreadable attachment");
+      return open(file, flags, mode);
+    });
+    try {
+      expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ filename: "blocked.png", size: 3 });
+      saveAssetFile(dataDir, POST, "new.png", Buffer.from("new"), meta("new.png"));
+      expect(() => deleteAsset(dataDir, POST, "accessible.png")).not.toThrow();
+      expect(fs.existsSync(path.join(assetDir(dataDir, POST), "accessible.png"))).toBe(false);
+      expect(fs.existsSync(blocked)).toBe(true);
+    } finally { fail.mockRestore(); }
+    expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual(recorded);
+  });
+
+  it("keeps upload facts when identical bytes are copied to a new file identity", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), { ...meta("a.png"), width: 100 });
+    const file = path.join(assetDir(dataDir, POST), "a.png");
+    fs.copyFileSync(file, file + ".copy");
+    fs.renameSync(file + ".copy", file);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 100 }]);
+  });
+
+  it("does not keep old upload facts after an interrupted same-name replacement", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("old"), { ...meta("a.png"), width: 100, height: 200, hasMetadata: true });
+    const dir = assetDir(dataDir, POST);
+    const oldMeta = fs.readFileSync(path.join(dir, "meta.json"));
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("new bytes"), { ...meta("a.png", 9), width: 1, height: 2 });
+    // Crash between binary publication and metadata publication leaves the prior sidecar.
+    fs.writeFileSync(path.join(dir, "meta.json"), oldMeta);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 9 }]);
+    expect(saveAssetFile(dataDir, POST, "a.png", Buffer.from("new bytes"), meta("a.png", 9)).asset).toEqual({ filename: "a.png", size: 9 });
+  });
+
   it("round-trips an asset and its metadata", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const listed = listAssets(dataDir, POST).assets;
@@ -356,17 +395,27 @@ describe("an unusable meta.json is moved aside", () => {
 
 // store-recovery-conventions: meta.json's format version.
 describe("asset metadata format version", () => {
+  it("does not certify hashless disposable prior-format upload facts as current", () => {
+    saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const file = path.join(assetDir(dataDir, POST), "meta.json");
+    const prior = JSON.stringify({ formatVersion: 1, assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
+    fs.writeFileSync(file, prior);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(fs.readFileSync(file, "utf-8")).toBe(prior);
+  });
+
   const metaFile = () => path.join(assetDir(dataDir, POST), "meta.json");
 
   it("writes this build's format version and reads the list back", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    expect(JSON.parse(fs.readFileSync(metaFile(), "utf-8"))).toEqual({ formatVersion: 1, assets: [meta("a.png")] });
+    expect(JSON.parse(fs.readFileSync(metaFile(), "utf-8"))).toEqual({ formatVersion: 2, assets: [{ ...meta("a.png"), contentHash: expect.any(String) }] });
     expect(listAssets(dataDir, POST).assets).toEqual([meta("a.png")]);
   });
 
   it("reads a meta.json without its format version as this build's format", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...meta("a.png"), width: 7 }] }));
+    const { assets } = JSON.parse(fs.readFileSync(metaFile(), "utf-8"));
+    fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...assets[0], width: 7 }] }));
     expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 7 }]);
   });
 
@@ -385,7 +434,7 @@ describe("asset metadata format version", () => {
 
   it("lists from the files over a meta.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    const body = JSON.stringify({ formatVersion: 2, items: [] });
+    const body = JSON.stringify({ formatVersion: 999, items: [] });
     fs.writeFileSync(metaFile(), body);
 
     expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);

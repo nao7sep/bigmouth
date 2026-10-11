@@ -28,6 +28,7 @@ import {
   sanitizeAssetFilename,
 } from "@shared/assetNames";
 import { holdsBytes, writeFileAtomic, writeManagedText } from "../shared/atomicWrite.js";
+import { createHash } from "node:crypto";
 import { record } from "./backupStore.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
@@ -55,7 +56,21 @@ export interface AssetSourceMetadata {
   mtime: Date;
 }
 
+interface RecordedAsset extends AssetMeta { contentHash?: string }
 const META_FILENAME = "meta.json";
+
+// Details describe bytes, not inode or filesystem timestamps: copying a workspace
+// must preserve its upload facts. Read in bounded chunks on the storage worker.
+function contentHash(filePath: string): string {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const hash = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let count: number;
+    while ((count = fs.readSync(fd, chunk, 0, chunk.length, null)) !== 0) hash.update(chunk.subarray(0, count));
+    return hash.digest("hex");
+  } finally { fs.closeSync(fd); }
+}
 
 /**
  * The attached file was installed or removed, but `meta.json` could not be
@@ -101,7 +116,8 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
   const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId));
-  return movedAside ? { assets, movedAside } : { assets };
+  const details = assets.map(({ contentHash: _hash, ...asset }) => asset);
+  return movedAside ? { assets: details, movedAside } : { assets: details };
 }
 
 /**
@@ -144,15 +160,18 @@ export function saveAssetFile(
   }
 
   const dir = ensureAssetDir(dataDir, postId);
-  const { assets: siblings, refusal } = reconcileAssets(dir);
+  const { assets: siblings, records, refusal } = reconcileAssets(dir);
   if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
   const finalMeta: AssetMeta = { ...meta, filename: finalName };
-  const existing = siblings.filter((a) => a.filename !== finalName);
+  const existing = records.filter((a) => a.filename !== finalName);
   const current = siblings.find((a) => a.filename === finalName);
-  if (current && holdsBytes(destPath, buffer)) return { asset: current, changed: false };
+  if (current && holdsBytes(destPath, buffer)) {
+    const { contentHash: _hash, ...asset } = current;
+    return { asset, changed: false };
+  }
 
   // Install the file via temp+rename (atomic, and replaces any same-named file,
   // keeping its permissions), then commit the metadata. If a crash lands between
@@ -162,7 +181,7 @@ export function saveAssetFile(
   if (writeFileAtomic(destPath, buffer)) record(destPath, buffer);
   if (source) keepSourceMetadata(destPath, source);
   try {
-    writeAssetMeta(metaPath, [...existing, finalMeta]);
+    writeAssetMeta(metaPath, [...existing, { ...finalMeta, contentHash: createHash("sha256").update(buffer).digest("hex") }]);
   } catch (cause) {
     throw new AssetRecordError(finalMeta, cause);
   }
@@ -212,9 +231,9 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
   const dir = assetDir(dataDir, postId);
   const filePath = safeResolveUnder(dir, filename);
   const metaPath = path.join(dir, META_FILENAME);
-  const { assets, refusal } = reconcileAssets(dir);
+  const { assets, records, refusal } = reconcileAssets(dir);
   if (refusal) throw refusal;
-  const remaining = assets.filter((a) => a.filename !== filename);
+  const remaining = records.filter((a) => a.filename !== filename);
 
   // Remove the file (the durable data) first, then update the cache. A crash
   // between the two heals on the next read: the now-missing file is reconciled
@@ -245,28 +264,47 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * raises, so the file stays exactly as it is.
  */
 function reconcileAssets(dir: string): {
-  assets: AssetMeta[];
+  assets: RecordedAsset[];
+  records: RecordedAsset[];
   refusal: Error | null;
   movedAside?: { path: string; movedTo: string };
 } {
-  if (!fs.existsSync(dir)) return { assets: [], refusal: null };
+  if (!fs.existsSync(dir)) return { assets: [], records: [], refusal: null };
 
   const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
   const { cached, refusal, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
-  const result: AssetMeta[] = [];
+  const result: RecordedAsset[] = [];
+  const records: RecordedAsset[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
     if (onDisk.has(entry.filename)) {
-      result.push(entry);
+      // A replacement can commit before its sidecar. The old row then describes
+      // different bytes; unknown upload facts are safer than invented continuity.
+      let verified = false;
+      let verificationFailed = false;
+      if (entry.contentHash !== undefined) {
+        try { verified = entry.contentHash === contentHash(path.join(dir, entry.filename)); }
+        catch (error) {
+          verificationFailed = true;
+          logWarn("asset details could not be verified; upload facts left unknown", { path: path.join(dir, entry.filename), error: serializeError(error) });
+        }
+      }
+      const asset = verified ? entry : projectAssetFile(dir, entry.filename);
+      result.push(asset);
+      // An unreadable file does not prove its bytes changed. Hide its details
+      // until verification succeeds, but retain the facts through sibling writes.
+      records.push(verificationFailed ? entry : asset);
       accountedFor.add(entry.filename);
     }
   }
   for (const filename of [...onDisk].sort()) {
     if (accountedFor.has(filename)) continue;
-    result.push(projectAssetFile(dir, filename));
+    const asset = projectAssetFile(dir, filename);
+    result.push(asset);
+    records.push(asset);
   }
-  return { assets: result, refusal, movedAside };
+  return { assets: result, records, refusal, movedAside };
 }
 
 /**
@@ -278,7 +316,7 @@ function reconcileAssets(dir: string): {
  * `meta.json` is absent.
  */
 function readAssetMeta(metaPath: string): {
-  cached: AssetMeta[];
+  cached: RecordedAsset[];
   refusal: Error | null;
   movedAside?: { path: string; movedTo: string };
 } {
@@ -316,7 +354,7 @@ function moveAsideUnreadableMeta(
   metaPath: string,
   detail: string,
   error: unknown,
-): { cached: AssetMeta[]; refusal: null; movedAside: { path: string; movedTo: string } } {
+): { cached: RecordedAsset[]; refusal: null; movedAside: { path: string; movedTo: string } } {
   const movedTo = moveAsideInvalid(metaPath);
   logWarn("asset metadata unreadable; moved aside, assets listed from the files on disk", {
     path: metaPath,
@@ -327,9 +365,9 @@ function moveAsideUnreadableMeta(
   return { cached: [], refusal: null, movedAside: { path: metaPath, movedTo } };
 }
 
-function isAssetMeta(value: unknown): value is AssetMeta {
+function isAssetMeta(value: unknown): value is RecordedAsset {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const { filename, size, width, height, hasMetadata, uploadedAt } = value as Record<string, unknown>;
+  const { filename, size, width, height, hasMetadata, uploadedAt, contentHash } = value as Record<string, unknown>;
   const isDimension = (n: unknown) => n === undefined || (typeof n === "number" && Number.isSafeInteger(n) && n > 0);
   return (
     typeof filename === "string" &&
@@ -340,7 +378,8 @@ function isAssetMeta(value: unknown): value is AssetMeta {
     isDimension(width) &&
     isDimension(height) &&
     (hasMetadata === undefined || typeof hasMetadata === "boolean") &&
-    (uploadedAt === undefined || typeof uploadedAt === "string")
+    (uploadedAt === undefined || typeof uploadedAt === "string") &&
+    (contentHash === undefined || typeof contentHash === "string")
   );
 }
 
@@ -368,7 +407,7 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
   return resolved;
 }
 
-function writeAssetMeta(metaPath: string, assets: AssetMeta[]): void {
+function writeAssetMeta(metaPath: string, assets: RecordedAsset[]): void {
   // recorded: meta.json holds upload times and dimensions that reconcileAssets cannot rebuild from
   // the files, so it is protected with the assets it describes.
   writeManagedText(metaPath, jsonStoreText("assetMeta", { assets }));

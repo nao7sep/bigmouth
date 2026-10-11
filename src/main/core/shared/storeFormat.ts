@@ -1,8 +1,8 @@
 /**
  * How every store reads and writes its format version (store-recovery-conventions):
  * `formatVersion` at the top of a JSON file or a post's front matter, and
- * `PRAGMA user_version` in SQLite. Every store has one format so far, so a
- * store without its marker is read as that format. The marker exists so a store
+ * `PRAGMA user_version` in SQLite. A store without its marker is read through
+ * its current owner, under the app's explicit disposable-data decision. The marker exists so a store
  * a newer build wrote is reported by name and never written by this one; it is
  * checked where a store is loaded or opened. The single-instance lock leaves no
  * other writer to change a store's format while it is open, so writes do not
