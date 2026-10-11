@@ -603,7 +603,9 @@ describe("post file format version", () => {
     const rebuilt = rebuildIndex(dataDir);
     expect(rebuilt.skipped.map((s) => s.fileName)).toEqual([path.basename(newer.filePath)]);
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([kept.frontMatter.id]);
-    expect(renameTarget(dataDir, "blogger", "renamed").skipped).toEqual([]);
+    expect(renameTarget(dataDir, "blogger", "renamed").skipped).toEqual([
+      { fileName: path.basename(newer.filePath), reason: expect.any(String) },
+    ]);
     expect(fs.readFileSync(newer.filePath, "utf-8")).toBe(body);
   });
 

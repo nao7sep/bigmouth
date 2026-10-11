@@ -48,6 +48,121 @@ function publishableDraft(): string {
   return created.frontMatter.id;
 }
 
+describe("authoritative post files", () => {
+  it("keeps old-identity edits away from an externally replaced post", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    queueContent(dataDir, id, "work owned by the original post");
+    const replacement = fs.readFileSync(post.filePath, "utf8").replace(id, "replacement-post");
+    fs.writeFileSync(post.filePath, replacement);
+
+    expect(getPost(dataDir, id)).toBeNull();
+    expect(flushAllPendingEdits()).toEqual([{ id, message: "post file is missing" }]);
+    expect(updatePost(dataDir, id, { content: "wrong owner" })).toBeNull();
+    expect(changeStatus(dataDir, id, "published")).toBeNull();
+    expect(setLocked(dataDir, id, true)).toBeNull();
+    expect(fs.readFileSync(post.filePath, "utf8")).toBe(replacement);
+  });
+
+  it("reports buffered work as unsaved when the source was locked externally", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    queueContent(dataDir, id, "still unsaved");
+    const locked = fs.readFileSync(post.filePath, "utf8").replace("status: draft", "status: draft\nlocked: true");
+    fs.writeFileSync(post.filePath, locked);
+    const events: ContentSaveEvent[] = [];
+    setContentSaveListener((event) => events.push(event));
+
+    expect(flushAllPendingEdits()).toEqual([{ id, message: "post is locked" }]);
+    expect(events.map((event) => event.kind)).toEqual(["locked"]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toBe(locked);
+    expect(() => updatePost(dataDir, id, { content: "bypass" })).toThrow(/locked/);
+    changeStatus(dataDir, id, "published");
+    expect(fs.readFileSync(post.filePath, "utf8")).not.toContain("still unsaved");
+    setLocked(dataDir, id, false);
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("still unsaved");
+  });
+
+  it("selects bulk target changes from the current files, including newly matching files", () => {
+    const movedAway = createPost(dataDir, "blogger", "en");
+    const movedIn = createPost(dataDir, "other", "en");
+    fs.writeFileSync(movedAway.filePath, fs.readFileSync(movedAway.filePath, "utf8").replace("target: blogger", "target: other"));
+    fs.writeFileSync(movedIn.filePath, fs.readFileSync(movedIn.filePath, "utf8").replace("target: other", "target: blogger"));
+    const added = path.join(dataDir, "posts", "external.md");
+    fs.writeFileSync(added, fs.readFileSync(movedIn.filePath, "utf8").replace(movedIn.frontMatter.id, "external-post"));
+
+    expect(renameTarget(dataDir, "blogger", "journal")).toEqual({ updated: 2, skipped: [] });
+    expect(fs.readFileSync(movedAway.filePath, "utf8")).toContain("target: other");
+    expect(fs.readFileSync(movedIn.filePath, "utf8")).toContain("target: journal");
+    expect(fs.readFileSync(added, "utf8")).toContain("target: journal");
+  });
+
+  it("leaves an invalid source alone during a bulk target change", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const invalid = fs.readFileSync(post.filePath, "utf8").replace("status: draft", "status: unknown");
+    fs.writeFileSync(post.filePath, invalid);
+    const result = renameTarget(dataDir, "blogger", "journal");
+    expect(result.updated).toBe(0);
+    expect(result.skipped).toEqual([{ fileName: path.basename(post.filePath), reason: expect.any(String) }]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toBe(invalid);
+  });
+
+  it("does not report unrelated unreadable files as incomplete source cleanup", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const unrelated = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(unrelated.filePath, "---\ntitle: [unclosed\n---\nbody\n");
+    expect(deletePost(dataDir, post.frontMatter.id)).toEqual({ cleanupIncomplete: false });
+  });
+
+  it.each([
+    ["blogger", "zz-copy.md"], ["other", "zz-copy.md"],
+    ["blogger", "000-copy.md"], ["other", "000-copy.md"],
+  ])("keeps duplicate copies out of bulk writes when the primary target is %s and copy is %s", (target, copyName) => {
+    const primary = createPost(dataDir, target, "en");
+    const id = primary.frontMatter.id;
+    updatePost(dataDir, id, { content: "original text" });
+    const copy = path.join(dataDir, "posts", copyName);
+    const copyBytes = fs.readFileSync(primary.filePath, "utf8")
+      .replace("original text", "copy text")
+      .replace("target: other", "target: blogger");
+    fs.writeFileSync(copy, copyBytes);
+    queueContent(dataDir, id, "pending original text");
+
+    const result = renameTarget(dataDir, "blogger", "journal");
+    expect(result.updated).toBe(target === "blogger" ? 1 : 0);
+    expect(getPost(dataDir, id)?.filePath).toBe(primary.filePath);
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(fs.readFileSync(primary.filePath, "utf8")).toContain("pending original text");
+    expect(fs.readFileSync(copy, "utf8")).toBe(copyBytes);
+  });
+
+  it.each(["missing", "different identity"])("promotes a surviving copy during a bulk rewrite when the primary is %s", (state) => {
+    const primary = createPost(dataDir, "blogger", "en");
+    const copy = path.join(dataDir, "posts", "zz-survivor.md");
+    fs.copyFileSync(primary.filePath, copy);
+    if (state === "missing") fs.unlinkSync(primary.filePath);
+    else fs.writeFileSync(primary.filePath, fs.readFileSync(primary.filePath, "utf8")
+      .replace(primary.frontMatter.id, "changed-identity")
+      .replace("target: blogger", "target: other"));
+    expect(renameTarget(dataDir, "blogger", "journal")).toEqual({ updated: 1, skipped: [] });
+    expect(getPost(dataDir, primary.frontMatter.id)?.filePath).toBe(copy);
+    expect(fs.readFileSync(copy, "utf8")).toContain("target: journal");
+  });
+
+  it("does not promote a copy merely because its indexed owner cannot be read", () => {
+    const primary = createPost(dataDir, "blogger", "en");
+    const copy = path.join(dataDir, "posts", "000-copy.md");
+    const copyBytes = fs.readFileSync(primary.filePath, "utf8");
+    fs.writeFileSync(copy, copyBytes);
+    const unreadable = copyBytes.replace("formatVersion: 1", "formatVersion: 999");
+    fs.writeFileSync(primary.filePath, unreadable);
+    expect(renameTarget(dataDir, "blogger", "journal").updated).toBe(0);
+    expect(fs.readFileSync(primary.filePath, "utf8")).toBe(unreadable);
+    expect(fs.readFileSync(copy, "utf8")).toBe(copyBytes);
+  });
+});
+
 describe("canonical edit admission and committed writes", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); flushAllPendingEdits(); });
 

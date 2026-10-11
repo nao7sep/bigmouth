@@ -43,9 +43,9 @@ import type {
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { comparatorFor } from "@shared/postOrder";
 import type { UnreadablePostFile, PostDeleteResult } from "@shared/types";
-import { postFileName } from "../shared/filenames.js";
+import { isPostId, postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
-import { applyStatusTransition } from "../shared/postLifecycle.js";
+import { applyStatusTransition, isPostStatus } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
 import { carryingText } from "@shared/i18n/carriedMessage";
 import { assetDir } from "./assetStore.js";
@@ -294,16 +294,6 @@ function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): v
 export function flushPostEdits(dataDir: string, id: string): boolean {
   if (getPending(dataDir, id) === undefined) return true;
 
-  // Re-checked at write time, not only when the edit was queued. The debounce
-  // window is exactly long enough for the post to be locked between a
-  // keystroke and its write, and the quit flush runs later still — so queue
-  // time alone would leave the autosave accident the lock exists to prevent.
-  const entry = index.getEntry(dataDir, id);
-  if (entry?.locked === true) {
-    reportTerminal(dataDir, id, LOCKED_REASON, { kind: "locked", dataDir, id });
-    return false;
-  }
-
   try {
     // updatePost writes through the overlay, so an empty update persists the
     // pending edits and clears the buffer.
@@ -318,6 +308,10 @@ export function flushPostEdits(dataDir: string, id: string): boolean {
     if (summary) contentSaveListener?.({ kind: "saved", dataDir, id, summary });
     return true;
   } catch (err) {
+    if (err instanceof PostLockedError) {
+      reportTerminal(dataDir, id, LOCKED_REASON, { kind: "locked", dataDir, id });
+      return false;
+    }
     // The message is for the user; the error itself travels alongside it so the
     // IPC layer can log a stack. It used to be flattened to a string here, which
     // left the app's most debugging-critical failure - a post's text not
@@ -422,7 +416,11 @@ function readFromDisk(dataDir: string, id: string): Post | null {
     index.rebuild(dataDir);
     return null;
   }
-  return readPost(filePath);
+  const post = readPost(filePath);
+  // The index locates a candidate file; only its current identity authorizes
+  // reading or rewriting it for this caller. Outside replacements must never
+  // receive another post's buffered edits. A list refresh discovers the new id.
+  return post.frontMatter.id === id ? post : null;
 }
 
 function overlayPending(post: Post, pending: PendingEdit | undefined): void {
@@ -471,6 +469,13 @@ export function createPost(
 
 // --- Writes ---
 
+class PostLockedError extends Error {
+  constructor() {
+    super("This post is locked. Unlock it to edit it.");
+    this.name = "PostLockedError";
+  }
+}
+
 /**
  * The one way an existing post is written. `change` edits the post as the
  * file holds it plus, for an unlocked post, its buffered edits — so the write
@@ -489,9 +494,14 @@ function rewritePost(
   id: string,
   change: (post: Post) => void,
   contentEdited = false,
+  requiresEditable = false,
 ): Post | null {
   const onDisk = readFromDisk(dataDir, id);
   if (!onDisk) return null;
+  // The file may have been locked outside the app since the index was read.
+  // Status and lock operations remain permitted, but authored writes must
+  // refuse rather than return a post that left their buffer unsaved.
+  if (requiresEditable && onDisk.frontMatter.locked === true) throw new PostLockedError();
 
   const post = structuredClone(onDisk);
   const writesPending = onDisk.frontMatter.locked !== true;
@@ -517,7 +527,7 @@ function rewritePost(
   return post;
 }
 
-/** Writes content and editable metadata. The caller has refused a locked post. */
+/** Writes content and editable metadata, checking the source's current lock. */
 export function updatePost(
   dataDir: string,
   id: string,
@@ -530,16 +540,16 @@ export function updatePost(
     }
     if (updates.frontMatter) applyMetadata(post.frontMatter, updates.frontMatter);
     if (updates.content !== undefined) post.content = updates.content;
-  });
+  }, false, true);
 }
 
 /**
  * Records that a post's attached files changed — an asset uploaded, replaced
  * or deleted — by moving its modified time, with any buffered edits. The
- * caller has refused a locked post.
+ * source's current lock is checked before writing.
  */
 export function recordAssetChange(dataDir: string, id: string): Post | null {
-  return rewritePost(dataDir, id, () => {}, true);
+  return rewritePost(dataDir, id, () => {}, true, true);
 }
 
 /**
@@ -697,7 +707,7 @@ export interface BulkRewriteResult {
 }
 
 /**
- * Rewrites the front matter of every indexed post that `matches`, as a system
+ * Rewrites the front matter of every source post that `matches`, as a system
  * operation: exempt from the lock, and updatedAtUtc is left alone — a rewrite
  * the app makes on its own is not an edit (content-lifecycle-conventions).
  *
@@ -716,23 +726,53 @@ function rewriteMatchingPosts(
 ): BulkRewriteResult {
   const rewritten: PostIndexEntry[] = [];
   const skipped: SkippedPostFile[] = [];
+  // Cleanup has already reported unreadable known referrers before refreshing.
+  // An unrelated unreadable file must not make an otherwise complete deletion
+  // look partial. This cached set limits diagnostics only, never selection.
+  const knownMatches = new Set(index.allEntries(dataDir).filter(matches).map((entry) => entry.fileName));
+  const sourceIds = new Set<string>();
   try {
-    for (const entry of index.allEntries(dataDir)) {
-      if (!matches(entry)) continue;
-      const filePath = filePathFor(dataDir, entry);
-      // An index entry whose file vanished out of band is skipped; the next
-      // load reconciles it away.
+    // A bulk operation selects from the source files, not cached membership:
+    // a checkout may add posts or change their target/source since the list
+    // was last opened. Read each source once and publish the index once below.
+    for (const fileName of fs.readdirSync(postsDir(dataDir)).filter((name) => name.endsWith(".md")).sort()) {
+      const filePath = path.join(postsDir(dataDir), fileName);
       if (!fs.existsSync(filePath)) continue;
       let post: Post;
       let projected: PostIndexEntry;
       try {
         post = readPost(filePath);
+        if (!isPostId(post.frontMatter.id) || !isPostStatus(post.frontMatter.status)) {
+          throw new Error("Post identity or status is invalid");
+        }
+        const current = projectIndexEntry(post.frontMatter, fileName, post.content);
+        // Preserve an existing usable owner, even when a new copy sorts before
+        // it. Only a missing or incompatible owner permits survivor promotion.
+        const owner = index.getEntry(dataDir, current.id);
+        let ownerStillUsable = false;
+        if (owner && owner.fileName !== fileName) {
+          try {
+            const owned = readPost(filePathFor(dataDir, owner));
+            ownerStillUsable = owned.frontMatter.id === current.id && isPostStatus(owned.frontMatter.status);
+            if (ownerStillUsable) projectIndexEntry(owned.frontMatter, owner.fileName, owned.content);
+          } catch (error) {
+            // An unreadable owner is not evidence that a copy owns its edits.
+            // Only an absent source permits promotion without reading identity.
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
+        if (ownerStillUsable) throw new Error(`duplicate post id ${current.id}`);
+        // Without a surviving indexed owner, the first usable source claims
+        // the id before filtering; an unmatched source still owns its identity.
+        if (sourceIds.has(current.id)) throw new Error(`duplicate post id ${current.id}`);
+        sourceIds.add(current.id);
+        if (!matches(current)) continue;
         rewrite(post.frontMatter);
-        projected = projectIndexEntry(post.frontMatter, entry.fileName, post.content);
+        projected = projectIndexEntry(post.frontMatter, fileName, post.content);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        logWarn("post file skipped by a bulk rewrite", { fileName: entry.fileName, reason, error: serializeError(err) });
-        skipped.push({ fileName: entry.fileName, reason });
+        logWarn("post file skipped by a bulk rewrite", { fileName, reason, error: serializeError(err) });
+        if (!continueAfterWriteFailure || knownMatches.has(fileName)) skipped.push({ fileName, reason });
         continue;
       }
       try {
@@ -740,8 +780,8 @@ function rewriteMatchingPosts(
         rewritten.push(projected);
       } catch (error) {
         if (!continueAfterWriteFailure) throw error;
-        logWarn("post cleanup rewrite failed", { fileName: entry.fileName, error: serializeError(error) });
-        skipped.push({ fileName: entry.fileName, reason: error instanceof Error ? error.message : String(error) });
+        logWarn("post cleanup rewrite failed", { fileName, error: serializeError(error) });
+        skipped.push({ fileName, reason: error instanceof Error ? error.message : String(error) });
       }
     }
   } finally {
