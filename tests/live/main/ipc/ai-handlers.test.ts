@@ -22,9 +22,11 @@ vi.mock("electron", () => ({
   },
 }));
 
+import { closeBackupStore } from "@main/core/services/backupStore.js";
 import { IMAGING_LITERALNESS, IMAGING_MOODS, IMAGING_PEOPLE, IMAGING_RELATIONS, IMAGING_STYLES } from "@main/core/ai/imaging.js";
 import { createPost, updatePost } from "@main/core/services/postStore.js";
-import { createWorkspace, initAppDir } from "@main/core/services/workspaceStore.js";
+import { initAppDir } from "@main/core/services/workspaceStore.js";
+import { createLiveWorkspace } from "./ai-fixture.js";
 import { DEFAULT_ANALYSIS_PROMPTS } from "@main/core/shared/defaults.js";
 import { registerAnalysisHandlers } from "@main/ipc/analysis.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
@@ -98,6 +100,8 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return handler({ sender: ownerWindow }, `live-${nextRequestId++}`, ...args) as Promise<T>;
 }
 
+const savedDataRoot = process.env.BIGMOUTH_DATA_DIR;
+
 beforeAll(() => {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error(
@@ -110,7 +114,7 @@ beforeAll(() => {
   registerMetadataHandlers();
   registerImagingHandlers();
   registerAnalysisHandlers();
-  const workspace = createWorkspace("Live");
+  const workspace = createLiveWorkspace(home);
   wsId = workspace.id;
   const post = createPost(workspace.dataDirectory, "blogger", "en");
   postId = post.frontMatter.id;
@@ -122,7 +126,9 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  delete process.env.BIGMOUTH_DATA_DIR;
+  closeBackupStore();
+  if (savedDataRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = savedDataRoot;
   if (home) fs.rmSync(home, { recursive: true, force: true });
 });
 
