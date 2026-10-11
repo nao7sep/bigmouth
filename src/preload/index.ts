@@ -39,6 +39,7 @@ import type {
   Target,
   UiState,
   Workspace,
+  WorkspaceDeleteResult,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
@@ -98,7 +99,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.suggestWorkspaceLocation, name) as Promise<string>,
   updateWorkspace: (id: string, updates: { name: string }) =>
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
-  deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<void>,
+  deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<WorkspaceDeleteResult>,
   openExternal: (url: string) => ipcRenderer.invoke(CHANNELS.openExternal, url) as Promise<void>,
   // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
   // something can never turn into a second failure the caller has to handle.
@@ -119,6 +120,13 @@ const api = {
   },
 
   // --- UI state (state.json) ---
+  getStoragePending: () => ipcRenderer.invoke(CHANNELS.getStoragePending) as Promise<boolean>,
+  onStoragePendingChanged: (listener: (pending: boolean) => void) => {
+    const callback = (_event: unknown, pending: unknown) => { if (typeof pending === "boolean") listener(pending); };
+    ipcRenderer.on(CHANNELS.storagePendingChanged, callback);
+    return () => { ipcRenderer.removeListener(CHANNELS.storagePendingChanged, callback); };
+  },
+
   getUiState: () => ipcRenderer.invoke(CHANNELS.getUiState) as Promise<UiState>,
   updateUiState: (patch: Partial<UiState>) =>
     ipcRenderer.invoke(CHANNELS.updateUiState, patch) as Promise<UiState>,

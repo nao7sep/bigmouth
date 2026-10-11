@@ -30,6 +30,7 @@ import type {
   Target,
   UiState,
   Workspace,
+  WorkspaceDeleteResult,
 } from "./types";
 import type { PagedPostStatus } from "./postStatus";
 import type { InterfaceLanguage } from "./i18n/languages";
@@ -82,6 +83,9 @@ export const CHANNELS = {
   readRecordDetail: "records:detail",
   readRecordSources: "records:sources",
   recordsChanged: "records:changed",
+
+  getStoragePending: "storage:pending",
+  storagePendingChanged: "storage:pendingChanged",
 
   // UI state (state.json)
   getUiState: "state:get",
@@ -305,6 +309,8 @@ export type Platform =
   | "netbsd";
 
 export interface BigMouthApi {
+  getStoragePending(): Promise<boolean>;
+  onStoragePendingChanged(listener: (pending: boolean) => void): () => void;
   /** The running OS, exposed synchronously from the preload (process.platform). */
   platform: Platform;
   /** Native BrowserWindow activation, which is distinct from DOM document focus on macOS. */
@@ -317,7 +323,7 @@ export interface BigMouthApi {
   suggestWorkspaceLocation(name?: string): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
-  deleteWorkspace(id: string): Promise<void>;
+  deleteWorkspace(id: string): Promise<WorkspaceDeleteResult>;
   /** Opens an allowed web or mail URL in the OS handler. */
   openExternal(url: string): Promise<void>;
   /** Native folder picker for choosing a workspace directory; null if cancelled. */

@@ -16,6 +16,7 @@ import { AssetUploadAdmissionError } from "../util/assetUpload";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
+import { useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 interface AssetsTabProps extends Pick<
   HTMLAttributes<HTMLDivElement>,
@@ -96,6 +97,17 @@ export function AssetsTab({
   ...containerProps
 }: AssetsTabProps) {
   const { t, text, list } = useI18n();
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
+  const current = useRef(true);
+  useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
+  const showNotice = (notice: AssetNotice) => {
+    if (current.current) { setUploadNotice(notice); return; }
+    for (const line of notice.lines) {
+      reportStorageResult(line.message, notice.severity);
+      for (const item of line.items ?? []) reportStorageResult(message("assets.itemReason", { name: item.name, reason: item.reason }), notice.severity);
+    }
+  };
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
@@ -106,6 +118,8 @@ export function AssetsTab({
   const assetsRef = useRef<AssetMeta[]>([]);
   const uploadTailRef = useRef<Promise<void>>(Promise.resolve());
   const queuedUploadsRef = useRef(0);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const confirm = useConfirm();
 
   const resetDragState = useCallback(() => {
@@ -116,8 +130,10 @@ export function AssetsTab({
     try {
       const { assets: list, movedAside } = await listAssets(postId, workspaceId);
       assetsRef.current = list;
-      setAssets(list);
-      if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
+      if (current.current) {
+        setAssets(list);
+        if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
+      } else if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
       return null;
     } catch (err) {
       return presentFailure(
@@ -127,7 +143,7 @@ export function AssetsTab({
         { postId },
       );
     }
-  }, [postId, workspaceId]);
+  }, [postId, workspaceId, reportStorageResult]);
 
   useEffect(() => {
     setAssets([]);
@@ -135,7 +151,7 @@ export function AssetsTab({
     setUploadNotice(null);
     setRecoveryNotice(null);
     void load().then((failure) => {
-      if (failure) setUploadNotice({
+      if (failure && current.current) showNotice({
         severity: "error",
         lines: [{ message: failure }],
         issueKeys: [`refresh:${postId}`],
@@ -183,7 +199,7 @@ export function AssetsTab({
       if (invalid.length > 0) lines.push(notAdded(invalid));
       if (operationalFailures.length > 0) lines.push(notAdded(operationalFailures));
       if (refreshFailure) lines.push({ message: refreshFailure });
-      setUploadNotice({
+      showNotice({
         severity: operationalFailures.length > 0 || refreshFailure ? "error" : "warning",
         lines,
         issueKeys: [
@@ -194,7 +210,7 @@ export function AssetsTab({
         ],
       });
     } else {
-      setUploadNotice((current) => {
+      if (current.current) setUploadNotice((current) => {
         if (current === null) return null;
         const resolvedKeys = [...operationKeys, `refresh:${postId}`];
         if (coversIssueKeys(resolvedKeys, current.issueKeys)) return null;
@@ -223,7 +239,7 @@ export function AssetsTab({
 
     if (uploadable.length === 0) {
       if (rejected.length > 0) {
-        setUploadNotice({
+        showNotice({
           severity: "warning",
           lines: [notAdded(rejected)],
           issueKeys: rejected.map(({ file }) => assetIssueKey(file)),
@@ -234,7 +250,7 @@ export function AssetsTab({
 
     const batchCollisions = collidingAssetFilenames(uploadable.map((file) => file.name));
     if (batchCollisions.length > 0) {
-      setUploadNotice({
+      showNotice({
         severity: "warning",
         lines: [
           notAdded(rejected, fileArray.length),
@@ -251,6 +267,10 @@ export function AssetsTab({
       .filter((name) => existingNames.has(name.normalize("NFC")));
 
     if (dupes.length > 0) {
+      if (!current.current) {
+        showNotice({ severity: "warning", lines: [notAdded(uploadable.map((file) => ({ file, reason: message("assets.fileNotAdded") })))], issueKeys: operationKeys });
+        return;
+      }
       const ok = await confirm({
         title: t("assets.replaceTitle"),
         message: t("assets.replaceMessage", { count: dupes.length, names: list(dupes) }),
@@ -263,7 +283,7 @@ export function AssetsTab({
 
   const enqueueUpload = async (files: FileList | File[]) => {
     const captured = Array.from(files);
-    if (captured.length === 0) return;
+    if (captured.length === 0 || storagePending || deletingRef.current) return;
     queuedUploadsRef.current += 1;
     setUploading(true);
     const operation = uploadTailRef.current.then(() => checkAndUpload(captured));
@@ -272,14 +292,14 @@ export function AssetsTab({
       await operation;
     } catch (err) {
       reportProblem("Asset upload transaction failed.", err, { postId });
-      setUploadNotice({
+      showNotice({
         severity: "error",
         lines: [{ message: message("assets.addFailed") }],
         issueKeys: captured.map(assetIssueKey),
       });
     } finally {
       queuedUploadsRef.current -= 1;
-      if (queuedUploadsRef.current === 0) setUploading(false);
+      if (queuedUploadsRef.current === 0 && current.current) setUploading(false);
     }
   };
 
@@ -291,7 +311,7 @@ export function AssetsTab({
     e.stopPropagation();
     e.dataTransfer.dropEffect = "none";
     if (locked) {
-      setUploadNotice({
+      showNotice({
         severity: "warning",
         lines: [{ message: message("assets.locked") }],
         issueKeys: ["receiver:read-only"],
@@ -299,7 +319,7 @@ export function AssetsTab({
       return;
     }
     if (e.dataTransfer.files.length === 0) {
-      setUploadNotice({
+      showNotice({
         severity: "warning",
         lines: [{ message: message("assets.filesOnly") }],
         issueKeys: ["offer:non-file"],
@@ -318,7 +338,10 @@ export function AssetsTab({
   };
 
   const handleDelete = async (filename: string) => {
-    if (locked) return;
+    if (locked || storagePending || queuedUploadsRef.current > 0 || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    try {
     const ok = await confirm({
       message: t("assets.deleteMessage", { name: filename }),
       confirmLabel: t("common.delete"),
@@ -327,13 +350,13 @@ export function AssetsTab({
     if (!ok) return;
     try {
       const { unsaved } = await deleteAsset(postId, filename, workspaceId);
-      setAssets((prev) => {
+      if (current.current) setAssets((prev) => {
         const next = prev.filter((a) => a.filename !== filename);
         assetsRef.current = next;
         return next;
       });
       if (unsaved?.includes("modifiedTime")) {
-        setUploadNotice({
+        showNotice({
           severity: "warning",
           lines: [{ message: message("assets.deletedWithoutPostTime", { name: filename }) }],
           issueKeys: [`delete:${filename}`],
@@ -342,9 +365,9 @@ export function AssetsTab({
     } catch (err) {
       reportProblem("Asset deletion failed.", err, { postId, filename });
       // Show the attachments as they now are, whatever the failure left.
-      void load();
+      if (current.current) void load();
       const carried = carriedMessage(err);
-      setUploadNotice({
+      showNotice({
         severity: "error",
         lines: [
           { message: message("assets.deleteFailed", { name: filename }) },
@@ -353,6 +376,7 @@ export function AssetsTab({
         issueKeys: [`delete:${filename}`],
       });
     }
+    } finally { deletingRef.current = false; if (current.current) setDeleting(false); }
   };
 
   const handleInsert = (filename: string) => {
@@ -379,7 +403,7 @@ export function AssetsTab({
         e.preventDefault();
         e.stopPropagation();
         const offer = inspectAssetDragOffer(e.dataTransfer, maxUploadMb * 1024 * 1024);
-        if (locked || offer === "rejected") {
+        if (locked || storagePending || offer === "rejected") {
           e.dataTransfer.dropEffect = "none";
           setDragState("rejecting");
           return;
@@ -410,7 +434,7 @@ export function AssetsTab({
         <button
           type="button"
           className="action-button"
-          disabled={locked || uploading}
+          disabled={locked || uploading || deleting || storagePending}
           onClick={() => fileInputRef.current?.click()}
         >
           {uploading ? t("assets.adding") : t("assets.add")}
@@ -465,7 +489,7 @@ export function AssetsTab({
                 asset={asset}
                 onInsert={() => handleInsert(asset.filename)}
                 onDelete={() => void handleDelete(asset.filename)}
-                locked={locked}
+                locked={locked || storagePending || uploading || deleting}
               />
             ))}
         </div>

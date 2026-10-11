@@ -11,11 +11,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
+import type { WorkspaceDeleteResult } from "@shared/types";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
+import { serializeError, warn } from "./logger.js";
 import { sanitizeFilenameSegment } from "@shared/assetNames";
 import {
   containsDirectory,
@@ -411,15 +413,22 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
   return renamed;
 }
 
-export function deleteWorkspace(id: string): boolean {
+export function deleteWorkspace(id: string): WorkspaceDeleteResult | null {
   const config = ensureLoaded();
   const index = config.workspaces.findIndex((w) => w.id === id);
-  if (index === -1) return false;
+  if (index === -1) return null;
 
   writeAppConfig({ ...config, workspaces: config.workspaces.filter((item) => item.id !== id) });
   // Drop the workspace's stored API keys too — they live in the shared secrets
   // file keyed by workspace id, so deregistering a workspace must take its keys
   // with it rather than leave them orphaned forever.
-  clearWorkspaceKeys(getApiKeysPath(), id);
-  return true;
+  // Registry publication is the commit. Key cleanup is best effort, and its
+  // failure must not ask the caller to restore an entry that is already gone.
+  try {
+    if (clearWorkspaceKeys(getApiKeysPath(), id)) return {};
+    warn("workspace removed; stored API key cleanup could not be established", { workspaceId: id });
+  } catch (error) {
+    warn("workspace removed; stored API key cleanup failed", { workspaceId: id, error: serializeError(error) });
+  }
+  return { keyCleanupIncomplete: true };
 }

@@ -158,6 +158,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      * mutation site that forgot the hand assignment read stale for a render and
      * the effect hid it.
      */
+    const mounted = useRef(true);
+    const selectionRequest = useRef(0);
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; selectionRequest.current += 1; }; }, []);
     const selectedPostIdRef = useRef<string | null>(null);
     const metadataTabRef = useRef(false);
     const currentPostRef = useRef<Post | null>(null);
@@ -195,12 +198,15 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     );
 
     const selectPost = useCallback(
-      async (id: string | null, options?: { skipFlush?: boolean }) => {
+      async (id: string | null, options?: { skipFlush?: boolean; mayAdopt?: () => boolean }) => {
+        const request = ++selectionRequest.current;
         if (id === selectedPostIdRef.current) return true;
         if (!options?.skipFlush) {
           const flushed = await flushPendingChanges();
           if (!flushed) return false;
         }
+        if (!mounted.current || request !== selectionRequest.current || (options?.mayAdopt && !options.mayAdopt())) return false;
+        selectedPostIdRef.current = id;
         setSelectedPostId(id);
         setCurrentPost(null);
         setEditorContent("");
@@ -224,8 +230,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           ? { ...FIRST_PAGES, [append]: listsRef.current[append].posts.length }
           : FIRST_PAGES;
         try {
-          const data = await listPosts(offsets, pubBatchSize);
-          if (request !== listRequestRef.current || version !== listVersionRef.current) return;
+          const data = await listPosts(offsets, pubBatchSize, workspace.id);
+          if (!mounted.current || request !== listRequestRef.current || version !== listVersionRef.current) return;
 
           listVersionRef.current += 1;
           setUnreadablePosts(data.unreadable ?? []);
@@ -244,7 +250,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           if (append && pageRequestsRef.current.get(append) === request) pageRequestsRef.current.delete(append);
         }
       },
-      [pubBatchSize, commitLists]
+      [pubBatchSize, commitLists, workspace.id]
     );
 
     /**
@@ -257,9 +263,9 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       const request = ++listRequestRef.current;
       const version = listVersionRef.current;
       const shown = (status: PagedPostStatus) => Math.max(pubBatchSize, listsRef.current[status].posts.length);
-      const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)));
+      const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)), workspace.id);
       // The app changed the lists while this read was out: they are newer.
-      if (request !== listRequestRef.current || listVersionRef.current !== version) return;
+      if (!mounted.current || request !== listRequestRef.current || listVersionRef.current !== version) return;
       setUnreadablePosts(data.unreadable ?? []);
 
       const fresh = listsFromResponse(data);
@@ -267,7 +273,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         fresh[status] = { ...fresh[status], posts: fresh[status].posts.slice(0, shown(status)) };
       }
       commitLists(fresh);
-    }, [pubBatchSize, commitLists]);
+    }, [pubBatchSize, commitLists, workspace.id]);
 
     useEffect(() => () => {
       listRequestRef.current += 1;
@@ -321,11 +327,12 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [uiFontFamily]);
 
     const loadConfig = useCallback(async () => {
-      const [nextTargets, settings, notice] = await Promise.all([listTargets(), getSettings(), getConfigNotice()]);
+      const [nextTargets, settings, notice] = await Promise.all([listTargets(workspace.id), getSettings(workspace.id), getConfigNotice(workspace.id)]);
+      if (!mounted.current) return;
       setTargets(nextTargets);
       applySettings(settings);
       setConfigNotice(notice);
-    }, [applySettings]);
+    }, [applySettings, workspace.id]);
 
     useEffect(() => {
       let cancelled = false;
@@ -355,6 +362,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      * session and to the centre pane, whose toolbar shows its own copy.
      */
     const reloadConfig = useCallback(() => {
+      if (!mounted.current) return;
       setLoadError(null);
 
       void (async () => {
@@ -367,13 +375,16 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             setLoadError(message("session.metadataUnsaved"));
             return;
           }
+          if (!mounted.current) return;
           await Promise.all([loadConfig(), loadPosts()]);
+          if (!mounted.current) return;
 
           // The open post too: a rename rewrites `target` in every post FILE, so
           // the copy in memory is stale and would match no target at all.
           const openId = selectedPostIdRef.current;
           if (openId) {
-            const reread = await getPost(openId);
+            const reread = await getPost(openId, workspace.id);
+            if (!mounted.current || selectedPostIdRef.current !== openId) return;
             setCurrentPost(reread);
             setRereadPost(reread);
           }
@@ -387,7 +398,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       })();
 
       setAnalysisPromptsVersion((n) => n + 1);
-    }, [flushRightPaneChanges, loadConfig, loadPosts]);
+    }, [flushRightPaneChanges, loadConfig, loadPosts, workspace.id]);
 
     useEffect(() => {
       // Any open modal/dialog owns the keyboard; global shortcuts must not
@@ -474,14 +485,21 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       return () => window.removeEventListener("keydown", handler);
     }, [anyModalOpen]);
 
-    const handleCreatePost = async (target: string, language: string, sourceId?: string) => {
-      const post = await createPost(target, language, sourceId);
-      setNewPostOpen(false);
-      await loadPosts();
-      await selectPost(post.frontMatter.id);
+    const handleCreatePost = async (target: string, language: string, sourceId?: string, ownsModal: () => boolean = () => true) => {
+      const selection = selectionRequest.current;
+      const mayAdopt = () => mounted.current && ownsModal() && selectionRequest.current === selection;
+      const post = await createPost(target, language, sourceId, workspace.id);
+      if (!mounted.current) return;
+      // The post was created even if its optional list refresh fails.
+      try { await loadPosts(); }
+      catch (err) { if (mounted.current) setLoadError(presentFailure(message("session.postListFailed"), "renderer: post list refresh after creation failed", err)); }
+      if (!mayAdopt()) return;
+      const selected = await selectPost(post.frontMatter.id, { mayAdopt: () => mounted.current && ownsModal() });
+      if (selected && mounted.current && ownsModal()) setNewPostOpen(false);
     };
 
     const handlePostDeleted = useCallback((deletedId: string, result: PostDeleteResult) => {
+      if (!mounted.current) return false;
       listVersionRef.current += 1;
       if (result.cleanupIncomplete) setDeleteWarning(true);
       // Drop only the deleted post from the back stack (it can't be navigated to
@@ -497,7 +515,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         const nextId = pickAdjacentPostId(listsRef.current[removed.status].posts, deletedId);
         commitLists(removed.lists);
         if (selectedPostIdRef.current === deletedId) void selectPost(nextId, { skipFlush: true });
-        return;
+        return true;
       }
 
       // Not in any loaded section (rare): clear and reload to resync.
@@ -509,6 +527,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           err,
         ));
       });
+      return true;
     }, [loadPosts, selectPost, commitLists]);
 
     /**
@@ -531,6 +550,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     );
 
     const handlePostUpdated = useCallback((result: PostMutationResult) => {
+      if (!mounted.current) return;
 
       // The update returns the canonical list summary (including its derived
       // excerpt); use it verbatim for the list and the full post for the editor.
@@ -738,7 +758,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             <div className="pane-empty">{t("session.empty")}</div>
           )}
           {settingsOpen && (
-            <SettingsModal onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />
+            <SettingsModal workspaceId={workspace.id} onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />
           )}
           {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
           {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}

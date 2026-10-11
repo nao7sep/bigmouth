@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
 import { useConfirm } from "./ConfirmHost";
@@ -8,13 +8,14 @@ import { OperationalResult } from "./OperationalResult";
 import { presentFailure } from "../util/presentFailure";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 interface NewPostModalProps {
   targets: Target[];
   supportedLanguages: string[];
   pubBatchSize: number;
   onClose: () => void;
-  onCreate: (target: string, language: string, sourceId?: string) => Promise<void> | void;
+  onCreate: (target: string, language: string, sourceId?: string, mayAdopt?: () => boolean) => Promise<void> | void;
 }
 
 function resolveLanguage(
@@ -34,6 +35,12 @@ export function NewPostModal({
   onCreate,
 }: NewPostModalProps) {
   const { t, text } = useI18n();
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
+  const current = useRef(true);
+  const creatingRef = useRef(false);
+  useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
+  const close = () => { if (!current.current) return; current.current = false; onClose(); };
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     resolveLanguage(undefined, supportedLanguages)
@@ -51,8 +58,10 @@ export function NewPostModal({
     sourceId !== "";
 
   const handleRequestClose = async () => {
+    if (!current.current) return;
+    if (creatingRef.current) { if (storagePending) close(); return; }
     if (!isDirty) {
-      onClose();
+      close();
       return;
     }
     const ok = await confirm({
@@ -62,7 +71,7 @@ export function NewPostModal({
       cancelLabel: t("common.keepEditing"),
       danger: true,
     });
-    if (ok) onClose();
+    if (ok && current.current) close();
   };
 
   const picker = usePostPicker(pubBatchSize);
@@ -77,6 +86,7 @@ export function NewPostModal({
   };
 
   const handleCreate = async () => {
+    if (creatingRef.current || storagePending || !current.current) return;
     if (!hasTargets) {
       setCreateError(message("newPost.noTargets"));
       return;
@@ -94,24 +104,26 @@ export function NewPostModal({
       return;
     }
 
+    creatingRef.current = true;
     setCreating(true);
     setCreateError(null);
     try {
-      await onCreate(selectedTarget, selectedLanguage, sourceId || undefined);
+      await onCreate(selectedTarget, selectedLanguage, sourceId || undefined, () => current.current);
     } catch (err) {
-      setCreateError(presentFailure(
-        message("newPost.createFailed"),
-        "renderer: post creation failed",
-        err,
-      ));
+      const failure = presentFailure(message(current.current ? "newPost.createFailed" : "app.storageChangeFailed"), "renderer: post creation failed", err);
+      if (current.current) setCreateError(failure);
+      else reportStorageResult(failure);
     } finally {
-      setCreating(false);
+      creatingRef.current = false;
+      if (current.current) setCreating(false);
     }
   };
 
   return (
-    <ModalShell title={t("left.newPost")} onClose={() => void handleRequestClose()} width={440}>
+    <ModalShell title={t("left.newPost")} onClose={() => void handleRequestClose()} width={440} closeDisabled={creating && !storagePending}>
       <div className="modal-body">
+        <StoragePendingNotice />
+        <fieldset disabled={creating} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="form-field">
           <label className="form-label">{t("newPost.target")}</label>
           {hasTargets ? (
@@ -183,6 +195,7 @@ export function NewPostModal({
             />
           )}
         </div>
+        </fieldset>
         {createError && (
           <OperationalResult severity="error" className="modal-result">
             {text(createError)}
@@ -190,13 +203,13 @@ export function NewPostModal({
         )}
       </div>
       <div className="modal-footer">
-        <button className="btn-action" onClick={() => void handleRequestClose()}>
-          {t("common.cancel")}
+        <button className="btn-action" onClick={() => void handleRequestClose()} disabled={creating && !storagePending}>
+          {creating && storagePending ? t("common.close") : t("common.cancel")}
         </button>
         <button
           className="btn-primary"
           onClick={handleCreate}
-          disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
+          disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating || storagePending}
         >
           {creating ? t("newPost.creating") : t("newPost.create")}
         </button>

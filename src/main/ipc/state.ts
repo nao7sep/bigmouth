@@ -1,11 +1,19 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 import type { UiState } from "@shared/types";
 import { getUiState, updateUiState } from "../storageAccess.js";
+import { storageOwner } from "../storageOwner.js";
 import { info } from "../core/services/logger.js";
 
 export function registerStateHandlers(): void {
+  ipcMain.handle(CHANNELS.getStoragePending, () => storageOwner.storagePending());
+  storageOwner.onStoragePending((pending) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.webContents.isDestroyed()) window.webContents.send(CHANNELS.storagePendingChanged, pending);
+    }
+  });
+
   ipcMain.handle(CHANNELS.getUiState, async () => await getUiState());
 
   ipcMain.handle(CHANNELS.updateUiState, async (_event, patch: Partial<UiState>) => {

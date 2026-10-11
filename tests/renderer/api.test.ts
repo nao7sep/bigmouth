@@ -151,10 +151,11 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.updateWorkspace).toHaveBeenCalledWith("w1", { name: "New" });
     });
 
-    it("deleteWorkspace forwards the id", () => {
+    it("deleteWorkspace forwards the id and committed cleanup result", async () => {
       const b = bridge();
+      b.deleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
       installBridge(b);
-      void deleteWorkspace("w1");
+      await expect(deleteWorkspace("w1")).resolves.toEqual({ keyCleanupIncomplete: true });
       expect(b.deleteWorkspace).toHaveBeenCalledWith("w1");
     });
 

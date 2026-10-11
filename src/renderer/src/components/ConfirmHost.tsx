@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { presentFailure } from "../util/presentFailure";
 import { message, type Message } from "@shared/i18n/translate";
+import { useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 export interface ConfirmOptions {
   title?: string;
@@ -10,6 +11,7 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  failureMessage?: Message;
   // Optional async action run when the user clicks confirm. If it rejects, the
   // dialog STAYS OPEN and shows the error (busy while running); the returned
   // promise resolves true only once it succeeds. Without it, confirm resolves
@@ -35,6 +37,8 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
  * is therefore the topmost layer in the modal stack and paints on top.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Message | null>(null);
@@ -45,20 +49,22 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   // The live queue, mirrored to a ref so the unmount cleanup can settle whatever
   // is still pending without re-subscribing on every queue change.
   const queueRef = useRef<ConfirmRequest[]>([]);
-  queueRef.current = queue;
   useEffect(
     () => () => {
       // On teardown (host unmount / app quit / OS shutdown) every pending dialog
       // promise must settle, through the cancel path, so no caller is left
       // awaiting forever (modal-dialog-conventions: promises always settle).
       for (const request of queueRef.current) request.resolve(false);
+      queueRef.current = [];
     },
     [],
   );
 
   const confirm = useCallback<ConfirmFn>((options) => {
     return new Promise<boolean>((resolve) => {
-      setQueue((current) => [...current, { ...options, resolve }]);
+      const next = [...queueRef.current, { ...options, resolve }];
+      queueRef.current = next;
+      setQueue(next);
     });
   }, []);
 
@@ -68,14 +74,16 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setBusy(false);
     setError(null);
     runningRef.current = false;
-    setQueue((current) => current.slice(1));
+    const next = queueRef.current.slice(1);
+    queueRef.current = next;
+    setQueue(next);
   }, []);
 
   const head = queue[0];
 
   const handleConfirm = useCallback(() => {
     const request = head;
-    if (!request || runningRef.current) return;
+    if (!request || queueRef.current[0] !== request || runningRef.current || (storagePending && request.onConfirm)) return;
 
     if (!request.onConfirm) {
       request.resolve(true);
@@ -89,28 +97,28 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         await request.onConfirm!();
+        if (queueRef.current[0] !== request) return;
         request.resolve(true);
         dequeue();
       } catch (err) {
         // The action failed: keep the dialog open, surface the reason, and clear
         // busy so the user can retry or cancel. The promise stays unsettled.
-        setError(presentFailure(
-          message("confirm.failed"),
-          "renderer: confirmed action failed",
-          err,
-        ));
+        const stillShown = queueRef.current[0] === request;
+        const failure = presentFailure(request.failureMessage ?? message(stillShown ? "confirm.failed" : "app.storageChangeFailed"), "renderer: confirmed action failed", err);
+        if (!stillShown) { reportStorageResult(failure); return; }
+        setError(failure);
         setBusy(false);
         runningRef.current = false;
       }
     })();
-  }, [head, dequeue]);
+  }, [head, dequeue, reportStorageResult, storagePending]);
 
   const handleCancel = useCallback(() => {
     const request = head;
-    if (!request || runningRef.current) return;
+    if (!request || queueRef.current[0] !== request || (runningRef.current && !storagePending)) return;
     request.resolve(false);
     dequeue();
-  }, [head, dequeue]);
+  }, [head, dequeue, storagePending]);
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -123,6 +131,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           cancelLabel={head.cancelLabel}
           danger={head.danger}
           busy={busy}
+          pending={storagePending && Boolean(head.onConfirm)}
           error={error}
           onConfirm={handleConfirm}
           onCancel={handleCancel}

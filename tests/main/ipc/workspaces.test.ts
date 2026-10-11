@@ -10,20 +10,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHANNELS } from "@shared/ipc";
-import type { Workspace } from "@shared/types";
+import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
 vi.mock("@main/storageAccess.js", async () => {
   const workspaceStore = await import("@main/core/services/workspaceStore.js");
   const postStore = await import("@main/core/services/postStore.js");
+  const { storageTasks } = await import("@main/storageTasks.js");
   return {
     listWorkspaces: async (...args: Parameters<typeof workspaceStore.listWorkspaces>) => workspaceStore.listWorkspaces(...args),
     getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
     openOrCreateWorkspace: async (...args: Parameters<typeof workspaceStore.openOrCreateWorkspace>) => workspaceStore.openOrCreateWorkspace(...args),
     suggestWorkspaceLocation: async (...args: Parameters<typeof workspaceStore.suggestWorkspaceLocation>) => workspaceStore.suggestWorkspaceLocation(...args),
     updateWorkspace: async (...args: Parameters<typeof workspaceStore.updateWorkspace>) => workspaceStore.updateWorkspace(...args),
-    deleteWorkspace: async (...args: Parameters<typeof workspaceStore.deleteWorkspace>) => workspaceStore.deleteWorkspace(...args),
+    deleteWorkspace: async (...args: Parameters<typeof storageTasks.deleteWorkspace>) => storageTasks.deleteWorkspace(...args),
     clearCache: async (...args: Parameters<typeof postStore.clearCache>) => postStore.clearCache(...args),
   };
 });
@@ -71,6 +72,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   for (const dir of tempDirs.splice(0)) {
@@ -164,8 +166,8 @@ describe("workspace IPC handlers", () => {
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
-    const result = (await invoke<void>(CHANNELS.deleteWorkspace, ws.id));
-    expect(result).toBeUndefined();
+    const result = (await invoke<WorkspaceDeleteResult>(CHANNELS.deleteWorkspace, ws.id));
+    expect(result).toEqual({});
     expect(listWorkspaces()).toHaveLength(0);
     // The shared secrets file is keyed by workspace id; deletion must take the
     // keys with it rather than orphan them.
@@ -174,5 +176,19 @@ describe("workspace IPC handlers", () => {
 
   it("throws 'Workspace not found' when deleting an unknown id", async () => {
     await expect(invoke(CHANNELS.deleteWorkspace, "nope")).rejects.toThrow(/not found/i);
+  });
+
+  it("returns the committed removal with a warning when stored key cleanup fails", async () => {
+    const ws = await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Keyed");
+    writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-disposable-key");
+    const rename = fs.renameSync;
+    vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
+      if (destination === getApiKeysPath()) throw Object.assign(new Error("key cleanup write refused"), { code: "EACCES" });
+      rename(source, destination);
+    });
+
+    await expect(invoke<WorkspaceDeleteResult>(CHANNELS.deleteWorkspace, ws.id)).resolves.toEqual({ keyCleanupIncomplete: true });
+    expect(await invoke<Workspace[]>(CHANNELS.listWorkspaces)).toEqual([]);
+    expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
   });
 });

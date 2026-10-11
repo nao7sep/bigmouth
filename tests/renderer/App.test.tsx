@@ -9,6 +9,8 @@ import { message } from "@shared/i18n/translate";
 // hydrated via getUiState and persisted via updateUiState.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getStoragePending: vi.fn().mockResolvedValue(false),
+  onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   listWorkspaces: vi.fn(),
   setActiveWorkspace: vi.fn(),
@@ -57,9 +59,13 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     activeWorkspaceId: string | null;
     onWorkspaceDeleted: (id: string) => boolean | Promise<boolean>;
     onWorkspaceUpdated: (ws: Workspace) => void;
+    onWorkspaceRemovalCompleted: (ws: Workspace, result: { keyCleanupIncomplete?: boolean }) => void;
+    onWorkspaceRemovalFailed: (ws: Workspace) => void;
+    reloadVersion: number;
     initialLoadError?: { key: string } | null;
   }) => (
     <div data-testid="ws-modal" data-dismissable={String(props.dismissable)} data-load-error={props.initialLoadError?.key ?? ""}>
+      <span data-testid="ws-modal-reload">{props.reloadVersion}</span>
       <span data-testid="ws-modal-active">{props.activeWorkspaceId ?? "none"}</span>
       <button
         data-testid="ws-modal-select"
@@ -67,6 +73,9 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
       >
         select
       </button>
+      <button data-testid="ws-modal-select-same" onClick={() => void props.onSelect({ id: "ws1", name: "Alpha", dataDirectory: "/d/a" })}>select-same</button>
+      <button data-testid="ws-modal-removal-completed" onClick={() => props.onWorkspaceRemovalCompleted({ id: "ws1", name: "Alpha", dataDirectory: "/d/a" }, { keyCleanupIncomplete: true })}>completed</button>
+      <button data-testid="ws-modal-removal-failed" onClick={() => void props.onWorkspaceRemovalFailed({ id: "ws1", name: "Alpha", dataDirectory: "/d/a" })}>failed</button>
       <button data-testid="ws-modal-close" onClick={props.onClose}>
         close
       </button>
@@ -113,7 +122,10 @@ vi.mock("@renderer/components/SetupModal", () => ({
   ),
 }));
 
-import { App } from "@renderer/App";
+import { App as AppContent } from "@renderer/App";
+import { StoragePendingProvider } from "@renderer/StoragePending";
+// Match production ownership while keeping the heavy confirm child mocked.
+function App() { return <StoragePendingProvider><AppContent /></StoragePendingProvider>; }
 import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
 
 const mockList = vi.mocked(listWorkspaces);
@@ -507,4 +519,99 @@ describe("App active-workspace rename", () => {
     // path ran without tearing anything down.
     expect(getByTestId("session-ws").textContent).toBe("ws1");
   });
+});
+
+
+it("does not close a reopened workspace picker when an older preference save settles", async () => {
+  let finish!: (state: UiState) => void;
+  mockUpdateUiState.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const view = await renderApp();
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select")); });
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { finish(uiState("ws2")); });
+  expect(view.getByTestId("ws-modal")).toBeTruthy();
+});
+
+it("retains active removal cleanup warnings and reloads the surviving picker", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  fireEvent.click(view.getByTestId("ws-modal-removal-completed"));
+  expect(view.getByRole("status").textContent).toContain('"Alpha" was removed from the workspace list');
+  expect(view.getByTestId("ws-modal-reload").textContent).toBe("1");
+});
+
+it("does not restore failed active removal over a newer selected workspace", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select")); });
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-removal-failed")); });
+  expect(view.getByTestId("session-ws").textContent).toBe("ws2");
+});
+
+
+it("retires a workspace reselected while its committed removal was still pending", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select-same")); });
+  expect(view.getByTestId("session-ws").textContent).toBe("ws1");
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-removal-completed")); });
+  expect(view.queryByTestId("session")).toBeNull();
+  expect(view.getByTestId("ws-modal-active").textContent).toBe("none");
+  expect(mockSetActive).toHaveBeenLastCalledWith("");
+  expect(mockUpdateUiState).toHaveBeenLastCalledWith({ activeWorkspaceId: "" });
+});
+
+it("invalidates a removed workspace selection still awaiting the newer session's flush", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select")); });
+  fireEvent.click(view.getByTestId("session-switch"));
+  let flushed!: (value: boolean) => void;
+  sessionFlush.mockImplementation(() => new Promise((resolve) => { flushed = resolve; }));
+  fireEvent.click(view.getByTestId("ws-modal-select-same"));
+  fireEvent.click(view.getByTestId("ws-modal-removal-completed"));
+  await act(async () => { flushed(true); });
+  expect(view.getByTestId("session-ws").textContent).toBe("ws2");
+  expect(view.getByTestId("ws-modal-active").textContent).toBe("ws2");
+  expect(mockSetActive).toHaveBeenLastCalledWith("ws2");
+});
+
+it("preserves a different workspace selected before removal completion", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select")); });
+  fireEvent.click(view.getByTestId("session-switch"));
+  const writes = mockUpdateUiState.mock.calls.length;
+  fireEvent.click(view.getByTestId("ws-modal-removal-completed"));
+  expect(view.getByTestId("session-ws").textContent).toBe("ws2");
+  expect(mockUpdateUiState).toHaveBeenCalledTimes(writes);
+});
+
+it("retires removed active A while preserving an in-flight selection of B", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  const view = await renderApp();
+  fireEvent.click(view.getByTestId("session-switch"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-delete-active")); });
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select-same")); });
+  fireEvent.click(view.getByTestId("session-switch"));
+  let flushed!: (value: boolean) => void;
+  sessionFlush.mockImplementation(() => new Promise((resolve) => { flushed = resolve; }));
+  fireEvent.click(view.getByTestId("ws-modal-select"));
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-removal-completed")); });
+  expect(view.queryByTestId("session")).toBeNull();
+  await act(async () => { flushed(true); });
+  expect(view.getByTestId("session-ws").textContent).toBe("ws2");
+  expect(mockUpdateUiState).toHaveBeenLastCalledWith({ activeWorkspaceId: "ws2" });
 });

@@ -24,12 +24,14 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useRadioGroup } from "../hooks/useRadioGroup";
 import { CheckIcon, ChevronLeftIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
+import { useStoragePending, useStorageResultReporter } from "../StoragePending";
+import type { MessageKey } from "@shared/i18n/catalogues";
 
 interface CenterPaneProps {
   workspaceId: string;
   postId: string;
   onPostUpdated: (result: PostMutationResult) => void;
-  onPostDeleted: (id: string, result: PostDeleteResult) => void;
+  onPostDeleted: (id: string, result: PostDeleteResult) => boolean | void;
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
   onExport: () => void;
@@ -68,6 +70,22 @@ export function CenterPane({
   editorRef,
 }: CenterPaneProps) {
   const { t, text } = useI18n();
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
+  const mutationRef = useRef(false);
+  const [mutating, setMutating] = useState(false);
+  const beginMutation = () => {
+    if (mutationRef.current || storagePending || !mountedRef.current) return false;
+    mutationRef.current = true;
+    setMutating(true);
+    return true;
+  };
+  const finishMutation = () => { mutationRef.current = false; if (mountedRef.current) setMutating(false); };
+  const mutationFailure = (key: MessageKey, diagnostic: string, error: unknown, detail: Record<string, unknown>) => {
+    const failure = presentFailure(message(key), diagnostic, error, detail);
+    if (mountedRef.current) setStatusError(failure);
+    else reportStorageResult(failure);
+  };
   const [post, setPost] = useState<Post | null>(null);
   const [content, setContent] = useState("");
   const [statusError, setStatusError] = useState<Message | null>(null);
@@ -176,6 +194,7 @@ export function CenterPane({
   };
 
   const applyStatusChange = async (newStatus: PostStatus) => {
+    if (!beginMutation()) return;
     try {
       setStatusError(null);
       // No edit needs a renderer-side flush: the main-process store writes its
@@ -188,20 +207,15 @@ export function CenterPane({
       }
 
       const updated = await changePostStatus(postId, newStatus, workspaceId);
-      setPost(updated);
+      if (mountedRef.current) setPost(updated);
       onPostUpdated(updated);
     } catch (err) {
-      setStatusError(presentFailure(
-        message("center.statusFailed"),
-        "renderer: post status change failed",
-        err,
-        { postId, newStatus },
-      ));
-    }
+      mutationFailure("center.statusFailed", "renderer: post status change failed", err, { postId, newStatus });
+    } finally { finishMutation(); }
   };
 
   const handleStatusChange = (newStatus: PostStatus) => {
-    if (!post || post.frontMatter.status === newStatus) return;
+    if (!post || mutationRef.current || storagePending || post.frontMatter.status === newStatus) return;
     // Only published and retired hold a publication time, so moving a post
     // that has one to any other status clears it, and a later publication is
     // a new one. Warn before it is lost.
@@ -222,6 +236,7 @@ export function CenterPane({
   };
 
   const handleLockChange = async (locked: boolean) => {
+    if (!beginMutation()) return;
     try {
       setStatusError(null);
       // A Metadata tab value the store refused would be left out of the
@@ -231,16 +246,11 @@ export function CenterPane({
         return;
       }
       const updated = await setPostLocked(postId, locked, workspaceId);
-      setPost(updated);
+      if (mountedRef.current) setPost(updated);
       onPostUpdated(updated);
     } catch (err) {
-      setStatusError(presentFailure(
-        message(locked ? "center.lockFailed" : "center.unlockFailed"),
-        "renderer: post lock change failed",
-        err,
-        { postId, locked },
-      ));
-    }
+      mutationFailure(locked ? "center.lockFailed" : "center.unlockFailed", "renderer: post lock change failed", err, { postId, locked });
+    } finally { finishMutation(); }
   };
 
   // Status switcher: a manual-activation radiogroup, so arrowing only moves the
@@ -259,7 +269,7 @@ export function CenterPane({
     // so two fast clicks queued two confirms: the first deleted the post and
     // moved the selection, then the second asked to delete a post that was
     // already gone and ran deletePost on the stale id from an unmounted pane.
-    if (deletingRef.current) return;
+    if (deletingRef.current || mutationRef.current || storagePending) return;
     deletingRef.current = true;
     try {
       await runDeleteConfirm();
@@ -291,17 +301,14 @@ export function CenterPane({
     });
     if (!ok || !mountedRef.current) return;
 
+    if (!beginMutation()) return;
     try {
       const result = await deletePost(postId, workspaceId);
-      onPostDeleted(postId, result);
+      const sessionAdopted = onPostDeleted(postId, result);
+      if (sessionAdopted === false && result.cleanupIncomplete) reportStorageResult(message("session.deleteCleanupIncomplete"), "warning");
     } catch (err) {
-      setStatusError(presentFailure(
-        message("center.deleteFailed"),
-        "renderer: post deletion failed",
-        err,
-        { postId },
-      ));
-    }
+      mutationFailure("center.deleteFailed", "renderer: post deletion failed", err, { postId });
+    } finally { finishMutation(); }
   };
 
   const [counts, setCounts] = useState<ContentCounts>({
@@ -326,35 +333,27 @@ export function CenterPane({
   const handleCopyContent = () => copyContent(content, "content");
 
   const handleSetSource = async (sourceId: string) => {
+    if (!beginMutation()) return;
     try {
       const updated = await updatePost(postId, { frontMatter: { sourceId } }, workspaceId);
-      setPost(updated);
+      if (mountedRef.current) setPost(updated);
       onPostUpdated(updated);
       setStatusError(null);
     } catch (err) {
-      setStatusError(presentFailure(
-        message("center.linkFailed"),
-        "renderer: source post link failed",
-        err,
-        { postId, sourceId },
-      ));
-    }
+      mutationFailure("center.linkFailed", "renderer: source post link failed", err, { postId, sourceId });
+    } finally { finishMutation(); }
   };
 
   const handleClearSource = async () => {
+    if (!beginMutation()) return;
     try {
       const updated = await updatePost(postId, { frontMatter: { sourceId: null } }, workspaceId);
-      setPost(updated);
+      if (mountedRef.current) setPost(updated);
       onPostUpdated(updated);
       setStatusError(null);
     } catch (err) {
-      setStatusError(presentFailure(
-        message("center.unlinkFailed"),
-        "renderer: source post unlink failed",
-        err,
-        { postId },
-      ));
-    }
+      mutationFailure("center.unlinkFailed", "renderer: source post unlink failed", err, { postId });
+    } finally { finishMutation(); }
   };
 
   if (!post) {
@@ -391,6 +390,7 @@ export function CenterPane({
               type="button"
               className={`status-radio${fm.status === value ? " active" : ""}`}
               {...getRadioProps(value)}
+              disabled={mutating || storagePending}
             >
               {t(POST_STATUS_LABELS[value])}
             </button>
@@ -402,6 +402,7 @@ export function CenterPane({
           aria-pressed={locked}
           title={t("center.lockHint")}
           onClick={() => void handleLockChange(!locked)}
+          disabled={mutating || storagePending}
         >
           {t("center.locked")}
         </button>
@@ -418,15 +419,15 @@ export function CenterPane({
             >
               {t("center.source")}
             </button>
-            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
+            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating || storagePending}>
               {t("center.change")}
             </button>
-            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked}>
+            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked || mutating || storagePending}>
               {t("newPost.unlink")}
             </button>
           </>
         ) : (
-          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked}>
+          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating || storagePending}>
             {t("center.linkSource")}
           </button>
         )}
@@ -443,7 +444,7 @@ export function CenterPane({
         <button className="btn-toolbar" onClick={onExport}>
           {t("export.title")}
         </button>
-        <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()}>
+        <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()} disabled={mutating || storagePending}>
           {t("common.delete")}
         </button>
       </div>

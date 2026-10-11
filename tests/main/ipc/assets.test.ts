@@ -16,6 +16,8 @@ import path from "node:path";
 import { CHANNELS, type AssetDeleteResult, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
 import type { AssetListing, AssetMeta, Post, Target } from "@shared/types";
 
+const transport = vi.hoisted(() => ({ afterPublication: null as null | (() => Promise<void>) }));
+
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
 vi.mock("@main/storageAccess.js", async () => {
@@ -34,20 +36,27 @@ vi.mock("@main/storageAccess.js", async () => {
     listByStatus: async (...args: Parameters<typeof post.listByStatus>) => post.listByStatus(...args),
     countByStatus: async (...args: Parameters<typeof post.countByStatus>) => post.countByStatus(...args),
     getPost: async (...args: Parameters<typeof post.getPost>) => post.getPost(...args),
-    changeStatus: async (...args: Parameters<typeof post.changeStatus>) => post.changeStatus(...args),
-    setLocked: async (...args: Parameters<typeof post.setLocked>) => post.setLocked(...args),
+    changeStatus: async (...args: Parameters<typeof storageTasks.changeStatus>) => storageTasks.changeStatus(...args),
+    setLocked: async (...args: Parameters<typeof storageTasks.setLocked>) => storageTasks.setLocked(...args),
     deletePost: async (...args: Parameters<typeof post.deletePost>) => post.deletePost(...args),
     rebuildIndex: async (...args: Parameters<typeof post.rebuildIndex>) => post.rebuildIndex(...args),
     postExists: async (...args: Parameters<typeof post.postExists>) => post.postExists(...args),
     listReferrers: async (...args: Parameters<typeof post.listReferrers>) => post.listReferrers(...args),
-    getPostSummary: async (...args: Parameters<typeof post.getPostSummary>) => post.getPostSummary(...args),
     queueContent: async (...args: Parameters<typeof post.queueContent>) => post.queueContent(...args),
     queueMetadata: async (...args: Parameters<typeof post.queueMetadata>) => post.queueMetadata(...args),
     recordAssetChange: async (...args: Parameters<typeof post.recordAssetChange>) => post.recordAssetChange(...args),
     createPost: async (...args: Parameters<typeof storageTasks.createPost>) => storageTasks.createPost(...args),
     updatePost: async (...args: Parameters<typeof storageTasks.updatePost>) => storageTasks.updatePost(...args),
-    saveAssetFile: async (...args: Parameters<typeof storageTasks.saveAssetFile>) => storageTasks.saveAssetFile(...args),
-    deleteAsset: async (...args: Parameters<typeof storageTasks.deleteAsset>) => storageTasks.deleteAsset(...args),
+    saveAssetFile: async (...args: Parameters<typeof storageTasks.saveAssetFile>) => {
+      const result = storageTasks.saveAssetFile(...args);
+      await transport.afterPublication?.();
+      return result;
+    },
+    deleteAsset: async (...args: Parameters<typeof storageTasks.deleteAsset>) => {
+      const result = storageTasks.deleteAsset(...args);
+      await transport.afterPublication?.();
+      return result;
+    },
     readSourceMetadata: async (...args: Parameters<typeof storageTasks.readSourceMetadata>) => storageTasks.readSourceMetadata(...args),
     fileExists: async (...args: Parameters<typeof storageTasks.fileExists>) => storageTasks.fileExists(...args),
     listAssets: async (...args: Parameters<typeof asset.listAssets>) => asset.listAssets(...args),
@@ -123,6 +132,7 @@ async function createDraft(): Promise<string> {
 }
 
 beforeEach(() => {
+  transport.afterPublication = null;
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
   process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
@@ -446,6 +456,36 @@ describe("an asset change whose record could not be saved", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(next);
   }
+
+  it.each(["upload", "delete"])("owns the post timestamp before a delayed %s reply reaches IPC", async (operation) => {
+    const id = await createDraft();
+    if (operation === "delete") await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+    laterClock();
+    let release!: () => void;
+    let published!: () => void;
+    const publication = new Promise<void>((resolve) => { published = resolve; });
+    const heldReply = new Promise<void>((resolve) => { release = resolve; });
+    transport.afterPublication = () => { published(); return heldReply; };
+    const pending = operation === "upload"
+      ? invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))
+      : invokeAsync(CHANNELS.deleteAsset, wsId, id, "a.png");
+    try {
+      await publication;
+      const publishedTime = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
+      expect(publishedTime).not.toBe(before);
+      // A caller waiting longer cannot move the timestamp a second time.
+      vi.setSystemTime(Date.now() + 1000);
+      release();
+      await pending;
+      expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe(publishedTime);
+    } finally {
+      release();
+      await pending;
+      transport.afterPublication = null;
+      vi.useRealTimers();
+    }
+  });
 
   it("keeps an added file and says its details were not saved", async () => {
     const id = (await createDraft());

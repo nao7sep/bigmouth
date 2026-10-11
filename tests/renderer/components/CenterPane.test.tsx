@@ -14,6 +14,8 @@ const failedListeners = vi.hoisted(
 );
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getStoragePending: vi.fn().mockResolvedValue(false),
+  onStoragePendingChanged: vi.fn(() => () => {}),
   getPost: vi.fn(),
   updatePost: vi.fn(),
   changePostStatus: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock("@renderer/components/SourcePickerModal", () => ({
 }));
 
 import { CenterPane } from "@renderer/components/CenterPane";
+import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import {
   getPost,
@@ -652,4 +655,21 @@ describe("CenterPane delete", () => {
     await waitFor(() => expect(screen.queryByText("Delete this post? This cannot be undone.")).toBeNull());
     expect(mockDeletePost).not.toHaveBeenCalled();
   });
+});
+
+
+it("keeps a delayed status failure visible after leaving its post", async () => {
+  let fail!: (error: Error) => void;
+  mockChangeStatus.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject; }));
+  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+    {shown && <CenterPane {...baseProps()} />}
+    <StoragePendingResults />
+  </ConfirmProvider></StoragePendingProvider>;
+  const view = render(surface(true));
+  await waitFor(() => expect(view.container.querySelector(".center-loading")).toBeNull());
+  fireEvent.click(view.getByRole("radio", { name: "Verified" }));
+  await act(async () => { await Promise.resolve(); });
+  view.rerender(surface(false));
+  await act(async () => { fail(new Error("disk refused")); });
+  expect(view.getByRole("alert").textContent).toContain("The post status could not be changed");
 });

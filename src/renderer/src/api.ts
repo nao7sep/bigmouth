@@ -18,6 +18,7 @@ import type {
   ImagingOptions,
   UiState,
   Workspace,
+  WorkspaceDeleteResult,
   ImagingRelation,
   ImagingMood,
   ImagingLiteralness,
@@ -80,7 +81,7 @@ export function updateWorkspace(id: string, updates: { name: string }): Promise<
   return bridge().updateWorkspace(id, updates);
 }
 
-export function deleteWorkspace(id: string): Promise<void> {
+export function deleteWorkspace(id: string): Promise<WorkspaceDeleteResult> {
   return bridge().deleteWorkspace(id);
 }
 
@@ -114,6 +115,12 @@ export function pickWorkspaceDirectory(): Promise<string | null> {
   return bridge().pickDirectory();
 }
 
+/** A started user mutation exceeded its normal wait and still owns its result. */
+export function getStoragePending(): Promise<boolean> { return bridge().getStoragePending(); }
+export function onStoragePendingChanged(listener: (pending: boolean) => void): () => void {
+  return bridge().onStoragePendingChanged(listener);
+}
+
 // --- UI state (state.json) ---
 
 /** The persisted view state: side-pane intent widths + last active workspace id. */
@@ -140,16 +147,16 @@ export function saveAppSettings(settings: Partial<AppSettings>): Promise<AppSett
 
 // --- Posts ---
 
-export function listPosts(offsets: PostListOffsets = FIRST_PAGES, limit = 50): Promise<PostListResponse> {
-  return bridge().listPosts(requireWs(), offsets, limit);
+export function listPosts(offsets: PostListOffsets = FIRST_PAGES, limit = 50, workspaceId?: string): Promise<PostListResponse> {
+  return bridge().listPosts(requireWs(workspaceId), offsets, limit);
 }
 
 export function getPost(id: string, workspaceId?: string): Promise<Post> {
   return bridge().getPost(requireWs(workspaceId), id);
 }
 
-export function createPost(target: string, language: string, sourceId?: string): Promise<Post> {
-  return bridge().createPost(requireWs(), target, language, sourceId);
+export function createPost(target: string, language: string, sourceId?: string, workspaceId?: string): Promise<Post> {
+  return bridge().createPost(requireWs(workspaceId), target, language, sourceId);
 }
 
 export function queuePostContent(id: string, content: string, workspaceId?: string): void {
@@ -237,13 +244,13 @@ export function listReferrers(
   return bridge().listReferrers(requireWs(workspaceId), id);
 }
 
-export function rebuildPostIndex(): Promise<{
+export function rebuildPostIndex(workspaceId?: string): Promise<{
   count: number;
   skipped: number;
   duplicateSlugs: number;
   orphanedAssets: number;
 }> {
-  return bridge().rebuildPostIndex(requireWs());
+  return bridge().rebuildPostIndex(requireWs(workspaceId));
 }
 
 // --- Targets ---
@@ -259,8 +266,9 @@ export function saveTargets(targets: Target[], workspaceId?: string): Promise<Ta
 export function renameTarget(
   oldName: string,
   newName: string,
+  workspaceId?: string,
 ): Promise<TargetRenameResult> {
-  return bridge().renameTarget(requireWs(), oldName, newName);
+  return bridge().renameTarget(requireWs(workspaceId), oldName, newName);
 }
 
 // --- Settings ---
@@ -269,13 +277,13 @@ export function getSettings(workspaceId?: string): Promise<Settings> {
   return bridge().getSettings(requireWs(workspaceId));
 }
 
-export function saveSettings(settings: Partial<Settings>): Promise<Settings> {
-  return bridge().saveSettings(requireWs(), settings);
+export function saveSettings(settings: Partial<Settings>, workspaceId?: string): Promise<Settings> {
+  return bridge().saveSettings(requireWs(workspaceId), settings);
 }
 
 /** Null, or why some of the workspace's stored settings are not in use. */
-export function getConfigNotice(): Promise<Message | null> {
-  return bridge().getConfigNotice(requireWs());
+export function getConfigNotice(workspaceId?: string): Promise<Message | null> {
+  return bridge().getConfigNotice(requireWs(workspaceId));
 }
 
 // --- The Anthropic section ---
@@ -294,30 +302,30 @@ export function saveAnthropicSettings(
 
 // --- Generation prompts ---
 
-export function getGenerationPrompts(): Promise<GenerationPromptsData> {
-  return bridge().getGenerationPrompts(requireWs());
+export function getGenerationPrompts(workspaceId?: string): Promise<GenerationPromptsData> {
+  return bridge().getGenerationPrompts(requireWs(workspaceId));
 }
 
-export function getGenerationPromptDefaults(): Promise<GenerationPromptsData> {
-  return bridge().getGenerationPromptDefaults(requireWs());
+export function getGenerationPromptDefaults(workspaceId?: string): Promise<GenerationPromptsData> {
+  return bridge().getGenerationPromptDefaults(requireWs(workspaceId));
 }
 
-export function saveGenerationPrompts(data: GenerationPromptsData): Promise<GenerationPromptsData> {
-  return bridge().saveGenerationPrompts(requireWs(), data);
+export function saveGenerationPrompts(data: GenerationPromptsData, workspaceId?: string): Promise<GenerationPromptsData> {
+  return bridge().saveGenerationPrompts(requireWs(workspaceId), data);
 }
 
 // --- Analysis prompts ---
 
-export function listAnalysisPrompts(): Promise<AnalysisPrompt[]> {
-  return bridge().listAnalysisPrompts(requireWs());
+export function listAnalysisPrompts(workspaceId?: string): Promise<AnalysisPrompt[]> {
+  return bridge().listAnalysisPrompts(requireWs(workspaceId));
 }
 
-export function listAnalysisPromptDefaults(): Promise<AnalysisPrompt[]> {
-  return bridge().listAnalysisPromptDefaults(requireWs());
+export function listAnalysisPromptDefaults(workspaceId?: string): Promise<AnalysisPrompt[]> {
+  return bridge().listAnalysisPromptDefaults(requireWs(workspaceId));
 }
 
-export function saveAnalysisPrompts(prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]> {
-  return bridge().saveAnalysisPrompts(requireWs(), prompts);
+export function saveAnalysisPrompts(prompts: AnalysisPrompt[], workspaceId?: string): Promise<AnalysisPrompt[]> {
+  return bridge().saveAnalysisPrompts(requireWs(workspaceId), prompts);
 }
 
 // --- Assets ---

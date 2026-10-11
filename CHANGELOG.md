@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- External post identity and lock changes are checked before writing; buffered text is not saved into a replacement post or reported saved while its file is locked. Bulk target and source-link changes use the current files and preserve duplicate-file ownership.
+- A slow storage change stays pending until its result arrives. Its view can be left, its result stays with the original workspace, and attachment timestamps complete with the file change.
+- Removing a workspace remains complete if stored-key cleanup fails, with a warning about the key that could not be cleared. Reloading a development window cancels its previous AI requests.
 - Delayed save refusals still reach their fields during quitting, and stopping Analysis during preparation cancels before a provider call starts.
 - An external post edit is detected even when another post was saved afterward. Filtering a source-post picker keeps older pages reachable.
 - Interrupted attachment replacement no longer shows the previous file's upload details. Duplicate post files sharing an ID must be resolved before deleting a post or changing its attachments.

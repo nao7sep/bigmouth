@@ -34,6 +34,7 @@ describe("registerIpcHandlers", () => {
       CHANNELS.windowActivityChanged,
       CHANNELS.interfaceLanguageChanged,
       CHANNELS.recordsChanged,
+      CHANNELS.storagePendingChanged,
     ]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {

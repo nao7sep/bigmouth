@@ -14,6 +14,8 @@ import { settingsFieldErrors } from "@shared/settingsValidation";
 // the whole module so the dialog renders against in-memory fixtures.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getStoragePending: vi.fn().mockResolvedValue(false),
+  onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   saveAppSettings: vi.fn(),
   getSettings: vi.fn(),
@@ -47,6 +49,7 @@ vi.mock("@shared/timeZone", async (importActual) => {
 import { SettingsModal } from "@renderer/components/SettingsModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import * as api from "@renderer/api";
+import { StoragePendingContext } from "@renderer/StoragePending";
 
 const mock = {
   getAppSettings: vi.mocked(api.getAppSettings),
@@ -123,7 +126,7 @@ async function renderModal(ai?: AnthropicSettingsView) {
   const onSettingsChanged = vi.fn();
   const utils = render(
     <ConfirmProvider>
-      <SettingsModal onClose={onClose} onSettingsChanged={onSettingsChanged} />
+      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
     </ConfirmProvider>,
   );
   // Flush the loader Promise.all so the tabs + body render.
@@ -153,7 +156,7 @@ describe("SettingsModal — render and tab switching", () => {
     seedLoaders();
     const { getByText } = render(
       <ConfirmProvider>
-        <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     expect(getByText("Loading…")).toBeTruthy();
@@ -175,7 +178,7 @@ describe("SettingsModal — render and tab switching", () => {
 
     const { getByText, getByRole, queryByRole } = render(
       <ConfirmProvider>
-        <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -395,7 +398,7 @@ describe("SettingsModal — Save flow (Anthropic section)", () => {
       endpoint: "https://api.anthropic.com",
       models: { analysis: "claude-opus-5-5", metadata: "claude-haiku-4-5", imagingPrompts: "claude-next-9" },
       thinking: { analysis: "max", metadata: "off", imagingPrompts: "adaptive" },
-    });
+    }, "ws1");
     expect(mock.saveSettings).not.toHaveBeenCalled();
     expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
     expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
@@ -416,7 +419,7 @@ describe("SettingsModal — Save flow (Anthropic section)", () => {
       await Promise.resolve();
     });
 
-    expect(mock.saveAnthropicSettings).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-new" }));
+    expect(mock.saveAnthropicSettings).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-new" }), "ws1");
   });
 
   it("says why stored keys cannot be used beside the key field", async () => {
@@ -795,7 +798,7 @@ describe("SettingsModal — Targets tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -832,7 +835,7 @@ describe("SettingsModal — Targets tab", () => {
     });
 
     // The originalName→newName diff drives a renameTarget before saveTargets.
-    expect(mock.renameTarget).toHaveBeenCalledWith("blog", "blog-renamed");
+    expect(mock.renameTarget).toHaveBeenCalledWith("blog", "blog-renamed", "ws1");
     expect(mock.saveTargets).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -938,7 +941,7 @@ describe("SettingsModal — Analysis tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -980,7 +983,7 @@ describe("SettingsModal — Generation tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -1061,14 +1064,78 @@ describe("SettingsModal — set writes and reset", () => {
     expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
     await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
     if (kind === "generation") {
-      expect(mock.saveGenerationPrompts).toHaveBeenCalledWith(genPrompts());
+      expect(mock.saveGenerationPrompts).toHaveBeenCalledWith(genPrompts(), "ws1");
       expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
     } else {
-      expect(mock.saveAnalysisPrompts).toHaveBeenCalledWith(prompts());
+      expect(mock.saveAnalysisPrompts).toHaveBeenCalledWith(prompts(), "ws1");
       expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
     }
     expect(mock.saveSettings).not.toHaveBeenCalled();
     expect(mock.saveTargets).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
   });
+});
+
+
+describe("SettingsModal — slow submitted save", () => {
+  it("allows leaving after storage reports pending and never closes a successor on settlement", async () => {
+    seedLoaders();
+    let finish!: (value: Settings) => void;
+    mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const onClose = vi.fn();
+    const onSettingsChanged = vi.fn();
+    const view = render(<ConfirmProvider><StoragePendingContext.Provider value={true}>
+      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+    </StoragePendingContext.Provider></ConfirmProvider>);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+    // Pending from another change prevents a new submission.
+    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={false}>
+      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+    </StoragePendingContext.Provider></ConfirmProvider>);
+    fireEvent.click(view.getByRole("button", { name: "Save" }));
+    view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={true}>
+      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+    </StoragePendingContext.Provider></ConfirmProvider>);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+it("finishes a dismissed multi-step settings intent against its original workspace", async () => {
+  const view = await renderModal();
+  let finish!: (settings: Settings) => void;
+  mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  mock.renameTarget.mockResolvedValue({ targets: targets(), postsUpdated: 0, postsSkipped: [] });
+  mock.saveTargets.mockResolvedValue([{ name: "renamed", defaultLanguage: "en", requiresMetadata: false }]);
+  fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+  const panel = openTab(view.getByRole, "Targets");
+  fireEvent.change(within(panel).getAllByRole("textbox")[0], { target: { value: "renamed" } });
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  view.unmount();
+  await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
+  expect(mock.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ postsPerLoad: 75 }), "ws1");
+  expect(mock.renameTarget).toHaveBeenCalledExactlyOnceWith("blog", "renamed", "ws1");
+  expect(mock.saveTargets).toHaveBeenCalledExactlyOnceWith([{ name: "renamed", defaultLanguage: "en", requiresMetadata: false }], "ws1");
+  expect(view.onClose).not.toHaveBeenCalled();
+});
+
+
+it("keeps Save owned when one submitted set fails before another settles", async () => {
+  const view = await renderModal();
+  let finish!: (settings: Settings) => void;
+  mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  mock.saveAppSettings.mockRejectedValue(new Error("app settings refused"));
+  fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+  fireEvent.click(view.getByRole("radio", { name: "Dark" }));
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect((view.getByRole("button", { name: "Saving…" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(view.queryByRole("alert")).toBeNull();
+  await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
+  expect(view.getByRole("alert").textContent).toContain("Settings could not be saved");
 });

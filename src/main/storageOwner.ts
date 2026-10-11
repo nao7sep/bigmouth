@@ -1,12 +1,21 @@
 import { Worker, MessageChannel, receiveMessageOnPort, type MessagePort } from "node:worker_threads";
 import type { ContentSaveEvent } from "./core/services/postStore.js";
 import type { StorageTasks } from "./storageTasks.js";
-import { AssetRecordError } from "./core/services/assetStore.js";
 import { DEBUG_LOG_FLAG } from "./core/services/logger.js";
 
 export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
 export const isAuthored = (name: StorageCommand) => ["queueContent", "queueMetadata", "queueWorkspaceContent", "queueWorkspaceMetadata"].includes(name);
+// These user mutations retain their logical result through actual settlement.
+// Their deadline ends the UI's normal wait through pending status, not a false
+// failure. Reads/startup and optional records/UI-state writes remain bounded.
+const mutationCommands = new Set<StorageCommand>([
+  "openOrCreateWorkspace", "updateWorkspace", "deleteWorkspace", "saveSettings",
+  "saveAnthropicSettings", "saveTargets", "saveAnalysisPrompts", "saveGenerationPrompts",
+  "rebuildIndex", "createPost", "updatePost", "changeStatus",
+  "setLocked", "deletePost", "renameTarget", "saveAssetFile", "deleteAsset", "saveAppSettings",
+]);
+const retainsSettlement = (name: StorageCommand) => mutationCommands.has(name);
 const isContent = (name: StorageCommand) => name === "queueContent" || name === "queueWorkspaceContent";
 // Requests that must still reach the worker after their caller stops waiting:
 // authored edits, and a cancelled quit's resumption of debounced writes.
@@ -16,7 +25,7 @@ export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; 
 export interface StorageFlushRequest { flush: true; edits: StorageRequest[]; signal: Int32Array; port: MessagePort }
 export type StorageReply =
   | { id: number; ok: true; value: unknown }
-  | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown; asset?: unknown } }
+  | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown } }
   | { event: "content-save"; value: ContentSaveEvent }
   | { event: "record-stored" }
   | { event: "flush-settled" };
@@ -46,6 +55,7 @@ interface Waiting {
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
   expired: boolean;
+  started: boolean;
 }
 
 // One post's held edits: its newest content, which replaces the whole text,
@@ -73,6 +83,7 @@ export class StorageOwner {
   // Requests taken out of the queue by a flush or finish, awaiting their replies.
   private delivering = new Map<number, Waiting>();
   private held = new Map<string, HeldEdits>();
+  private pendingListener: ((pending: boolean) => void) | null = null;
   private contentListener: ((event: ContentSaveEvent) => void) | null = null;
   private flushSettled: (() => void) | null = null;
   private recordListener: (() => void) | null = null;
@@ -84,6 +95,9 @@ export class StorageOwner {
     // a worker sees only the arguments it is given, never the app's own.
     return new Worker(new URL(module, import.meta.url), { argv: process.argv.filter((arg) => arg === DEBUG_LOG_FLAG) });
   }) {}
+
+  storagePending(): boolean { return this.active?.expired === true && retainsSettlement(this.active.request.name); }
+  onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
 
   onContentSave(listener: ((event: ContentSaveEvent) => void) | null): void { this.contentListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
@@ -107,9 +121,15 @@ export class StorageOwner {
 
   private wait(request: StorageRequest, resolve: (value: unknown) => void, reject: (error: Error) => void, boundMs: number): Waiting {
     const waiting: Waiting = {
-      request, resolve, reject, expired: false,
+      request, resolve, reject, expired: false, started: false,
       timer: setTimeout(() => {
         waiting.expired = true;
+        if (waiting.started && retainsSettlement(request.name)) {
+          // The mutation may already have published. Its real reply still owns
+          // completion work; the pending phase lets the user leave meanwhile.
+          this.pendingListener?.(true);
+          return;
+        }
         // Timeout ends the caller's wait. An active mutation still belongs to
         // this worker until its actual result settles; no successor runs. An
         // edit, or a cancelled quit's resumption, keeps its queue position so it
@@ -117,7 +137,9 @@ export class StorageOwner {
         if (!mustReachWorker(request.name)) this.queued = this.queued.filter((item) => item !== waiting);
         reject(isAuthored(request.name)
           ? new EditPendingError()
-          : new Error("Storage did not finish within its wait bound. Its outcome is still pending."));
+          : new Error(waiting.started || mustReachWorker(request.name)
+            ? "Storage did not finish within its wait bound. Its outcome is still pending."
+            : "Storage did not start within its wait bound. No operation was issued."));
       }, boundMs),
     };
     return waiting;
@@ -228,7 +250,10 @@ export class StorageOwner {
     if (!this.worker || this.failed) return null;
     this.closing = true;
     const queued = this.queued.splice(0);
-    for (const waiting of queued) this.delivering.set(waiting.request.id, waiting);
+    for (const waiting of queued) {
+      waiting.started = true;
+      this.delivering.set(waiting.request.id, waiting);
+    }
     const held = this.takeHeld();
     for (const request of held) this.delivering.set(request.id, this.delivery(request));
     const requests = [...held, ...queued.map((item) => item.request)].sort((a, b) => a.id - b.id);
@@ -285,6 +310,7 @@ export class StorageOwner {
     const waiting = this.queued.shift();
     if (!waiting) return;
     this.active = waiting;
+    waiting.started = true;
     try {
       if (!this.worker) {
         const worker = this.createWorker();
@@ -321,33 +347,34 @@ export class StorageOwner {
     // A timed-out authored edit was reported as held, not discarded. Its
     // eventual refusal still belongs to the field/save-status owner.
     if (reply.ok) {
-      if (!waiting.expired) waiting.resolve(reply.value);
+      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.resolve(reply.value);
       else if (isAuthored(waiting.request.name) && !isContent(waiting.request.name) && reply.value !== null) {
         this.heldFailureListener?.(waiting.request, reply.value);
       }
     } else {
       const data = reply.error;
-      const error = data.name === "AssetRecordError" && data.asset
-        ? new AssetRecordError(data.asset as ConstructorParameters<typeof AssetRecordError>[0], data.cause)
-        : new Error(data.message, { cause: data.cause });
+      const error = new Error(data.message, { cause: data.cause });
       error.name = data.name;
       error.stack = data.stack;
-      if (!waiting.expired) waiting.reject(error);
+      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.reject(error);
       else if (isAuthored(waiting.request.name)) this.heldFailureListener?.(waiting.request, error);
     }
+    if (waiting.expired && waiting.started && retainsSettlement(waiting.request.name)) this.pendingListener?.(false);
     this.dispatch();
   }
 
   private failWaiting(error: Error): void {
     const waiting = [this.active, ...this.queued, ...this.delivering.values()];
+    const wasPending = this.storagePending();
     this.delivering.clear();
     this.active = null;
     this.queued = [];
     for (const item of waiting) {
       if (!item) continue;
       clearTimeout(item.timer);
-      if (!item.expired) item.reject(error);
+      if (!item.expired || (item.started && retainsSettlement(item.request.name))) item.reject(error);
     }
+    if (wasPending) this.pendingListener?.(false);
   }
 }
 

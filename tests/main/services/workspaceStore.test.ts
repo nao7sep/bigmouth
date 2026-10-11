@@ -542,15 +542,15 @@ describe("deleteWorkspace", () => {
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
-    expect(deleteWorkspace(ws.id)).toBe(true);
+    expect(deleteWorkspace(ws.id)).toEqual({});
     expect(getWorkspace(ws.id)).toBeUndefined();
     // The shared secrets file is keyed by workspace id; deletion must take its
     // keys with it rather than orphan them.
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(false);
   });
 
-  it("returns false for an unknown workspace id", () => {
-    expect(deleteWorkspace("nope")).toBe(false);
+  it("returns null for an unknown workspace id", () => {
+    expect(deleteWorkspace("nope")).toBeNull();
   });
 });
 

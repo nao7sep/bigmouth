@@ -5,6 +5,8 @@ import type { AssetMeta } from "@shared/types";
 // AssetsTab reaches the backend through these four api calls.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
+  getStoragePending: vi.fn().mockResolvedValue(false),
+  onStoragePendingChanged: vi.fn(() => () => {}),
   listAssets: vi.fn(),
   uploadAsset: vi.fn(),
   deleteAsset: vi.fn(),
@@ -17,6 +19,7 @@ vi.mock("@renderer/api", () => ({
 import { AssetsTab } from "@renderer/components/AssetsTab";
 import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
 import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
+import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
 import { carryingText } from "@shared/i18n/carriedMessage";
@@ -663,4 +666,23 @@ describe("AssetsTab locked", () => {
     expect(getByText("Assets are locked.")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
+});
+
+
+it("keeps delayed upload partial-success warnings after leaving Assets", async () => {
+  mockListAssets.mockResolvedValue({ assets: [] });
+  let finish!: (value: { asset: AssetMeta; unsaved: Array<"details" | "modifiedTime"> }) => void;
+  mockUploadAsset.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+    {shown && <AssetsTab workspaceId="w1" postId="p1" onInsertAtCursor={vi.fn()} maxUploadMb={5} />}
+    <StoragePendingResults />
+  </ConfirmProvider></StoragePendingProvider>;
+  const view = render(surface(true));
+  await act(async () => { await Promise.resolve(); });
+  fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [makeFile("pic.png")] } });
+  await act(async () => { await Promise.resolve(); });
+  view.rerender(surface(false));
+  await act(async () => { finish({ asset: asset(), unsaved: ["details", "modifiedTime"] }); });
+  expect(view.getAllByRole("status").map((node) => node.textContent).join(" ")).toContain("pic.png");
+  expect(view.getAllByRole("status")).toHaveLength(3);
 });

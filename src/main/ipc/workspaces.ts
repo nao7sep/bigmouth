@@ -3,12 +3,10 @@ import { ipcMain } from "electron";
 import { CHANNELS } from "@shared/ipc";
 import {
   listWorkspaces,
-  getWorkspace,
   openOrCreateWorkspace,
   suggestWorkspaceLocation,
   updateWorkspace,
   deleteWorkspace,
-  clearCache,
 } from "../storageAccess.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 
@@ -64,15 +62,12 @@ export function registerWorkspaceHandlers(): void {
   });
 
   ipcMain.handle(CHANNELS.deleteWorkspace, async (_event, id: string) => {
-    // Capture the data directory before removal so the derived in-memory index is
-    // evicted — re-opening the same folder later must not serve a stale cache.
-    const removed = await getWorkspace(id);
     const deleted = await deleteWorkspace(id);
-    if (!deleted) {
+    if (deleted === null) {
       warn("workspace delete failed", { workspaceId: id, reason: "not-found" });
       throw new Error("Workspace not found");
     }
-    if (removed) await clearCache(removed.dataDirectory);
     info("workspace removed from registry", { workspaceId: id });
+    return deleted;
   });
 }

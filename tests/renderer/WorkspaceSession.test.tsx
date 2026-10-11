@@ -221,31 +221,18 @@ vi.mock("@renderer/components/RightPane", () => {
 });
 
 function modalMock(testid: string) {
-  return (p: AnyProps) => (
-    <div data-testid={testid}>
-      <button data-testid={`${testid}-close`} onClick={() => (p.onClose as () => void)()}>
-        close
-      </button>
-      {p.onCreate ? (
-        <button
-          data-testid={`${testid}-create`}
-          onClick={() =>
-            void (p.onCreate as (t: string, l: string, s?: string) => void)("blog", "en")
-          }
-        >
-          create
-        </button>
-      ) : null}
-      {p.onSettingsChanged ? (
-        <button
-          data-testid={`${testid}-changed`}
-          onClick={() => (p.onSettingsChanged as () => void)()}
-        >
-          changed
-        </button>
-      ) : null}
-    </div>
-  );
+  return function MockModal(p: AnyProps) {
+    const { useEffect, useRef } = require("react") as typeof import("react");
+    const current = useRef(true);
+    useEffect(() => () => { current.current = false; }, []);
+    return <div data-testid={testid}>
+      <button data-testid={`${testid}-close`} onClick={() => { current.current = false; (p.onClose as () => void)(); }}>close</button>
+      {p.onCreate ? <button data-testid={`${testid}-create`} onClick={() =>
+        void (p.onCreate as (t: string, l: string, s?: string, mayAdopt?: () => boolean) => void)("blog", "en", undefined, () => current.current)
+      }>create</button> : null}
+      {p.onSettingsChanged ? <button data-testid={`${testid}-changed`} onClick={() => (p.onSettingsChanged as () => void)()}>changed</button> : null}
+    </div>;
+  };
 }
 
 vi.mock("@renderer/components/ExportModal", () => ({ ExportModal: modalMock("export-modal") }));
@@ -650,7 +637,7 @@ describe("WorkspaceSession new post", () => {
       await Promise.resolve();
     });
 
-    expect(mockCreatePost).toHaveBeenCalledWith("blog", "en", undefined);
+    expect(mockCreatePost).toHaveBeenCalledWith("blog", "en", undefined, WS.id);
     // The modal closed, posts reloaded, and the new post is selected/open.
     expect(getByTestId("center-postid").textContent).toBe("newid");
   });
@@ -752,7 +739,7 @@ describe("WorkspaceSession modals", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(mockGetPost).toHaveBeenCalledWith("a");
+    expect(mockGetPost).toHaveBeenCalledWith("a", WS.id);
     expect(props.center!.rereadPost).toBe(reread);
   });
 
@@ -867,7 +854,7 @@ describe("WorkspaceSession load more / log", () => {
     // Appended: original page plus the next; the other paged sections untouched.
     expect(getByTestId("left-published").textContent).toBe("p1,p2");
     expect(getByTestId("left-discarded").textContent).toBe("x1");
-    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, published: 1 }, 25);
+    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, published: 1 }, 25, WS.id);
   });
 
   it("loads the next discarded page from its own offset", async () => {
@@ -883,7 +870,7 @@ describe("WorkspaceSession load more / log", () => {
     });
     expect(getByTestId("left-discarded").textContent).toBe("x1,x2");
     expect(getByTestId("left-published").textContent).toBe("p1");
-    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, discarded: 1 }, 25);
+    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, discarded: 1 }, 25, WS.id);
   });
 
   it("surfaces a load-more failure", async () => {
@@ -962,7 +949,7 @@ describe("WorkspaceSession reread on activation", () => {
     await settle(300);
 
     // The batch size is 25, more than any paged section shows, so a page of it is read.
-    expect(mockListPosts).toHaveBeenCalledExactlyOnceWith(FIRST, 25);
+    expect(mockListPosts).toHaveBeenCalledExactlyOnceWith(FIRST, 25, WS.id);
   });
 
   it("drops a reread the app's own list change overtook", async () => {
@@ -1240,4 +1227,33 @@ describe("WorkspaceSession misc wiring", () => {
     });
     expect(rightFlush).toHaveBeenCalled();
   });
+});
+
+
+it("does not select a delayed creation or close a reopened New Post modal", async () => {
+  let finish!: (post: Post) => void;
+  mockCreatePost.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const view = await mountLoaded();
+  await act(async () => { fireEvent.click(view.getByTestId("left-select-a")); });
+  fireEvent.click(view.getByTestId("left-newpost"));
+  fireEvent.click(view.getByTestId("newpost-modal-create"));
+  fireEvent.click(view.getByTestId("newpost-modal-close"));
+  await act(async () => { fireEvent.click(view.getByTestId("left-select-b")); });
+  fireEvent.click(view.getByTestId("left-newpost"));
+  await act(async () => { finish(POST_B_CREATED); });
+  expect(view.getByTestId("newpost-modal")).toBeTruthy();
+  expect(view.getByTestId("center-postid").textContent).toBe("b");
+  expect(mockCreatePost).toHaveBeenCalledExactlyOnceWith("blog", "en", undefined, WS.id);
+});
+
+it("does not start continuation reads after the creation's workspace session has left", async () => {
+  let finish!: (post: Post) => void;
+  mockCreatePost.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const view = await mountLoaded();
+  fireEvent.click(view.getByTestId("left-newpost"));
+  fireEvent.click(view.getByTestId("newpost-modal-create"));
+  const reads = mockListPosts.mock.calls.length;
+  view.unmount();
+  await act(async () => { finish(POST_B_CREATED); });
+  expect(mockListPosts).toHaveBeenCalledTimes(reads);
 });

@@ -45,6 +45,65 @@ describe("storage mutation ownership", () => {
     } finally { await owner.stop(); }
   });
 
+  it.each(["success", "failure"] as const)("retains a started post creation through delayed %s settlement", async (outcome) => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const pending: boolean[] = [];
+    owner.onStoragePending((value) => pending.push(value));
+    const completed = vi.fn();
+    try {
+      const result = owner.run("createPost", ["/workspace", "blog", "en"], 10).then(completed, completed);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(completed).not.toHaveBeenCalled();
+      expect(owner.storagePending()).toBe(true);
+      expect(pending).toEqual([true]);
+      await expect(owner.run("createPost", ["/workspace", "blog", "en"])).rejects.toThrow("previous operation settles");
+      expect(worker.requests).toHaveLength(1);
+      worker.emit("message", outcome === "success"
+        ? { id: worker.requests[0].id, ok: true, value: { frontMatter: { id: "created-once" } } }
+        : { id: worker.requests[0].id, ok: false, error: { name: "Error", message: "primary publication failed" } });
+      await result;
+      expect(completed).toHaveBeenCalledTimes(1);
+      expect(completed.mock.calls[0][0]).toEqual(outcome === "success"
+        ? { frontMatter: { id: "created-once" } }
+        : expect.objectContaining({ message: "primary publication failed" }));
+      expect(owner.storagePending()).toBe(false);
+      expect(pending).toEqual([true, false]);
+    } finally { await owner.stop(); }
+  });
+
+  it("settles a pending mutation and clears pending status when its worker fails", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const pending: boolean[] = [];
+    owner.onStoragePending((value) => pending.push(value));
+    try {
+      const mutation = owner.run("createPost", ["/workspace", "blog", "en"], 10).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10);
+      worker.emit("error", new Error("worker failed"));
+      expect(await mutation).toEqual(expect.objectContaining({ message: "worker failed" }));
+      expect(pending).toEqual([true, false]);
+      expect(owner.storagePending()).toBe(false);
+    } finally { await owner.stop(); }
+  });
+
+  it("expires a queued creation before it starts without issuing the effect", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    try {
+      const read = owner.run("getUiState", [], 1000).catch(() => undefined);
+      const queued = owner.run("createPost", ["/workspace", "blog", "en"], 10).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await queued).toEqual(expect.objectContaining({ message: expect.stringContaining("did not start") }));
+      worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
+      await read;
+      expect(worker.requests).toHaveLength(1);
+    } finally { await owner.stop(); }
+  });
+
   it("holds an edit storage cannot take yet and delivers it once storage takes work again", async () => {
     vi.useFakeTimers();
     const worker = new HeldWorker();

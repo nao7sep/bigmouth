@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent, screen, within } from "@testing-library/react";
-import type { Workspace } from "@shared/types";
+import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 
 // WorkspaceModal talks to the main process through these api calls (the list is
 // a listbox, so pickWorkspaceDirectory backs the Browse button too).
@@ -12,10 +12,13 @@ vi.mock("@renderer/api", () => ({
   deleteWorkspace: vi.fn(),
   pickWorkspaceDirectory: vi.fn(),
   suggestWorkspaceLocation: vi.fn(),
+  getStoragePending: vi.fn(async () => false),
+  onStoragePendingChanged: vi.fn(() => () => {}),
 }));
 
 import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
+import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import {
   listWorkspaces,
   openOrCreateWorkspace,
@@ -81,6 +84,9 @@ interface ModalOverrides {
   activeWorkspaceId?: string | null;
   onWorkspaceDeleted?: (id: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated?: (ws: Workspace) => void;
+  onWorkspaceRemovalCompleted?: (ws: Workspace, result: WorkspaceDeleteResult) => void;
+  onWorkspaceRemovalFailed?: (ws: Workspace) => void | Promise<void>;
+  reloadVersion?: number;
 }
 
 async function renderWith(over: ModalOverrides = {}) {
@@ -88,22 +94,34 @@ async function renderWith(over: ModalOverrides = {}) {
   const onSelect = over.onSelect ?? vi.fn();
   const onWorkspaceDeleted = over.onWorkspaceDeleted ?? vi.fn().mockResolvedValue(true);
   const onWorkspaceUpdated = over.onWorkspaceUpdated ?? vi.fn();
-  const utils = render(
+  const element = (pending = false, shown = true) => (
+    <StoragePendingProvider>
+    <StoragePendingContext.Provider value={pending}>
     <ConfirmProvider>
-      <WorkspaceModal
+      {shown && <WorkspaceModal
         dismissable={over.dismissable ?? true}
         onClose={onClose}
         onSelect={onSelect}
         activeWorkspaceId={over.activeWorkspaceId ?? WORKSPACE.id}
         onWorkspaceDeleted={onWorkspaceDeleted}
         onWorkspaceUpdated={onWorkspaceUpdated}
-      />
-    </ConfirmProvider>,
+        onWorkspaceRemovalCompleted={over.onWorkspaceRemovalCompleted}
+        onWorkspaceRemovalFailed={over.onWorkspaceRemovalFailed}
+        reloadVersion={over.reloadVersion}
+      />}
+    </ConfirmProvider>
+    </StoragePendingContext.Provider>
+    <StoragePendingResults />
+    </StoragePendingProvider>
   );
+  const utils = render(element());
   await act(async () => {
     await Promise.resolve();
   });
-  return { onClose, onSelect, onWorkspaceDeleted, onWorkspaceUpdated, ...utils };
+  return { onClose, onSelect, onWorkspaceDeleted, onWorkspaceUpdated, ...utils,
+    rerenderPending: (pending: boolean) => utils.rerender(element(pending)),
+    leaveModal: () => utils.rerender(element(true, false)),
+  };
 }
 
 // The delete-confirmation dialog (a ConfirmModal) carries its own role="dialog"
@@ -364,6 +382,70 @@ describe("WorkspaceModal — Browse", () => {
 });
 
 describe("WorkspaceModal — inline rename save", () => {
+  it("checks an unsubmitted create draft when leaving a pending rename", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let resolveRename!: (workspace: Workspace) => void;
+    mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
+    const view = await renderWith();
+    fireEvent.change(view.getByPlaceholderText("Uses the folder name if available"), { target: { value: "Unsubmitted workspace" } });
+    fireEvent.click(view.getByText("Rename"));
+    fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Submitted name" } });
+    fireEvent.click(view.getByText("Save"));
+    view.rerenderPending(true);
+    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    expect(view.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(view.getByDisplayValue("Unsubmitted workspace")).toBeTruthy();
+    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Discard" })); });
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+    expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveRename({ ...WORKSPACE, name: "Submitted name" }); });
+    expect(view.onWorkspaceUpdated).toHaveBeenCalledTimes(1);
+    expect(mockOpenOrCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps a departed rename failure in the app without reviving its editor", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let rejectRename!: (error: Error) => void;
+    mockUpdateWorkspace.mockReturnValue(new Promise((_, reject) => { rejectRename = reject; }));
+    const view = await renderWith();
+    fireEvent.click(view.getByText("Rename"));
+    const input = view.getByDisplayValue("Alpha");
+    fireEvent.change(input, { target: { value: "Submitted name" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
+    view.rerenderPending(true);
+    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+    view.leaveModal();
+    await act(async () => { rejectRename(new Error("private rename diagnostic")); });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("current name is unchanged");
+    expect(screen.getByRole("alert").textContent).not.toContain("private rename diagnostic");
+    expect(view.onWorkspaceUpdated).not.toHaveBeenCalled();
+  });
+
+  it("hands a committed active rename to App after its modal is removed", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let resolveRename!: (workspace: Workspace) => void;
+    mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
+    const view = await renderWith();
+    fireEvent.click(view.getByText("Rename"));
+    fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
+    fireEvent.click(view.getByText("Save"));
+    view.leaveModal();
+    const renamed = { ...WORKSPACE, name: "Renamed" };
+    await act(async () => { resolveRename(renamed); });
+
+    expect(view.onWorkspaceUpdated).toHaveBeenCalledExactlyOnceWith(renamed);
+    expect(view.onSelect).not.toHaveBeenCalled();
+    expect(mockListWorkspaces).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the editor open with authored copy and logs hostile rename diagnostics", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockUpdateWorkspace.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_RENAME_SENTINEL"));
@@ -467,11 +549,123 @@ describe("WorkspaceModal — inline rename save", () => {
   });
 });
 
+describe("WorkspaceModal — pending workspace opening", () => {
+  it("retains a failed opening after the modal leaves while pending", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let rejectOpen!: (error: Error) => void;
+    mockOpenOrCreate.mockReturnValue(new Promise((_, reject) => { rejectOpen = reject; }));
+    const view = await renderWith();
+    fireEvent.click(view.getByRole("button", { name: "Open or Create" }));
+    view.rerenderPending(true);
+    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    view.leaveModal();
+    await act(async () => { rejectOpen(new Error("private open diagnostic")); });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("The workspace could not be opened or created.");
+    expect(screen.getByRole("alert").textContent).not.toContain("private open diagnostic");
+    expect(view.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not adopt an opening result after a newer workspace selection", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let resolveOpen!: (workspace: Workspace) => void;
+    mockOpenOrCreate.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
+    const { getByRole, onSelect } = await renderWith();
+    fireEvent.click(getByRole("button", { name: "Open or Create" }));
+    fireEvent.click(getByRole("option"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
+
+    await act(async () => { resolveOpen({ id: "late", name: "Late workspace", dataDirectory: "/late" }); });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+  it.each(["Close", "Escape", "backdrop"] as const)("can leave via %s without replaying or adopting a late completion", async (path) => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let resolveOpen!: (workspace: Workspace) => void;
+    mockOpenOrCreate.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
+    const { getByRole, getByPlaceholderText, container, onClose, onSelect, rerenderPending } = await renderWith();
+    const name = getByPlaceholderText("Uses the folder name if available");
+    fireEvent.change(name, { target: { value: "Submitted workspace" } });
+    fireEvent.click(getByRole("button", { name: "Open or Create" }));
+    // Enter remains a form submission path even when its button is disabled.
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(mockOpenOrCreate).toHaveBeenCalledTimes(1);
+    expect(name.hasAttribute("disabled")).toBe(true);
+    rerenderPending(true);
+
+    expect(getByRole("status").textContent).toContain("This change is still being saved.");
+    const leave = within(container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" });
+    expect(leave.hasAttribute("disabled")).toBe(false);
+    if (path === "Close") fireEvent.click(leave);
+    else if (path === "Escape") fireEvent.keyDown(document, { key: "Escape" });
+    else fireEvent.click(container.querySelector(".modal-backdrop")!);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+    await act(async () => { resolveOpen({ id: "late", name: "Late workspace", dataDirectory: "/late" }); });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mockListWorkspaces).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("WorkspaceModal — delete", () => {
+  it("hands removal completion to the surviving owner after the active-session pre-check unmounts its modal", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockDeleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
+    let unmountModal!: () => void;
+    const onWorkspaceDeleted = vi.fn(async () => { unmountModal(); return true; });
+    const completed = vi.fn();
+    const view = await renderWith({ onWorkspaceDeleted, onWorkspaceRemovalCompleted: completed });
+    unmountModal = view.unmount;
+    fireEvent.click(view.getByText("Remove"));
+    await act(async () => { clickDeleteConfirm(); await Promise.resolve(); });
+
+    expect(completed).toHaveBeenCalledExactlyOnceWith(WORKSPACE, { keyCleanupIncomplete: true });
+    expect(view.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("delegates primary removal recovery to the surviving owner without selecting an old workspace itself", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockDeleteWorkspace.mockRejectedValue(new Error("registry write failed"));
+    const failed = vi.fn();
+    const view = await renderWith({ onWorkspaceRemovalFailed: failed });
+    fireEvent.click(view.getByText("Remove"));
+    await act(async () => { clickDeleteConfirm(); await Promise.resolve(); });
+
+    expect(failed).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
+    expect(view.onSelect).not.toHaveBeenCalled();
+    expect(view.getByText('"Alpha" could not be removed. It remains in the workspace list; try again.')).toBeTruthy();
+  });
+
+  it("retires a removed active workspace and reloads while preserving its key cleanup warning", async () => {
+    mockListWorkspaces.mockResolvedValueOnce([WORKSPACE]).mockResolvedValue([]);
+    mockDeleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
+    const onSelect = vi.fn();
+    const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
+    const { getByText, findByText, queryByRole } = await renderWith({ onSelect, onWorkspaceDeleted });
+
+    fireEvent.click(getByText("Remove"));
+    await act(async () => {
+      clickDeleteConfirm();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onWorkspaceDeleted).toHaveBeenCalledWith(WORKSPACE.id);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(mockListWorkspaces).toHaveBeenCalledTimes(2);
+    expect(await findByText('"Alpha" was removed from the workspace list, but its stored API key could not be cleared.')).toBeTruthy();
+    expect(queryByRole("option")).toBeNull();
+    expect(queryByRole("alertdialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close result" }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("deletes a non-active workspace after confirmation", async () => {
     const other: Workspace = { id: "ws2", name: "Bravo", dataDirectory: "/data/bravo" };
     mockListWorkspaces.mockResolvedValue([WORKSPACE, other]);
-    mockDeleteWorkspace.mockResolvedValue(undefined);
+    mockDeleteWorkspace.mockResolvedValue({});
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
     const { getAllByText } = await renderWith({ onWorkspaceDeleted });
 
@@ -490,7 +684,7 @@ describe("WorkspaceModal — delete", () => {
 
   it("runs the active-workspace pre-check before deleting the active one", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockDeleteWorkspace.mockResolvedValue(undefined);
+    mockDeleteWorkspace.mockResolvedValue({});
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
     const { getByText } = await renderWith({ onWorkspaceDeleted });
 
@@ -519,7 +713,7 @@ describe("WorkspaceModal — delete", () => {
 
     // The vetoed deletion surfaces inline and does not call deleteWorkspace.
     expect(
-      await findByText("The action could not be completed. Nothing was changed; try again."),
+      await findByText('"Alpha" could not be removed. It remains in the workspace list; try again.'),
     ).toBeTruthy();
     expect(mockDeleteWorkspace).not.toHaveBeenCalled();
   });
@@ -539,7 +733,7 @@ describe("WorkspaceModal — delete", () => {
     });
 
     // The failed active-delete restores the session and surfaces the error.
-    expect(await findByText("The action could not be completed. Nothing was changed; try again.")).toBeTruthy();
+    expect(await findByText('"Alpha" could not be removed. It remains in the workspace list; try again.')).toBeTruthy();
     expect(onSelect).toHaveBeenCalledWith(WORKSPACE);
   });
 

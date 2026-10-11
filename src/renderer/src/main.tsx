@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { StoragePendingProvider } from "./StoragePending";
 import { ConfirmProvider } from "./components/ConfirmHost";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { reportProblem } from "./api";
@@ -49,9 +50,11 @@ void interfaceLanguage().then((initial) => {
     <StrictMode>
       <ErrorBoundary>
         <InterfaceLanguageRoot initial={initial}>
-          <ConfirmProvider>
-            <App />
-          </ConfirmProvider>
+          <StoragePendingProvider>
+            <ConfirmProvider>
+              <App />
+            </ConfirmProvider>
+          </StoragePendingProvider>
         </InterfaceLanguageRoot>
       </ErrorBoundary>
     </StrictMode>

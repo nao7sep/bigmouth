@@ -10,18 +10,38 @@ import * as recordsStore from "./core/services/recordsStore.js";
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
-import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath } from "./core/services/logger.js";
+import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath, serializeError } from "./core/services/logger.js";
 import { stopBackups } from "./core/services/backupStore.js";
 import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
 import { message } from "@shared/i18n/translate";
 import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
+import type { AssetDeleteResult, AssetUploadResult, AssetUnsavedStep } from "@shared/ipc";
+import { projectIndexEntry } from "./core/services/postFile.js";
 
 function workspaceDir(id: string): string {
   const workspace = workspaceStore.getWorkspace(id);
   if (!workspace) throw new Error("Workspace not found");
   return workspace.dataDirectory;
+}
+
+// Publication and its post timestamp share this worker task. A caller ceasing
+// to wait cannot skip the consequence of bytes already installed or removed.
+function recordAssetEdit(dataDirectory: string, postId: string, filename: string): boolean {
+  try {
+    if (!postStore.recordAssetChange(dataDirectory, postId)) throw new Error("Post not found after its asset changed");
+    return true;
+  } catch (cause) {
+    error("post modified time not updated after an asset change", { dataDirectory, postId, filename, error: serializeError(cause) });
+    return false;
+  }
+}
+
+// The reply's projection belongs to this published post, never a later queued
+// operation or another filesystem read. Keep filePath for main-process logs.
+function mutationResult(post: ReturnType<typeof postStore.updatePost>) {
+  return post ? { ...post, summary: projectIndexEntry(post.frontMatter, path.basename(post.filePath), post.content) } : null;
 }
 
 export const storageTasks = {
@@ -59,7 +79,12 @@ export const storageTasks = {
   openOrCreateWorkspace: workspaceStore.openOrCreateWorkspace,
   suggestWorkspaceLocation: workspaceStore.suggestWorkspaceLocation,
   updateWorkspace: workspaceStore.updateWorkspace,
-  deleteWorkspace: workspaceStore.deleteWorkspace,
+  deleteWorkspace(id: string) {
+    const removed = workspaceStore.getWorkspace(id);
+    const result = workspaceStore.deleteWorkspace(id);
+    if (result && removed) postStore.clearCache(removed.dataDirectory);
+    return result;
+  },
   getSettings: configStore.getSettings,
   getConfigNotice: configStore.getConfigNotice,
   saveSettings: configStore.saveSettings,
@@ -105,13 +130,15 @@ export const storageTasks = {
     if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to edit it."), { name: "PostLockedError" });
     const source = args[2].frontMatter?.sourceId;
     if (source && !postStore.postExists(args[0], source)) throw new Error("Source post not found");
-    return postStore.updatePost(...args);
+    return mutationResult(postStore.updatePost(...args));
   },
-  recordAssetChange: postStore.recordAssetChange,
-  changeStatus: postStore.changeStatus,
-  setLocked: postStore.setLocked,
+  changeStatus(...args: Parameters<typeof postStore.changeStatus>) {
+    return mutationResult(postStore.changeStatus(...args));
+  },
+  setLocked(...args: Parameters<typeof postStore.setLocked>) {
+    return mutationResult(postStore.setLocked(...args));
+  },
   deletePost: postStore.deletePost,
-  getPostSummary: postStore.getPostSummary,
   listReferrers: postStore.listReferrers,
   postExists: postStore.postExists,
   renameTarget(dir: string, oldName: string, newName: string) {
@@ -130,19 +157,37 @@ export const storageTasks = {
   holdPendingFlushes: postStore.holdPendingFlushes,
   resumePendingFlushes: postStore.resumePendingFlushes,
   listAssets: assetStore.listAssets,
-  saveAssetFile(...args: Parameters<typeof assetStore.saveAssetFile>) {
+  saveAssetFile(...args: Parameters<typeof assetStore.saveAssetFile>): Extract<AssetUploadResult, { ok: true }> {
     postStore.assertUnambiguousPostId(args[0], args[1]);
     const post = postStore.getPost(args[0], args[1]);
     if (!post) throw new Error("Post not found");
     if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to change its assets."), { name: "PostLockedError" });
-    return assetStore.saveAssetFile(...args);
+    let saved: ReturnType<typeof assetStore.saveAssetFile>;
+    const unsaved: AssetUnsavedStep[] = [];
+    try {
+      saved = assetStore.saveAssetFile(...args);
+    } catch (cause) {
+      if (!(cause instanceof assetStore.AssetRecordError)) throw cause;
+      error("asset metadata save failed", { dataDirectory: args[0], postId: args[1], filename: args[2], error: serializeError(cause) });
+      saved = { asset: cause.asset, changed: true };
+      unsaved.push("details");
+    }
+    if (saved.changed && !recordAssetEdit(args[0], args[1], saved.asset.filename)) unsaved.push("modifiedTime");
+    return { ok: true, asset: saved.asset, ...(unsaved.length > 0 ? { unsaved } : {}) };
   },
-  deleteAsset(...args: Parameters<typeof assetStore.deleteAsset>) {
+  deleteAsset(...args: Parameters<typeof assetStore.deleteAsset>): AssetDeleteResult {
     postStore.assertUnambiguousPostId(args[0], args[1]);
     const post = postStore.getPost(args[0], args[1]);
     if (!post) throw new Error("Post not found");
     if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to change its assets."), { name: "PostLockedError" });
-    return assetStore.deleteAsset(...args);
+    try {
+      assetStore.deleteAsset(...args);
+    } catch (cause) {
+      if (!(cause instanceof assetStore.AssetRecordError)) throw cause;
+      // Removal stands; the next asset read reconciles the stale details.
+      error("asset metadata update failed", { dataDirectory: args[0], postId: args[1], filename: args[2], error: serializeError(cause) });
+    }
+    return recordAssetEdit(args[0], args[1], args[2]) ? {} : { unsaved: ["modifiedTime"] };
   },
   getUiState: stateStore.getUiState,
   updateUiState: stateStore.updateUiState,

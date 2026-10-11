@@ -13,7 +13,7 @@
  * With a workspace already open it is an ordinary dismissable modal.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   listWorkspaces,
   openOrCreateWorkspace,
@@ -24,7 +24,7 @@ import {
   suggestWorkspaceLocation,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
-import type { Workspace } from "@shared/types";
+import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
@@ -32,6 +32,7 @@ import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { OperationalResult } from "./OperationalResult";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 const WORKSPACE_PAGE_SIZE = 10;
 
@@ -42,6 +43,9 @@ interface WorkspaceModalProps {
   activeWorkspaceId: string | null;
   onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
+  onWorkspaceRemovalCompleted?: (workspace: Workspace, result: WorkspaceDeleteResult) => void;
+  onWorkspaceRemovalFailed?: (workspace: Workspace) => void | Promise<void>;
+  reloadVersion?: number;
   initialLoadError?: Message | null;
   onLoadRecovered?: () => void;
 }
@@ -53,6 +57,9 @@ export function WorkspaceModal({
   activeWorkspaceId,
   onWorkspaceDeleted,
   onWorkspaceUpdated,
+  onWorkspaceRemovalCompleted,
+  onWorkspaceRemovalFailed,
+  reloadVersion = 0,
   initialLoadError = null,
   onLoadRecovered,
 }: WorkspaceModalProps) {
@@ -72,7 +79,25 @@ export function WorkspaceModal({
   const [listError, setListError] = useState<Message | null>(initialLoadError);
   const [renameError, setRenameError] = useState<{ id: string; message: Message } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [removalWarnings, setRemovalWarnings] = useState<{ id: string; message: Message }[]>([]);
+  const current = useRef(true);
+  const selectionIntent = useRef(0);
+  const submittingRef = useRef(false);
+  const renamingRef = useRef(false);
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
   const confirm = useConfirm();
+
+  useEffect(() => {
+    current.current = true;
+    return () => { current.current = false; };
+  }, []);
+
+  const close = () => {
+    selectionIntent.current += 1;
+    current.current = false;
+    onClose();
+  };
 
   const renameComposing = useComposing();
   const nameComposing = useComposing();
@@ -81,6 +106,7 @@ export function WorkspaceModal({
   const locationId = useId();
 
   const isDirty = name.trim() !== "" || location !== "";
+  const mutationBusy = submitting || renamingId !== null;
 
   const clearForm = () => {
     setError(null);
@@ -105,18 +131,25 @@ export function WorkspaceModal({
   };
 
   const handleRequestClose = () => {
+    if (submittingRef.current || renamingRef.current) {
+      // The submitted intent stays owned by storage after this view is left.
+      if (!dismissable || !storagePending) return;
+      if (submittingRef.current) { close(); return; }
+      // A submitted rename does not submit the separate create/open form.
+      // Its unsent draft still takes the ordinary discard guard below.
+    }
     // An inline rename is a nested edit within the modal. Any close request
     // (Escape, backdrop, close button) unwinds that edit first instead of
     // closing the modal, keeping "cancel this edit" distinct from "leave the
     // modal" — and giving Escape a single, well-defined path through this one
     // guard rather than a competing handler on the input.
-    if (editingId !== null) {
+    if (editingId !== null && !renamingRef.current) {
       setEditingId(null);
       return;
     }
     if (!dismissable) return;
     if (!isDirty) {
-      onClose();
+      close();
       return;
     }
     void (async () => {
@@ -127,9 +160,9 @@ export function WorkspaceModal({
         cancelLabel: t("common.keepEditing"),
         danger: true,
       });
-      if (ok) {
+      if (ok && current.current) {
         clearForm();
-        onClose();
+        close();
       }
     })();
   };
@@ -138,12 +171,14 @@ export function WorkspaceModal({
     setLoading(true);
     listWorkspaces()
       .then((ws) => {
+        if (!current.current) return;
         setWorkspaces(ws);
         setListError(null);
         onLoadRecovered?.();
         setLoading(false);
       })
       .catch((err: unknown) => {
+        if (!current.current) { reportProblem("renderer: workspace registry load failed", err); return; }
         setListError(presentFailure(
           message("workspaces.loadFailed"),
           "renderer: workspace registry load failed",
@@ -155,7 +190,7 @@ export function WorkspaceModal({
 
   useEffect(() => {
     load();
-  }, []);
+  }, [reloadVersion]);
 
   useEffect(() => {
     let current = true;
@@ -174,53 +209,64 @@ export function WorkspaceModal({
   }, [name]);
 
   const handleSubmit = async () => {
+    if (submittingRef.current || renamingRef.current || storagePending) return;
+    submittingRef.current = true;
+    const intent = ++selectionIntent.current;
     setSubmitting(true);
     setError(null);
     try {
       const workspace = await openOrCreateWorkspace(name.trim() || undefined, location === "" ? undefined : location);
+      if (!current.current || selectionIntent.current !== intent) return;
       clearForm();
       load();
       await onSelect(workspace);
     } catch (err) {
-      setError(presentFailure(
+      const failure = presentFailure(
         message("workspaces.openFailed"),
         "renderer: workspace open or creation failed",
         err,
-      ));
+      );
+      if (current.current && selectionIntent.current === intent) setError(failure);
+      else reportStorageResult(failure);
     } finally {
-      setSubmitting(false);
+      submittingRef.current = false;
+      if (current.current) setSubmitting(false);
     }
   };
 
   const handleRename = async (id: string) => {
-    if (!editName.trim()) return;
+    if (!editName.trim() || renamingRef.current || submittingRef.current || storagePending) return;
+    renamingRef.current = true;
     setRenamingId(id);
     setRenameError(null);
     try {
       const updated = await updateWorkspace(id, { name: editName.trim() });
       if (updated && updated.id === activeWorkspaceId) onWorkspaceUpdated(updated);
+      if (!current.current) return;
       setEditingId(null);
       load();
     } catch (err) {
-      setRenameError({
-        id,
-        message: presentFailure(
-          message("workspaces.renameFailed"),
-          "renderer: workspace rename failed",
-          err,
-          { workspaceId: id },
-        ),
-      });
+      const failure = presentFailure(
+        message("workspaces.renameFailed"),
+        "renderer: workspace rename failed",
+        err,
+        { workspaceId: id },
+      );
+      if (current.current) setRenameError({ id, message: failure });
+      else reportStorageResult(failure);
     } finally {
-      setRenamingId(null);
+      renamingRef.current = false;
+      if (current.current) setRenamingId(null);
     }
   };
 
   const handleDelete = (ws: Workspace) => {
+    if (storagePending || submittingRef.current || renamingRef.current) return;
     void confirm({
       title: t("workspaces.deleteTitle"),
       message: t("workspaces.deleteMessage", { name: ws.name }),
       confirmLabel: t("workspaces.remove"),
+      failureMessage: message("workspaces.removeFailed", { name: ws.name }),
       danger: true,
       // The whole deletion runs inside onConfirm so the host keeps the dialog
       // busy while it runs and, on failure, holds it open with the reason shown.
@@ -236,17 +282,27 @@ export function WorkspaceModal({
             throw new Error("Resolve the unsaved changes in the active workspace before deleting it.");
           }
         }
+        let result: WorkspaceDeleteResult;
         try {
-          await deleteWorkspace(ws.id);
+          result = await deleteWorkspace(ws.id);
         } catch (err) {
           // Deletion failed: if this was the active workspace, the pre-check
           // already cleared it, so re-select it to restore the session before
           // surfacing the error. Re-throw so the host shows it in the dialog.
-          if (ws.id === activeWorkspaceId) {
+          if (onWorkspaceRemovalFailed) {
+            await onWorkspaceRemovalFailed(ws);
+          } else if (current.current && ws.id === activeWorkspaceId) {
             await onSelect(ws);
           }
           throw err instanceof Error ? err : new Error("Failed to delete workspace.");
         }
+        onWorkspaceRemovalCompleted?.(ws, result);
+        if (result.keyCleanupIncomplete && !onWorkspaceRemovalCompleted) {
+          const warning = message("workspaces.keyCleanupIncomplete", { name: ws.name });
+          if (current.current) setRemovalWarnings((warnings) => [...warnings, { id: ws.id, message: warning }]);
+          else reportStorageResult(warning, "warning");
+        }
+        if (!current.current) return;
         load();
       },
     });
@@ -274,7 +330,10 @@ export function WorkspaceModal({
   const handleActivateWorkspace = useCallback(
     (id: string) => {
       const ws = sorted.find((w) => w.id === id);
-      if (ws) void onSelect(ws);
+      if (ws) {
+        selectionIntent.current += 1;
+        void onSelect(ws);
+      }
     },
     [sorted, onSelect]
   );
@@ -285,6 +344,7 @@ export function WorkspaceModal({
     // The row buttons sit outside the tab order, as the composite-control
     // conventions require — so the keys are how a keyboard reaches them.
     onRowAction: (id, action) => {
+      if (storagePending || submittingRef.current || renamingRef.current) return;
       const ws = workspaces.find((w) => w.id === id);
       if (!ws) return;
       if (action === "rename") {
@@ -306,8 +366,18 @@ export function WorkspaceModal({
       maxHeight="85vh"
       closeOnBackdrop={dismissable}
       showClose={dismissable}
+      closeDisabled={mutationBusy && !storagePending}
     >
       <div className="modal-body">
+        <StoragePendingNotice />
+        {removalWarnings.map((warning) => (
+          <OperationalResult
+            key={warning.id}
+            severity="warning"
+            className="modal-result"
+            onDismiss={() => setRemovalWarnings((warnings) => warnings.filter((item) => item.id !== warning.id))}
+          >{text(warning.message)}</OperationalResult>
+        ))}
         {loading ? (
           <p className="modal-empty-message">{t("common.loading")}</p>
         ) : listError ? (
@@ -362,7 +432,7 @@ export function WorkspaceModal({
                       <button
                         className="btn-primary"
                         onClick={() => handleRename(ws.id)}
-                        disabled={!editName.trim() || renamingId === ws.id}
+                        disabled={!editName.trim() || renamingId === ws.id || storagePending}
                       >
                         {renamingId === ws.id ? t("common.saving") : t("common.save")}
                       </button>
@@ -380,6 +450,7 @@ export function WorkspaceModal({
                       <div className="workspace-item-actions">
                         <button
                           className="btn-toolbar"
+                          disabled={storagePending || mutationBusy}
                           tabIndex={-1}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -392,6 +463,7 @@ export function WorkspaceModal({
                         </button>
                         <button
                           className="btn-toolbar btn-delete"
+                          disabled={storagePending || mutationBusy}
                           tabIndex={-1}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -420,6 +492,7 @@ export function WorkspaceModal({
             id={nameId}
             className="form-input"
             value={name}
+            disabled={submitting}
             onChange={(e) => {
               setError(null);
               setName(e.target.value);
@@ -444,6 +517,7 @@ export function WorkspaceModal({
               className="form-input"
               style={{ flex: 1 }}
               value={location}
+              disabled={submitting}
               onChange={(e) => {
                 setError(null);
                 setLocation(e.target.value);
@@ -456,7 +530,7 @@ export function WorkspaceModal({
                 if (e.key === "Enter") void handleSubmit();
               }}
             />
-            <button className="btn-action" type="button" onClick={() => void handleBrowse()}>
+            <button className="btn-action" type="button" disabled={submitting} onClick={() => void handleBrowse()}>
               {t("common.browse")}
             </button>
           </div>
@@ -472,15 +546,15 @@ export function WorkspaceModal({
             <button
               className="btn-action"
               onClick={handleRequestClose}
-              disabled={submitting}
+              disabled={mutationBusy && !storagePending}
             >
-              {t("common.cancel")}
+              {t(mutationBusy && storagePending ? "common.close" : "common.cancel")}
             </button>
           )}
           <button
             className="btn-primary"
             onClick={() => void handleSubmit()}
-            disabled={submitting}
+            disabled={mutationBusy || storagePending}
           >
             {submitting ? t("workspaces.opening") : t("workspaces.openOrCreate")}
           </button>

@@ -291,11 +291,17 @@ export function writeApiKey(filePath: string, workspaceId: string, provider: AiP
  * Remove every stored key for a workspace — used when the workspace is deleted.
  * A file that cannot be written, or whose content is damaged, is left as it is,
  * its key with it, rather than failing the deletion or setting the file aside.
+ * False means cleanup could not be established; absence is a complete cleanup.
  */
-export function clearWorkspaceKeys(filePath: string, workspaceId: string): void {
+export function clearWorkspaceKeys(filePath: string, workspaceId: string): boolean {
   const read = readFile(filePath);
-  if (read.refusal || read.damaged) return;
-  update(filePath, workspaceId, (keys) => {
-    for (const id of Object.keys(keys)) delete keys[id];
-  });
+  if (read.refusal || read.damaged) return false;
+  const workspaces = read.raw.workspaces as Record<string, unknown>;
+  if (!Object.hasOwn(workspaces, workspaceId)) return true;
+  // Removal owns the whole scope, including entries a lookup cannot interpret.
+  // Every other workspace is preserved exactly as read.
+  const next = { ...workspaces };
+  delete next[workspaceId];
+  writeFile(filePath, { ...read.raw, workspaces: next });
+  return true;
 }

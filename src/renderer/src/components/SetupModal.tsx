@@ -14,6 +14,8 @@
  * launch gate: there is nothing behind it to return to, and dismissing it would
  * leave the user with no workspace and no way forward. The way out of the
  * guided path is "Open Existing Workspace", which hands over to the picker.
+ * A slow issued save keeps its result owner while that path lets the user
+ * leave the guided steps; its later completion cannot advance retired setup.
  * Once the workspace step has run, a workspace exists; quitting part-way leaves
  * it registered, and the next launch offers it in the picker.
  */
@@ -39,6 +41,7 @@ import { OperationalResult } from "./OperationalResult";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 type Step = "workspace" | "target" | "key";
 
@@ -56,6 +59,17 @@ export function SetupModal({ onFinish, onOpenExisting }: SetupModalProps) {
   // Opening the workspace awaits the caller; a second click meanwhile must not
   // open it twice.
   const finishing = useRef(false);
+  const current = useRef(true);
+  useEffect(() => {
+    current.current = true;
+    return () => { current.current = false; };
+  }, []);
+  const mayAdopt = () => current.current;
+  const openExisting = () => {
+    if (!current.current) return;
+    current.current = false;
+    onOpenExisting();
+  };
 
   // Escape and every other close path land here and do nothing: see the header.
   const ignoreClose = () => {};
@@ -72,20 +86,26 @@ export function SetupModal({ onFinish, onOpenExisting }: SetupModalProps) {
       {step === "workspace" && (
         <WorkspaceStep
           onCreated={(created) => {
+            if (!current.current) return;
             setWorkspace(created);
             setStep("target");
           }}
-          onOpenExisting={onOpenExisting}
+          onOpenExisting={openExisting}
+          mayAdopt={mayAdopt}
         />
       )}
       {step === "target" && workspace && (
-        <TargetStep workspace={workspace} onDone={() => setStep("key")} />
+        <TargetStep workspace={workspace} onDone={() => {
+          if (current.current) setStep("key");
+        }} onOpenExisting={openExisting} mayAdopt={mayAdopt} />
       )}
       {step === "key" && workspace && (
         <KeyStep
           workspace={workspace}
+          onOpenExisting={openExisting}
+          mayAdopt={mayAdopt}
           onDone={() => {
-            if (finishing.current) return;
+            if (finishing.current || !current.current) return;
             finishing.current = true;
             void onFinish(workspace);
           }}
@@ -100,9 +120,11 @@ export function SetupModal({ onFinish, onOpenExisting }: SetupModalProps) {
 function WorkspaceStep({
   onCreated,
   onOpenExisting,
+  mayAdopt,
 }: {
   onCreated: (workspace: Workspace) => void;
   onOpenExisting: () => void;
+  mayAdopt: () => boolean;
 }) {
   const { t, text } = useI18n();
   const [name, setName] = useState(() => t("setup.workspaceNameDefault"));
@@ -115,6 +137,15 @@ function WorkspaceStep({
   const [suggestion, setSuggestion] = useState("");
   const [error, setError] = useState<Message | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const current = useRef(true);
+  const pending = useStoragePending();
+  const reportResult = useStorageResultReporter();
+  useEffect(() => {
+    current.current = true;
+    return () => { current.current = false; };
+  }, []);
+  const ownsView = () => current.current && mayAdopt();
   const nameComposing = useComposing();
   const locationComposing = useComposing();
   const nameId = useId();
@@ -141,34 +172,41 @@ function WorkspaceStep({
   const handleBrowse = async () => {
     try {
       const dir = await pickWorkspaceDirectory();
-      if (dir) {
+      if (dir && ownsView()) {
         setError(null);
         setLocation(dir);
         setLocationEdited(true);
       }
     } catch (err) {
-      setError(presentFailure(
+      const failure = presentFailure(
         message("workspaces.pickerFailed"),
         "renderer: setup workspace folder picker failed",
         err,
-      ));
+      );
+      if (ownsView()) setError(failure);
     }
   };
 
   const handleContinue = async () => {
-    if (submitting) return;
+    if (submittingRef.current || pending || !ownsView()) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
       const chosen = locationEdited && location !== "" ? location : undefined;
-      onCreated(await openOrCreateWorkspace(name.trim() || undefined, chosen));
+      const created = await openOrCreateWorkspace(name.trim() || undefined, chosen);
+      if (ownsView()) onCreated(created);
     } catch (err) {
-      setError(presentFailure(
+      const failure = presentFailure(
         message("workspaces.openFailed"),
         "renderer: setup workspace open or creation failed",
         err,
-      ));
-      setSubmitting(false);
+      );
+      if (ownsView()) {
+        setError(failure);
+        submittingRef.current = false;
+        setSubmitting(false);
+      } else reportResult(failure);
     }
   };
 
@@ -196,6 +234,7 @@ function WorkspaceStep({
             onCompositionEnd={nameComposing.handlers.onCompositionEnd}
             onKeyDown={submitOnEnter(nameComposing)}
             autoFocus
+            disabled={submitting}
           />
         </div>
         <div className="form-field">
@@ -216,6 +255,7 @@ function WorkspaceStep({
               onCompositionStart={locationComposing.handlers.onCompositionStart}
               onCompositionEnd={locationComposing.handlers.onCompositionEnd}
               onKeyDown={submitOnEnter(locationComposing)}
+              disabled={submitting}
             />
             <button className="btn-action" type="button" onClick={() => void handleBrowse()} disabled={submitting}>
               {t("common.browse")}
@@ -228,12 +268,13 @@ function WorkspaceStep({
             {text(error)}
           </OperationalResult>
         )}
+        <StoragePendingNotice />
       </div>
       <div className="modal-footer">
-        <button className="btn-action" onClick={onOpenExisting} disabled={submitting}>
+        <button className="btn-action" onClick={onOpenExisting} disabled={submitting && !pending}>
           {t("setup.openExisting")}
         </button>
-        <button className="btn-primary" onClick={() => void handleContinue()} disabled={submitting}>
+        <button className="btn-primary" onClick={() => void handleContinue()} disabled={submitting || pending}>
           {submitting ? t("workspaces.opening") : t("setup.continue")}
         </button>
       </div>
@@ -251,7 +292,9 @@ function defaultTargetLanguage(languages: string[], interfaceLanguage: string): 
   return languages[0] ?? "";
 }
 
-function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () => void }) {
+function TargetStep({ workspace, onDone, onOpenExisting, mayAdopt }: {
+  workspace: Workspace; onDone: () => void; onOpenExisting: () => void; mayAdopt: () => boolean;
+}) {
   const { t, text, language } = useI18n();
   // The workspace's own targets and languages: a new workspace has no targets,
   // but the workspace step may have opened an existing one, whose targets this
@@ -263,6 +306,11 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
   const [requiresMetadata, setRequiresMetadata] = useState(true);
   const [error, setError] = useState<Message | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const current = useRef(true);
+  const pending = useStoragePending();
+  const reportResult = useStorageResultReporter();
+  const ownsView = () => current.current && mayAdopt();
   const composing = useComposing();
   const nameId = useId();
   const nameErrorId = useId();
@@ -276,12 +324,12 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
     setLoaded(null);
     Promise.all([listTargets(workspace.id), getSettings(workspace.id)])
       .then(([targets, settings]) => {
-        if (attempt !== loadAttempt.current) return;
+        if (!ownsView() || attempt !== loadAttempt.current) return;
         setLoaded({ targets, languages: settings.supportedLanguages });
         setTargetLanguage(defaultTargetLanguage(settings.supportedLanguages, language));
       })
       .catch((err: unknown) => {
-        if (attempt !== loadAttempt.current) return;
+        if (!ownsView() || attempt !== loadAttempt.current) return;
         setLoadError(presentFailure(
           message("setup.targetLoadFailed"),
           "renderer: setup target step load failed",
@@ -292,7 +340,9 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
   };
 
   useEffect(() => {
+    current.current = true;
     load();
+    return () => { current.current = false; ++loadAttempt.current; };
   }, []);
 
   const trimmed = name.trim();
@@ -305,7 +355,8 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
   const canContinue = loaded !== null && hasLanguages && nameError === null && targetLanguage !== "" && !saving;
 
   const handleContinue = async () => {
-    if (!canContinue || !loaded) return;
+    if (!canContinue || !loaded || savingRef.current || pending || !ownsView()) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -313,15 +364,19 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
         [...loaded.targets, { name: trimmed, defaultLanguage: targetLanguage, requiresMetadata }],
         workspace.id,
       );
-      onDone();
+      if (ownsView()) onDone();
     } catch (err) {
-      setError(presentFailure(
+      const failure = presentFailure(
         message("setup.targetSaveFailed"),
         "renderer: setup target save failed",
         err,
         { workspaceId: workspace.id },
-      ));
-      setSaving(false);
+      );
+      if (ownsView()) {
+        setError(failure);
+        savingRef.current = false;
+        setSaving(false);
+      } else reportResult(failure);
     }
   };
 
@@ -365,6 +420,7 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
             aria-invalid={nameError !== null || undefined}
             aria-describedby={nameError ? nameErrorId : undefined}
             autoFocus
+            disabled={saving}
           />
           {nameError && <p id={nameErrorId} className="settings-field-error">{text(nameError)}</p>}
         </div>
@@ -412,8 +468,10 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
             {text(error)}
           </OperationalResult>
         )}
+        <StoragePendingNotice />
       </div>
       <div className="modal-footer">
+        {pending && saving && <button className="btn-action" onClick={onOpenExisting}>{t("setup.openExisting")}</button>}
         {/* Skipping is offered only where the step cannot be completed here:
             a workspace with no languages has nothing to give a target. */}
         {loaded && !hasLanguages ? (
@@ -421,7 +479,7 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
             {t("setup.skip")}
           </button>
         ) : (
-          <button className="btn-primary" onClick={() => void handleContinue()} disabled={!canContinue}>
+          <button className="btn-primary" onClick={() => void handleContinue()} disabled={!canContinue || pending}>
             {saving ? t("common.saving") : t("setup.continue")}
           </button>
         )}
@@ -432,7 +490,9 @@ function TargetStep({ workspace, onDone }: { workspace: Workspace; onDone: () =>
 
 // --- The Anthropic API key ---------------------------------------------------
 
-function KeyStep({ workspace, onDone }: { workspace: Workspace; onDone: () => void }) {
+function KeyStep({ workspace, onDone, onOpenExisting, mayAdopt }: {
+  workspace: Workspace; onDone: () => void; onOpenExisting: () => void; mayAdopt: () => boolean;
+}) {
   const { t, text } = useI18n();
   const [apiKey, setApiKey] = useState("");
   // The section as stored, for its hints: whether a key is already stored, or
@@ -443,6 +503,15 @@ function KeyStep({ workspace, onDone }: { workspace: Workspace; onDone: () => vo
   // stays on screen until the user finishes, as it does in Settings.
   const [savedNotice, setSavedNotice] = useState<Message | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const current = useRef(true);
+  const pending = useStoragePending();
+  const reportResult = useStorageResultReporter();
+  const ownsView = () => current.current && mayAdopt();
+  useEffect(() => {
+    current.current = true;
+    return () => { current.current = false; };
+  }, []);
   const composing = useComposing();
   const keyId = useId();
   const noticeId = useId();
@@ -466,26 +535,37 @@ function KeyStep({ workspace, onDone }: { workspace: Workspace; onDone: () => vo
   const canSave = apiKey.trim() !== "" && !saving && savedNotice === null;
 
   const handleSave = async () => {
-    if (!canSave) return;
+    if (!canSave || savingRef.current || pending || !ownsView()) return;
+    savingRef.current = true;
+    const submittedKey = apiKey;
     setSaving(true);
     setError(null);
     try {
       const { endpoint, models, thinking } = await getAnthropicSettings(workspace.id);
-      const saved = await saveAnthropicSettings({ endpoint, models, thinking, apiKey }, workspace.id);
+      // Reading the current section is preparation. Leaving before it finishes
+      // must not issue a new key write from the retired setup.
+      if (!ownsView()) return;
+      const saved = await saveAnthropicSettings({ endpoint, models, thinking, apiKey: submittedKey }, workspace.id);
       if (saved.keyNotice?.key === "settings.keyFileMovedAside") {
-        setSavedNotice(saved.keyNotice);
-        setSaving(false);
+        if (ownsView()) {
+          setSavedNotice(saved.keyNotice);
+          setSaving(false);
+        } else reportResult(saved.keyNotice, "warning");
         return;
       }
-      onDone();
+      if (ownsView()) onDone();
     } catch (err) {
-      setError(presentFailure(
+      const failure = presentFailure(
         message("setup.keySaveFailed"),
         "renderer: setup API key save failed",
         err,
         { workspaceId: workspace.id },
-      ));
-      setSaving(false);
+      );
+      if (ownsView()) {
+        setError(failure);
+        savingRef.current = false;
+        setSaving(false);
+      } else reportResult(failure);
     }
   };
 
@@ -536,8 +616,10 @@ function KeyStep({ workspace, onDone }: { workspace: Workspace; onDone: () => vo
             {text(error)}
           </OperationalResult>
         )}
+        <StoragePendingNotice />
       </div>
       <div className="modal-footer">
+        {pending && saving && <button className="btn-action" onClick={onOpenExisting}>{t("setup.openExisting")}</button>}
         {savedNotice ? (
           <button className="btn-primary" onClick={onDone} autoFocus>
             {t("setup.finish")}
@@ -547,7 +629,7 @@ function KeyStep({ workspace, onDone }: { workspace: Workspace; onDone: () => vo
             <button className="btn-action" onClick={onDone} disabled={saving}>
               {t("setup.skip")}
             </button>
-            <button className="btn-primary" onClick={() => void handleSave()} disabled={!canSave}>
+            <button className="btn-primary" onClick={() => void handleSave()} disabled={!canSave || pending}>
               {saving ? t("common.saving") : t("setup.finish")}
             </button>
           </>

@@ -15,6 +15,11 @@ export interface Workspace {
   dataDirectory: string;
 }
 
+/** The workspace was removed; optional cleanup cannot undo that committed result. */
+export interface WorkspaceDeleteResult {
+  keyCleanupIncomplete?: boolean;
+}
+
 // --- UI state (state.json) ---
 
 import { RECORDS_LIST_WIDTH } from "./layout.js";

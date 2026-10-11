@@ -45,8 +45,10 @@ import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useTablist } from "../hooks/useTablist";
 import { OperationalResult } from "./OperationalResult";
+import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 interface SettingsModalProps {
+  workspaceId: string;
   onClose: () => void;
   onSettingsChanged: () => void;
 }
@@ -91,10 +93,17 @@ function targetPayload(targets: EditableTarget[]): Target[] {
 }
 
 export function SettingsModal({
+  workspaceId,
   onClose,
   onSettingsChanged,
 }: SettingsModalProps) {
   const { t, text, rich } = useI18n();
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
+  const current = useRef(true);
+  const savingRef = useRef(false);
+  useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
+  const close = () => { if (!current.current) return; current.current = false; onClose(); };
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   // App-wide (the storage root's config.json), edited and saved with the
@@ -134,13 +143,13 @@ export function SettingsModal({
     let cancelled = false;
     Promise.all([
       getAppSettings(),
-      getSettings(),
-      getAnthropicSettings(),
-      getGenerationPromptDefaults(),
-      getGenerationPrompts(),
-      listTargets(),
-      listAnalysisPromptDefaults(),
-      listAnalysisPrompts(),
+      getSettings(workspaceId),
+      getAnthropicSettings(workspaceId),
+      getGenerationPromptDefaults(workspaceId),
+      getGenerationPrompts(workspaceId),
+      listTargets(workspaceId),
+      listAnalysisPromptDefaults(workspaceId),
+      listAnalysisPrompts(workspaceId),
     ])
       .then(([app, s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
         if (cancelled) return;
@@ -173,7 +182,7 @@ export function SettingsModal({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [workspaceId]);
 
   const appSettingsDirty =
     JSON.stringify(appSettings) !== JSON.stringify(initialAppSettings.current);
@@ -186,8 +195,9 @@ export function SettingsModal({
     appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty || anthropicDirty;
 
   const handleRequestClose = async () => {
-    if (saving) return; // non-interruptible save in progress; gate every close path (incl. Escape)
-    if (!isDirty) { onClose(); return; }
+    if (!current.current) return;
+    if (savingRef.current) { if (storagePending) close(); return; }
+    if (!isDirty) { close(); return; }
     const ok = await confirm({
       title: t("common.discardTitle"),
       message: t("common.discardMessage"),
@@ -195,7 +205,7 @@ export function SettingsModal({
       cancelLabel: t("common.keepEditing"),
       danger: true,
     });
-    if (ok) onClose();
+    if (ok && current.current) close();
   };
 
   const isValid = (): boolean => {
@@ -214,7 +224,7 @@ export function SettingsModal({
 
   // Save requires both dirty and valid: re-persisting an unchanged form is a
   // no-op that the convention asks us to disable.
-  const canSave = !saving && isDirty && isValid();
+  const canSave = !saving && !storagePending && isDirty && isValid();
 
   const { tablistProps, getTabProps, getPanelProps } = useTablist<Tab>({
     tabs: TABS,
@@ -224,7 +234,8 @@ export function SettingsModal({
   });
 
   const handleSaveAll = async () => {
-    if (!appSettings || !settings || !anthropic || !generationPrompts) return;
+    if (savingRef.current || storagePending || !appSettings || !settings || !anthropic || !generationPrompts) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     setRenameSkips([]);
@@ -237,23 +248,40 @@ export function SettingsModal({
         .filter(({ oldName, newName }) => oldName && newName && oldName !== newName);
 
       const { endpoint, models, thinking, apiKey } = anthropic;
-      const [savedAppSettings, savedSettings, savedAnthropic, savedGenPrompts, savedPrompts] = await Promise.all([
+      const saves = [
         appSettingsDirty ? saveAppSettings(appSettings) : Promise.resolve(appSettings),
-        settingsDirty ? saveSettings(settings) : Promise.resolve(settings),
+        settingsDirty ? saveSettings(settings, workspaceId) : Promise.resolve(settings),
         anthropicDirty
-          ? saveAnthropicSettings({ endpoint, models, thinking, ...(apiKey.trim() ? { apiKey } : {}) })
+          ? saveAnthropicSettings({ endpoint, models, thinking, ...(apiKey.trim() ? { apiKey } : {}) }, workspaceId)
           : Promise.resolve(anthropic),
-        generationDirty ? saveGenerationPrompts(generationPrompts) : Promise.resolve(generationPrompts),
-        analysisDirty ? saveAnalysisPrompts(prompts) : Promise.resolve(prompts),
-      ]);
+        generationDirty ? saveGenerationPrompts(generationPrompts, workspaceId) : Promise.resolve(generationPrompts),
+        analysisDirty ? saveAnalysisPrompts(prompts, workspaceId) : Promise.resolve(prompts),
+      ] as const;
+      const [savedAppSettings, savedSettings, savedAnthropic, savedGenPrompts, savedPrompts] = await Promise.all(saves).catch(async (error: unknown) => {
+        // One refused set does not cancel the other already submitted writes.
+        // Keep this Save owned and non-repeatable until all of them settle.
+        await Promise.allSettled(saves);
+        throw error;
+      });
 
       const skips: RenameSkip[] = [];
       for (const { oldName, newName } of renames) {
-        const { postsSkipped } = await renameTarget(oldName, newName);
+        const { postsSkipped } = await renameTarget(oldName, newName, workspaceId);
         for (const file of postsSkipped) skips.push({ ...file, oldName });
       }
-      const savedTargets = targetsDirty ? await saveTargets(targetPayload(targets)) : targetPayload(targets);
+      const savedTargets = targetsDirty ? await saveTargets(targetPayload(targets), workspaceId) : targetPayload(targets);
 
+      // The submitted workspace intent still finishes after leaving. Only its
+      // original live editor may adopt snapshots or close itself.
+      onSettingsChanged();
+      if (!current.current) {
+        if (skips.length > 0) {
+          reportStorageResult(message("settings.renameSkipped", { count: skips.length }), "warning");
+          for (const skip of skips) reportStorageResult(message("settings.renameSkippedFile", { file: skip.fileName, target: skip.oldName, reason: skip.reason }), "warning");
+        }
+        if (savedAnthropic.keyNotice?.key === "settings.keyFileMovedAside") reportStorageResult(savedAnthropic.keyNotice, "warning");
+        return;
+      }
       setAppSettings(savedAppSettings);
       initialAppSettings.current = savedAppSettings;
       const savedDraft = { ...savedAnthropic, apiKey: "" };
@@ -268,19 +296,17 @@ export function SettingsModal({
       initialTargets.current = editableSavedTargets;
       setPrompts(savedPrompts);
       initialPrompts.current = savedPrompts;
-      onSettingsChanged();
       // Where this save moved a damaged key file stays on screen, like a rename
       // that skipped posts.
       if (skips.length > 0) setRenameSkips(skips);
-      else if (savedAnthropic.keyNotice?.key !== "settings.keyFileMovedAside") onClose();
+      else if (savedAnthropic.keyNotice?.key !== "settings.keyFileMovedAside") close();
     } catch (err) {
-      setSaveError(presentFailure(
-        message("settings.saveFailed"),
-        "renderer: settings save failed",
-        err,
-      ));
+      const failure = presentFailure(message(current.current ? "settings.saveFailed" : "app.storageChangeFailed"), "renderer: settings save failed", err);
+      if (current.current) setSaveError(failure);
+      else reportStorageResult(failure);
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (current.current) setSaving(false);
     }
   };
 
@@ -290,8 +316,9 @@ export function SettingsModal({
       onClose={() => void handleRequestClose()}
       width={560}
       maxHeight="85vh"
-      closeDisabled={saving}
+      closeDisabled={saving && !storagePending}
     >
+      <StoragePendingNotice />
       {loadError ? (
         <div className="modal-body">
           <OperationalResult severity="error" className="modal-result">
@@ -322,8 +349,10 @@ export function SettingsModal({
           </div>
 
           <div className="modal-body" {...getPanelProps(tab)}>
+            <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
             {tab === "general" && settings && appSettings && (
               <GeneralTab
+                workspaceId={workspaceId}
                 settings={settings}
                 onChange={setSettings}
                 appSettings={appSettings}
@@ -358,6 +387,7 @@ export function SettingsModal({
                 onChange={setGenerationPrompts}
               />
             )}
+            </fieldset>
           </div>
           {saveError && (
             <OperationalResult severity="error" className="modal-result modal-footer-result">
@@ -384,9 +414,9 @@ export function SettingsModal({
             <button
               className="btn-action"
               onClick={() => void handleRequestClose()}
-              disabled={saving}
+              disabled={saving && !storagePending}
             >
-              {t("common.cancel")}
+              {saving && storagePending ? t("common.close") : t("common.cancel")}
             </button>
             <button
               className="btn-primary"
@@ -448,11 +478,13 @@ function parseLanguages(text: string): string[] {
 }
 
 function GeneralTab({
+  workspaceId,
   settings,
   onChange,
   appSettings,
   onAppSettingsChange,
 }: {
+  workspaceId: string;
   settings: Settings;
   onChange: (s: Settings) => void;
   appSettings: AppSettings;
@@ -614,7 +646,7 @@ function GeneralTab({
       <FontsSection settings={settings} update={update} />
 
       <div className="settings-subheading">{t("settings.maintenance")}</div>
-      <RebuildIndexSection />
+      <RebuildIndexSection workspaceId={workspaceId} />
     </div>
   );
 }
@@ -733,27 +765,38 @@ function FontsSection({
 // What a rebuild found: the counts, rendered as sentences when shown.
 type RebuildSummary = { count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number };
 
-function RebuildIndexSection() {
+function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
   const { t, text, rich } = useI18n();
+  const storagePending = useStoragePending();
+  const reportStorageResult = useStorageResultReporter();
+  const current = useRef(true);
+  const runningRef = useRef(false);
+  useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<RebuildSummary | null>(null);
   const [error, setError] = useState<Message | null>(null);
 
   const rebuild = async () => {
+    if (runningRef.current || storagePending) return;
+    runningRef.current = true;
     setRunning(true);
     setSummary(null);
     setError(null);
     try {
-      const { count, skipped, duplicateSlugs, orphanedAssets } = await rebuildPostIndex();
-      setSummary({ count, skipped, duplicateSlugs, orphanedAssets });
+      const { count, skipped, duplicateSlugs, orphanedAssets } = await rebuildPostIndex(workspaceId);
+      if (current.current) setSummary({ count, skipped, duplicateSlugs, orphanedAssets });
+      else {
+        if (skipped > 0) reportStorageResult(message("settings.rebuildSkipped", { count: skipped }), "warning");
+        if (duplicateSlugs > 0) reportStorageResult(message("settings.rebuildDuplicates", { count: duplicateSlugs }), "warning");
+        if (orphanedAssets > 0) reportStorageResult(message("settings.rebuildOrphans", { count: orphanedAssets }), "warning");
+      }
     } catch (err) {
-      setError(presentFailure(
-        message("settings.rebuildFailed"),
-        "renderer: post index rebuild failed",
-        err,
-      ));
+      const failure = presentFailure(message("settings.rebuildFailed"), "renderer: post index rebuild failed", err);
+      if (current.current) setError(failure);
+      else reportStorageResult(failure);
     } finally {
-      setRunning(false);
+      runningRef.current = false;
+      if (current.current) setRunning(false);
     }
   };
 
@@ -762,7 +805,7 @@ function RebuildIndexSection() {
       <p className="settings-hint">
         {rich("settings.rebuildHint", { file: <code>posts/index.json</code> })}
       </p>
-      <button className="btn-action" onClick={() => void rebuild()} disabled={running}>
+      <button className="btn-action" onClick={() => void rebuild()} disabled={running || storagePending}>
         {running ? t("settings.rebuilding") : t("settings.rebuild")}
       </button>
       {summary && (

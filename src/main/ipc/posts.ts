@@ -21,7 +21,6 @@ import {
   rebuildIndex,
   postExists,
   listReferrers,
-  getPostSummary,
   queueWorkspaceContent,
   queueWorkspaceMetadata,
   setContentSaveListener,
@@ -322,7 +321,7 @@ export function registerPostHandlers(): void {
     return {
       frontMatter: post.frontMatter,
       content: post.content,
-      summary: (await getPostSummary(dir, post.frontMatter.id)),
+      summary: post.summary,
     };
   });
 
@@ -354,7 +353,7 @@ export function registerPostHandlers(): void {
       return {
         frontMatter: post.frontMatter,
         content: post.content,
-        summary: (await getPostSummary(dir, post.frontMatter.id)),
+        summary: post.summary,
       };
     } catch (err) {
       logError("post status change failed", {
@@ -384,7 +383,7 @@ export function registerPostHandlers(): void {
     return {
       frontMatter: post.frontMatter,
       content: post.content,
-      summary: (await getPostSummary(dir, post.frontMatter.id)),
+      summary: post.summary,
     };
   });
 

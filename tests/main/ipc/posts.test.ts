@@ -16,6 +16,8 @@ import path from "node:path";
 import { CHANNELS, type PostContentSavedEvent, type PostUpdate } from "@shared/ipc";
 import type { Post, PostListResponse, PostMutationResult, PostStatus, Target } from "@shared/types";
 
+const publication = vi.hoisted(() => ({ summaryUnavailable: false, afterMutation: null as null | (() => void) }));
+
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 // Every main -> renderer send, in order: the far side of the content-save seam.
 const sent = vi.hoisted(() => [] as { channel: string; payload: unknown }[]);
@@ -37,18 +39,33 @@ vi.mock("@main/storageAccess.js", async () => {
     listByStatus: async (...args: Parameters<typeof post.listByStatus>) => post.listByStatus(...args),
     countByStatus: async (...args: Parameters<typeof post.countByStatus>) => post.countByStatus(...args),
     getPost: async (...args: Parameters<typeof post.getPost>) => post.getPost(...args),
-    changeStatus: async (...args: Parameters<typeof post.changeStatus>) => post.changeStatus(...args),
-    setLocked: async (...args: Parameters<typeof post.setLocked>) => post.setLocked(...args),
+    changeStatus: async (...args: Parameters<typeof storageTasks.changeStatus>) => {
+      const result = storageTasks.changeStatus(...args);
+      publication.afterMutation?.();
+      return result;
+    },
+    setLocked: async (...args: Parameters<typeof storageTasks.setLocked>) => {
+      const result = storageTasks.setLocked(...args);
+      publication.afterMutation?.();
+      return result;
+    },
     deletePost: async (...args: Parameters<typeof post.deletePost>) => post.deletePost(...args),
     rebuildIndex: async (...args: Parameters<typeof post.rebuildIndex>) => post.rebuildIndex(...args),
     postExists: async (...args: Parameters<typeof post.postExists>) => post.postExists(...args),
     listReferrers: async (...args: Parameters<typeof post.listReferrers>) => post.listReferrers(...args),
-    getPostSummary: async (...args: Parameters<typeof post.getPostSummary>) => post.getPostSummary(...args),
+    getPostSummary: async (...args: Parameters<typeof post.getPostSummary>) => {
+      if (publication.summaryUnavailable) throw new Error("Independent summary read timed out after publication");
+      return post.getPostSummary(...args);
+    },
     queueWorkspaceContent: async (...args: Parameters<typeof storageTasks.queueWorkspaceContent>) => storageTasks.queueWorkspaceContent(...args),
     queueWorkspaceMetadata: async (...args: Parameters<typeof storageTasks.queueWorkspaceMetadata>) => storageTasks.queueWorkspaceMetadata(...args),
     recordAssetChange: async (...args: Parameters<typeof post.recordAssetChange>) => post.recordAssetChange(...args),
     createPost: async (...args: Parameters<typeof storageTasks.createPost>) => storageTasks.createPost(...args),
-    updatePost: async (...args: Parameters<typeof storageTasks.updatePost>) => storageTasks.updatePost(...args),
+    updatePost: async (...args: Parameters<typeof storageTasks.updatePost>) => {
+      const result = storageTasks.updatePost(...args);
+      publication.afterMutation?.();
+      return result;
+    },
   };
 });
 
@@ -79,7 +96,7 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { saveTargets } from "@main/core/services/configStore.js";
-import { clearCache } from "@main/core/services/postStore.js";
+import { clearCache, changeStatus } from "@main/core/services/postStore.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
 
 let home: string;
@@ -100,6 +117,8 @@ async function createDraft(target = "blogger", language = "en", sourceId?: strin
 }
 
 beforeEach(() => {
+  publication.summaryUnavailable = false;
+  publication.afterMutation = null;
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-posts-"));
   process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
@@ -596,4 +615,31 @@ describe("rebuildPostIndex", () => {
   // throws on unreadable workspace files, which cannot be induced through the
   // public handler surface without corrupting the on-disk posts directory in a way
   // that is environment-specific and brittle. The success path is covered above.
+});
+
+
+describe("mutation summaries belong to the published result", () => {
+  it.each(["update", "status", "lock"] as const)("returns %s success even when an independent summary request would time out", async (operation) => {
+    const id = await createDraft();
+    publication.summaryUnavailable = true;
+    const result = await mutate(operation, id);
+    expect(result.summary.id).toBe(id);
+    expect(result.summary.status).toBe(result.frontMatter.status);
+    expect(result.summary.locked).toBe(result.frontMatter.locked);
+  });
+
+  it.each(["update", "status", "lock"] as const)("keeps the %s summary from its own publication when a successor runs before delivery", async (operation) => {
+    const id = await createDraft();
+    publication.afterMutation = () => changeStatus(dataDir, id, "discarded");
+    const result = await mutate(operation, id);
+    expect(result.frontMatter.status).not.toBe("discarded");
+    expect(result.summary.status).toBe(result.frontMatter.status);
+    expect(result.summary.locked).toBe(result.frontMatter.locked);
+  });
+
+  function mutate(operation: "update" | "status" | "lock", id: string): Promise<PostMutationResult> {
+    if (operation === "update") return invoke(CHANNELS.updatePost, wsId, id, { content: "Canonical body excerpt" });
+    if (operation === "status") return invoke(CHANNELS.changePostStatus, wsId, id, "verified");
+    return invoke(CHANNELS.setPostLocked, wsId, id, true);
+  }
 });

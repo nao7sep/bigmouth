@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type { AnthropicSettingsView, Settings, Workspace } from "@shared/types";
+const pendingBridge = vi.hoisted(() => ({ listeners: new Set<(pending: boolean) => void>() }));
 
 // First-run setup asks for the workspace, its first target and the optional
 // API key, each saved through the ordinary call the moment the user continues.
 // The api is mocked so each step's call, and what a skip leaves unwritten, can
 // be asserted directly.
 vi.mock("@renderer/api", () => ({
+  getStoragePending: vi.fn(async () => false),
+  onStoragePendingChanged: (listener: (pending: boolean) => void) => {
+    pendingBridge.listeners.add(listener);
+    return () => pendingBridge.listeners.delete(listener);
+  },
   reportProblem: vi.fn(),
   suggestWorkspaceLocation: vi.fn(),
   openOrCreateWorkspace: vi.fn(),
@@ -19,6 +25,7 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { SetupModal } from "@renderer/components/SetupModal";
+import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import {
   getAnthropicSettings,
   getSettings,
@@ -65,7 +72,171 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  pendingBridge.listeners.clear();
   vi.clearAllMocks();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+async function renderDepartableSetup() {
+  const onFinish = vi.fn();
+  const onOpenExisting = vi.fn();
+  const view = render(<StoragePendingProvider>
+    <SetupModal onFinish={onFinish} onOpenExisting={onOpenExisting} />
+    <StoragePendingResults />
+  </StoragePendingProvider>);
+  await flush();
+  return { ...view, onFinish, onOpenExisting };
+}
+
+function announcePending() {
+  act(() => { for (const listener of pendingBridge.listeners) listener(true); });
+}
+
+describe("SetupModal — pending changes retain their result after leaving", () => {
+  it("allows leaving slow creation and does not advance the retired setup on late success", async () => {
+    const work = deferred<Workspace>();
+    mockOpenOrCreate.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    expect(view.onOpenExisting).toHaveBeenCalledTimes(1);
+    await act(async () => { work.resolve(WS); });
+    expect(view.queryByText("Your first target")).toBeNull();
+    expect(view.onFinish).not.toHaveBeenCalled();
+  });
+
+  it("retains a departed creation failure in the surviving result owner", async () => {
+    const work = deferred<Workspace>();
+    mockOpenOrCreate.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    await act(async () => { work.reject(new Error("creation failed")); });
+    expect(view.getByRole("alert").textContent).toContain("The workspace could not be opened or created.");
+    expect(view.getByRole("alert").closest(".app-operational-result")).not.toBeNull();
+  });
+
+  it("leaves a slow target save without advancing after its final success", async () => {
+    const work = deferred<Awaited<ReturnType<typeof saveTargets>>>();
+    mockSaveTargets.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    expect(view.onOpenExisting).toHaveBeenCalledTimes(1);
+    await act(async () => { work.resolve([]); });
+    expect(view.queryByText("Your API key")).toBeNull();
+  });
+
+  it("retains a departed target failure without applying it to a successor", async () => {
+    const work = deferred<Awaited<ReturnType<typeof saveTargets>>>();
+    mockSaveTargets.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    await act(async () => { work.reject(new Error("target failed")); });
+    expect(view.getByRole("alert").closest(".app-operational-result")).not.toBeNull();
+    expect(view.getByRole("alert").textContent).toContain("The target could not be saved.");
+  });
+
+  it("does not finish retired setup when a slow key save completes", async () => {
+    const work = deferred<AnthropicSettingsView>();
+    mockSaveAnthropic.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    fireEvent.change(view.getByLabelText(/^API Key/), { target: { value: "test-key" } });
+    await click(view.getByText("Finish"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    await act(async () => { work.resolve(ANTHROPIC); });
+    expect(view.onFinish).not.toHaveBeenCalled();
+  });
+
+  it("retains the key recovery warning after leaving a slow save", async () => {
+    const work = deferred<AnthropicSettingsView>();
+    mockSaveAnthropic.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    fireEvent.change(view.getByLabelText(/^API Key/), { target: { value: "test-key" } });
+    await click(view.getByText("Finish"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    await act(async () => { work.resolve({ ...ANTHROPIC, keyNotice: { key: "settings.keyFileMovedAside", values: { path: "/fixture/keys" } } }); });
+    expect(view.getByText(/fixture\/keys/).closest(".app-operational-result")).not.toBeNull();
+    expect(view.onFinish).not.toHaveBeenCalled();
+  });
+
+  it("retains a departed key failure without exposing its diagnostic details", async () => {
+    const work = deferred<AnthropicSettingsView>();
+    mockSaveAnthropic.mockReturnValue(work.promise);
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    fireEvent.change(view.getByLabelText(/^API Key/), { target: { value: "test-key" } });
+    await click(view.getByText("Finish"));
+    announcePending();
+    await click(view.getByText("Open Existing Workspace"));
+    await act(async () => { work.reject(new Error("private-key-save-details")); });
+    const result = view.getByRole("alert");
+    expect(result.closest(".app-operational-result")).not.toBeNull();
+    expect(result.textContent).toContain("The API key could not be saved.");
+    expect(result.textContent).not.toContain("private-key-save-details");
+    expect(view.onFinish).not.toHaveBeenCalled();
+  });
+
+  it("does not issue a key write when setup leaves during section preparation", async () => {
+    const view = await renderDepartableSetup();
+    await click(view.getByText("Continue"));
+    await click(view.getByText("Continue"));
+    const read = deferred<AnthropicSettingsView>();
+    mockGetAnthropic.mockReturnValueOnce(read.promise);
+    fireEvent.change(view.getByLabelText(/^API Key/), { target: { value: "test-key" } });
+    await click(view.getByText("Finish"));
+    view.unmount();
+    await act(async () => { read.resolve(ANTHROPIC); });
+    expect(mockSaveAnthropic).not.toHaveBeenCalled();
+    expect(view.onFinish).not.toHaveBeenCalled();
+  });
+
+  it("admits one save per step when Enter is repeated before rerender", async () => {
+    const view = await renderDepartableSetup();
+    let field = view.getByLabelText("Name");
+    act(() => {
+      fireEvent.keyDown(field, { key: "Enter" });
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    await flush();
+    expect(mockOpenOrCreate).toHaveBeenCalledTimes(1);
+    field = view.getByLabelText("Name");
+    act(() => {
+      fireEvent.keyDown(field, { key: "Enter" });
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    await flush();
+    expect(mockSaveTargets).toHaveBeenCalledTimes(1);
+    field = view.getByLabelText(/^API Key/);
+    fireEvent.change(field, { target: { value: "test-key" } });
+    act(() => {
+      fireEvent.keyDown(field, { key: "Enter" });
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    await flush();
+    expect(mockSaveAnthropic).toHaveBeenCalledTimes(1);
+    expect(view.onFinish).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function flush() {

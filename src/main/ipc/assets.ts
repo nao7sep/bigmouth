@@ -6,20 +6,17 @@ import exifr from "exifr";
 import {
   CHANNELS,
   type AssetDeleteResult,
-  type AssetUnsavedStep,
   type AssetUploadInput,
   type AssetUploadResult,
 } from "@shared/ipc";
 import { isImageAssetFilename, isReservedAssetName } from "@shared/assetNames";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getSettings } from "../storageAccess.js";
-import { getPost, recordAssetChange } from "../storageAccess.js";
+import { getPost } from "../storageAccess.js";
 import {
   assetDir,
   sanitizeFilename,
   safeResolveUnder,
-  type AssetMeta,
-  AssetRecordError,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
@@ -68,25 +65,6 @@ function readUploadDimensions(
     return {};
   }
   return { width, height };
-}
-
-/**
- * Moves the post's modified time for an asset change that already happened, and
- * says whether it could; a failure here does not undo the change.
- */
-async function recordPostEdit(dir: string, wsId: string, postId: string, filename: string): Promise<boolean> {
-  try {
-    (await recordAssetChange(dir, postId));
-    return true;
-  } catch (err) {
-    logError("post modified time not updated after an asset change", {
-      workspace: wsId,
-      postId,
-      filename,
-      error: serializeError(err),
-    });
-    return false;
-  }
 }
 
 export function registerAssetHandlers(): void {
@@ -144,31 +122,23 @@ export function registerAssetHandlers(): void {
       uploadedAt: formatUtcIso(utcNow()),
     };
 
-    // The lock is read HERE, with nothing awaited between it and the write. It
-    // used to be checked at the top of the handler, before the exifr parse above
-    // — and a lock landing inside that await then wrote an asset into a post
-    // the app had already locked. Do not hoist this back up for a faster refusal.
+    // Refuse a lock that arrived during image parsing. The storage task checks
+    // again at publication, after the remaining source-metadata lookup.
     const post = (await getPost(dir, pid));
     if (!post) throw new Error("Post not found");
     if (post.frontMatter.locked === true) {
       return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
     }
 
-    let saved: { asset: AssetMeta; changed: boolean };
-    const unsaved: AssetUnsavedStep[] = [];
+    let saved: Extract<AssetUploadResult, { ok: true }>;
     try {
       saved = (await saveAssetFile(dir, pid, filename, buffer, meta, (await readSourceMetadata(file.sourcePath, buffer.length))));
     } catch (err) {
       logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
-      // Past the file's install the upload stands, and only what records it is missing.
       if (err instanceof Error && err.name === "PostLockedError") return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
-      if (!(err instanceof AssetRecordError)) throw new Error(assetStoreErrorMessage(err));
-      saved = { asset: err.asset, changed: true };
-      unsaved.push("details");
+      throw new Error(assetStoreErrorMessage(err));
     }
     const storedMeta = saved.asset;
-    // An attached file is the post's content, so a changed one edited the post.
-    if (saved.changed && !(await recordPostEdit(dir, wsId, pid, storedMeta.filename))) unsaved.push("modifiedTime");
     logInfo("asset uploaded", {
       workspace: wsId,
       postId: pid,
@@ -178,7 +148,7 @@ export function registerAssetHandlers(): void {
       height: height ?? null,
       hasMetadata: hasMetadata ?? false,
     });
-    return { ok: true, asset: storedMeta, ...(unsaved.length > 0 ? { unsaved } : {}) } satisfies AssetUploadResult;
+    return saved;
   });
 
   ipcMain.handle(CHANNELS.deleteAsset, async (_event, wsId: string, postId: string, filename: string) => {
@@ -204,15 +174,14 @@ export function registerAssetHandlers(): void {
       throw new Error("This post is locked. Unlock it to change its assets.");
     }
 
+    let result: AssetDeleteResult;
     try {
-      (await deleteAsset(dir, pid, fn));
+      result = await deleteAsset(dir, pid, fn);
     } catch (err) {
       logError("asset metadata update failed", { workspace: wsId, postId: pid, filename: fn, error: serializeError(err) });
-      // Past the file's removal the delete stands; the next read reconciles meta.json.
-      if (!(err instanceof AssetRecordError)) throw new Error(assetStoreErrorMessage(err));
+      throw new Error(assetStoreErrorMessage(err));
     }
-    const unsaved: AssetUnsavedStep[] = (await recordPostEdit(dir, wsId, pid, fn)) ? [] : ["modifiedTime"];
     logInfo("asset deleted", { workspace: wsId, postId: pid, filename: fn });
-    return (unsaved.length > 0 ? { unsaved } : {}) satisfies AssetDeleteResult;
+    return result;
   });
 }

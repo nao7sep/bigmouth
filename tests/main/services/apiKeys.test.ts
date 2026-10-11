@@ -76,10 +76,20 @@ describe("apiKeys secret store", () => {
     writeApiKey(keyFile, W1, "anthropic", "a");
     writeApiKey(keyFile, W2, "anthropic", "c");
 
-    clearWorkspaceKeys(keyFile, W1);
+    expect(clearWorkspaceKeys(keyFile, W1)).toBe(true);
     expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("c");
     expect(JSON.parse(fs.readFileSync(keyFile, "utf-8")).workspaces[W1]).toBeUndefined();
+  });
+
+  it("clears the requested raw workspace scope even when its individual key entries cannot be read", () => {
+    const other = { keys: { anthropic: "other-workspace-key" }, future: { kept: true } };
+    fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: {
+      [W1]: { keys: { "Unknown-Key": "uninterpretable-stored-value" } }, [W2]: other,
+    } }));
+
+    expect(clearWorkspaceKeys(keyFile, W1)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(keyFile, "utf8")).workspaces).toEqual({ [W2]: other });
   });
 
   it("hasStoredApiKey reports only a stored key, excluding the environment", () => {
@@ -130,7 +140,7 @@ describe("apiKeys secret store", () => {
     });
 
     it("does not create the file when clearing a key that was never set", () => {
-      clearWorkspaceKeys(keyFile, W1);
+      expect(clearWorkspaceKeys(keyFile, W1)).toBe(true);
       expect(fs.existsSync(keyFile)).toBe(false);
       writeApiKey(keyFile, W1, "anthropic", ""); // blank write on an absent key is also a no-op
       expect(fs.existsSync(keyFile)).toBe(false);
@@ -160,7 +170,7 @@ describe("apiKeys secret store", () => {
 
     it("leaves a damaged file in place when a workspace is removed", () => {
       fs.writeFileSync(keyFile, "{ not json");
-      clearWorkspaceKeys(keyFile, W1);
+      expect(clearWorkspaceKeys(keyFile, W1)).toBe(false);
       expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
     });
 
@@ -170,7 +180,7 @@ describe("apiKeys secret store", () => {
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       expect(keyFileProblem(keyFile)).toEqual({ key: "settings.keyFileInaccessible", values: { path: keyFile } });
       expect(() => writeApiKey(keyFile, W1, "anthropic", "new-key")).toThrow(UnreadableStoreError);
-      clearWorkspaceKeys(keyFile, W1);
+      expect(clearWorkspaceKeys(keyFile, W1)).toBe(false);
       expect(fs.statSync(keyFile).isDirectory()).toBe(true);
       expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
     });
@@ -285,7 +295,7 @@ describe("file permissions (POSIX only)", () => {
         expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
         expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
         expect(() => writeApiKey(keyFile, W1, "anthropic", "sk-new")).toThrow(NewerFormatError);
-        clearWorkspaceKeys(keyFile, W1);
+        expect(clearWorkspaceKeys(keyFile, W1)).toBe(false);
 
         expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
         expect(fs.readdirSync(dir).filter((entry) => entry.endsWith(".invalid"))).toEqual([]);

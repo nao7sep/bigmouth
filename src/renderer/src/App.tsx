@@ -9,6 +9,7 @@ import {
   DEFAULT_PANE_RIGHT_WIDTH,
   type UiState,
   type Workspace,
+  type WorkspaceDeleteResult,
 } from "@shared/types";
 import {
   CENTER_MIN,
@@ -23,6 +24,7 @@ import { presentFailure } from "./util/presentFailure";
 import { OperationalResult } from "./components/OperationalResult";
 import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
+import { StoragePendingNotice, StoragePendingResults, useStorageResultReporter } from "./StoragePending";
 import "./App.css";
 
 // Per-pane configured bounds. The lower bound is the pane's own minimum; the
@@ -47,6 +49,9 @@ const RIGHT_MAX = 960;
 
 export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
+  const [workspaceReloadVersion, setWorkspaceReloadVersion] = useState(0);
+  const reportStorageResult = useStorageResultReporter();
+  const removalSelection = useRef(new Map<string, number>());
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   // First run: no workspace is registered at all, so the guided setup stands in
   // for the picker until it opens one or the user asks for the picker.
@@ -80,6 +85,10 @@ export function App() {
   const leftIntentRef = useRef(leftIntent);
   const rightIntentRef = useRef(rightIntent);
   const sessionRef = useRef<WorkspaceSessionHandle>(null);
+  const workspaceSelectionRef = useRef(0);
+  const workspaceSelectionIntent = useRef<{ workspaceId: string; selection: number } | null>(null);
+  const activeWorkspaceRef = useRef(activeWorkspace);
+  activeWorkspaceRef.current = activeWorkspace;
   // The live pane-row element, so the displayed-width clamp measures the real
   // container width rather than a guessed maximum.
   const appLayoutRef = useRef<HTMLDivElement>(null);
@@ -213,16 +222,28 @@ export function App() {
   }, [reportShellResult]);
 
   const handleSelectWorkspace = useCallback(async (ws: Workspace) => {
-    const flushed = (await sessionRef.current?.flushPendingChanges()) ?? true;
-    if (!flushed) return;
+    const selection = ++workspaceSelectionRef.current;
+    const intent = { workspaceId: ws.id, selection };
+    workspaceSelectionIntent.current = intent;
+    let flushed: boolean;
+    try { flushed = (await sessionRef.current?.flushPendingChanges()) ?? true; }
+    finally { if (workspaceSelectionIntent.current === intent) workspaceSelectionIntent.current = null; }
+    if (!flushed || workspaceSelectionRef.current !== selection) return;
 
     setActiveWorkspace(ws.id);
     setActiveWorkspaceState(ws);
+    activeWorkspaceRef.current = ws;
     setWorkspaceRegistryError(null);
+    // Selection has happened. Its optional preference save must not later close
+    // a newly opened picker or setup surface.
+    setWorkspaceModalOpen(false);
+    setSetupOpen(false);
     try {
       await updateUiState({ activeWorkspaceId: ws.id });
+      if (workspaceSelectionRef.current !== selection) return;
       resolveShellResult("active-workspace");
     } catch (err) {
+      if (workspaceSelectionRef.current !== selection) return;
       reportShellResult("active-workspace", presentFailure(
         message("app.activeWorkspaceSaveFailed"),
         "renderer: active workspace preference save failed",
@@ -230,35 +251,76 @@ export function App() {
         { workspaceId: ws.id },
       ));
     }
-    setWorkspaceModalOpen(false);
-    setSetupOpen(false);
+  }, [reportShellResult, resolveShellResult]);
+
+  const clearActiveWorkspacePreference = useCallback(async (workspaceId: string, selection: number) => {
+    try {
+      await updateUiState({ activeWorkspaceId: "" });
+      if (workspaceSelectionRef.current !== selection || activeWorkspaceRef.current !== null) return;
+      resolveShellResult("active-workspace");
+    } catch (err) {
+      if (workspaceSelectionRef.current !== selection || activeWorkspaceRef.current !== null) return;
+      reportShellResult("active-workspace", presentFailure(
+        message("app.activeWorkspaceClearFailed"),
+        "renderer: cleared active workspace preference save failed",
+        err,
+        { workspaceId },
+      ));
+    }
   }, [reportShellResult, resolveShellResult]);
 
   const handleActiveWorkspaceDeleted = useCallback(
     async (workspaceId: string) => {
-      if (activeWorkspace?.id !== workspaceId) return true;
+      if (activeWorkspaceRef.current?.id !== workspaceId) return true;
 
       const flushed = (await sessionRef.current?.flushPendingChanges()) ?? true;
       if (!flushed) return false;
+      if (activeWorkspaceRef.current?.id !== workspaceId) return true;
 
+      const selection = ++workspaceSelectionRef.current;
+      removalSelection.current.set(workspaceId, selection);
       setActiveWorkspace("");
-      try {
-        await updateUiState({ activeWorkspaceId: "" });
-        resolveShellResult("active-workspace");
-      } catch (err) {
-        reportShellResult("active-workspace", presentFailure(
-          message("app.activeWorkspaceClearFailed"),
-          "renderer: cleared active workspace preference save failed",
-          err,
-          { workspaceId },
-        ));
-      }
+      activeWorkspaceRef.current = null;
       setActiveWorkspaceState(null);
       setWorkspaceModalOpen(true);
+      await clearActiveWorkspacePreference(workspaceId, selection);
       return true;
     },
-    [activeWorkspace, reportShellResult, resolveShellResult]
+    [clearActiveWorkspacePreference]
   );
+
+  const handleWorkspaceRemovalCompleted = useCallback((workspace: Workspace, result: WorkspaceDeleteResult) => {
+    removalSelection.current.delete(workspace.id);
+    // A stale picker may still offer this row while removal is running. Retire
+    // only that identity, including a selection still awaiting another session's
+    // flush, without cancelling a selection of a different workspace.
+    if (workspaceSelectionIntent.current?.workspaceId === workspace.id) {
+      workspaceSelectionIntent.current = null;
+      workspaceSelectionRef.current += 1;
+    }
+    if (activeWorkspaceRef.current?.id === workspace.id) {
+      const selection = workspaceSelectionIntent.current
+        ? workspaceSelectionRef.current
+        : ++workspaceSelectionRef.current;
+      setActiveWorkspace("");
+      activeWorkspaceRef.current = null;
+      setActiveWorkspaceState(null);
+      setWorkspaceModalOpen(true);
+      setSetupOpen(false);
+      void clearActiveWorkspacePreference(workspace.id, selection);
+    }
+    setWorkspaceReloadVersion((version) => version + 1);
+    if (result.keyCleanupIncomplete) reportStorageResult(message("workspaces.keyCleanupIncomplete", { name: workspace.name }), "warning");
+  }, [clearActiveWorkspacePreference, reportStorageResult]);
+
+  const handleWorkspaceRemovalFailed = useCallback(async (workspace: Workspace) => {
+    const selection = removalSelection.current.get(workspace.id);
+    removalSelection.current.delete(workspace.id);
+    setWorkspaceReloadVersion((version) => version + 1);
+    if (selection !== undefined && selection === workspaceSelectionRef.current && activeWorkspaceRef.current === null) {
+      await handleSelectWorkspace(workspace);
+    }
+  }, [handleSelectWorkspace]);
 
   const handleActiveWorkspaceUpdated = useCallback((workspace: Workspace) => {
     setActiveWorkspaceState((current) => {
@@ -338,13 +400,18 @@ export function App() {
       activeWorkspaceId={activeWorkspace?.id ?? null}
       onWorkspaceDeleted={handleActiveWorkspaceDeleted}
       onWorkspaceUpdated={handleActiveWorkspaceUpdated}
+      onWorkspaceRemovalCompleted={handleWorkspaceRemovalCompleted}
+      onWorkspaceRemovalFailed={handleWorkspaceRemovalFailed}
+      reloadVersion={workspaceReloadVersion}
       initialLoadError={workspaceRegistryError}
       onLoadRecovered={() => setWorkspaceRegistryError(null)}
     />
   );
 
-  const shellResultStack = shellResults.length > 0 ? (
+  const shellResultStack = (
     <div className="app-operational-results">
+      <StoragePendingNotice className="app-operational-result" />
+      <StoragePendingResults />
       {shellResults.map((result) => (
         <OperationalResult
           key={result.key}
@@ -356,7 +423,7 @@ export function App() {
         </OperationalResult>
       ))}
     </div>
-  ) : null;
+  );
 
   if (!activeWorkspace) {
     const gate = setupOpen ? (
