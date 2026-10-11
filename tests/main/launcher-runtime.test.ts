@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // The launcher helper is plain ESM because both shell families execute it directly.
 // @ts-expect-error The directly executed .mjs helper intentionally has no declaration file.
-import { claimRuntime, isRuntimeOwner, ownsProcess, releaseRuntime, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
+import { ownsProcess, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
   const identity = { kind: "electron", label: "BigMouth", executable: "BigMouth" };
@@ -40,16 +40,41 @@ describe("launcher process identity", () => {
     }, identity)).toBe(false);
   });
 
-  it("does not let a stale launcher generation clean up its replacement", async () => {
-    const first = `first-${randomUUID()}`;
-    const second = `second-${randomUUID()}`;
+  it.each(["success", "assertion failure", "partial setup"])("isolates ownership and stale generations after %s", async (outcome) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-launcher-owner-"));
+    const scripts = path.join(root, "fixture", "scripts");
+    fs.mkdirSync(scripts, { recursive: true });
+    const helper = path.join(scripts, "launcher-runtime.mjs");
+    fs.copyFileSync(path.join(REPO_ROOT, "scripts", "launcher-runtime.mjs"), helper);
+    const sentinel = path.join(root, `company-launcher-${createHash("sha256").update(REPO_ROOT).digest("hex").slice(0, 20)}.owner`);
+    fs.writeFileSync(sentinel, "existing-launcher\n");
+    const script = [
+      'import { pathToFileURL } from "node:url";',
+      'import assert from "node:assert/strict";',
+      'const [helper, outcome] = process.argv.slice(1);',
+      'const { claimRuntime, isRuntimeOwner, releaseRuntime } = await import(pathToFileURL(helper).href);',
+      'try {',
+      '  await claimRuntime("first");',
+      '  if (outcome === "partial setup") throw new Error("simulated failure");',
+      '  await claimRuntime("second");',
+      '  assert.equal(await isRuntimeOwner("first"), false);',
+      '  assert.equal(await isRuntimeOwner("second"), true);',
+      '  if (outcome === "assertion failure") throw new Error("simulated failure");',
+      '} catch (error) {',
+      '  if (error.message !== "simulated failure") throw error;',
+      '} finally {',
+      '  await releaseRuntime("first");',
+      '  await releaseRuntime("second");',
+      '}',
+    ].join("\n");
     try {
-      await claimRuntime(first);
-      await claimRuntime(second);
-      expect(await isRuntimeOwner(first)).toBe(false);
-      expect(await isRuntimeOwner(second)).toBe(true);
+      await promisify(execFile)(process.execPath, ["--input-type=module", "--eval", script, helper, outcome], {
+        env: { ...process.env, TMPDIR: root, TMP: root, TEMP: root },
+      });
+      expect(fs.readFileSync(sentinel, "utf8")).toBe("existing-launcher\n");
+      expect(fs.readdirSync(root).sort()).toEqual([path.basename(sentinel), "fixture"].sort());
     } finally {
-      await releaseRuntime(second);
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

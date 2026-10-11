@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 
 import {
   RECORDS_READ_TIMEOUT_MS,
@@ -18,6 +19,8 @@ import type { RecordsQuery } from "@shared/records";
 
 let root: string;
 let dbPath: string;
+const nativeTerminate = Worker.prototype.terminate;
+let terminations: { worker: Worker; exit: Promise<number> }[];
 
 const query: RecordsQuery = { session: null, kind: null, level: null, search: "", after: null };
 
@@ -27,20 +30,45 @@ function line(message: string): void {
 }
 
 beforeEach(() => {
+  terminations = [];
+  vi.spyOn(Worker.prototype, "terminate").mockImplementation(function (this: Worker) {
+    const exit = nativeTerminate.call(this);
+    terminations.push({ worker: this, exit });
+    return exit;
+  });
   root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-reader-"));
   dbPath = path.join(root, "records.sqlite3");
   openRecords(dbPath, path.join(root, "logs"), new Date());
   initRecordsReader(dbPath);
 });
 
-afterEach(() => {
-  vi.useRealTimers();
+async function disposeReaderFixture(): Promise<void> {
   closeRecordsReader();
+  // close is intentionally nonblocking in the app. The fixture owns actual
+  // worker exit, including threads abandoned by earlier timeouts or failures.
+  await Promise.all(terminations.map(({ exit }) => exit));
   closeRecords();
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+afterEach(async () => {
+  vi.useRealTimers();
+  await disposeReaderFixture();
+  vi.restoreAllMocks();
 });
 
 describe("records reader", () => {
+  it("joins current and already-abandoned readers before disposing the database", async () => {
+    await readRecords({ op: "sessions" });
+    closeRecordsReader();
+    initRecordsReader(dbPath);
+    await readRecords({ op: "sessions" });
+    await disposeReaderFixture();
+    expect(terminations).toHaveLength(2);
+    expect(terminations.every(({ worker }) => worker.threadId === -1)).toBe(true);
+    expect(fs.existsSync(root)).toBe(false);
+  });
+
   it("reads beside the writer, seeing every record stored before the read", async () => {
     line("first");
     expect((await readRecords({ op: "page", query })).records.map((record) => record.title)).toEqual(["first"]);

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import {
+import type { ContentSaveEvent } from "@main/core/services/postStore.js";
+import { createPostStoreFixture } from "./postStore-fixture.js";
+let {
   createPost,
   getPost,
   queueContent,
@@ -11,7 +11,6 @@ import {
   flushPostEdits,
   flushAllPendingEdits,
   setContentSaveListener,
-  type ContentSaveEvent,
   updatePost,
   changeStatus,
   setLocked,
@@ -25,18 +24,22 @@ import {
   renameTarget,
   holdPendingFlushes,
   resumePendingFlushes,
-} from "@main/core/services/postStore.js";
+} = await import("@main/core/services/postStore.js");
 
 let dataDir: string;
+let fixture: Awaited<ReturnType<typeof createPostStoreFixture>>;
 
-beforeEach(() => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-poststore-"));
-  initializeWorkspaceData(dataDir);
+beforeEach(async () => {
+  fixture = await createPostStoreFixture();
+  dataDir = fixture.dataDir;
+  ({ createPost, getPost, queueContent, queueMetadata, flushPostEdits, flushAllPendingEdits,
+    setContentSaveListener, updatePost, changeStatus, setLocked, recordAssetChange, deletePost,
+    refreshIndex, listByStatus, countByStatus, clearCache, rebuildIndex, renameTarget,
+    holdPendingFlushes, resumePendingFlushes } = fixture.store);
 });
 
 afterEach(() => {
-  clearCache(dataDir);
-  fs.rmSync(dataDir, { recursive: true, force: true });
+  fixture?.dispose();
 });
 
 function publishableDraft(): string {
@@ -683,12 +686,12 @@ describe("pending content (write-behind buffer)", () => {
   }
 
   /**
-   * The quit-path failures for the given posts. Text that can never be saved
-   * stays buffered by design, so the process-wide buffer can still hold an
-   * earlier test's unsaveable post; scoping by id keeps each test honest.
+   * The whole fixture's quit outcome, including any unexpected pending post.
    */
   function quitFailures(...ids: string[]): { id: string; message: string }[] {
-    return flushAllPendingEdits().filter((failure) => ids.includes(failure.id));
+    const failures = flushAllPendingEdits();
+    expect(failures.every((failure) => ids.includes(failure.id))).toBe(true);
+    return failures;
   }
 
   it("getPost reads through the buffer while the disk still has the old content", () => {
