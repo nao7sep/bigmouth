@@ -429,10 +429,10 @@ describe("setPostLocked", () => {
 });
 
 describe("deletePost", () => {
-  it("deletes a post (returns undefined) and getPost then fails", async () => {
+  it("returns completed deletion and getPost then fails", async () => {
     const id = (await createDraft());
-    const result = (await invoke<void>(CHANNELS.deletePost, wsId, id));
-    expect(result).toBeUndefined();
+    const result = (await invoke(CHANNELS.deletePost, wsId, id));
+    expect(result).toEqual({ cleanupIncomplete: false });
     await expect(invoke(CHANNELS.getPost, wsId, id)).rejects.toThrow(/Post not found/);
   });
 

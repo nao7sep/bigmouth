@@ -136,6 +136,7 @@
   "session.loadFailed": "Non è stato possibile caricare questo spazio di lavoro. Riaprilo per riprovare.",
   "session.metadataUnsaved": "Non è stato possibile salvare le modifiche ai metadati. Risolvile prima di ricaricare le impostazioni.",
   "session.refreshFailed": "Le impostazioni sono cambiate, ma non è stato possibile aggiornare questo spazio di lavoro. Riapri lo spazio di lavoro per usare le impostazioni salvate.",
+  "session.deleteCleanupIncomplete": "Il post è stato eliminato, ma alcuni collegamenti alla fonte o allegati non sono stati rimossi. I file rimanenti sono ancora nello spazio di lavoro.",
   "session.postListFailed": "Non è stato possibile aggiornare l’elenco dei post. Riapri lo spazio di lavoro per riprovare.",
   "session.unreadablePosts": {
     "one": "{count} file di post non è nell’elenco perché BigMouth non è riuscito a leggerlo:",
@@ -225,6 +226,7 @@
     "many": "Eliminare questo post? L’operazione non si può annullare. {count} di altri post lo usano come origine e verranno scollegati.",
     "other": "Eliminare questo post? L’operazione non si può annullare. {count} altri post lo usano come origine e verranno scollegati."
   },
+  "post.duplicateId": "Più file di post hanno questo ID. Risolvi i file duplicati prima di eliminare il post o modificarne gli allegati: {paths}",
   "center.deleteFailed": "Non è stato possibile eliminare il post. Resta nello spazio di lavoro; riprova.",
   "center.linkFailed": "Non è stato possibile collegare il post di origine. L’origine attuale non è cambiata; riprova.",
   "center.unlinkFailed": "Non è stato possibile scollegare il post di origine. L’origine attuale non è cambiata; riprova.",

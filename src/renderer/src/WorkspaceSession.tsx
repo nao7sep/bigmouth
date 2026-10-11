@@ -32,6 +32,7 @@ import { AboutModal } from "./components/AboutModal";
 import type {
   ContentFont,
   Post,
+  PostDeleteResult,
   EditablePostMetadata,
   PostMutationResult,
   PostStatus,
@@ -128,6 +129,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [analysisPromptsVersion, setAnalysisPromptsVersion] = useState(0);
     const { t, text } = useI18n();
     const [loadError, setLoadError] = useState<Message | null>(null);
+    const [deleteWarning, setDeleteWarning] = useState(false);
     // Post files the list leaves out because they cannot be read. A dismissed
     // set stays hidden until the set changes.
     const [unreadablePosts, setUnreadablePosts] = useState<UnreadablePostFile[]>([]);
@@ -479,27 +481,27 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       await selectPost(post.frontMatter.id);
     };
 
-    const handlePostDeleted = useCallback(() => {
+    const handlePostDeleted = useCallback((deletedId: string, result: PostDeleteResult) => {
       listVersionRef.current += 1;
-      const deletedId = selectedPostIdRef.current;
+      if (result.cleanupIncomplete) setDeleteWarning(true);
       // Drop only the deleted post from the back stack (it can't be navigated to
       // anymore), keeping the rest so Back still works through the other posts.
       setNavHistory((history) => history.filter((id) => id !== deletedId));
 
-      // Delete always targets the open post, so it lives in at most one loaded
+      // Delete retains its submitted identity, even after navigation. It lives in at most one loaded
       // section. Drop it from that section and move the selection to its
       // neighbour, keeping the user in place. Only a post reached via a source
       // link can be missing from every loaded page — fall back to a reload then.
-      const removed = deletedId ? removePostFromLists(listsRef.current, deletedId) : null;
-      if (deletedId && removed) {
+      const removed = removePostFromLists(listsRef.current, deletedId);
+      if (removed) {
         const nextId = pickAdjacentPostId(listsRef.current[removed.status].posts, deletedId);
         commitLists(removed.lists);
-        void selectPost(nextId, { skipFlush: true });
+        if (selectedPostIdRef.current === deletedId) void selectPost(nextId, { skipFlush: true });
         return;
       }
 
       // Not in any loaded section (rare): clear and reload to resync.
-      void selectPost(null, { skipFlush: true });
+      if (selectedPostIdRef.current === deletedId) void selectPost(null, { skipFlush: true });
       loadPosts().catch((err) => {
         setLoadError(presentFailure(
           message("session.postListFailed"),
@@ -635,6 +637,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             onDismiss={() => setLoadError(null)}
           >
             {text(loadError)}
+          </OperationalResult>
+        )}
+        {deleteWarning && (
+          <OperationalResult severity="warning" className="toolbar-warning" onDismiss={() => setDeleteWarning(false)}>
+            {t("session.deleteCleanupIncomplete")}
           </OperationalResult>
         )}
         {unreadablePosts.length > 0 && unreadableKey !== dismissedUnreadable && (

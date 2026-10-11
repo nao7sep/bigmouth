@@ -395,6 +395,7 @@ export function registerPostHandlers(): void {
       warn("post delete failed", { workspace: wsId, postId: id, reason: "not-found" });
       throw new Error("Post not found");
     }
-    info("post deleted", { workspace: wsId, postId: id });
+    info("post deleted", { workspace: wsId, postId: id, cleanupIncomplete: deleted.cleanupIncomplete });
+    return deleted;
   });
 }

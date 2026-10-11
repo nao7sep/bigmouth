@@ -2,6 +2,7 @@ import type {
   AppSettings,
   AppSettingsLoad,
   Post,
+  PostDeleteResult,
   PostStatus,
   PostMutationResult,
   PostListResponse,
@@ -156,7 +157,7 @@ export function queuePostContent(id: string, content: string, workspaceId?: stri
 }
 
 /**
- * Buffers metadata field edits in the main process, which owns the write and
+ * Buffers metadata field edits on the storage worker, which owns the write and
  * the flush at quit. Resolves null when buffered, else why the edit was refused.
  */
 export function queuePostMetadata(
@@ -225,7 +226,7 @@ export function setPostLocked(
   return bridge().setPostLocked(requireWs(workspaceId), id, locked);
 }
 
-export function deletePost(id: string, workspaceId?: string): Promise<void> {
+export function deletePost(id: string, workspaceId?: string): Promise<PostDeleteResult> {
   return bridge().deletePost(requireWs(workspaceId), id);
 }
 

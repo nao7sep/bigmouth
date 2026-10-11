@@ -42,11 +42,12 @@ import type {
 } from "../shared/types.js";
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { comparatorFor } from "@shared/postOrder";
-import type { UnreadablePostFile } from "@shared/types";
+import type { UnreadablePostFile, PostDeleteResult } from "@shared/types";
 import { postFileName } from "../shared/filenames.js";
 import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
 import { applyStatusTransition } from "../shared/postLifecycle.js";
 import * as index from "./postIndex.js";
+import { carryingText } from "@shared/i18n/carriedMessage";
 import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { message, type Message } from "@shared/i18n/translate";
@@ -611,12 +612,27 @@ export function postExists(dataDir: string, id: string): boolean {
 
 // --- Delete ---
 
-export function deletePost(dataDir: string, id: string): boolean {
-  const entry = index.getEntry(dataDir, id);
-  if (!entry) return false;
+/** Refuse destructive work while copied Markdown files still share one attachment identity. */
+export function assertUnambiguousPostId(dataDir: string, id: string): UnreadablePostFile[] {
+  const unreadable = index.refresh(dataDir);
+  const files = index.duplicateFiles(dataDir, id);
+  if (files.length) throw new Error(carryingText(message("post.duplicateId", { paths: files.join("\n") })));
+  return unreadable;
+}
 
-  const filePath = filePathFor(dataDir, entry);
+export function deletePost(dataDir: string, id: string): PostDeleteResult | null {
+  let entry = index.getEntry(dataDir, id);
+  if (!entry) return null;
+  let filePath = filePathFor(dataDir, entry);
   if (fs.existsSync(filePath)) readPost(filePath);
+  const referrerPaths = new Set(index.allEntries(dataDir).filter((row) => row.sourceId === id).map((row) => filePathFor(dataDir, row)));
+  const unreadable = assertUnambiguousPostId(dataDir, id);
+  // Refresh can change identity or promote a surviving copy. Only the current
+  // mapping may authorize both the unlink and its shared attachment cleanup.
+  entry = index.getEntry(dataDir, id);
+  if (!entry) return null;
+  filePath = filePathFor(dataDir, entry);
+  if (fs.existsSync(filePath) && readPost(filePath).frontMatter.id !== id) throw new Error("Post identity changed before deletion");
 
   // The post goes first. An interruption after this leaves at worst a link to
   // a post that no longer exists, which the editor lets the user clear, never
@@ -631,28 +647,38 @@ export function deletePost(dataDir: string, id: string): boolean {
   // would otherwise dangle, so clear that link. This is a system operation, not
   // a user edit, so it is exempt from the lock and does not move updatedAtUtc
   // — mirroring renameTarget.
-  clearSourceReferences(dataDir, id);
+  let cleanupIncomplete = unreadable.some((file) => referrerPaths.has(file.path));
+  try {
+    cleanupIncomplete = clearSourceReferences(dataDir, id).skipped.length > 0 || cleanupIncomplete;
+  } catch (error) {
+    cleanupIncomplete = true;
+    logWarn("deleted post source cleanup incomplete", { id, error: serializeError(error) });
+  }
 
   // The attachments go with the post whatever state their meta.json is in.
   const assets = assetDir(dataDir, id);
-  if (fs.existsSync(assets)) {
-    fs.rmSync(assets, { recursive: true });
+  try {
+    if (fs.existsSync(assets)) fs.rmSync(assets, { recursive: true });
+  } catch (error) {
+    cleanupIncomplete = true;
+    logWarn("deleted post attachment cleanup incomplete", { id, path: assets, error: serializeError(error) });
   }
 
-  return true;
+  return { cleanupIncomplete };
 }
 
-function clearSourceReferences(dataDir: string, sourceId: string): void {
+function clearSourceReferences(dataDir: string, sourceId: string): BulkRewriteResult {
   // A referrer that cannot be read is skipped (and logged) and keeps its link;
   // once repaired it shows a source that no longer exists, which the editor
   // lets the user unlink. It does not block the delete: it is not a post the
   // app can show anyway.
-  rewriteMatchingPosts(
+  return rewriteMatchingPosts(
     dataDir,
     (entry) => entry.sourceId === sourceId,
     (fm) => {
       delete fm.sourceId;
     },
+    true,
   );
 }
 
@@ -677,7 +703,8 @@ export interface BulkRewriteResult {
  *
  * A post file that cannot be read (hand-edited into invalid YAML) is skipped
  * and reported, not thrown, as the index skips such a file; it is not a post
- * the app can show anyway. A failed write does throw, which stops the pass.
+ * the app can show anyway. A failed write stops an ordinary pass; post-deletion
+ * cleanup instead reports it and continues, since its primary deletion already committed.
  * The index is written once, including for a pass cut short, so it matches
  * every file already rewritten.
  */
@@ -685,6 +712,7 @@ function rewriteMatchingPosts(
   dataDir: string,
   matches: (entry: PostIndexEntry) => boolean,
   rewrite: (fm: PostFrontMatter) => void,
+  continueAfterWriteFailure = false,
 ): BulkRewriteResult {
   const rewritten: PostIndexEntry[] = [];
   const skipped: SkippedPostFile[] = [];
@@ -707,8 +735,14 @@ function rewriteMatchingPosts(
         skipped.push({ fileName: entry.fileName, reason });
         continue;
       }
-      writePost(filePath, post.frontMatter, post.content);
-      rewritten.push(projected);
+      try {
+        writePost(filePath, post.frontMatter, post.content);
+        rewritten.push(projected);
+      } catch (error) {
+        if (!continueAfterWriteFailure) throw error;
+        logWarn("post cleanup rewrite failed", { fileName: entry.fileName, error: serializeError(error) });
+        skipped.push({ fileName: entry.fileName, reason: error instanceof Error ? error.message : String(error) });
+      }
     }
   } finally {
     index.upsertEntries(dataDir, rewritten);

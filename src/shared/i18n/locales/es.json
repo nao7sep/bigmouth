@@ -136,6 +136,7 @@
   "session.loadFailed": "No se pudo cargar este espacio de trabajo. Vuelve a abrirlo para intentarlo de nuevo.",
   "session.metadataUnsaved": "No se pudieron guardar los cambios de metadatos. Resuélvelos antes de volver a cargar la configuración.",
   "session.refreshFailed": "La configuración cambió, pero no se pudo actualizar este espacio de trabajo. Vuelve a abrir el espacio de trabajo para usar la configuración guardada.",
+  "session.deleteCleanupIncomplete": "La publicación se eliminó, pero no se pudieron quitar algunos enlaces de origen o adjuntos. Los archivos restantes siguen en el espacio de trabajo.",
   "session.postListFailed": "No se pudo actualizar la lista de publicaciones. Vuelve a abrir el espacio de trabajo para intentarlo de nuevo.",
   "session.unreadablePosts": {
     "one": "{count} archivo de publicación no aparece en la lista porque BigMouth no pudo leerlo:",
@@ -225,6 +226,7 @@
     "many": "¿Eliminar esta publicación? No se puede deshacer. {count} de publicaciones más la tienen como origen y se desvincularán.",
     "other": "¿Eliminar esta publicación? No se puede deshacer. {count} publicaciones más la tienen como origen y se desvincularán."
   },
+  "post.duplicateId": "Más de un archivo de publicación tiene este ID. Resuelve los archivos duplicados antes de eliminar la publicación o cambiar sus adjuntos: {paths}",
   "center.deleteFailed": "No se pudo eliminar la publicación. Sigue en el espacio de trabajo; inténtalo de nuevo.",
   "center.linkFailed": "No se pudo vincular la publicación de origen. El origen actual no cambió; inténtalo de nuevo.",
   "center.unlinkFailed": "No se pudo desvincular la publicación de origen. El origen actual no cambió; inténtalo de nuevo.",

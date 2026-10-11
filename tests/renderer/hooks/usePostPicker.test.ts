@@ -60,6 +60,21 @@ afterEach(() => {
 });
 
 describe("usePostPicker", () => {
+  it("can reach an older matching post without clearing its filter", async () => {
+    mockListPosts.mockResolvedValueOnce(page({ published: [summary("new", { title: "New" })] }, { published: 2 }));
+    const { result } = renderHook(() => usePostPicker(1));
+    await settled();
+    act(() => result.current.setQuery("older"));
+    expect(result.current.posts).toEqual([]);
+    expect(result.current.hasMore).toBe(true);
+    mockListPosts.mockResolvedValueOnce(page({ published: [summary("old", { title: "Older match" })] }, { published: 2 }, { published: 1 }));
+    act(() => result.current.loadMore());
+    await settled();
+    expect(result.current.query).toBe("older");
+    expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["old"]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
   it("ignores a previous picker basis resolving after the replacement load", async () => {
     let answerOld!: (value: ReturnType<typeof page>) => void;
     mockListPosts.mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve; }));

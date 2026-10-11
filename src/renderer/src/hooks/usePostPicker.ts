@@ -61,7 +61,7 @@ export function usePostPicker(
   const canLoadMore = PAGED_POST_STATUSES.some((status) => offsets[status] < totals[status]);
 
   const loadMore = () => {
-    if (loadingMoreRef.current || query.trim() || !canLoadMore) {
+    if (loadingMoreRef.current || !canLoadMore) {
       return;
     }
 
@@ -107,7 +107,8 @@ export function usePostPicker(
       })
     : allPosts;
 
-  const hasMore = !lowerQuery && canLoadMore;
+  // Filtering the loaded page cannot establish absence in the remaining pages.
+  const hasMore = canLoadMore;
 
   return { posts, hasMore, loadingMore, loadMore, query, setQuery, error };
 }

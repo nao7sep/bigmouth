@@ -31,6 +31,7 @@ import type {
   GenerationPromptsData,
   ImagingOptions,
   Post,
+  PostDeleteResult,
   PostListResponse,
   PostMutationResult,
   PostStatus,
@@ -145,7 +146,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.changePostStatus, wsId, id, status) as Promise<PostMutationResult>,
   setPostLocked: (wsId: string, id: string, locked: boolean) =>
     ipcRenderer.invoke(CHANNELS.setPostLocked, wsId, id, locked) as Promise<PostMutationResult>,
-  deletePost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.deletePost, wsId, id) as Promise<void>,
+  deletePost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.deletePost, wsId, id) as Promise<PostDeleteResult>,
   listReferrers: (wsId: string, id: string) =>
     ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,
   rebuildPostIndex: (wsId: string) =>

@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Delayed save refusals still reach their fields during quitting, and stopping Analysis during preparation cancels before a provider call starts.
+- An external post edit is detected even when another post was saved afterward. Filtering a source-post picker keeps older pages reachable.
+- Interrupted attachment replacement no longer shows the previous file's upload details. Duplicate post files sharing an ID must be resolved before deleting a post or changing its attachments.
+- Deletion keeps its submitted post identity after navigation. When the post is deleted but source-link or attachment cleanup fails, the editor moves on and a workspace warning describes the remaining files.
 - A post's updated time changes only when its text, metadata, assets or source link change. Changing its status, locking it, and saving text or metadata equal to what is on disk no longer move it; uploading, replacing or deleting an asset now does.
 - An asset found in a post's folder without a record of its upload no longer gets its file's modified time saved as its upload time.
 - Quitting waits at most 2 seconds for the posts to be written. When they cannot be written, the quit is cancelled and asks to cancel, retry or quit anyway. When a stalled network or removable disk still blocks storage once the quit goes ahead, BigMouth ends itself instead of hanging; a post is never left half-written.

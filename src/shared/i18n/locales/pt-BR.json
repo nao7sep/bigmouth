@@ -136,6 +136,7 @@
   "session.loadFailed": "Não foi possível carregar este espaço de trabalho. Abra-o novamente para tentar outra vez.",
   "session.metadataUnsaved": "Não foi possível salvar as alterações de metadados. Resolva-as antes de recarregar as configurações.",
   "session.refreshFailed": "As configurações mudaram, mas não foi possível atualizar este espaço de trabalho. Abra o espaço de trabalho novamente para usar as configurações salvas.",
+  "session.deleteCleanupIncomplete": "A publicação foi excluída, mas alguns links de origem ou anexos não puderam ser removidos. Os arquivos restantes continuam no espaço de trabalho.",
   "session.postListFailed": "Não foi possível atualizar a lista de publicações. Abra o espaço de trabalho novamente para tentar outra vez.",
   "session.unreadablePosts": {
     "one": "{count} arquivo de publicação não está na lista porque o BigMouth não conseguiu lê-lo:",
@@ -225,6 +226,7 @@
     "many": "Apagar esta publicação? Isso não pode ser desfeito. {count} de outras publicações a usam como origem e serão desvinculadas.",
     "other": "Apagar esta publicação? Isso não pode ser desfeito. {count} outras publicações a usam como origem e serão desvinculadas."
   },
+  "post.duplicateId": "Mais de um arquivo de publicação tem este ID. Resolva os arquivos duplicados antes de excluir a publicação ou alterar seus anexos: {paths}",
   "center.deleteFailed": "Não foi possível apagar a publicação. Ela continua no espaço de trabalho; tente novamente.",
   "center.linkFailed": "Não foi possível vincular a publicação de origem. A origem atual não mudou; tente novamente.",
   "center.unlinkFailed": "Não foi possível desvincular a publicação de origem. A origem atual não mudou; tente novamente.",

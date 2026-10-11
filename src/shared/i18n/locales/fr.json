@@ -136,6 +136,7 @@
   "session.loadFailed": "Cet espace de travail n’a pas pu être chargé. Rouvrez-le pour réessayer.",
   "session.metadataUnsaved": "Les modifications des métadonnées n’ont pas pu être enregistrées. Réglez-les avant de recharger les réglages.",
   "session.refreshFailed": "Les réglages ont changé, mais cet espace de travail n’a pas pu être actualisé. Rouvrez l’espace de travail pour utiliser les réglages enregistrés.",
+  "session.deleteCleanupIncomplete": "La publication a été supprimée, mais certains liens vers la source ou pièces jointes n’ont pas pu être retirés. Les fichiers restants se trouvent toujours dans l’espace de travail.",
   "session.postListFailed": "La liste des publications n’a pas pu être actualisée. Rouvrez l’espace de travail pour réessayer.",
   "session.unreadablePosts": {
     "one": "{count}\u00a0fichier de publication n’apparaît pas dans la liste, car BigMouth n’a pas pu le lire\u00a0:",
@@ -225,6 +226,7 @@
     "many": "Supprimer cette publication\u00a0? Cette action est irréversible. {count} d’autres publications l’utilisent comme source et en seront dissociées.",
     "other": "Supprimer cette publication\u00a0? Cette action est irréversible. {count} autres publications l’utilisent comme source et en seront dissociées."
   },
+  "post.duplicateId": "Plusieurs fichiers de publication ont cet identifiant. Résolvez les doublons avant de supprimer la publication ou de modifier ses pièces jointes : {paths}",
   "center.deleteFailed": "La publication n’a pas pu être supprimée. Elle reste dans l’espace de travail\u00a0; réessayez.",
   "center.linkFailed": "La publication source n’a pas pu être associée. La source actuelle est inchangée\u00a0; réessayez.",
   "center.unlinkFailed": "La publication source n’a pas pu être dissociée. La source actuelle est inchangée\u00a0; réessayez.",

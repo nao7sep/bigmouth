@@ -160,6 +160,18 @@ describe("listAssets", () => {
 });
 
 describe("uploadAsset", () => {
+  it("preserves shared attachments when copied post files duplicate an id", async () => {
+    const id = await createDraft();
+    await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, { width: 1, height: 1 }));
+    const post = await invoke<Post>(CHANNELS.getPost, wsId, id);
+    const filename = fs.readdirSync(path.join(dataDir, "posts")).find((name) => name.endsWith(".md"))!;
+    fs.copyFileSync(path.join(dataDir, "posts", filename), path.join(dataDir, "posts", "duplicate.md"));
+    await expect(invokeUpload(wsId, id, upload("pic.png", Buffer.from("changed")))).rejects.toThrow("bigmouth-message:");
+    await expect(invoke(CHANNELS.deleteAsset, wsId, id, "pic.png")).rejects.toThrow("bigmouth-message:");
+    expect(fs.readFileSync(path.join(assetDir(dataDir, id), "pic.png"))).toEqual(PNG_1x1);
+    expect(post.frontMatter.id).toBe(id);
+  });
+
   it("stores a renderer-inspected image with its validated dimensions and lists it back", async () => {
     const id = (await createDraft());
     const meta = await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, { width: 1, height: 1 }));

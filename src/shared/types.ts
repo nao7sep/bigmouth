@@ -222,6 +222,11 @@ export interface AnalysisPrompt {
 
 // --- Asset ---
 
+export interface PostDeleteResult {
+  /** The primary post was deleted; independent source/attachment cleanup may be incomplete. */
+  cleanupIncomplete: boolean;
+}
+
 export interface AssetMeta {
   filename: string;
   size: number;

@@ -589,9 +589,20 @@ describe("CenterPane toolbar actions", () => {
 });
 
 describe("CenterPane delete", () => {
+  it("does not open an obsolete delete prompt after the pane was replaced", async () => {
+    let answer!: (value: { count: number; ids: string[] }) => void;
+    mockListReferrers.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const { container, rerender } = await renderPane();
+    fireEvent.click(container.querySelector(".btn-delete")!);
+    rerender(<ConfirmProvider><CenterPane key="replacement" {...baseProps()} postId="p2" /></ConfirmProvider>);
+    await act(async () => { answer({ count: 0, ids: [] }); });
+    expect(screen.queryByText("Delete this post? This cannot be undone.")).toBeNull();
+    expect(mockDeletePost).not.toHaveBeenCalled();
+  });
+
   it("confirms (mentioning referrers) then deletes and notifies the parent", async () => {
     mockListReferrers.mockResolvedValue({ count: 2, ids: ["a", "b"] });
-    mockDeletePost.mockResolvedValue(undefined);
+    mockDeletePost.mockResolvedValue({ cleanupIncomplete: false });
     const onPostDeleted = vi.fn();
     const { container } = await renderPane({ onPostDeleted });
     // The toolbar Delete button opens the confirm.
@@ -612,7 +623,7 @@ describe("CenterPane delete", () => {
     // clicks enqueued two confirms: the first deleted the post and moved the
     // selection, then the second asked to delete a post that was already gone.
     mockListReferrers.mockResolvedValue({ count: 0, ids: [] });
-    mockDeletePost.mockResolvedValue(undefined);
+    mockDeletePost.mockResolvedValue({ cleanupIncomplete: false });
     const { container } = await renderPane();
 
     const button = container.querySelector(".btn-delete")!;

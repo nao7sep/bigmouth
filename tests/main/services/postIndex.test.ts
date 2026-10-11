@@ -14,6 +14,7 @@ import {
   rebuildIndex,
   deletePost,
   renameTarget,
+  refreshIndex,
 } from "@main/core/services/postStore.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 import { canonicalIndexJson } from "@main/core/services/postIndex.js";
@@ -96,6 +97,7 @@ describe("rebuild determinism", () => {
       const created = createPost(dataDir, "blogger", "en");
       updatePost(dataDir, created.frontMatter.id, { frontMatter: { title: `Post ${i}` } });
     }
+    rebuildIndex(dataDir);
     const before = indexBytes();
     rebuildIndex(dataDir);
     expect(indexBytes()).toBe(before);
@@ -290,7 +292,7 @@ describe("a hand-edited post id outside the nanoid grammar", () => {
     clearCache(dataDir);
 
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([keeper.frontMatter.id]);
-    expect(deletePost(dataDir, bad)).toBe(false);
+    expect(deletePost(dataDir, bad)).toBeNull();
     expect(fs.existsSync(keeper.filePath)).toBe(true);
     expect(fs.existsSync(path.join(dataDir, "assets", keeper.frontMatter.id, "a.png"))).toBe(true);
 
@@ -311,7 +313,7 @@ describe("a hand-edited post id outside the nanoid grammar", () => {
     fs.utimesSync(indexFile, later, later);
     clearCache(dataDir);
 
-    expect(deletePost(dataDir, "..")).toBe(false);
+    expect(deletePost(dataDir, "..")).toBeNull();
     expect(fs.existsSync(post.filePath)).toBe(true);
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
   });
@@ -449,6 +451,49 @@ describe("a rebuild says what it left behind", () => {
 });
 
 describe("reconcile", () => {
+  it("does not delete a file whose outside edit changed its post identity", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf-8").replace(post.frontMatter.id, "new-post-id"));
+    expect(deletePost(dataDir, post.frontMatter.id)).toBeNull();
+    expect(fs.existsSync(post.filePath)).toBe(true);
+  });
+
+  it("deletes the current same-id file promoted after the original disappeared", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const copy = path.join(dataDir, "posts", "duplicate.md");
+    fs.copyFileSync(post.filePath, copy);
+    fs.unlinkSync(post.filePath);
+    expect(deletePost(dataDir, post.frontMatter.id)).toEqual({ cleanupIncomplete: false });
+    expect(fs.existsSync(copy)).toBe(false);
+    refreshIndex(dataDir);
+    expect(getPost(dataDir, post.frontMatter.id)).toBeNull();
+  });
+
+  it("does not hide an external edit behind an unrelated index publication, even after restart", () => {
+    const a = createPost(dataDir, "blogger", "en");
+    const b = createPost(dataDir, "blogger", "en");
+    const raw = fs.readFileSync(b.filePath, "utf-8").replace("status: draft", "status: published");
+    fs.writeFileSync(b.filePath, raw);
+    // Preserve its old mtime, as a restored file can do. Size/ctime still identify the change.
+    const old = new Date(0);
+    fs.utimesSync(b.filePath, old, old);
+    updatePost(dataDir, a.frontMatter.id, { frontMatter: { title: "Later save" } });
+    clearCache(dataDir);
+    refreshIndex(dataDir);
+    expect(listByStatus(dataDir, "published").map((p) => p.frontMatter.id)).toContain(b.frontMatter.id);
+  });
+
+  it("refuses to delete shared attachments when another file has the same post id", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    fs.copyFileSync(post.filePath, path.join(dataDir, "posts", "duplicate.md"));
+    const assets = path.join(dataDir, "assets", post.frontMatter.id);
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(assets, "photo.png"), "kept");
+    expect(() => deletePost(dataDir, post.frontMatter.id)).toThrow();
+    expect(fs.existsSync(post.filePath)).toBe(true);
+    expect(fs.readFileSync(path.join(assets, "photo.png"), "utf-8")).toBe("kept");
+  });
+
   it("re-reads a post edited out of band, instead of listing its old status", () => {
     // A post's filename is fixed for its lifetime, so a status flipped by a git
     // revert, a merge or a hand edit never changed the name and never triggered
@@ -491,7 +536,7 @@ describe("reconcile", () => {
     const draftIds = listByStatus(dataDir, "draft").map((post) => post.frontMatter.id);
     expect(draftIds).toContain(keep.frontMatter.id);
     expect(draftIds).not.toContain(broken.frontMatter.id);
-    expect(indexBytes()).not.toContain(broken.frontMatter.id);
+    expect(JSON.parse(indexBytes()).posts.map((row: PostIndexEntry) => row.id)).not.toContain(broken.frontMatter.id);
   });
 
   it("does not overwrite the original row when an edit creates a duplicate id", () => {
@@ -511,7 +556,7 @@ describe("reconcile", () => {
     );
     expect(matching).toHaveLength(1);
     expect(getPost(dataDir, original.frontMatter.id)?.filePath).toBe(original.filePath);
-    expect(indexBytes()).not.toContain(path.basename(changed.filePath));
+    expect(JSON.parse(indexBytes()).posts.map((row: PostIndexEntry) => row.fileName)).not.toContain(path.basename(changed.filePath));
   });
 
 
@@ -595,8 +640,9 @@ describe("post index format version", () => {
     clearCache(dataDir);
 
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
-    // Nothing drifted, so the index is not rewritten.
-    expect(indexBytes()).toBe(unmarked);
+    // Missing source observations are reconstructed, without changing the rows.
+    expect(JSON.parse(indexBytes()).posts).toEqual(posts);
+    expect(JSON.parse(indexBytes()).sources).toHaveProperty(path.basename(post.filePath));
   });
 
   it("builds the index from the post files over one it could not read, and never writes over it", () => {

@@ -145,8 +145,11 @@ vi.mock("@renderer/components/CenterPane", () => {
           >
             published
           </button>
-          <button data-testid="center-deleted" onClick={() => (p.onPostDeleted as () => void)()}>
+          <button data-testid="center-deleted" onClick={() => (p.onPostDeleted as (id: string, result: { cleanupIncomplete: boolean }) => void)(p.postId as string, { cleanupIncomplete: false })}>
             deleted
+          </button>
+          <button data-testid="center-deleted-a" onClick={() => (p.onPostDeleted as (id: string, result: { cleanupIncomplete: boolean }) => void)("a", { cleanupIncomplete: true })}>
+            delayed-delete-a
           </button>
           <button data-testid="center-export" onClick={() => (p.onExport as () => void)()}>
             export
@@ -610,6 +613,15 @@ describe("WorkspaceSession post mutation", () => {
     expect(getByTestId("right-slug").textContent).toBe("edited-slug");
   });
 
+  it("removes the submitted deleted post without moving a newer selection", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => { fireEvent.click(getByTestId("left-select-b")); });
+    await act(async () => { fireEvent.click(getByTestId("center-deleted-a")); });
+    expect(getByTestId("left-drafts").textContent).toBe("b");
+    expect(getByTestId("center-postid").textContent).toBe("b");
+    expect(document.body.textContent).toContain("The post was deleted, but some source links or attachments could not be removed.");
+  });
+
   it("removes a deleted post and selects its neighbour", async () => {
     const { getByTestId } = await mountLoaded();
     await act(async () => {
@@ -710,8 +722,7 @@ describe("WorkspaceSession modals", () => {
     // onSettingsChanged reloads targets + settings — and the POSTS with them.
     // Renaming a target rewrites `target` in every post file, so reloading only
     // the targets left the open post carrying a name that matched nothing: the
-    // Metadata tab vanished and its unmount cleared the one-second autosave
-    // timers WITHOUT persisting, taking anything typed in the last second.
+    // Metadata tab vanished. Reloading the post keeps its target projection current.
     expect(mockListTargets).toHaveBeenCalledTimes(1);
     expect(mockGetSettings).toHaveBeenCalledTimes(1);
     expect(mockListPosts).toHaveBeenCalledTimes(1);
@@ -748,7 +759,7 @@ describe("WorkspaceSession modals", () => {
   it("flushes pending metadata edits before a settings change lands", async () => {
     // The right pane is only mounted with a post open, which is exactly the case
     // that loses data: renaming a target can make the Metadata tab disappear, and
-    // its unmount clears the one-second autosave timers WITHOUT persisting.
+    // its unmount must not discard a refused value without the save/discard decision.
     const { getByTestId } = await mountLoaded();
     await act(async () => {
       fireEvent.click(getByTestId("left-select-a"));

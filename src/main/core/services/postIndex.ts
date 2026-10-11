@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PostStatus, PostIndexEntry } from "../shared/types.js";
 import type { UnreadablePostFile } from "@shared/types";
+import { fileVersion } from "../shared/fileVersion.js";
 import { readPost, projectIndexEntry } from "./postFile.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { NewerFormatError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
@@ -30,6 +31,18 @@ import { isPostId } from "../shared/filenames.js";
 
 // One map per workspace data directory, keyed by post id.
 const indexes = new Map<string, Map<string, PostIndexEntry>>();
+interface SourceObservation { version: string | null; id?: string }
+// Each source's own observation: publishing a different row proves nothing about this file.
+const sources = new Map<string, Map<string, SourceObservation>>();
+function observations(dataDir: string): Map<string, SourceObservation> {
+  let files = sources.get(dataDir);
+  if (!files) { files = new Map(); sources.set(dataDir, files); }
+  return files;
+}
+// A write supplied a projection, not a read observation. Reparse only this file at refresh.
+function observeEntry(dataDir: string, entry: PostIndexEntry): void {
+  observations(dataDir).set(entry.fileName, { version: null, id: entry.id });
+}
 // Workspaces whose index.json is left as it is while their index is loaded: a
 // newer build wrote it, or it could not be read. Their index lives in memory only.
 const leftAsIs = new Set<string>();
@@ -42,19 +55,11 @@ function indexPath(dataDir: string): string {
   return path.join(postsDir(dataDir), "index.json");
 }
 
-/** A file's modification time in ms, or 0 when it is not there to stat. */
-function modifiedAt(filePath: string): number {
-  try {
-    return fs.statSync(filePath).mtimeMs;
-  } catch {
-    return 0;
-  }
-}
-
 // --- Public API ---
 
 export function clearCache(dataDir: string): void {
   indexes.delete(dataDir);
+  sources.delete(dataDir);
   leftAsIs.delete(dataDir);
 }
 
@@ -84,6 +89,7 @@ export function countByStatus(dataDir: string, status: PostStatus): number {
  */
 export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
   const map = state(dataDir);
+  observeEntry(dataDir, entry);
   const existing = map.get(entry.id);
   if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) return;
   map.set(entry.id, entry);
@@ -99,6 +105,7 @@ export function upsertEntries(dataDir: string, entries: readonly PostIndexEntry[
   const map = state(dataDir);
   let changed = false;
   for (const entry of entries) {
+    observeEntry(dataDir, entry);
     const existing = map.get(entry.id);
     if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) continue;
     map.set(entry.id, entry);
@@ -136,6 +143,7 @@ export interface RebuildResult {
  * editing those files outside it.
  */
 export function rebuild(dataDir: string): RebuildResult {
+  sources.delete(dataDir);
   const { map, skipped, duplicateSlugs } = buildFromDisk(dataDir);
   indexes.set(dataDir, map);
   persist(dataDir, map);
@@ -145,7 +153,7 @@ export function rebuild(dataDir: string): RebuildResult {
 /**
  * Brings the in-memory index up to date with the Markdown files, which BigMouth
  * explicitly lets the user edit outside the app. Cheap: a `stat` per file, and a
- * read only of the files written since the index was (see reconcile).
+ * read only of changed files, using their individual observations (see reconcile).
  *
  * Returns the post files left out because they cannot be read, so the list can
  * say so: each is a document of its own, reported in place while the rest
@@ -156,6 +164,12 @@ export function refresh(dataDir: string): UnreadablePostFile[] {
   const { changed, unreadable } = reconcile(dataDir, map);
   if (changed) persist(dataDir, map);
   return unreadable;
+}
+
+/** Source paths sharing an id, after the caller refreshed before destructive work. */
+export function duplicateFiles(dataDir: string, id: string): string[] {
+  const files = [...observations(dataDir)].filter(([, source]) => source.id === id).map(([name]) => path.join(postsDir(dataDir), name));
+  return files.length > 1 ? files : [];
 }
 
 // --- Internal ---
@@ -246,6 +260,16 @@ function readIndexFile(dataDir: string): Map<string, PostIndexEntry> | null {
     });
     return null;
   }
+  const sourceRows = read.value.sources;
+  const known = observations(dataDir);
+  if (sourceRows && typeof sourceRows === "object" && !Array.isArray(sourceRows)) {
+    for (const [name, value] of Object.entries(sourceRows)) {
+      if (value && typeof value === "object" && "version" in value && (value.version === null || typeof value.version === "string")
+        && (!("id" in value) || typeof value.id === "string")) {
+        known.set(name, value as SourceObservation);
+      }
+    }
+  }
   const map = new Map<string, PostIndexEntry>();
   for (const item of posts) map.set(item.id, item);
   return map;
@@ -308,12 +332,9 @@ function buildFromDisk(dataDir: string): {
  * gone. Returns whether anything changed, and the files that cannot be read:
  * those are never rows, so every reconcile reads them again and finds them all.
  *
- * The re-read is by modification time against the index file's own. A post's
- * filename is fixed for its lifetime, so a status flipped by a `git revert`, a
- * merge or a hand edit never changed the name and never triggered a
- * re-projection — the left pane went on listing the post under its old status
- * while the editor showed the new one, and only Settings → Rebuild index fixed
- * it. Cheap: a `stat` per file, and a read only of the few that are newer.
+ * A row is reusable only while its own source file has the version observed
+ * when it was projected. The index file's publication time is unrelated: a save
+ * to A must not hide an earlier outside edit to B, even after a restart.
  */
 function reconcile(
   dataDir: string,
@@ -323,8 +344,16 @@ function reconcile(
   const indexed = new Map<string, string>();
   for (const [id, entry] of map) indexed.set(entry.fileName, id);
 
-  const indexedAt = modifiedAt(indexPath(dataDir));
+  const known = observations(dataDir);
   let changed = false;
+  // Release missing rows before inserting surviving copies with the same id.
+  for (const [id, entry] of [...map.entries()]) {
+    if (!onDisk.has(entry.fileName)) {
+      map.delete(id);
+      changed = true;
+    }
+  }
+
   const unreadable: UnreadablePostFile[] = [];
   const noteUnreadable = (fileName: string, newer: boolean) =>
     unreadable.push({ path: path.join(postsDir(dataDir), fileName), newer });
@@ -332,8 +361,9 @@ function reconcile(
   for (const fileName of onDisk) {
     const existingId = indexed.get(fileName);
     if (existingId !== undefined) {
-      // Written after the index was: its projection may be stale.
-      if (modifiedAt(path.join(postsDir(dataDir), fileName)) <= indexedAt) continue;
+      const version = fileVersion(path.join(postsDir(dataDir), fileName));
+      if (version !== null && known.get(fileName)?.version === version) continue;
+      changed = true; // Persist the observation even when the projection is unchanged.
       const result = tryEntryFromFile(dataDir, fileName);
       if (!("entry" in result)) {
         // The source file is authoritative. Once it is no longer projectable,
@@ -356,13 +386,9 @@ function reconcile(
     else if (insertUnique(map, result.entry)) changed = true;
   }
 
-  for (const [id, entry] of [...map.entries()]) {
-    if (!onDisk.has(entry.fileName)) {
-      map.delete(id);
-      changed = true;
-    }
+  for (const fileName of known.keys()) {
+    if (!onDisk.has(fileName)) { known.delete(fileName); changed = true; }
   }
-
   return { changed, unreadable };
 }
 
@@ -379,6 +405,8 @@ function tryEntryFromFile(
   dataDir: string,
   fileName: string,
 ): { entry: PostIndexEntry } | { reason: string; newer: boolean } {
+  const observed: SourceObservation = { version: fileVersion(path.join(postsDir(dataDir), fileName)) };
+  observations(dataDir).set(fileName, observed);
   try {
     const post = readPost(path.join(postsDir(dataDir), fileName));
     if (!post.frontMatter.id) {
@@ -401,6 +429,7 @@ function tryEntryFromFile(
       logWarn("post file skipped", { fileName, reason });
       return { reason, newer: false };
     }
+    observed.id = post.frontMatter.id;
     return { entry: projectIndexEntry(post.frontMatter, fileName, post.content) };
   } catch (err) {
     // `reason` is what the user is shown; the serialized error is what makes the
@@ -459,7 +488,7 @@ function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
   if (leftAsIs.has(dataDir)) return;
   // not recorded: posts/index.json is a cache rebuilt from the post files (data-backup conventions).
   try {
-    writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()]));
+    writeFileAtomic(indexPath(dataDir), canonicalIndexJson([...map.values()], Object.fromEntries([...observations(dataDir)].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))));
   } catch (error) {
     logWarn("post index could not be persisted; current catalog remains in memory", { path: indexPath(dataDir), error: serializeError(error) });
   }
@@ -472,9 +501,9 @@ function persist(dataDir: string, map: Map<string, PostIndexEntry>): void {
  * sorted by (createdAtUtc instant, id), each entry written with a fixed key
  * order and absent optionals omitted, 2-space indent, trailing newline.
  */
-export function canonicalIndexJson(entries: PostIndexEntry[]): string {
+export function canonicalIndexJson(entries: PostIndexEntry[], sourceFiles?: Record<string, SourceObservation>): string {
   const sorted = [...entries].sort(compareEntries);
-  return jsonStoreText("postIndex", { posts: sorted.map(canonicalEntryObject) });
+  return jsonStoreText("postIndex", { posts: sorted.map(canonicalEntryObject), ...(sourceFiles ? { sources: sourceFiles } : {}) });
 }
 
 function compareEntries(a: PostIndexEntry, b: PostIndexEntry): number {

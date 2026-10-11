@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ContentFont, Post, PostMutationResult, PostStatus } from "@shared/types";
+import type { ContentFont, Post, PostDeleteResult, PostMutationResult, PostStatus } from "@shared/types";
 import {
   getPost,
   updatePost,
@@ -29,7 +29,7 @@ interface CenterPaneProps {
   workspaceId: string;
   postId: string;
   onPostUpdated: (result: PostMutationResult) => void;
-  onPostDeleted: () => void;
+  onPostDeleted: (id: string, result: PostDeleteResult) => void;
   onContentChange: (content: string) => void;
   onPostLoaded: (post: Post) => void;
   onExport: () => void;
@@ -73,6 +73,11 @@ export function CenterPane({
   const [statusError, setStatusError] = useState<Message | null>(null);
   // True while a delete confirmation is open or resolving. See openDeleteConfirm.
   const deletingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [saveError, setSaveError] = useState<Message | null>(null);
   const [loadError, setLoadError] = useState<Message | null>(null);
   const {
@@ -240,7 +245,7 @@ export function CenterPane({
 
   // Status switcher: a manual-activation radiogroup, so arrowing only moves the
   // cursor and Space/Enter (or a click) commits — a status change flushes saves
-  // and hits the network, so it must not fire on focus move the way a native
+  // and writes to storage, so it must not fire on focus move the way a native
   // radio would. `value` falls back to "draft" only while no post is loaded (the
   // group isn't rendered then).
   const { radioGroupProps, getRadioProps } = useRadioGroup<PostStatus>({
@@ -275,6 +280,7 @@ export function CenterPane({
       referrerCount = 0;
     }
 
+    if (!mountedRef.current) return;
     const ok = await confirm({
       message:
         referrerCount > 0
@@ -283,11 +289,11 @@ export function CenterPane({
       confirmLabel: t("common.delete"),
       danger: true,
     });
-    if (!ok) return;
+    if (!ok || !mountedRef.current) return;
 
     try {
-      await deletePost(postId, workspaceId);
-      onPostDeleted();
+      const result = await deletePost(postId, workspaceId);
+      onPostDeleted(postId, result);
     } catch (err) {
       setStatusError(presentFailure(
         message("center.deleteFailed"),

@@ -131,12 +131,14 @@ export const storageTasks = {
   resumePendingFlushes: postStore.resumePendingFlushes,
   listAssets: assetStore.listAssets,
   saveAssetFile(...args: Parameters<typeof assetStore.saveAssetFile>) {
+    postStore.assertUnambiguousPostId(args[0], args[1]);
     const post = postStore.getPost(args[0], args[1]);
     if (!post) throw new Error("Post not found");
     if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to change its assets."), { name: "PostLockedError" });
     return assetStore.saveAssetFile(...args);
   },
   deleteAsset(...args: Parameters<typeof assetStore.deleteAsset>) {
+    postStore.assertUnambiguousPostId(args[0], args[1]);
     const post = postStore.getPost(args[0], args[1]);
     if (!post) throw new Error("Post not found");
     if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to change its assets."), { name: "PostLockedError" });

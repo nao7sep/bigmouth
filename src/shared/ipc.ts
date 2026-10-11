@@ -21,6 +21,7 @@ import type {
   GenerationPromptsData,
   ImagingOptions,
   Post,
+  PostDeleteResult,
   PostIndexEntry,
   PostListResponse,
   PostMutationResult,
@@ -365,7 +366,7 @@ export interface BigMouthApi {
   onPostMetadataRefused(listener: (event: PostMetadataRefusedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   setPostLocked(wsId: string, id: string, locked: boolean): Promise<PostMutationResult>;
-  deletePost(wsId: string, id: string): Promise<void>;
+  deletePost(wsId: string, id: string): Promise<PostDeleteResult>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
   /**
    * `count` is what is now indexed, `skipped` how many files could not be read,

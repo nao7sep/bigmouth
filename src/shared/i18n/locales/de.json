@@ -136,6 +136,7 @@
   "session.loadFailed": "Dieser Arbeitsbereich konnte nicht geladen werden. Öffnen Sie ihn erneut, um es noch einmal zu versuchen.",
   "session.metadataUnsaved": "Metadatenänderungen konnten nicht gespeichert werden. Beheben Sie das, bevor die Einstellungen neu geladen werden.",
   "session.refreshFailed": "Die Einstellungen wurden geändert, aber dieser Arbeitsbereich konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um die gespeicherten Einstellungen zu verwenden.",
+  "session.deleteCleanupIncomplete": "Der Beitrag wurde gelöscht, aber einige Quellverknüpfungen oder Anhänge konnten nicht entfernt werden. Die verbleibenden Dateien befinden sich weiterhin im Arbeitsbereich.",
   "session.postListFailed": "Die Beitragsliste konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um es noch einmal zu versuchen.",
   "session.unreadablePosts": {
     "one": "{count} Beitragsdatei fehlt in der Liste, weil BigMouth sie nicht lesen konnte:",
@@ -223,6 +224,7 @@
     "one": "Diesen Beitrag löschen? Das kann nicht rückgängig gemacht werden. {count} anderer Beitrag verweist auf ihn als Quelle; diese Verknüpfung wird gelöst.",
     "other": "Diesen Beitrag löschen? Das kann nicht rückgängig gemacht werden. {count} andere Beiträge verweisen auf ihn als Quelle; diese Verknüpfungen werden gelöst."
   },
+  "post.duplicateId": "Mehrere Beitragsdateien haben diese ID. Bereinigen Sie die doppelten Dateien, bevor Sie den Beitrag löschen oder seine Anhänge ändern: {paths}",
   "center.deleteFailed": "Der Beitrag konnte nicht gelöscht werden. Er bleibt im Arbeitsbereich; versuchen Sie es erneut.",
   "center.linkFailed": "Der Quellbeitrag konnte nicht verknüpft werden. Die aktuelle Quelle bleibt unverändert; versuchen Sie es erneut.",
   "center.unlinkFailed": "Die Verknüpfung mit dem Quellbeitrag konnte nicht gelöst werden. Die aktuelle Quelle bleibt unverändert; versuchen Sie es erneut.",

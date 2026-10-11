@@ -17,6 +17,7 @@ import {
   setLocked,
   recordAssetChange,
   deletePost,
+  refreshIndex,
   listByStatus,
   countByStatus,
   clearCache,
@@ -87,7 +88,7 @@ describe("canonical edit admission and committed writes", () => {
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, "a.png"), "abc");
     fs.writeFileSync(path.join(folder, "meta.json"), body);
-    expect(deletePost(dataDir, post.frontMatter.id)).toBe(true);
+    expect(deletePost(dataDir, post.frontMatter.id)).toEqual({ cleanupIncomplete: false });
     expect(fs.existsSync(post.filePath)).toBe(false);
     expect(fs.existsSync(folder)).toBe(false);
   });
@@ -95,15 +96,19 @@ describe("canonical edit admission and committed writes", () => {
   it("removes the post before clearing links to it, so an interrupted delete never strips a live post's link", () => {
     const source = createPost(dataDir, "blogger", "en");
     const referrer = createPost(dataDir, "blogger", "en", source.frontMatter.id);
+    const assets = path.join(dataDir, "assets", source.frontMatter.id);
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(assets, "a.png"), "attachment");
     const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
       throw Object.assign(new Error("EIO: i/o error"), { code: "EIO" });
     });
     try {
-      expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow("EIO");
+      expect(deletePost(dataDir, source.frontMatter.id)).toEqual({ cleanupIncomplete: true });
     } finally {
       rename.mockRestore();
     }
     expect(fs.existsSync(source.filePath)).toBe(false);
+    expect(fs.existsSync(assets)).toBe(false);
     expect(getPost(dataDir, source.frontMatter.id)).toBeNull();
     // The link now names a post that is gone, which the editor lets the user clear.
     expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);
@@ -235,6 +240,7 @@ describe("updatePost", () => {
   it("checks a slug without reading the other posts' files", () => {
     const others = Array.from({ length: 10 }, () => createPost(dataDir, "blogger", "en"));
     const editable = createPost(dataDir, "blogger", "en");
+    refreshIndex(dataDir); // Establish per-file source observations before testing unchanged files.
     const read = vi.spyOn(fs, "readFileSync");
     try {
       updatePost(dataDir, editable.frontMatter.id, { frontMatter: { slug: "fresh-slug" } });
@@ -508,7 +514,7 @@ describe("setLocked", () => {
       expect(moved?.frontMatter.status).toBe(status);
       expect(moved?.frontMatter.locked).toBe(true);
     }
-    expect(deletePost(dataDir, id)).toBe(true);
+    expect(deletePost(dataDir, id)).toEqual({ cleanupIncomplete: false });
     expect(getPost(dataDir, id)).toBeNull();
   });
 
@@ -532,18 +538,32 @@ describe("setLocked", () => {
 });
 
 describe("deletePost", () => {
+  it("reports committed deletion when attachment cleanup fails", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const assets = path.join(dataDir, "assets", post.frontMatter.id);
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(assets, "kept.png"), "kept");
+    const remove = vi.spyOn(fs, "rmSync").mockImplementation(() => { throw new Error("removal refused"); });
+    try {
+      expect(deletePost(dataDir, post.frontMatter.id)).toEqual({ cleanupIncomplete: true });
+    } finally { remove.mockRestore(); }
+    expect(fs.existsSync(post.filePath)).toBe(false);
+    expect(getPost(dataDir, post.frontMatter.id)).toBeNull();
+    expect(fs.existsSync(assets)).toBe(true);
+  });
+
   it("removes the file and the index entry", () => {
     const created = createPost(dataDir, "blogger", "en");
     const id = created.frontMatter.id;
 
-    expect(deletePost(dataDir, id)).toBe(true);
+    expect(deletePost(dataDir, id)).toEqual({ cleanupIncomplete: false });
     expect(fs.existsSync(created.filePath)).toBe(false);
     expect(getPost(dataDir, id)).toBeNull();
     expect(ids("draft")).not.toContain(id);
   });
 
-  it("returns false for an unknown id", () => {
-    expect(deletePost(dataDir, "nope")).toBe(false);
+  it("returns null for an unknown id", () => {
+    expect(deletePost(dataDir, "nope")).toBeNull();
   });
 
   it("clears sourceId on referrers when the source post is deleted", () => {
@@ -565,7 +585,7 @@ describe("deletePost", () => {
     // The index row is stale: it still says the broken file links the source.
     fs.writeFileSync(broken.filePath, "---\ntitle: [unclosed\n---\nbody\n");
 
-    expect(deletePost(dataDir, source.frontMatter.id)).toBe(true);
+    expect(deletePost(dataDir, source.frontMatter.id)).toEqual({ cleanupIncomplete: true });
 
     expect(fs.existsSync(source.filePath)).toBe(false);
     expect(getPost(dataDir, fine.frontMatter.id)?.frontMatter.sourceId).toBeUndefined();

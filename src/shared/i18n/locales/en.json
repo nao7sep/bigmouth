@@ -136,6 +136,7 @@
   "session.loadFailed": "This workspace could not be loaded. Reopen it to try again.",
   "session.metadataUnsaved": "Metadata changes could not be saved. Resolve them before reloading settings.",
   "session.refreshFailed": "Settings changed, but this workspace could not be refreshed. Reopen the workspace to use the saved settings.",
+  "session.deleteCleanupIncomplete": "The post was deleted, but some source links or attachments could not be removed. The remaining files are still in the workspace.",
   "session.postListFailed": "The post list could not be refreshed. Reopen the workspace to try again.",
   "session.unreadablePosts": {
     "one": "{count} post file is not in the list because BigMouth could not read it:",
@@ -223,6 +224,7 @@
     "one": "Delete this post? This cannot be undone. {count} other post links to it as its source and will be unlinked.",
     "other": "Delete this post? This cannot be undone. {count} other posts link to it as their source and will be unlinked."
   },
+  "post.duplicateId": "More than one post file has this ID. Resolve the duplicate files before deleting the post or changing its attachments: {paths}",
   "center.deleteFailed": "The post could not be deleted. It remains in the workspace; try again.",
   "center.linkFailed": "The source post could not be linked. The current source is unchanged; try again.",
   "center.unlinkFailed": "The source post could not be unlinked. The current source is unchanged; try again.",
