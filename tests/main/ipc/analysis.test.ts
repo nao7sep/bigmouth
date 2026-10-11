@@ -9,6 +9,7 @@ const ipc = vi.hoisted(() => ({
 }));
 
 const provider = vi.hoisted(() => ({
+  preflight: null as null | Promise<{ dataDirectory: string }>,
   onText: null as null | ((delta: string) => void),
   onThinking: null as null | ((delta: string) => void),
   abort: null as null | (() => void),
@@ -34,7 +35,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@main/ipc/context.js", () => ({
-  resolveWorkspace: () => ({ dataDirectory: "/ws" }),
+  resolveWorkspace: () => provider.preflight ?? ({ dataDirectory: "/ws" }),
 }));
 
 vi.mock("@main/core/services/postStore.js", () => ({
@@ -134,6 +135,7 @@ let abort: (...args: unknown[]) => unknown;
 beforeEach(() => {
   ipc.handlers.clear();
   ipc.listeners.clear();
+  provider.preflight = null;
   provider.onText = null;
   provider.onThinking = null;
   provider.abort = null;
@@ -149,6 +151,18 @@ beforeEach(() => {
 });
 
 describe("analysis stream handlers", () => {
+  it("does not start a provider call when Stop arrives during storage preparation", async () => {
+    let ready!: (value: { dataDirectory: string }) => void;
+    provider.preflight = new Promise((resolve) => { ready = resolve; });
+    const event = makeEvent();
+    const starting = start(event, "preflight-stop", params);
+    abort(undefined, "preflight-stop");
+    ready({ dataDirectory: "/ws" });
+    await starting;
+    expect(provider.onText).toBeNull();
+    expect(event.sender.send).not.toHaveBeenCalled();
+  });
+
   it("forwards deltas then a done frame on normal completion", async () => {
     const event = makeEvent();
     const channel = analysisStreamChannel("req-done");

@@ -167,7 +167,9 @@ export class StorageOwner {
     const queuedEdits = this.queued.filter((waiting) => isAuthored(waiting.request.name));
     this.queued = this.queued.filter((waiting) => !isAuthored(waiting.request.name));
     for (const waiting of queuedEdits) this.delivering.set(waiting.request.id, waiting);
-    const edits = [...this.takeHeld(), ...queuedEdits.map((waiting) => waiting.request)].sort((a, b) => a.id - b.id);
+    const held = this.takeHeld();
+    for (const request of held) this.delivering.set(request.id, this.delivery(request));
+    const edits = [...held, ...queuedEdits.map((waiting) => waiting.request)].sort((a, b) => a.id - b.id);
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
@@ -227,7 +229,9 @@ export class StorageOwner {
     this.closing = true;
     const queued = this.queued.splice(0);
     for (const waiting of queued) this.delivering.set(waiting.request.id, waiting);
-    const requests = [...this.takeHeld(), ...queued.map((item) => item.request)].sort((a, b) => a.id - b.id);
+    const held = this.takeHeld();
+    for (const request of held) this.delivering.set(request.id, this.delivery(request));
+    const requests = [...held, ...queued.map((item) => item.request)].sort((a, b) => a.id - b.id);
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
