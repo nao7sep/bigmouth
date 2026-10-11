@@ -17,8 +17,9 @@ import {
   normalizeImagingOutput,
   type ImagingOptions,
 } from "../core/ai/imaging.js";
-import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { info as logInfo, error as logError } from "../core/services/logger.js";
+import { logAiFailure } from "../core/ai/errorDetails.js";
+import { info as logInfo } from "../core/services/logger.js";
+import { maskCredentials } from "../core/ai/maskCredentials.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
 
@@ -83,11 +84,14 @@ async function generateImaging(
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "imaging" });
   } catch (err) {
-    logError("imaging provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
-    throw err instanceof Error ? err : new Error("Request failed");
+    const message = logAiFailure(
+      { kind: "imaging provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey },
+      err,
+    );
+    throw new Error(message);
   }
 
-  logInfo("imaging started", {
+  logInfo("imaging started", maskCredentials({
     workspace: wsId,
     postId,
     options,
@@ -98,7 +102,7 @@ async function generateImaging(
     thinking: roleCall.thinking ?? null,
     systemPrompt,
     userContent,
-  });
+  }, [roleCall.apiKey]));
 
   try {
     signal.throwIfAborted();
@@ -107,35 +111,36 @@ async function generateImaging(
       signal,
     });
     const items = normalizeImagingOutput(raw, options.count);
-    logInfo("imaging completed", {
+    logInfo("imaging completed", maskCredentials({
       workspace: wsId,
       postId,
       itemCount: items.length,
       mode: "structured",
       result: raw,
-    });
+    }, [roleCall.apiKey]));
     return items;
   } catch (err) {
     if (signal.aborted) {
       // The user stopped it, or its window went away: not a failure to report.
-      logInfo("imaging cancelled", { workspace: wsId, postId });
+      logInfo("imaging cancelled", maskCredentials({ workspace: wsId, postId }, [roleCall.apiKey]));
       throw new Error("Imaging was cancelled.");
     }
     const details = logAiFailure(
       {
         kind: "Imaging",
+        apiKey: roleCall.apiKey,
         workspaceId: wsId,
         postId,
         extra: {
           ...options,
           mode: "structured",
           maxDurationMs: IMAGING_GENERATION_MAX_MS,
-              contentLength: postContent.length,
+          contentLength: postContent.length,
           model: roleCall.model,
         },
       },
       err,
     );
-    throw new Error(err instanceof Error ? err.message : details);
+    throw new Error(details);
   }
 }

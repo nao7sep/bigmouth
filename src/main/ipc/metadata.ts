@@ -12,8 +12,9 @@ import {
   normalizeMetadataFields,
   type MetadataField,
 } from "../core/ai/metadataGeneration.js";
-import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { info as logInfo, error as logError } from "../core/services/logger.js";
+import { logAiFailure } from "../core/ai/errorDetails.js";
+import { info as logInfo } from "../core/services/logger.js";
+import { maskCredentials } from "../core/ai/maskCredentials.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
 
@@ -67,8 +68,11 @@ async function generateMetadata(
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "metadata" });
   } catch (err) {
-    logError("metadata generation provider init failed", { workspace: wsId, postId, ...describeAiError(err) });
-    throw err instanceof Error ? err : new Error("AI provider error");
+    const message = logAiFailure(
+      { kind: "metadata generation provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey },
+      err,
+    );
+    throw new Error(message);
   }
 
   const postContent = content?.trim() ? content : post.content;
@@ -82,7 +86,7 @@ async function generateMetadata(
       frontMatter: post.frontMatter,
       customPrompts,
     });
-    logInfo("metadata generation started", {
+    logInfo("metadata generation started", maskCredentials({
       workspace: wsId,
       postId,
       fields: validFields,
@@ -97,7 +101,7 @@ async function generateMetadata(
       systemPrompt: request.systemPrompt,
       userContent: request.userContent,
       schema: request.schema,
-    });
+    }, [roleCall.apiKey]));
     signal.throwIfAborted();
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
       maxDurationMs: METADATA_GENERATION_MAX_MS,
@@ -111,29 +115,30 @@ async function generateMetadata(
       values[field] = metadataValueToClientString(value);
       results[field] = { value: values[field] };
     }
-    logInfo("metadata generation completed", {
+    logInfo("metadata generation completed", maskCredentials({
       workspace: wsId,
       postId,
       fields: validFields,
       mode: "structured",
       result: raw,
-    });
+    }, [roleCall.apiKey]));
   } catch (err) {
     if (signal.aborted) {
       // The user stopped it, or its window went away: not a failure to report.
-      logInfo("metadata generation cancelled", { workspace: wsId, postId, fields: validFields });
+      logInfo("metadata generation cancelled", maskCredentials({ workspace: wsId, postId, fields: validFields }, [roleCall.apiKey]));
       throw new Error("Metadata generation was cancelled.");
     }
-    const details = logAiFailure(
+    const message = logAiFailure(
       {
         kind: "Metadata generation",
+        apiKey: roleCall.apiKey,
         workspaceId: wsId,
         postId,
         extra: {
           fields: validFields,
           mode: "structured",
           maxDurationMs: METADATA_GENERATION_MAX_MS,
-              contentSource,
+          contentSource,
           contentLength: postContent.length,
           language: post.frontMatter.language,
           target: post.frontMatter.target,
@@ -142,7 +147,6 @@ async function generateMetadata(
       },
       err,
     );
-    const message = err instanceof Error ? err.message : details;
     for (const field of validFields) results[field] = { error: message };
   }
 

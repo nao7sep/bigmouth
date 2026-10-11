@@ -98,6 +98,21 @@ describe("writeFileAtomic", () => {
     expect(fs.readFileSync(target, "utf-8")).toBe("changed");
   });
 
+  it.runIf(process.platform === "win32")("preserves a read-only Windows target on failed replacement and permits retry", () => {
+    const target = path.join(dir, "data.json");
+    fs.writeFileSync(target, "original");
+    fs.chmodSync(target, 0o444);
+    try {
+      expect(writeFileAtomic(target, "original")).toBe(false);
+      expect(() => writeFileAtomic(target, "changed")).toThrow();
+      expect(fs.readFileSync(target, "utf8")).toBe("original");
+      expect(fs.readdirSync(dir)).toEqual(["data.json"]);
+    } finally { fs.chmodSync(target, 0o666); }
+    expect(writeFileAtomic(target, "changed")).toBe(true);
+    expect(fs.readFileSync(target, "utf8")).toBe("changed");
+    expect(fs.readdirSync(dir)).toEqual(["data.json"]);
+  });
+
   it("removes its temp and rethrows the original failure when the install fails", () => {
     const target = path.join(dir, "data.json");
     fs.writeFileSync(target, "original");

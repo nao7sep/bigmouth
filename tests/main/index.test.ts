@@ -39,6 +39,7 @@ const shell = vi.hoisted(() => ({
   dialogChoices: [] as number[],
   // When set, the dialog stays open until the test answers it.
   dialogAnswer: null as Promise<number> | null,
+  dialogFailure: null as Error | null,
   // Answers an open dialog with its cancel choice, as an ending session does.
   cancelOpenDialog: null as (() => void) | null,
   windowLoadFailure: null as Error | null,
@@ -70,6 +71,7 @@ vi.mock("electron", () => ({
 vi.mock("@main/plain-message-dialog.js", () => ({
   showPlainMessageDialog: async (options: { detail?: string; buttons?: string[] }) => {
     shell.dialogs.push(options);
+    if (shell.dialogFailure) throw shell.dialogFailure;
     if (shell.dialogAnswer) {
       return Promise.race([shell.dialogAnswer, new Promise<number>((resolve) => { shell.cancelOpenDialog = () => resolve(0); })]);
     }
@@ -213,6 +215,7 @@ async function bootApp(): Promise<PostStore> {
   shell.dialogChoice = 0;
   shell.dialogChoices = [];
   shell.dialogAnswer = null;
+  shell.dialogFailure = null;
   shell.cancelOpenDialog = null;
   flush.plan = [];
   flush.calls = 0;
@@ -438,6 +441,22 @@ describe("an ending OS session", () => {
     // A dialog here would block until Windows force-terminated the app.
     expect(shell.dialogs).toEqual([]);
     expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush failed at quit");
+    expect(shell.exits).toEqual([0]);
+  });
+
+  it("saves and exits synchronously at session-end while a quit question remains unanswered", async () => {
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    flush.plan = ["stall"];
+    shell.dialogAnswer = new Promise(() => {});
+    await quit();
+    expect(shell.dialogs).toHaveLength(1);
+    store.queueContent(dataDir, post.frontMatter.id, "typed while the question was open");
+
+    windowHandlers.get("session-end")!({ reasons: ["shutdown"] });
+
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed while the question was open");
+    expect(shell.dialogs).toHaveLength(1);
     expect(shell.exits).toEqual([0]);
   });
 
@@ -726,13 +745,17 @@ describe("single app-process ownership", () => {
     ]);
   });
 
-  it("routes a renderer document-load rejection to the authored startup halt", async () => {
+  it.each(["settled", "blocked", "blocked-dialog-failed"] as const)("routes a renderer load rejection to startup halt with storage %s", async (outcome) => {
     vi.resetModules();
     appHandlers.clear();
     windowHandlers.clear();
     shell.dialogs.length = 0;
     shell.exits.length = 0;
     shell.loggedErrors.length = 0;
+    shell.kills.length = 0;
+    shell.dialogAnswer = null;
+    flush.finishSettles = outcome === "settled";
+    shell.dialogFailure = outcome === "blocked-dialog-failed" ? new Error("dialog unavailable") : null;
     shell.windowLoadFailure = new Error("EACCES /private/tmp/renderer.html");
 
     await import("@main/index.js");
@@ -741,7 +764,16 @@ describe("single app-process ownership", () => {
     expect(shell.dialogs[0].detail).toContain("No posts or workspace documents were changed");
     expect(JSON.stringify(shell.dialogs[0])).not.toContain("EACCES");
     expect(JSON.stringify(shell.loggedErrors)).toContain("EACCES");
-    expect(shell.exits).toEqual([1]);
+    if (outcome === "settled") {
+      await vi.waitFor(() => expect(shell.exits).toEqual([1]));
+      expect(shell.kills).toEqual([]);
+    } else {
+      await vi.waitFor(() => expect(shell.kills).toEqual(["SIGKILL"]));
+      expect(shell.exits).toEqual([]);
+    }
+    shell.dialogAnswer = null;
+    shell.dialogFailure = null;
+    flush.finishSettles = true;
   });
 
   it("quits a second process before it can bootstrap process-local workspace state", async () => {

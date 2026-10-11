@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -119,6 +119,30 @@ describe("logAiFailure", () => {
     expect(line.promptName).toBe("tone");
     expect(line.contentLength).toBe(1200);
     expect((line.error as Record<string, unknown>).message).toBe("model failed");
+  });
+
+  it("masks request credentials in causes, context and raw output before every diagnostic sink", () => {
+    const key = "fake-request-credential-12345";
+    const original = new Error(`outer ${key}`, { cause: new TypeError(`inner ${key}`) });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const message = logAiFailure(
+        { kind: "Analysis", apiKey: key, extra: { echoed: key, ordinary: "keep this" } },
+        original,
+        `response ${key}`,
+      );
+      const line = readLogLines()[0]!;
+      expect(message).toBe("outer [REDACTED]");
+      expect(line.error).toMatchObject({
+        name: "Error", message: "outer [REDACTED]", stack: expect.any(String),
+        cause: { name: "TypeError", message: "inner [REDACTED]", stack: expect.any(String) },
+      });
+      expect(line).toMatchObject({ echoed: "[REDACTED]", ordinary: "keep this", rawResponse: "response [REDACTED]" });
+      expect(JSON.stringify(line)).not.toContain(key);
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain(key);
+      expect(original.message).toContain(key);
+      expect((original.cause as Error).message).toContain(key);
+    } finally { consoleError.mockRestore(); }
   });
 
   it("captures unparseable raw output as a single field, not a multi-line block", () => {

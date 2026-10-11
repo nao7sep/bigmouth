@@ -180,7 +180,7 @@ function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAs
 // The records window's reader is let go without waiting and never forces a kill:
 // records.sqlite3 lives in the storage root on the local disk, outside the
 // stalled volumes this path exists for.
-function terminateApp(storageSettled: boolean): void {
+function terminateApp(storageSettled: boolean, exitCode = 0): void {
   closeRecordsReader();
   if (!storageSettled) {
     console.error("[bigmouth] Storage did not settle within the exit bound; ending the process.");
@@ -188,15 +188,15 @@ function terminateApp(storageSettled: boolean): void {
     return;
   }
   void storageOwner.stop();
-  app.exit(0);
+  app.exit(exitCode);
 }
 
-async function exitApp(): Promise<void> {
+async function exitApp(exitCode = 0): Promise<void> {
   let settled = false;
   // Pending backup writes get a short part of the bound at an ordinary quit
   // and none while the OS session ends (data-backup-conventions).
   try { settled = await storageOwner.finishAsync(1000, systemShutdown() ? 0 : BACKUP_DRAIN_MS); }
-  finally { terminateApp(settled); }
+  finally { terminateApp(settled, exitCode); }
 }
 
 function exitAppWithin(): void {
@@ -215,8 +215,11 @@ async function handleStartupFailure(err: unknown): Promise<void> {
   } catch {
     // The logger itself may be what failed; stderr above already carried it.
   }
-  await showStartupFailure(err);
-  app.exit(1);
+  // Initialization can time out while storage is still blocked in native I/O.
+  // The halt must use the same bounded teardown as an ordinary exit.
+  try { await showStartupFailure(err); }
+  catch (error) { console.error("[bigmouth] Startup failure dialog could not be shown:", error); }
+  finally { await exitApp(1); }
 }
 
 if (!ownsInstance) {

@@ -885,6 +885,26 @@ describe("pending content (write-behind buffer)", () => {
     expect(diskContent(post.filePath)).toContain("held through failure");
   });
 
+  it.runIf(process.platform === "win32")("keeps edits after a read-only post replacement fails and saves them on retry", () => {
+    const events: ContentSaveEvent[] = [];
+    setContentSaveListener((e) => events.push(e));
+    const post = createPost(dataDir, "blogger", "en");
+    const before = fs.readFileSync(post.filePath, "utf8");
+    queueContent(dataDir, post.frontMatter.id, "held through read-only failure");
+    fs.chmodSync(post.filePath, 0o444);
+    try {
+      expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(false);
+      expect(fs.readFileSync(post.filePath, "utf8")).toBe(before);
+      expect(events.some((e) => e.kind === "save-failed")).toBe(true);
+      expect(events.some((e) => e.kind === "saved")).toBe(false);
+      expect(getPost(dataDir, post.frontMatter.id)?.content).toBe("held through read-only failure");
+      expect(fs.readdirSync(path.dirname(post.filePath)).some((name) => name.endsWith(".tmp"))).toBe(false);
+    } finally { fs.chmodSync(post.filePath, 0o666); }
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
+    expect(diskContent(post.filePath)).toContain("held through read-only failure");
+    expect(events.at(-1)?.kind).toBe("saved");
+  });
+
   // A post's file can disappear under the app — a workspace may live in a
   // user-chosen external directory, so a sync client, a Finder move or a git
   // checkout is enough. Saving is then impossible, which is exactly why it must
@@ -992,5 +1012,27 @@ describe("a quit's hold on the buffer", () => {
     resumePendingFlushes();
     vi.advanceTimersByTime(1_000);
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed while the quit runs");
+  });
+});
+
+
+describe("a refused post deletion", () => {
+  it("retains buffered content and metadata for the next save", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    queueContent(dataDir, post.frontMatter.id, "draft survives refused delete");
+    queueMetadata(dataDir, post.frontMatter.id, { title: "Title survives" });
+    const unlink = fs.unlinkSync;
+    const refuse = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+      if (file === post.filePath) throw Object.assign(new Error("delete denied"), { code: "EPERM" });
+      unlink(file);
+    });
+    try {
+      expect(() => deletePost(dataDir, post.frontMatter.id)).toThrow("delete denied");
+      expect(fs.existsSync(post.filePath)).toBe(true);
+    } finally { refuse.mockRestore(); }
+    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
+    const saved = getPost(dataDir, post.frontMatter.id)!;
+    expect(saved.content).toContain("draft survives refused delete");
+    expect(saved.frontMatter.title).toBe("Title survives");
   });
 });

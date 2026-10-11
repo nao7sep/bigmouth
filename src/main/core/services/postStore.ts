@@ -618,13 +618,13 @@ export function deletePost(dataDir: string, id: string): boolean {
   const filePath = filePathFor(dataDir, entry);
   if (fs.existsSync(filePath)) readPost(filePath);
 
-  // Deleting a post deliberately discards its edits, buffered ones included.
-  clearPending(dataDir, id);
-
   // The post goes first. An interruption after this leaves at worst a link to
   // a post that no longer exists, which the editor lets the user clear, never
   // a cleared link to a post that still exists.
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  // Discard buffered edits only once deletion succeeded (or the post is gone).
+  // A refused unlink must leave authored work available to autosave and quit.
+  clearPending(dataDir, id);
   index.removeEntry(dataDir, id);
 
   // Referential integrity: a post that links the deleted one as its source

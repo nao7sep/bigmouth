@@ -93,7 +93,7 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
    * own that carries nothing the launcher recognizes. Resolves once the child's
    * pid is known.
    */
-  async function processTree(dir: string, marker: string): Promise<{ parent: ChildProcess; childPid: number }> {
+  async function processTree(dir: string, marker: string, cleanupPids: number[]): Promise<{ parent: ChildProcess; childPid: number }> {
     const script = path.join(dir, "tree.cjs");
     fs.writeFileSync(script, [
       'const { spawn } = require("node:child_process");',
@@ -102,12 +102,18 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
       "setInterval(() => {}, 1000);",
     ].join("\n"));
     const parent = spawn(process.execPath, [script, marker], { stdio: ["ignore", "pipe", "inherit"], windowsHide: true });
+    if (parent.pid) cleanupPids.push(parent.pid);
     const childPid = await new Promise<number>((resolvePid, rejectPid) => {
       let output = "";
       parent.stdout!.on("data", (chunk) => {
         output += String(chunk);
-        if (output.includes("\n")) resolvePid(Number(output.trim()));
+        if (output.includes("\n")) {
+          const pid = Number(output.trim());
+          cleanupPids.push(pid);
+          resolvePid(pid);
+        }
       });
+      parent.once("error", rejectPid);
       parent.once("exit", () => rejectPid(new Error("The test process tree exited before it started.")));
     });
     return { parent, childPid };
@@ -129,9 +135,10 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-launcher-"));
     const ownMarker = path.join(REPO_ROOT, "node_modules", "electron", "dist", "windows-test-marker");
     const foreignMarker = path.join(dir, "elsewhere", "node_modules", "electron", "dist", "windows-test-marker");
-    const own = await processTree(dir, ownMarker);
-    const foreign = await processTree(dir, foreignMarker);
+    const cleanupPids: number[] = [];
     try {
+      const own = await processTree(dir, ownMarker, cleanupPids);
+      const foreign = await processTree(dir, foreignMarker, cleanupPids);
       const owned = await ownedProcesses();
       expect(owned.map((p) => p.pid)).toEqual([own.parent.pid]);
 
@@ -151,9 +158,10 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
       expect(alive(foreign.parent.pid!)).toBe(true);
       expect(alive(foreign.childPid)).toBe(true);
     } finally {
-      for (const pid of [own.parent.pid!, own.childPid, foreign.parent.pid!, foreign.childPid]) {
+      for (const pid of cleanupPids) {
         await run("taskkill.exe", ["/PID", String(pid), "/T", "/F"]).catch(() => undefined);
       }
+      await vi.waitFor(() => expect(cleanupPids.filter(alive)).toEqual([]));
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 90_000);

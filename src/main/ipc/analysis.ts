@@ -6,8 +6,9 @@ import { getPost } from "../storageAccess.js";
 import { getAnalysisPrompts, getRoleCall } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
-import { describeAiError, logAiFailure } from "../core/ai/errorDetails.js";
-import { debug as logDebug, info as logInfo, error as logError } from "../core/services/logger.js";
+import { logAiFailure } from "../core/ai/errorDetails.js";
+import { debug as logDebug, info as logInfo } from "../core/services/logger.js";
+import { maskCredentials } from "../core/ai/maskCredentials.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
 
@@ -35,8 +36,11 @@ async function resolveAnalysisRequest(
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "analysis" });
   } catch (err) {
-    logError("analysis provider init failed", { workspace: ws.id, postId, ...describeAiError(err) });
-    throw err instanceof Error ? err : new Error("AI provider error");
+    const message = logAiFailure(
+      { kind: "analysis provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey },
+      err,
+    );
+    throw new Error(message);
   }
 
   return { postId, promptName, post, postContent, contentSource, promptMode, systemPrompt, userContent, roleCall, provider };
@@ -59,7 +63,7 @@ export function registerAnalysisHandlers(): void {
       if (!event.sender.isDestroyed()) event.sender.send(channel, frame);
     };
 
-    logInfo("analysis stream started", {
+    logInfo("analysis stream started", maskCredentials({
       workspace: params.wsId,
       postId: request.postId,
       promptName: request.promptName,
@@ -70,7 +74,7 @@ export function registerAnalysisHandlers(): void {
       thinking: request.roleCall.thinking ?? null,
       systemPrompt: request.systemPrompt,
       userContent: request.userContent,
-    });
+    }, [request.roleCall.apiKey]));
 
     let wroteDelta = false;
     stream = request.provider.generateTextStream(
@@ -81,7 +85,7 @@ export function registerAnalysisHandlers(): void {
         wroteDelta = true;
         // Per chunk: `debug` by the frequency rule, and the only record of how a
         // stream actually arrived when one stalls or ends early.
-        logDebug("analysis delta", { requestId, length: delta.length });
+        logDebug("analysis delta", maskCredentials({ requestId, length: delta.length }, [request.roleCall.apiKey]));
         send({ type: "delta", text: delta });
       },
       (delta) => {
@@ -98,18 +102,19 @@ export function registerAnalysisHandlers(): void {
         // Robustness: a provider that produced text without incremental events.
         if (!wroteDelta && finalText) send({ type: "delta", text: finalText });
         send({ type: "done" });
-        logInfo("analysis stream completed", {
+        logInfo("analysis stream completed", maskCredentials({
           workspace: params.wsId,
           postId: request.postId,
           wroteDelta,
           result: finalText,
-        });
+        }, [request.roleCall.apiKey]));
       })
       .catch((err: unknown) => {
         if (aborted) return;
         const message = logAiFailure(
           {
             kind: "Analysis stream",
+            apiKey: request.roleCall.apiKey,
             workspaceId: params.wsId,
             postId: request.postId,
             promptName: request.promptName,
@@ -123,7 +128,7 @@ export function registerAnalysisHandlers(): void {
           },
           err,
         );
-        send({ type: "error", message: err instanceof Error ? err.message : message });
+        send({ type: "error", message });
       })
       .finally(release);
     } catch (error) { release(); throw error; }

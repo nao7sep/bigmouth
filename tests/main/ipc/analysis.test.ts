@@ -78,12 +78,8 @@ vi.mock("@main/core/ai/factory.js", () => ({
   }),
 }));
 
-vi.mock("@main/core/ai/errorDetails.js", () => ({
-  describeAiError: () => ({}),
-  logAiFailure: () => "ai failure",
-}));
-
-vi.mock("@main/core/services/logger.js", () => ({
+vi.mock("@main/core/services/logger.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@main/core/services/logger.js")>(),
   debug: () => {},
   info: () => {},
   warn: () => {},

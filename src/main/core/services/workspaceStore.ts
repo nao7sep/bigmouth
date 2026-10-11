@@ -111,11 +111,13 @@ export function initAppDir(): AppConfig {
   return appConfig;
 }
 
-function writeAppConfig(): void {
+function writeAppConfig(next = ensureLoaded()): void {
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
   // folders themselves survive, so it is exactly the managed text the backup exists to protect.
-  writeManagedText(getWorkspacesJsonPath(), jsonStoreText("workspaces", { workspaces: ensureLoaded().workspaces }));
+  writeManagedText(getWorkspacesJsonPath(), jsonStoreText("workspaces", { workspaces: next.workspaces }));
+  // Publish only committed registry state, so a refused save remains retryable.
+  appConfig = next;
 }
 
 function ensureLoaded(): AppConfig {
@@ -336,8 +338,7 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
     throw new Error(`Cannot create a workspace in ${dir}: the folder is not writable.`, { cause });
   }
 
-  config.workspaces.push(workspace);
-  writeAppConfig();
+  writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
 
   return workspace;
 }
@@ -360,8 +361,7 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
     dataDirectory: dir,
   };
 
-  config.workspaces.push(workspace);
-  writeAppConfig();
+  writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
   return workspace;
 }
 
@@ -406,9 +406,9 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
   const ws = config.workspaces.find((w) => w.id === id);
   if (!ws) return null;
 
-  ws.name = updates.name;
-  writeAppConfig();
-  return ws;
+  const renamed = { ...ws, name: updates.name };
+  writeAppConfig({ ...config, workspaces: config.workspaces.map((item) => item.id === id ? renamed : item) });
+  return renamed;
 }
 
 export function deleteWorkspace(id: string): boolean {
@@ -416,8 +416,7 @@ export function deleteWorkspace(id: string): boolean {
   const index = config.workspaces.findIndex((w) => w.id === id);
   if (index === -1) return false;
 
-  config.workspaces.splice(index, 1);
-  writeAppConfig();
+  writeAppConfig({ ...config, workspaces: config.workspaces.filter((item) => item.id !== id) });
   // Drop the workspace's stored API keys too — they live in the shared secrets
   // file keyed by workspace id, so deregistering a workspace must take its keys
   // with it rather than leave them orphaned forever.

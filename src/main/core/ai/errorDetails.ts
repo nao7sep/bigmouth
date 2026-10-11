@@ -1,7 +1,10 @@
 import { error as logError, serializeError, type LogFields } from "../services/logger.js";
+import { maskCredentials } from "./maskCredentials.js";
 
 export type AiFailureContext = {
   kind: string;
+  /** The credential resolved for this request; used only to mask diagnostic copies. */
+  apiKey?: string | null;
   requestId?: string;
   workspaceId?: string;
   postId?: string;
@@ -56,8 +59,8 @@ export function describeAiError(err: unknown): Record<string, unknown> {
 }
 
 /**
- * Short, human-readable message for a failure, used as the fallback message. Errors
- * surface their own `.message` at the call site; this covers the non-Error case.
+ * Existing provider failure text. Credential masking is applied by the request owner
+ * before this text crosses the IPC boundary.
  */
 export function aiErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -65,7 +68,7 @@ export function aiErrorMessage(err: unknown): string {
 
 /**
  * Logs an AI/provider failure as one structured `error` record and returns a
- * short message suitable for surfacing to the renderer. When the provider returns
+ * credential-masked failure text for the existing renderer error surface. When the provider returns
  * unparseable free-form output, that output is captured in a single `rawResponse`
  * field (newlines JSON-escaped, so the event stays one physical line) — never a
  * multi-line block.
@@ -90,6 +93,8 @@ export function logAiFailure(
     fields.rawResponseLength = rawResponse.length;
   }
 
-  logError(`${context.kind} failed`, fields);
-  return aiErrorMessage(err);
+  // The SDK error stays intact for retry classification. Mask its serialized copy,
+  // including causes and provider payloads, before any log sink or console sees it.
+  logError(`${context.kind} failed`, maskCredentials(fields, [context.apiKey]));
+  return maskCredentials(aiErrorMessage(err), [context.apiKey]);
 }

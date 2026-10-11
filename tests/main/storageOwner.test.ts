@@ -282,7 +282,7 @@ describe("storage mutation ownership", () => {
   });
 });
 
-it("runs real store writes and quit flush on the persistent worker", async () => {
+it.each(["async", "session-end"] as const)("runs real store writes and %s quit flush on the persistent worker", async (mode) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-storage-owner-"));
   let owner: StorageOwner | undefined;
   try {
@@ -295,7 +295,7 @@ it("runs real store writes and quit flush on the persistent worker", async () =>
     const post = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
     const authored = new Date(new Date(post.frontMatter.createdAtUtc).getTime() + 1);
     await owner.run("queueContent", [workspace.dataDirectory, post.frontMatter.id, "written by the worker", authored]);
-    expect(await owner.flushAsync(2000)).toEqual({ kind: "flushed", failures: [] });
+    expect(mode === "async" ? await owner.flushAsync(2000) : owner.flushWithin(2000)).toEqual({ kind: "flushed", failures: [] });
     const raw = fs.readFileSync(post.filePath, "utf8");
     expect(raw).toContain("written by the worker");
     expect(raw).toContain(authored.toISOString());
@@ -305,14 +305,34 @@ it("runs real store writes and quit flush on the persistent worker", async () =>
     await owner.run("resumePendingFlushes", []);
     await owner.run("queueContent", [workspace.dataDirectory, post.frontMatter.id, "locked before autosave"]);
     await owner.run("setLocked", [workspace.dataDirectory, post.frontMatter.id, true]);
-    expect(await owner.flushAsync(2000)).toEqual({ kind: "flushed", failures: [] });
+    const late = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
+    expect(mode === "async" ? await owner.flushAsync(2000) : owner.flushWithin(2000)).toEqual({ kind: "flushed", failures: [] });
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("locked before autosave");
 
     // An edit buffered after the last quit flush, as while the quit question
     // is open, is written by the finish step.
-    const late = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
-    await owner.run("queueContent", [workspace.dataDirectory, late.frontMatter.id, "typed during the question"]);
-    expect(await owner.finishAsync(1000, 0)).toBe(true);
+    const lateEdit = owner.run("queueContent", [workspace.dataDirectory, late.frontMatter.id, "typed during the question"]);
+    // The synchronous flush has not yielded to its settlement event yet.
+    // Finish must take ownership of an edit still held on the main thread too.
+    if (mode === "session-end") await expect(lateEdit).rejects.toBeInstanceOf(EditPendingError);
+    else await lateEdit;
+    expect(mode === "async" ? await owner.finishAsync(1000, 0) : owner.finishWithin(1000)).toBe(true);
     expect(fs.readFileSync(late.filePath, "utf8")).toContain("typed during the question");
   } finally { await owner?.stop(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+it("returns from synchronous session-end bounds while a real worker remains stalled", async () => {
+  // A real worker answers startup but never settles flush/finish. The main
+  // thread must return from its Atomics wait without an event-loop callback.
+  const owner = new StorageOwner(() => new Worker(`
+    const { parentPort } = require("node:worker_threads");
+    parentPort.on("message", (request) => {
+      if (request.id) parentPort.postMessage({ id: request.id, ok: true, value: {} });
+    });
+  `, { eval: true }));
+  try {
+    await owner.run("getUiState", []);
+    expect(owner.flushWithin(10)).toEqual({ kind: "expired" });
+    expect(owner.finishWithin(10)).toBe(false);
+  } finally { await owner.stop(); }
 });

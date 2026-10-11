@@ -314,17 +314,22 @@ export class StorageOwner {
     clearTimeout(waiting.timer);
     if (delivered) this.delivering.delete(reply.id);
     else this.active = null;
-    if (!waiting.expired) {
-      if (reply.ok) waiting.resolve(reply.value);
-      else {
-        const data = reply.error;
-        const error = data.name === "AssetRecordError" && data.asset
-          ? new AssetRecordError(data.asset as ConstructorParameters<typeof AssetRecordError>[0], data.cause)
-          : new Error(data.message, { cause: data.cause });
-        error.name = data.name;
-        error.stack = data.stack;
-        waiting.reject(error);
+    // A timed-out authored edit was reported as held, not discarded. Its
+    // eventual refusal still belongs to the field/save-status owner.
+    if (reply.ok) {
+      if (!waiting.expired) waiting.resolve(reply.value);
+      else if (isAuthored(waiting.request.name) && !isContent(waiting.request.name) && reply.value !== null) {
+        this.heldFailureListener?.(waiting.request, reply.value);
       }
+    } else {
+      const data = reply.error;
+      const error = data.name === "AssetRecordError" && data.asset
+        ? new AssetRecordError(data.asset as ConstructorParameters<typeof AssetRecordError>[0], data.cause)
+        : new Error(data.message, { cause: data.cause });
+      error.name = data.name;
+      error.stack = data.stack;
+      if (!waiting.expired) waiting.reject(error);
+      else if (isAuthored(waiting.request.name)) this.heldFailureListener?.(waiting.request, error);
     }
     this.dispatch();
   }
