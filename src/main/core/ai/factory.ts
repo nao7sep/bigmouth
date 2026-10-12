@@ -7,10 +7,14 @@
 import type { RoleCall } from "../services/configStore.js";
 import type { AiProvider, ProviderCallContext } from "./provider.js";
 import { ClaudeProvider } from "./claude.js";
+import { carryingText } from "@shared/i18n/carriedMessage";
+import { message } from "@shared/i18n/translate";
 
 export function createProvider(call: RoleCall, context: ProviderCallContext): AiProvider {
   if (!call.apiKey) {
-    throw new Error("No Anthropic API key is set for this workspace. Add one in Settings.");
+    // Setup asks for no key, so this is how a user learns one is needed: the
+    // AI tabs show this message in place of their generic failure.
+    throw new Error(carryingText(message("ai.noApiKey")));
   }
   return new ClaudeProvider(call.apiKey, { endpoint: call.endpoint, model: call.model, thinking: call.thinking }, context);
 }

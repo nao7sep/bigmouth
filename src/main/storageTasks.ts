@@ -76,7 +76,8 @@ export const storageTasks = {
   },
   listWorkspaces: workspaceStore.listWorkspaces,
   getWorkspace: workspaceStore.getWorkspace,
-  openOrCreateWorkspace: workspaceStore.openOrCreateWorkspace,
+  createWorkspace: workspaceStore.createWorkspaceIn,
+  addExistingWorkspace: (dataDirectory: string) => workspaceStore.openWorkspace(dataDirectory),
   suggestWorkspaceLocation: workspaceStore.suggestWorkspaceLocation,
   updateWorkspace: workspaceStore.updateWorkspace,
   deleteWorkspace(id: string) {

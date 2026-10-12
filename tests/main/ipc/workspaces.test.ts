@@ -1,6 +1,6 @@
 // Integration test for the workspace IPC handlers: the real workspaceStore runs
 // against a throwaway BIGMOUTH_DATA_DIR; the async storageAccess edge calls these real services while Electron and the logger
-// are mocked. Exercises list/openOrCreate/update/delete, name cleanup, literal paths, the
+// are mocked. Exercises list/create/add-existing/update/delete, name cleanup, literal paths, the
 // not-found -> thrown-Error mapping, and the rule that deleting a workspace also
 // drops its stored API keys (asserted through the apiKeys service, mirroring
 // tests/main/services/workspaceStore.test.ts).
@@ -21,7 +21,8 @@ vi.mock("@main/storageAccess.js", async () => {
   return {
     listWorkspaces: async (...args: Parameters<typeof workspaceStore.listWorkspaces>) => workspaceStore.listWorkspaces(...args),
     getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
-    openOrCreateWorkspace: async (...args: Parameters<typeof workspaceStore.openOrCreateWorkspace>) => workspaceStore.openOrCreateWorkspace(...args),
+    createWorkspace: async (...args: Parameters<typeof storageTasks.createWorkspace>) => storageTasks.createWorkspace(...args),
+    addExistingWorkspace: async (...args: Parameters<typeof storageTasks.addExistingWorkspace>) => storageTasks.addExistingWorkspace(...args),
     suggestWorkspaceLocation: async (...args: Parameters<typeof workspaceStore.suggestWorkspaceLocation>) => workspaceStore.suggestWorkspaceLocation(...args),
     updateWorkspace: async (...args: Parameters<typeof workspaceStore.updateWorkspace>) => workspaceStore.updateWorkspace(...args),
     deleteWorkspace: async (...args: Parameters<typeof storageTasks.deleteWorkspace>) => storageTasks.deleteWorkspace(...args),
@@ -86,7 +87,7 @@ describe("workspace IPC handlers", () => {
   });
 
   it("creates a workspace (default location) and then lists it", async () => {
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "My WS"));
+    const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "My WS"));
     expect(ws.name).toBe("My WS");
     expect(ws.id).toBeTruthy();
     expect(ws.dataDirectory).toBe(path.join(os.homedir(), "Documents", "BigMouth", "My WS"));
@@ -97,7 +98,7 @@ describe("workspace IPC handlers", () => {
     expect(list[0].id).toBe(ws.id);
   });
 
-  it("suggests the folder a blank location would use, trimming the name and creating nothing", async () => {
+  it("suggests the folder creation would use, trimming the name and creating nothing", async () => {
     const parent = path.join(os.homedir(), "Documents", "BigMouth");
     expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "  Blog  ")).toBe(path.join(parent, "Blog"));
     // A blank or non-text name asks for the default name's folder.
@@ -106,44 +107,59 @@ describe("workspace IPC handlers", () => {
     expect(fs.existsSync(parent)).toBe(false);
     expect(listWorkspaces()).toHaveLength(0);
 
-    const ws = await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Blog");
+    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "Blog");
     expect(ws.dataDirectory).toBe(path.join(parent, "Blog"));
     expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Blog")).toBe(path.join(parent, "Blog (2)"));
   });
 
-  it("trims the name when opening-or-creating, then opens the same directory idempotently", async () => {
-    const dir = tempDir("explicit");
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "  Spaced  ", dir));
-    expect(ws.name).toBe("Spaced");
-    expect(ws.dataDirectory).toBe(dir);
+  it("creates inside a chosen parent, in a folder named after the workspace", async () => {
+    const parent = tempDir("parent");
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Notes", parent)).toBe(path.join(parent, "Notes"));
+    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "  Notes  ", parent);
+    expect(ws.name).toBe("Notes");
+    expect(ws.dataDirectory).toBe(path.join(parent, "Notes"));
+    expect(fs.existsSync(path.join(os.homedir(), "Documents", "BigMouth"))).toBe(false);
+  });
 
-    // Re-opening the same directory returns the existing entry, not a duplicate.
-    const again = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "ignored", dir));
-    expect(again.id).toBe(ws.id);
+  it("refuses to create a workspace without a name", async () => {
+    await expect(invoke(CHANNELS.createWorkspace, "   ")).rejects.toThrow(/name is required/i);
+    await expect(invoke(CHANNELS.createWorkspace, undefined)).rejects.toThrow(/name is required/i);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("adds an existing workspace folder once, named after the folder", async () => {
+    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "Shared", tempDir("shared"));
+    await invoke(CHANNELS.deleteWorkspace, ws.id);
+
+    const added = await invoke<Workspace>(CHANNELS.addExistingWorkspace, ws.dataDirectory);
+    expect(added.name).toBe("Shared");
+    expect(added.dataDirectory).toBe(ws.dataDirectory);
+    // Adding a listed folder again returns its entry, not a duplicate.
+    expect((await invoke<Workspace>(CHANNELS.addExistingWorkspace, ws.dataDirectory)).id).toBe(added.id);
     expect(listWorkspaces()).toHaveLength(1);
   });
 
-  it.skipIf(process.platform === "win32")("preserves a native-picked directory with leading and trailing spaces", async () => {
-    const parent = tempDir("literal-spaces");
-    const dir = path.join(parent, " Workspace ");
-    fs.mkdirSync(dir);
+  it.skipIf(process.platform === "win32")("preserves a native-picked parent with leading and trailing spaces", async () => {
+    const root = tempDir("literal-spaces");
+    const parent = path.join(root, " Parent ");
+    fs.mkdirSync(parent);
 
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Literal", dir));
+    const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "Literal", parent));
 
-    expect(ws.dataDirectory).toBe(dir);
-    expect(fs.existsSync(path.join(dir, "config.json"))).toBe(false);
-    expect(fs.existsSync(path.join(parent, "Workspace"))).toBe(false);
+    expect(ws.dataDirectory).toBe(path.join(parent, "Literal"));
+    expect(fs.existsSync(path.join(root, "Parent"))).toBe(false);
   });
 
-  it("maps a store rejection (a folder whose config.json the app did not write) to a thrown Error", async () => {
+  it("refuses to add a folder that holds no workspace, saying so in the user's words", async () => {
     const dir = tempDir("foreign-config");
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog" }));
-    await expect(invoke(CHANNELS.openOrCreateWorkspace, "WS", dir)).rejects.toThrow(/would take over/i);
+    await expect(invoke(CHANNELS.addExistingWorkspace, dir)).rejects.toThrow(/workspaces\.notAWorkspace/);
+    await expect(invoke(CHANNELS.addExistingWorkspace, tempDir("empty"))).rejects.toThrow(/workspaces\.notAWorkspace/);
     expect(listWorkspaces()).toHaveLength(0);
   });
 
   it("updates a workspace name and trims it", async () => {
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Before"));
+    const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "Before"));
     const updated = (await invoke<Workspace>(CHANNELS.updateWorkspace, ws.id, { name: "  After  " }));
     expect(updated.name).toBe("After");
     expect(listWorkspaces()[0].name).toBe("After");
@@ -154,7 +170,7 @@ describe("workspace IPC handlers", () => {
   });
 
   it("refuses a rename with no name, rather than clearing it", async () => {
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Original"));
+    const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "Original"));
 
     await expect(invoke(CHANNELS.updateWorkspace, ws.id, { name: "   " })).rejects.toThrow(/name is required/i);
     await expect(invoke(CHANNELS.updateWorkspace, ws.id, {})).rejects.toThrow(/name is required/i);
@@ -162,7 +178,7 @@ describe("workspace IPC handlers", () => {
   });
 
   it("deletes a workspace and clears its stored API keys", async () => {
-    const ws = (await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Keyed"));
+    const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "Keyed"));
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
@@ -179,7 +195,7 @@ describe("workspace IPC handlers", () => {
   });
 
   it("returns the committed removal with a warning when stored key cleanup fails", async () => {
-    const ws = await invoke<Workspace>(CHANNELS.openOrCreateWorkspace, "Keyed");
+    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "Keyed");
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-disposable-key");
     const rename = fs.renameSync;
     vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {

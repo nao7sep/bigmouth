@@ -32,7 +32,7 @@ describe("createProvider", () => {
   });
 
   it("throws when no API key resolves", () => {
-    expect(() => createProvider(roleCall({ apiKey: null }), CALL)).toThrow(/No Anthropic API key/);
+    expect(() => createProvider(roleCall({ apiKey: null }), CALL)).toThrow(/ai\.noApiKey/);
   });
 
   // The provider's answer decides whether an id works (ai-model-routing-conventions).

@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, createWorkspace, openWorkspace, openOrCreateWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, createWorkspaceIn, openWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
@@ -261,7 +261,7 @@ describe("createWorkspace gating", () => {
     expect(listWorkspaces()).toHaveLength(0);
   });
 
-  it("rejects a folder that already contains a workspace (directing to Open)", () => {
+  it("refuses to create over a folder that already contains a workspace", () => {
     const dir = tempDir("existing-ws");
     initializeWorkspaceData(dir); // a complete workspace on disk, not yet registered
     expect(() => createWorkspace("WS", dir)).toThrow(/already contains a workspace/);
@@ -282,7 +282,7 @@ describe("openWorkspace gating", () => {
     const dir = tempDir("partial");
     initializeWorkspaceData(dir);
     fs.rmdirSync(path.join(dir, "assets"));
-    expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
+    expect(() => openWorkspace(dir)).toThrow(/workspaces\.notAWorkspace/);
   });
 
   it("accepts a sparse config object in a workspace directory", () => {
@@ -301,7 +301,7 @@ describe("openWorkspace gating", () => {
     fs.mkdirSync(path.join(dir, "assets"));
     const foreign = JSON.stringify({ title: "My Blog", theme: "dark" });
     fs.writeFileSync(path.join(dir, "config.json"), foreign);
-    expect(() => openWorkspace(dir)).toThrow(/workspace folder/);
+    expect(() => openWorkspace(dir)).toThrow(/workspaces\.notAWorkspace/);
     expect(listWorkspaces()).toHaveLength(0);
     expect(fs.readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(foreign);
   });
@@ -312,9 +312,7 @@ describe("openWorkspace gating", () => {
     fs.mkdirSync(path.join(dir, "assets"));
     const configPath = path.join(dir, "config.json");
     fs.writeFileSync(configPath, '{ "formatVersion": 1, ');
-    for (const open of [() => openWorkspace(dir), () => openOrCreateWorkspace(undefined, dir)]) {
-      expect(carriedMessage(unreadable(open))).toEqual({ key: "store.unreadable", values: { path: configPath } });
-    }
+    expect(carriedMessage(unreadable(() => openWorkspace(dir)))).toEqual({ key: "store.unreadable", values: { path: configPath } });
     expect(listWorkspaces()).toHaveLength(0);
     expect(fs.readFileSync(configPath, "utf-8")).toBe('{ "formatVersion": 1, ');
   });
@@ -437,15 +435,12 @@ describe("the default workspace location", () => {
     // Asking writes nothing.
     expect(fs.existsSync(suggested)).toBe(false);
     expect(listWorkspaces()).toHaveLength(0);
-    expect(openOrCreateWorkspace("Blog").dataDirectory).toBe(suggested);
+    expect(createWorkspaceIn("Blog").dataDirectory).toBe(suggested);
   });
 
-  it("suggests the default name's folder for a blank name, as creation resolves it", () => {
+  it("suggests the next default name's folder for a blank name", () => {
     createWorkspace("Workspace", tempDir("elsewhere"));
-    const suggested = suggestWorkspaceLocation(undefined);
-
-    expect(suggested).toBe(path.join(documentsBigMouth(), "Workspace 2"));
-    expect(openOrCreateWorkspace().dataDirectory).toBe(suggested);
+    expect(suggestWorkspaceLocation(undefined)).toBe(path.join(documentsBigMouth(), "Workspace 2"));
   });
 
   it("stops at the first name when a workspace holds the whole default folder, and creation says why", () => {
@@ -479,54 +474,59 @@ describe("updateWorkspace renames, and only renames", () => {
   });
 });
 
-describe("openOrCreateWorkspace", () => {
-  it("creates a default-named workspace when no directory is given", () => {
-    const ws = openOrCreateWorkspace();
-    expect(ws.name).toBe("Workspace");
-    expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace"));
-    expect(listWorkspaces()).toHaveLength(1);
-    // A second nameless create resolves the next free default name, and its folder.
-    const second = openOrCreateWorkspace();
-    expect(second.name).toBe("Workspace 2");
-    expect(second.dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace 2"));
-  });
-
-  it("opens an existing workspace directory instead of recreating it", () => {
-    const dir = tempDir("existing");
-    initializeWorkspaceData(dir); // a complete workspace on disk, not yet registered
-    const ws = openOrCreateWorkspace("Reopened", dir);
-    expect(ws.dataDirectory).toBe(dir);
-    expect(listWorkspaces()).toHaveLength(1);
-    // Calling again returns the same registered entry, not a duplicate.
-    expect(openOrCreateWorkspace(undefined, dir).id).toBe(ws.id);
-    expect(listWorkspaces()).toHaveLength(1);
-  });
-
-  it("creates a workspace in an empty directory", () => {
-    const dir = tempDir("empty");
-    const ws = openOrCreateWorkspace("Fresh", dir);
+describe("creating inside a parent, and adding an existing folder", () => {
+  it("creates in its own folder, named after the workspace, inside a chosen parent", () => {
+    const parent = tempDir("parent");
+    const ws = createWorkspaceIn("  Fresh  ", parent);
     expect(ws.name).toBe("Fresh");
-    expect(ws.dataDirectory).toBe(dir);
+    expect(ws.dataDirectory).toBe(path.join(parent, "Fresh"));
+    expect(fs.existsSync(documentsBigMouth())).toBe(false);
   });
 
-  it("creates in a directory holding content the app would not take over", () => {
-    const dir = tempDir("nonempty");
-    fs.writeFileSync(path.join(dir, "junk.txt"), "x");
-    expect(openOrCreateWorkspace("X", dir).dataDirectory).toBe(dir);
+  it("uses a folder of that name holding only files it would not take over", () => {
+    const parent = tempDir("parent");
+    fs.mkdirSync(path.join(parent, "X"));
+    fs.writeFileSync(path.join(parent, "X", "junk.txt"), "x");
+    expect(createWorkspaceIn("X", parent).dataDirectory).toBe(path.join(parent, "X"));
   });
 
-  it("rejects a directory holding content the app would take over", () => {
-    const dir = tempDir("foreign");
-    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ title: "My Blog" }));
-    expect(() => openOrCreateWorkspace("X", dir)).toThrow(/would take over/i);
+  it("numbers past a folder holding content it would take over, leaving that folder alone", () => {
+    const parent = tempDir("parent");
+    fs.mkdirSync(path.join(parent, "X"));
+    const foreign = JSON.stringify({ title: "My Blog" });
+    fs.writeFileSync(path.join(parent, "X", "config.json"), foreign);
+    expect(createWorkspaceIn("X", parent).dataDirectory).toBe(path.join(parent, "X (2)"));
+    expect(fs.readFileSync(path.join(parent, "X", "config.json"), "utf-8")).toBe(foreign);
+  });
+
+  it("refuses a blank name", () => {
+    expect(() => createWorkspaceIn("   ", tempDir("parent"))).toThrow(/name is required/i);
     expect(listWorkspaces()).toHaveLength(0);
   });
 
-  it("rejects a path that exists but is a file", () => {
-    const dir = tempDir("hostdir");
-    const filePath = path.join(dir, "afile");
+  it("refuses a parent that is a file", () => {
+    const filePath = path.join(tempDir("hostdir"), "afile");
     fs.writeFileSync(filePath, "x");
-    expect(() => openOrCreateWorkspace("X", filePath)).toThrow(/must be a directory/i);
+    expect(() => createWorkspaceIn("X", filePath)).toThrow(/not writable/i);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("adds an existing workspace folder once, named after the folder", () => {
+    const dir = path.join(tempDir("existing"), "Reopened");
+    initializeWorkspaceData(dir); // a complete workspace on disk, not yet registered
+    const ws = openWorkspace(dir);
+    expect(ws.name).toBe("Reopened");
+    expect(ws.dataDirectory).toBe(dir);
+    expect(openWorkspace(dir).id).toBe(ws.id);
+    expect(listWorkspaces()).toHaveLength(1);
+  });
+
+  it("refuses to add a folder holding no workspace, naming it in the user's words", () => {
+    const dir = tempDir("empty");
+    let thrown: unknown;
+    try { openWorkspace(dir); } catch (err) { thrown = err; }
+    expect(carriedMessage(thrown)).toEqual({ key: "workspaces.notAWorkspace", values: { path: dir } });
+    expect(listWorkspaces()).toHaveLength(0);
   });
 });
 

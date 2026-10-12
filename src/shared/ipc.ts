@@ -63,7 +63,8 @@ export interface RendererLogEntry {
 export const CHANNELS = {
   // Workspace management
   listWorkspaces: "workspace:list",
-  openOrCreateWorkspace: "workspace:openOrCreate",
+  createWorkspace: "workspace:create",
+  addExistingWorkspace: "workspace:addExisting",
   suggestWorkspaceLocation: "workspace:suggestLocation",
   updateWorkspace: "workspace:update",
   deleteWorkspace: "workspace:delete",
@@ -318,16 +319,19 @@ export interface BigMouthApi {
 
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
-  openOrCreateWorkspace(name?: string, dataDirectory?: string): Promise<Workspace>;
-  /** The absolute folder openOrCreateWorkspace would create for `name` with no location given. */
-  suggestWorkspaceLocation(name?: string): Promise<string>;
+  /** Creates a workspace in its own folder inside `parentDirectory`, or the default parent. */
+  createWorkspace(name: string, parentDirectory?: string): Promise<Workspace>;
+  /** Registers a folder that already holds a BigMouth workspace; one already listed is returned as is. */
+  addExistingWorkspace(dataDirectory: string): Promise<Workspace>;
+  /** The absolute folder createWorkspace would use for `name` inside `parentDirectory`. */
+  suggestWorkspaceLocation(name?: string, parentDirectory?: string): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<WorkspaceDeleteResult>;
   /** Opens an allowed web or mail URL in the OS handler. */
   openExternal(url: string): Promise<void>;
-  /** Native folder picker for choosing a workspace directory; null if cancelled. */
-  pickDirectory(): Promise<string | null>;
+  /** Native folder picker: a workspace folder to add, or the parent to create one in; null if cancelled. */
+  pickDirectory(purpose: "workspace" | "parent"): Promise<string | null>;
 
   // The records window. Opening it again brings it forward.
   openRecordsWindow(): Promise<void>;

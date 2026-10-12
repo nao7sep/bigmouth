@@ -1,6 +1,6 @@
 /**
- * The workspace picker — and, when no workspace is open, the app's root launch
- * gate.
+ * The workspace list — and, when no workspace is open, the app's root launch
+ * gate, first run included.
  *
  * In that mode App renders it as the ENTIRE app with `dismissable={false}`,
  * which suppresses the ✕, the backdrop, Escape and the footer Cancel. That is
@@ -11,17 +11,26 @@
  * finds a modal with every dismiss path removed and no recorded reason.
  *
  * With a workspace already open it is an ordinary dismissable modal.
+ *
+ * The list is the window: a row is selected by click or arrows, opened by
+ * Enter, double-click or Open, and renamed or removed from the buttons under
+ * the list. A workspace's folder is never typed. "New Workspace…" creates one
+ * in its own folder, named after it, inside a parent the user may change;
+ * "Add Existing Folder…" registers a folder that already holds a workspace.
+ * With nothing registered, the new-workspace form is shown straight away.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
-  listWorkspaces,
-  openOrCreateWorkspace,
-  updateWorkspace,
+  addExistingWorkspace,
+  createWorkspace,
   deleteWorkspace,
+  listWorkspaces,
   pickWorkspaceDirectory,
   reportProblem,
   suggestWorkspaceLocation,
+  updateWorkspace,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
@@ -40,6 +49,12 @@ interface WorkspaceModalProps {
   dismissable: boolean;
   onClose: () => void;
   onSelect: (workspace: Workspace) => void | Promise<void>;
+  /**
+   * A workspace this window just created. `firstRun` is true when it is the
+   * only one registered, so the caller can continue first-run setup. Without
+   * this callback a created workspace opens like a selected one.
+   */
+  onCreated?: (workspace: Workspace, firstRun: boolean) => void | Promise<void>;
   activeWorkspaceId: string | null;
   onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
@@ -54,6 +69,7 @@ export function WorkspaceModal({
   dismissable,
   onClose,
   onSelect,
+  onCreated,
   activeWorkspaceId,
   onWorkspaceDeleted,
   onWorkspaceUpdated,
@@ -66,20 +82,24 @@ export function WorkspaceModal({
   const { t, text } = useI18n();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
-  // The folder a blank location creates for the typed name, shown as the
-  // location's placeholder so "blank" names a real path (config-sets
-  // conventions: a derived default is shown, never poured into the field).
-  const [suggestedLocation, setSuggestedLocation] = useState("");
-  const [error, setError] = useState<Message | null>(null);
+  const [listError, setListError] = useState<Message | null>(initialLoadError);
+  const [chosenId, setChosenId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [listError, setListError] = useState<Message | null>(initialLoadError);
   const [renameError, setRenameError] = useState<{ id: string; message: Message } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [removalWarnings, setRemovalWarnings] = useState<{ id: string; message: Message }[]>([]);
+  // The new-workspace form. `createFrom` is the name it opened with, so an
+  // untouched form leaves without asking.
+  const [creatingForm, setCreatingForm] = useState(false);
+  const [createFrom, setCreateFrom] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [parentDir, setParentDir] = useState<string | null>(null);
+  const [suggestedLocation, setSuggestedLocation] = useState("");
+  const [createError, setCreateError] = useState<Message | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<Message | null>(null);
   const current = useRef(true);
   const selectionIntent = useRef(0);
   const submittingRef = useRef(false);
@@ -101,70 +121,26 @@ export function WorkspaceModal({
 
   const renameComposing = useComposing();
   const nameComposing = useComposing();
-  const locationComposing = useComposing();
+  const listComposing = useComposing();
   const nameId = useId();
   const locationId = useId();
 
-  const isDirty = name.trim() !== "" || location !== "";
-  const mutationBusy = submitting || renamingId !== null;
+  const mutationBusy = creating || adding || renamingId !== null;
+  const formDirty = creatingForm && (createName.trim() !== createFrom.trim() || parentDir !== null);
 
-  const clearForm = () => {
-    setError(null);
-    setName("");
-    setLocation("");
+  const openCreateForm = (initialName: string) => {
+    setCreateError(null);
+    setCreateFrom(initialName);
+    setCreateName(initialName);
+    setParentDir(null);
+    setCreatingForm(true);
   };
 
-  const handleBrowse = async () => {
-    try {
-      const dir = await pickWorkspaceDirectory();
-      if (dir) {
-        setError(null);
-        setLocation(dir);
-      }
-    } catch (err) {
-      setError(presentFailure(
-        message("workspaces.pickerFailed"),
-        "renderer: workspace folder picker failed",
-        err,
-      ));
-    }
-  };
-
-  const handleRequestClose = () => {
-    if (submittingRef.current || renamingRef.current) {
-      // The submitted intent stays owned by storage after this view is left.
-      if (!dismissable || !storagePending) return;
-      if (submittingRef.current) { close(); return; }
-      // A submitted rename does not submit the separate create/open form.
-      // Its unsent draft still takes the ordinary discard guard below.
-    }
-    // An inline rename is a nested edit within the modal. Any close request
-    // (Escape, backdrop, close button) unwinds that edit first instead of
-    // closing the modal, keeping "cancel this edit" distinct from "leave the
-    // modal" — and giving Escape a single, well-defined path through this one
-    // guard rather than a competing handler on the input.
-    if (editingId !== null && !renamingRef.current) {
-      setEditingId(null);
-      return;
-    }
-    if (!dismissable) return;
-    if (!isDirty) {
-      close();
-      return;
-    }
-    void (async () => {
-      const ok = await confirm({
-        title: t("common.discardTitle"),
-        message: t("common.discardMessage"),
-        confirmLabel: t("common.discard"),
-        cancelLabel: t("common.keepEditing"),
-        danger: true,
-      });
-      if (ok && current.current) {
-        clearForm();
-        close();
-      }
-    })();
+  const closeCreateForm = () => {
+    setCreateError(null);
+    setCreatingForm(false);
+    setCreateName("");
+    setParentDir(null);
   };
 
   const load = () => {
@@ -176,6 +152,8 @@ export function WorkspaceModal({
         setListError(null);
         onLoadRecovered?.();
         setLoading(false);
+        // Nothing to choose from: the window opens on the one thing to do.
+        if (ws.length === 0 && !submittingRef.current) openCreateForm(t("setup.workspaceNameDefault"));
       })
       .catch((err: unknown) => {
         if (!current.current) { reportProblem("renderer: workspace registry load failed", err); return; }
@@ -193,45 +171,126 @@ export function WorkspaceModal({
   }, [reloadVersion]);
 
   useEffect(() => {
+    if (!creatingForm) return;
     let current = true;
-    suggestWorkspaceLocation(name.trim() || undefined)
+    suggestWorkspaceLocation(createName.trim() || undefined, parentDir ?? undefined)
       .then((path) => {
         if (current) setSuggestedLocation(path);
       })
       .catch((err: unknown) => {
-        // Only the preview is lost: creation still resolves the default itself.
+        // Only the preview is lost: creation resolves the folder itself.
         if (current) setSuggestedLocation("");
         reportProblem("renderer: workspace location suggestion failed", err);
       });
     return () => {
       current = false;
     };
-  }, [name]);
+  }, [createName, parentDir, creatingForm]);
 
-  const handleSubmit = async () => {
-    if (submittingRef.current || renamingRef.current || storagePending) return;
+  const handleRequestClose = () => {
+    if (submittingRef.current || renamingRef.current) {
+      // The submitted intent stays owned by storage after this view is left.
+      if (!dismissable || !storagePending) return;
+      if (submittingRef.current) { close(); return; }
+    }
+    // A nested edit — an inline rename or the new-workspace form over a list —
+    // unwinds first, keeping "cancel this edit" distinct from "leave the window".
+    if (editingId !== null && !renamingRef.current) {
+      setEditingId(null);
+      return;
+    }
+    if (creatingForm && workspaces.length > 0) {
+      if (!formDirty) { closeCreateForm(); return; }
+      void (async () => {
+        const ok = await confirm({
+          title: t("common.discardTitle"),
+          message: t("common.discardMessage"),
+          confirmLabel: t("common.discard"),
+          cancelLabel: t("common.keepEditing"),
+          danger: true,
+        });
+        if (ok && current.current) closeCreateForm();
+      })();
+      return;
+    }
+    if (!dismissable) return;
+    close();
+  };
+
+  const handleChangeParent = async () => {
+    try {
+      const dir = await pickWorkspaceDirectory("parent");
+      if (dir && current.current) {
+        setCreateError(null);
+        setParentDir(dir);
+      }
+    } catch (err) {
+      const failure = presentFailure(message("workspaces.pickerFailed"), "renderer: workspace parent picker failed", err);
+      if (current.current) setCreateError(failure);
+    }
+  };
+
+  const handleCreate = async () => {
+    const name = createName.trim();
+    if (!name || submittingRef.current || renamingRef.current || storagePending) return;
     submittingRef.current = true;
     const intent = ++selectionIntent.current;
-    setSubmitting(true);
-    setError(null);
+    const firstRun = workspaces.length === 0;
+    setCreating(true);
+    setCreateError(null);
     try {
-      const workspace = await openOrCreateWorkspace(name.trim() || undefined, location === "" ? undefined : location);
+      const workspace = await createWorkspace(name, parentDir ?? undefined);
       if (!current.current || selectionIntent.current !== intent) return;
-      clearForm();
+      closeCreateForm();
       load();
-      await onSelect(workspace);
+      if (onCreated) await onCreated(workspace, firstRun);
+      else await onSelect(workspace);
     } catch (err) {
-      const failure = presentFailure(
-        message("workspaces.openFailed"),
-        "renderer: workspace open or creation failed",
-        err,
-      );
-      if (current.current && selectionIntent.current === intent) setError(failure);
+      const failure = presentFailure(message("workspaces.createFailed"), "renderer: workspace creation failed", err);
+      if (current.current && selectionIntent.current === intent) setCreateError(failure);
       else reportStorageResult(failure);
     } finally {
       submittingRef.current = false;
-      if (current.current) setSubmitting(false);
+      if (current.current) setCreating(false);
     }
+  };
+
+  const handleAddExisting = async () => {
+    if (submittingRef.current || renamingRef.current || storagePending) return;
+    setAddError(null);
+    setCreateError(null);
+    let dir: string | null;
+    try {
+      dir = await pickWorkspaceDirectory("workspace");
+    } catch (err) {
+      const failure = presentFailure(message("workspaces.pickerFailed"), "renderer: workspace folder picker failed", err);
+      if (current.current) setAddError(failure);
+      return;
+    }
+    if (!dir || !current.current || submittingRef.current) return;
+    submittingRef.current = true;
+    const intent = ++selectionIntent.current;
+    setAdding(true);
+    try {
+      const workspace = await addExistingWorkspace(dir);
+      if (!current.current || selectionIntent.current !== intent) return;
+      closeCreateForm();
+      load();
+      await onSelect(workspace);
+    } catch (err) {
+      const failure = presentFailure(message("workspaces.addFailed"), "renderer: workspace add failed", err, { dataDirectory: dir });
+      if (current.current && selectionIntent.current === intent) setAddError(failure);
+      else reportStorageResult(failure);
+    } finally {
+      submittingRef.current = false;
+      if (current.current) setAdding(false);
+    }
+  };
+
+  const startRename = (ws: Workspace) => {
+    setEditingId(ws.id);
+    setEditName(ws.name);
+    setRenameError(null);
   };
 
   const handleRename = async (id: string) => {
@@ -315,54 +374,212 @@ export function WorkspaceModal({
       ),
     [workspaces]
   );
-  const preferredWorkspaceId =
-    sorted.find((ws) => ws.id === activeWorkspaceId)?.id ?? sorted[0]?.id ?? null;
+  // The row the buttons act on: the user's choice while it is listed, else the
+  // open workspace, else the first.
+  const selectedId =
+    sorted.find((ws) => ws.id === chosenId)?.id ??
+    sorted.find((ws) => ws.id === activeWorkspaceId)?.id ??
+    sorted[0]?.id ??
+    null;
+  const selected = sorted.find((ws) => ws.id === selectedId) ?? null;
+
+  const handleOpen = useCallback(
+    (id: string | null) => {
+      const ws = sorted.find((w) => w.id === id);
+      if (!ws || submittingRef.current || renamingRef.current) return;
+      selectionIntent.current += 1;
+      void onSelect(ws);
+    },
+    [sorted, onSelect]
+  );
 
   // The workspace list is one listbox per the composite-control conventions:
-  // one tab stop, arrow navigation, type-ahead by name, Enter/click to open.
-  // The per-row Rename/Delete buttons are pointer-only (not tab stops); deleting
-  // recovers the cursor to a neighbour via the hook's removal recovery.
-  const listComposing = useComposing();
+  // one tab stop, arrows and type-ahead move the selection (choosing a row is
+  // cheap and discards nothing), and Enter opens it. Rename and Remove are
+  // ordinary buttons under the list, acting on the selected row; F2, Cmd+R and
+  // Delete reach them from the list too.
   const rows: PostListRow[] = useMemo(
     () => sorted.map((ws) => ({ id: ws.id, label: ws.name })),
     [sorted]
   );
-  const handleActivateWorkspace = useCallback(
-    (id: string) => {
-      const ws = sorted.find((w) => w.id === id);
-      if (ws) {
-        selectionIntent.current += 1;
-        void onSelect(ws);
-      }
-    },
-    [sorted, onSelect]
-  );
   const { listboxProps, getRowProps, activeId } = usePostListbox({
     rows,
-    selectedId: preferredWorkspaceId,
-    onActivate: handleActivateWorkspace,
-    // The row buttons sit outside the tab order, as the composite-control
-    // conventions require — so the keys are how a keyboard reaches them.
+    selectedId,
+    onActivate: setChosenId,
+    followFocus: true,
+    autoActivateFirst: true,
     onRowAction: (id, action) => {
       if (storagePending || submittingRef.current || renamingRef.current) return;
       const ws = workspaces.find((w) => w.id === id);
       if (!ws) return;
-      if (action === "rename") {
-        setEditingId(ws.id);
-        setEditName(ws.name);
-        return;
-      }
-      void handleDelete(ws);
+      if (action === "rename") startRename(ws);
+      else handleDelete(ws);
     },
     pageSize: WORKSPACE_PAGE_SIZE,
     composingRef: listComposing.composingRef,
   });
+  const onListKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === "Enter" && !isComposingKeyboardEvent(listComposing.composingRef, e)) {
+      e.preventDefault();
+      handleOpen(activeId ?? selectedId);
+      return;
+    }
+    listboxProps.onKeyDown(e);
+  };
+
+  const firstRun = !loading && !listError && sorted.length === 0;
+  const rowActionsDisabled = !selected || storagePending || mutationBusy || editingId !== null;
+
+  const createForm = (
+    <div className="workspace-create">
+      {firstRun ? (
+        <p className="setup-intro">{t("setup.workspaceIntro")}</p>
+      ) : (
+        <div className="workspace-create-heading">{t("workspaces.createHeading")}</div>
+      )}
+      <div className="form-field">
+        <label className="form-label" htmlFor={nameId}>{t("workspaces.name")}</label>
+        <input
+          id={nameId}
+          className="form-input"
+          value={createName}
+          disabled={creating}
+          onChange={(e) => {
+            setCreateError(null);
+            setCreateName(e.target.value);
+          }}
+          onCompositionStart={nameComposing.handlers.onCompositionStart}
+          onCompositionEnd={nameComposing.handlers.onCompositionEnd}
+          onKeyDown={(e) => {
+            if (isComposingKeyboardEvent(nameComposing.composingRef, e)) return;
+            if (e.key === "Enter") void handleCreate();
+          }}
+          autoFocus
+        />
+      </div>
+      <div className="form-field">
+        <span className="form-label" id={locationId}>{t("workspaces.location")}</span>
+        <div className="workspace-location-row">
+          <code className="workspace-location" aria-labelledby={locationId}>{suggestedLocation}</code>
+          <button className="btn-action" type="button" disabled={creating} onClick={() => void handleChangeParent()}>
+            {t("center.change")}
+          </button>
+        </div>
+        <p className="settings-hint">{t("workspaces.locationHint")}</p>
+      </div>
+      {createError && (
+        <OperationalResult severity="error" className="modal-result">
+          {text(createError)}
+        </OperationalResult>
+      )}
+    </div>
+  );
+
+  let body;
+  if (loading) {
+    body = <p className="modal-empty-message">{t("common.loading")}</p>;
+  } else if (listError) {
+    body = (
+      <div className="workspace-load-recovery">
+        <OperationalResult severity="error" className="modal-result">{text(listError)}</OperationalResult>
+        <div className="dialog-actions">
+          <button className="btn-action" type="button" onClick={load}>{t("common.retry")}</button>
+        </div>
+      </div>
+    );
+  } else if (sorted.length === 0) {
+    body = creatingForm ? null : <p className="modal-empty-message">{t("workspaces.empty")}</p>;
+  } else {
+    body = (
+      <>
+        <div
+          className="workspace-list"
+          aria-label={t("workspaces.title")}
+          onCompositionStart={listComposing.handlers.onCompositionStart}
+          onCompositionEnd={listComposing.handlers.onCompositionEnd}
+          {...listboxProps}
+          onKeyDown={onListKeyDown}
+        >
+          {sorted.map((ws) => {
+            const editing = editingId === ws.id;
+            const rowProps = getRowProps(ws.id);
+            return (
+              <div
+                key={ws.id}
+                className={`workspace-item${ws.id === activeId ? " active" : ""}`}
+                {...rowProps}
+                // While renaming, the row is not a selection target — the edit
+                // field owns it.
+                onClick={editing ? undefined : rowProps.onClick}
+                onDoubleClick={editing ? undefined : () => handleOpen(ws.id)}
+              >
+                {editing ? (
+                  <div className="workspace-edit-stack" onClick={(e) => e.stopPropagation()}>
+                    <div className="workspace-edit-row">
+                      <input
+                        className="form-input"
+                        aria-label={t("workspaces.name")}
+                        value={editName}
+                        onChange={(e) => { setRenameError(null); setEditName(e.target.value); }}
+                        onCompositionStart={renameComposing.handlers.onCompositionStart}
+                        onCompositionEnd={renameComposing.handlers.onCompositionEnd}
+                        onKeyDown={(e) => {
+                          // Keep navigation keys out of the listbox while editing.
+                          e.stopPropagation();
+                          if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
+                          if (e.key === "Enter") void handleRename(ws.id);
+                          if (e.key === "Escape") { setRenameError(null); setEditingId(null); }
+                        }}
+                        autoFocus
+                        disabled={renamingId === ws.id}
+                      />
+                      <button className="btn-action" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
+                        {t("common.cancel")}
+                      </button>
+                      <button
+                        className="btn-primary"
+                        onClick={() => void handleRename(ws.id)}
+                        disabled={!editName.trim() || renamingId === ws.id || storagePending}
+                      >
+                        {renamingId === ws.id ? t("common.saving") : t("common.save")}
+                      </button>
+                    </div>
+                    {renameError?.id === ws.id && (
+                      <OperationalResult severity="error" className="modal-result workspace-rename-result">{text(renameError.message)}</OperationalResult>
+                    )}
+                  </div>
+                ) : (
+                  <div className="workspace-item-main">
+                    <div className="workspace-item-name">
+                      {ws.name}
+                      {ws.id === activeWorkspaceId && <span className="workspace-item-current">{t("workspaces.current")}</span>}
+                    </div>
+                    <div className="workspace-item-dir">{ws.dataDirectory}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="workspace-row-actions">
+          <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
+            {t("common.rename")}
+          </button>
+          <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
+            {t("workspaces.remove")}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  const listed = !loading && !listError && sorted.length > 0;
 
   return (
     <ModalShell
-      title={t("workspaces.title")}
+      title={t(firstRun ? "setup.title" : "workspaces.title")}
       onClose={handleRequestClose}
-      width={520}
+      width={560}
       maxHeight="85vh"
       closeOnBackdrop={dismissable}
       showClose={dismissable}
@@ -378,187 +595,60 @@ export function WorkspaceModal({
             onDismiss={() => setRemovalWarnings((warnings) => warnings.filter((item) => item.id !== warning.id))}
           >{text(warning.message)}</OperationalResult>
         ))}
-        {loading ? (
-          <p className="modal-empty-message">{t("common.loading")}</p>
-        ) : listError ? (
-          <div className="workspace-load-recovery">
-            <OperationalResult severity="error" className="modal-result">{text(listError)}</OperationalResult>
-            <div className="dialog-actions">
-              <button className="btn-action" type="button" onClick={load}>{t("common.retry")}</button>
-            </div>
-          </div>
-        ) : sorted.length === 0 ? (
-          <p className="modal-empty-message">{t("workspaces.empty")}</p>
-        ) : (
-          <div className="workspace-list" aria-label={t("workspaces.title")} {...listboxProps}>
-            {sorted.map((ws) => {
-              const editing = editingId === ws.id;
-              const rowProps = getRowProps(ws.id);
-              return (
-                <div
-                  key={ws.id}
-                  className={`workspace-item${ws.id === activeId ? " active" : ""}`}
-                  onCompositionStart={listComposing.handlers.onCompositionStart}
-                  onCompositionEnd={listComposing.handlers.onCompositionEnd}
-                  {...rowProps}
-                  // While renaming, the row is not an activation target — the
-                  // edit field owns it (see the inline-editing integration point).
-                  onClick={editing ? undefined : rowProps.onClick}
-                >
-                  {editing ? (
-                    <div
-                      className="workspace-edit-stack"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="workspace-edit-row"><input
-                        className="form-input"
-                        value={editName}
-                        onChange={(e) => { setRenameError(null); setEditName(e.target.value); }}
-                        onCompositionStart={renameComposing.handlers.onCompositionStart}
-                        onCompositionEnd={renameComposing.handlers.onCompositionEnd}
-                        onKeyDown={(e) => {
-                          // Keep navigation keys out of the listbox while editing.
-                          e.stopPropagation();
-                          if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
-                          if (e.key === "Enter") handleRename(ws.id);
-                          if (e.key === "Escape") { setRenameError(null); setEditingId(null); }
-                        }}
-                        autoFocus
-                        disabled={renamingId === ws.id}
-                      />
-                      <button className="btn-action" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
-                        {t("common.cancel")}
-                      </button>
-                      <button
-                        className="btn-primary"
-                        onClick={() => handleRename(ws.id)}
-                        disabled={!editName.trim() || renamingId === ws.id || storagePending}
-                      >
-                        {renamingId === ws.id ? t("common.saving") : t("common.save")}
-                      </button>
-                      </div>
-                      {renameError?.id === ws.id && (
-                        <OperationalResult severity="error" className="modal-result workspace-rename-result">{text(renameError.message)}</OperationalResult>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="workspace-item-main">
-                        <div className="workspace-item-name">{ws.name}</div>
-                        <div className="workspace-item-dir">{ws.dataDirectory}</div>
-                      </div>
-                      <div className="workspace-item-actions">
-                        <button
-                          className="btn-toolbar"
-                          disabled={storagePending || mutationBusy}
-                          tabIndex={-1}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingId(ws.id);
-                            setEditName(ws.name);
-                            setRenameError(null);
-                          }}
-                        >
-                          {t("common.rename")}
-                        </button>
-                        <button
-                          className="btn-toolbar btn-delete"
-                          disabled={storagePending || mutationBusy}
-                          tabIndex={-1}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(ws);
-                          }}
-                        >
-                          {t("workspaces.remove")}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="workspace-create">
-        <div className="workspace-create-heading">{t("workspaces.createHeading")}</div>
-        <div className="form-field">
-          <label className="form-label" htmlFor={nameId}>
-            {t("workspaces.name")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
-          </label>
-          <input
-            id={nameId}
-            className="form-input"
-            value={name}
-            disabled={submitting}
-            onChange={(e) => {
-              setError(null);
-              setName(e.target.value);
-            }}
-            placeholder={t("workspaces.namePlaceholder")}
-            onCompositionStart={nameComposing.handlers.onCompositionStart}
-            onCompositionEnd={nameComposing.handlers.onCompositionEnd}
-            onKeyDown={(e) => {
-              if (isComposingKeyboardEvent(nameComposing.composingRef, e)) return;
-              if (e.key === "Enter") void handleSubmit();
-            }}
-            autoFocus={sorted.length === 0}
-          />
-        </div>
-        <div className="form-field">
-          <label className="form-label" htmlFor={locationId}>
-            {t("workspaces.location")} <span style={{ color: "var(--bm-text-muted)", fontWeight: 400 }}>{t("common.optional")}</span>
-          </label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              id={locationId}
-              className="form-input"
-              style={{ flex: 1 }}
-              value={location}
-              disabled={submitting}
-              onChange={(e) => {
-                setError(null);
-                setLocation(e.target.value);
-              }}
-              placeholder={suggestedLocation}
-              onCompositionStart={locationComposing.handlers.onCompositionStart}
-              onCompositionEnd={locationComposing.handlers.onCompositionEnd}
-              onKeyDown={(e) => {
-                if (isComposingKeyboardEvent(locationComposing.composingRef, e)) return;
-                if (e.key === "Enter") void handleSubmit();
-              }}
-            />
-            <button className="btn-action" type="button" disabled={submitting} onClick={() => void handleBrowse()}>
-              {t("common.browse")}
-            </button>
-          </div>
-          <p className="settings-hint">{t("workspaces.locationHint")}</p>
-        </div>
-        {error && (
-          <OperationalResult severity="error" className="modal-result">
-            {text(error)}
+        {body}
+        {creatingForm && createForm}
+        {addError && (
+          <OperationalResult severity="error" className="modal-result" onDismiss={() => setAddError(null)}>
+            {text(addError)}
           </OperationalResult>
         )}
-        <div className="dialog-actions">
-          {dismissable && (
-            <button
-              className="btn-action"
-              onClick={handleRequestClose}
-              disabled={mutationBusy && !storagePending}
-            >
-              {t(mutationBusy && storagePending ? "common.close" : "common.cancel")}
+      </div>
+      <div className="modal-footer">
+        <div className="workspace-footer-start">
+          {!creatingForm && !loading && !listError && (
+            <button className="btn-action" disabled={mutationBusy || storagePending} onClick={() => openCreateForm("")}>
+              {t("workspaces.new")}
             </button>
           )}
-          <button
-            className="btn-primary"
-            onClick={() => void handleSubmit()}
-            disabled={mutationBusy || storagePending}
-          >
-            {submitting ? t("workspaces.opening") : t("workspaces.openOrCreate")}
-          </button>
+          {!loading && !listError && (
+            <button className="btn-action" disabled={mutationBusy || storagePending} onClick={() => void handleAddExisting()}>
+              {adding ? t("workspaces.opening") : t("workspaces.addExisting")}
+            </button>
+          )}
         </div>
+        {creatingForm ? (
+          <>
+            {listed && (
+              <button className="btn-action" disabled={creating && !storagePending} onClick={handleRequestClose}>
+                {t("common.cancel")}
+              </button>
+            )}
+            <button
+              className="btn-primary"
+              onClick={() => void handleCreate()}
+              disabled={!createName.trim() || mutationBusy || storagePending}
+            >
+              {creating ? t("workspaces.creating") : t("workspaces.create")}
+            </button>
+          </>
+        ) : (
+          <>
+            {dismissable && (
+              <button className="btn-action" onClick={handleRequestClose} disabled={mutationBusy && !storagePending}>
+                {t(mutationBusy && storagePending ? "common.close" : "common.cancel")}
+              </button>
+            )}
+            {listed && (
+              <button
+                className="btn-primary"
+                onClick={() => handleOpen(selectedId)}
+                disabled={!selected || mutationBusy || storagePending || editingId !== null}
+              >
+                {t("workspaces.open")}
+              </button>
+            )}
+          </>
+        )}
       </div>
     </ModalShell>
   );

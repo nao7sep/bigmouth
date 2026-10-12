@@ -83,6 +83,8 @@ interface WorkspaceSessionProps {
   onStartLeftDrag: MouseEventHandler<HTMLDivElement>;
   onStartRightDrag: MouseEventHandler<HTMLDivElement>;
   onSwitchWorkspace: () => void;
+  /** A rename saved from Settings, so the app shows the open workspace's new name. */
+  onWorkspaceUpdated: (workspace: Workspace) => void;
 }
 
 export interface WorkspaceSessionHandle {
@@ -99,6 +101,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       onStartLeftDrag,
       onStartRightDrag,
       onSwitchWorkspace,
+      onWorkspaceUpdated,
     },
     ref
   ) {
@@ -758,7 +761,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             <div className="pane-empty">{t("session.empty")}</div>
           )}
           {settingsOpen && (
-            <SettingsModal workspaceId={workspace.id} onClose={() => setSettingsOpen(false)} onSettingsChanged={reloadConfig} />
+            <SettingsModal
+              workspaceId={workspace.id}
+              workspaceName={workspace.name}
+              workspaceFolder={workspace.dataDirectory}
+              onClose={() => setSettingsOpen(false)}
+              onSettingsChanged={reloadConfig}
+              onWorkspaceRenamed={onWorkspaceUpdated}
+            />
           )}
           {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
           {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}

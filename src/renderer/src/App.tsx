@@ -53,9 +53,9 @@ export function App() {
   const reportStorageResult = useStorageResultReporter();
   const removalSelection = useRef(new Map<string, number>());
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
-  // First run: no workspace is registered at all, so the guided setup stands in
-  // for the picker until it opens one or the user asks for the picker.
-  const [setupOpen, setSetupOpen] = useState(false);
+  // First run: the workspace window created the only workspace, and setup asks
+  // for its first target before opening it.
+  const [setupWorkspace, setSetupWorkspace] = useState<Workspace | null>(null);
   const [wsChecked, setWsChecked] = useState(false);
   const { text } = useI18n();
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<Message | null>(null);
@@ -180,23 +180,19 @@ export function App() {
       }
 
       // The registry is read even with nothing remembered: an empty one is a
-      // first run, which gets the guided setup rather than the picker.
+      // first run, which the workspace window opens on its new-workspace form.
       try {
         const workspaces = await listWorkspaces();
         if (cancelled) return;
         setWorkspaceRegistryError(null);
-        if (workspaces.length === 0) {
-          // A remembered id that names nothing is left alone: finishing setup
-          // replaces it, and nothing reads it before then.
-          setSetupOpen(true);
-          return;
-        }
         const ws = storedId ? workspaces.find((workspace) => workspace.id === storedId) : undefined;
         if (ws) {
           setActiveWorkspace(ws.id);
           setActiveWorkspaceState(ws);
         } else {
-          if (storedId) {
+          // A remembered id that names nothing is cleared, unless nothing is
+          // registered: opening the first workspace replaces it then.
+          if (storedId && workspaces.length > 0) {
             await updateUiState({ activeWorkspaceId: "" });
             if (cancelled) return;
           }
@@ -237,7 +233,7 @@ export function App() {
     // Selection has happened. Its optional preference save must not later close
     // a newly opened picker or setup surface.
     setWorkspaceModalOpen(false);
-    setSetupOpen(false);
+    setSetupWorkspace(null);
     try {
       await updateUiState({ activeWorkspaceId: ws.id });
       if (workspaceSelectionRef.current !== selection) return;
@@ -306,7 +302,7 @@ export function App() {
       activeWorkspaceRef.current = null;
       setActiveWorkspaceState(null);
       setWorkspaceModalOpen(true);
-      setSetupOpen(false);
+      setSetupWorkspace(null);
       void clearActiveWorkspacePreference(workspace.id, selection);
     }
     setWorkspaceReloadVersion((version) => version + 1);
@@ -397,6 +393,10 @@ export function App() {
       dismissable={activeWorkspace !== null}
       onClose={() => setWorkspaceModalOpen(false)}
       onSelect={handleSelectWorkspace}
+      onCreated={(workspace, firstRun) => {
+        if (firstRun) setSetupWorkspace(workspace);
+        else return handleSelectWorkspace(workspace);
+      }}
       activeWorkspaceId={activeWorkspace?.id ?? null}
       onWorkspaceDeleted={handleActiveWorkspaceDeleted}
       onWorkspaceUpdated={handleActiveWorkspaceUpdated}
@@ -426,14 +426,8 @@ export function App() {
   );
 
   if (!activeWorkspace) {
-    const gate = setupOpen ? (
-      <SetupModal
-        onFinish={handleSelectWorkspace}
-        onOpenExisting={() => {
-          setSetupOpen(false);
-          setWorkspaceModalOpen(true);
-        }}
-      />
+    const gate = setupWorkspace ? (
+      <SetupModal workspace={setupWorkspace} onFinish={handleSelectWorkspace} />
     ) : workspaceModal;
     return <>{gate}{shellResultStack}</>;
   }
@@ -459,6 +453,7 @@ export function App() {
               startDrag(e, rightIntentRef, setRightIntent, "paneRightWidth", -1, RIGHT_MIN, RIGHT_MAX)
             }
             onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
+            onWorkspaceUpdated={handleActiveWorkspaceUpdated}
           />
         </div>
       </div>

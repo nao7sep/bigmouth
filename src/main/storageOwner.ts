@@ -10,7 +10,7 @@ export const isAuthored = (name: StorageCommand) => ["queueContent", "queueMetad
 // Their deadline ends the UI's normal wait through pending status, not a false
 // failure. Reads/startup and optional records/UI-state writes remain bounded.
 const mutationCommands = new Set<StorageCommand>([
-  "openOrCreateWorkspace", "updateWorkspace", "deleteWorkspace", "saveSettings",
+  "createWorkspace", "addExistingWorkspace", "updateWorkspace", "deleteWorkspace", "saveSettings",
   "saveAnthropicSettings", "saveTargets", "saveAnalysisPrompts", "saveGenerationPrompts",
   "rebuildIndex", "createPost", "updatePost", "changeStatus",
   "setLocked", "deletePost", "renameTarget", "saveAssetFile", "deleteAsset", "saveAppSettings",

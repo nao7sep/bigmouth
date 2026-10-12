@@ -32,6 +32,7 @@ vi.mock("@renderer/WorkspaceSession", () => {
         workspace: Workspace;
         onSwitchWorkspace: () => void;
         onStartLeftDrag: (event: React.MouseEvent) => void;
+        onWorkspaceUpdated: (workspace: Workspace) => void;
       },
       ref: React.Ref<{ flushPendingChanges: () => Promise<boolean> }>
     ) {
@@ -39,6 +40,13 @@ vi.mock("@renderer/WorkspaceSession", () => {
       return (
         <div data-testid="session">
           <span data-testid="session-ws">{props.workspace.id}</span>
+          <span data-testid="session-ws-name">{props.workspace.name}</span>
+          <button
+            data-testid="session-rename"
+            onClick={() => props.onWorkspaceUpdated({ ...props.workspace, name: "Renamed in Settings" })}
+          >
+            rename
+          </button>
           <button data-testid="session-switch" onClick={props.onSwitchWorkspace}>
             switch
           </button>
@@ -56,6 +64,7 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     dismissable: boolean;
     onClose: () => void;
     onSelect: (ws: Workspace) => void | Promise<void>;
+    onCreated?: (ws: Workspace, firstRun: boolean) => void | Promise<void>;
     activeWorkspaceId: string | null;
     onWorkspaceDeleted: (id: string) => boolean | Promise<boolean>;
     onWorkspaceUpdated: (ws: Workspace) => void;
@@ -72,6 +81,18 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
         onClick={() => void props.onSelect({ id: "ws2", name: "Beta", dataDirectory: "/d/beta" })}
       >
         select
+      </button>
+      <button
+        data-testid="ws-modal-created-first"
+        onClick={() => void props.onCreated?.({ id: "ws9", name: "My Blog", dataDirectory: "/d/my-blog" }, true)}
+      >
+        created first
+      </button>
+      <button
+        data-testid="ws-modal-created-later"
+        onClick={() => void props.onCreated?.({ id: "ws3", name: "Gamma", dataDirectory: "/d/gamma" }, false)}
+      >
+        created later
       </button>
       <button data-testid="ws-modal-select-same" onClick={() => void props.onSelect({ id: "ws1", name: "Alpha", dataDirectory: "/d/a" })}>select-same</button>
       <button data-testid="ws-modal-removal-completed" onClick={() => props.onWorkspaceRemovalCompleted({ id: "ws1", name: "Alpha", dataDirectory: "/d/a" }, { keyCleanupIncomplete: true })}>completed</button>
@@ -101,22 +122,17 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
   ),
 }));
 
-// First-run setup is replaced too: App's part is when it shows, and that its
-// two ways out reach the session and the picker.
+// First-run setup is replaced too: App's part is when it shows, for which
+// workspace, and that finishing it opens that workspace.
 vi.mock("@renderer/components/SetupModal", () => ({
   SetupModal: (props: {
+    workspace: Workspace;
     onFinish: (ws: Workspace) => void | Promise<void>;
-    onOpenExisting: () => void;
   }) => (
     <div data-testid="setup">
-      <button
-        data-testid="setup-finish"
-        onClick={() => void props.onFinish({ id: "ws9", name: "My Blog", dataDirectory: "/d/my-blog" })}
-      >
+      <span data-testid="setup-ws">{props.workspace.id}</span>
+      <button data-testid="setup-finish" onClick={() => void props.onFinish(props.workspace)}>
         finish
-      </button>
-      <button data-testid="setup-open-existing" onClick={props.onOpenExisting}>
-        open existing
       </button>
     </div>
   ),
@@ -188,8 +204,7 @@ async function renderApp() {
 describe("App bootstrap — no stored workspace", () => {
   it("opens the workspace picker (non-dismissable) when nothing is stored", async () => {
     const { getByTestId, queryByTestId } = await renderApp();
-    // No stored id, but workspaces exist: the registry is read only to tell
-    // this from a first run, and the picker opens.
+    // No stored id, but workspaces exist: the picker opens on the list.
     expect(mockList).toHaveBeenCalledTimes(1);
     expect(queryByTestId("setup")).toBeNull();
     expect(getByTestId("ws-modal")).toBeTruthy();
@@ -223,35 +238,45 @@ describe("App bootstrap — no stored workspace", () => {
 });
 
 describe("App bootstrap — first run", () => {
-  it("shows the setup instead of the picker when no workspace is registered", async () => {
+  // No separate setup gate at launch: with nothing registered, the workspace
+  // window is the gate and opens on its new-workspace form.
+  it("shows the non-dismissable workspace window, not setup, when no workspace is registered", async () => {
     mockList.mockResolvedValue([]);
     const { getByTestId, queryByTestId } = await renderApp();
 
-    expect(getByTestId("setup")).toBeTruthy();
-    expect(queryByTestId("ws-modal")).toBeNull();
+    expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
+    expect(queryByTestId("setup")).toBeNull();
     expect(queryByTestId("session")).toBeNull();
   });
 
-  it("shows the setup even when a stale id is remembered, leaving it for setup to replace", async () => {
+  it("leaves a stale remembered id alone when nothing is registered, for the first workspace to replace", async () => {
     mockGetUiState.mockResolvedValue(uiState("gone"));
     mockList.mockResolvedValue([]);
     const { getByTestId } = await renderApp();
 
-    expect(getByTestId("setup")).toBeTruthy();
+    expect(getByTestId("ws-modal")).toBeTruthy();
     expect(mockUpdateUiState).not.toHaveBeenCalled();
   });
 
-  it("shows the setup when the saved UI state could not be read but nothing is registered", async () => {
+  it("shows the workspace window when the saved UI state could not be read and nothing is registered", async () => {
     mockGetUiState.mockRejectedValue(new Error("unreadable"));
     mockList.mockResolvedValue([]);
-    const { getByTestId } = await renderApp();
+    const { getByTestId, queryByTestId } = await renderApp();
 
-    expect(getByTestId("setup")).toBeTruthy();
+    expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
+    expect(queryByTestId("setup")).toBeNull();
   });
 
-  it("opens the finished workspace the way choosing it in the picker does", async () => {
+  it("continues a first-run creation into setup for that workspace, whose finish opens it", async () => {
     mockList.mockResolvedValue([]);
     const { getByTestId, queryByTestId } = await renderApp();
+
+    act(() => { fireEvent.click(getByTestId("ws-modal-created-first")); });
+
+    expect(getByTestId("setup-ws").textContent).toBe("ws9");
+    expect(queryByTestId("ws-modal")).toBeNull();
+    expect(queryByTestId("session")).toBeNull();
+    expect(mockSetActive).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.click(getByTestId("setup-finish"));
@@ -266,17 +291,25 @@ describe("App bootstrap — first run", () => {
     expect(queryByTestId("ws-modal")).toBeNull();
   });
 
-  it("hands over to the non-dismissable picker to open an existing workspace", async () => {
-    mockList.mockResolvedValue([]);
+  it("opens a workspace created when others exist directly, without setup", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
     const { getByTestId, queryByTestId } = await renderApp();
 
-    fireEvent.click(getByTestId("setup-open-existing"));
+    fireEvent.click(getByTestId("session-switch"));
+    await act(async () => {
+      fireEvent.click(getByTestId("ws-modal-created-later"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(queryByTestId("setup")).toBeNull();
-    expect(getByTestId("ws-modal").getAttribute("data-dismissable")).toBe("false");
+    expect(sessionFlush).toHaveBeenCalled();
+    expect(mockUpdateUiState).toHaveBeenCalledWith({ activeWorkspaceId: "ws3" });
+    expect(getByTestId("session-ws").textContent).toBe("ws3");
+    expect(queryByTestId("ws-modal")).toBeNull();
   });
 
-  it("gives the picker its recovery copy, not the setup, when the registry cannot be read", async () => {
+  it("gives the workspace window its recovery copy, not setup, when the registry cannot be read", async () => {
     mockList.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_FIRST_RUN_SENTINEL"));
     const { getByTestId, queryByTestId } = await renderApp();
 
@@ -518,6 +551,18 @@ describe("App active-workspace rename", () => {
     // The session still renders the same id (rename keeps identity); the update
     // path ran without tearing anything down.
     expect(getByTestId("session-ws").textContent).toBe("ws1");
+    expect(getByTestId("session-ws-name").textContent).toBe("Renamed");
+  });
+
+  it("shows a rename saved from Settings on the open workspace", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
+    const { getByTestId } = await renderApp();
+
+    act(() => { fireEvent.click(getByTestId("session-rename")); });
+
+    expect(getByTestId("session-ws").textContent).toBe("ws1");
+    expect(getByTestId("session-ws-name").textContent).toBe("Renamed in Settings");
+    expect(sessionFlush).not.toHaveBeenCalled();
   });
 });
 

@@ -22,6 +22,7 @@ vi.mock("@renderer/api", () => ({
   saveSettings: vi.fn(),
   listTargets: vi.fn(),
   saveTargets: vi.fn(),
+  updateWorkspace: vi.fn(),
   renameTarget: vi.fn(),
   listAnalysisPrompts: vi.fn(),
   listAnalysisPromptDefaults: vi.fn(),
@@ -58,6 +59,7 @@ const mock = {
   saveSettings: vi.mocked(api.saveSettings),
   listTargets: vi.mocked(api.listTargets),
   saveTargets: vi.mocked(api.saveTargets),
+  updateWorkspace: vi.mocked(api.updateWorkspace),
   renameTarget: vi.mocked(api.renameTarget),
   listAnalysisPrompts: vi.mocked(api.listAnalysisPrompts),
   listAnalysisPromptDefaults: vi.mocked(api.listAnalysisPromptDefaults),
@@ -67,6 +69,14 @@ const mock = {
   getGenerationPrompts: vi.mocked(api.getGenerationPrompts),
   getGenerationPromptDefaults: vi.mocked(api.getGenerationPromptDefaults),
   saveGenerationPrompts: vi.mocked(api.saveGenerationPrompts),
+};
+
+// The open workspace as the app knows it: Settings edits its name and shows
+// its folder.
+const WORKSPACE_PROPS = {
+  workspaceName: "Alpha",
+  workspaceFolder: "/data/alpha",
+  onWorkspaceRenamed: vi.fn(),
 };
 
 function settings(): Settings {
@@ -124,9 +134,16 @@ async function renderModal(ai?: AnthropicSettingsView) {
   seedLoaders(ai);
   const onClose = vi.fn();
   const onSettingsChanged = vi.fn();
+  const onWorkspaceRenamed = vi.fn();
   const utils = render(
     <ConfirmProvider>
-      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+      <SettingsModal
+        workspaceId="ws1"
+        {...WORKSPACE_PROPS}
+        onClose={onClose}
+        onSettingsChanged={onSettingsChanged}
+        onWorkspaceRenamed={onWorkspaceRenamed}
+      />
     </ConfirmProvider>,
   );
   // Flush the loader Promise.all so the tabs + body render.
@@ -134,7 +151,7 @@ async function renderModal(ai?: AnthropicSettingsView) {
     await Promise.resolve();
     await Promise.resolve();
   });
-  return { onClose, onSettingsChanged, ...utils };
+  return { onClose, onSettingsChanged, onWorkspaceRenamed, ...utils };
 }
 
 // Switch to the AI tab and return its panel for scoped queries.
@@ -156,7 +173,7 @@ describe("SettingsModal — render and tab switching", () => {
     seedLoaders();
     const { getByText } = render(
       <ConfirmProvider>
-        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     expect(getByText("Loading…")).toBeTruthy();
@@ -178,7 +195,7 @@ describe("SettingsModal — render and tab switching", () => {
 
     const { getByText, getByRole, queryByRole } = render(
       <ConfirmProvider>
-        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -798,7 +815,7 @@ describe("SettingsModal — Targets tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -941,7 +958,7 @@ describe("SettingsModal — Analysis tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -983,7 +1000,7 @@ describe("SettingsModal — Generation tab", () => {
 
     const { getByRole } = render(
       <ConfirmProvider>
-        <SettingsModal workspaceId="ws1" onClose={vi.fn()} onSettingsChanged={vi.fn()} />
+        <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} />
       </ConfirmProvider>,
     );
     await act(async () => {
@@ -1046,6 +1063,8 @@ describe("SettingsModal — set writes and reset", () => {
     expect(mock.saveTargets).not.toHaveBeenCalled();
     expect(mock.saveGenerationPrompts).not.toHaveBeenCalled();
     expect(mock.saveAnalysisPrompts).not.toHaveBeenCalled();
+    // An unchanged workspace name writes nothing to the workspace list.
+    expect(mock.updateWorkspace).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1077,6 +1096,104 @@ describe("SettingsModal — set writes and reset", () => {
 });
 
 
+describe("SettingsModal — workspace name", () => {
+  it("starts General with the workspace's name and shows its folder", async () => {
+    const { getByLabelText, getByText } = await renderModal();
+    expect((getByLabelText("Workspace name") as HTMLInputElement).value).toBe("Alpha");
+    expect(getByText("Folder: /data/alpha")).toBeTruthy();
+  });
+
+  it("refuses an empty name with Save disabled", async () => {
+    const { getByLabelText, getByRole } = await renderModal();
+    const name = getByLabelText("Workspace name");
+    fireEvent.change(name, { target: { value: "   " } });
+    expect(within(getByRole("tabpanel")).getByText("Name is required.")).toBeTruthy();
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    const save = getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
+    expect(mock.updateWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("saves a renamed workspace through updateWorkspace and reports it", async () => {
+    const renamed = { id: "ws1", name: "Beta", dataDirectory: "/data/alpha" };
+    mock.updateWorkspace.mockResolvedValue(renamed);
+    const { getByLabelText, getByRole, onWorkspaceRenamed, onSettingsChanged, onClose } = await renderModal();
+    fireEvent.change(getByLabelText("Workspace name"), { target: { value: "  Beta  " } });
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+
+    expect(mock.updateWorkspace).toHaveBeenCalledExactlyOnceWith("ws1", { name: "Beta" });
+    expect(onWorkspaceRenamed).toHaveBeenCalledExactlyOnceWith(renamed);
+    expect(onSettingsChanged).toHaveBeenCalledOnce();
+    // Only the name changed, so no workspace set is written.
+    expect(mock.saveSettings).not.toHaveBeenCalled();
+    expect(mock.saveAppSettings).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("saves the rename alongside the other changed sets", async () => {
+    let finishSettings!: (value: Settings) => void;
+    mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finishSettings = resolve; }));
+    mock.updateWorkspace.mockResolvedValue({ id: "ws1", name: "Beta", dataDirectory: "/data/alpha" });
+    const { getByLabelText, getByRole, container } = await renderModal();
+    fireEvent.change(getByLabelText("Workspace name"), { target: { value: "Beta" } });
+    fireEvent.change(container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+    fireEvent.click(getByRole("button", { name: "Save" }));
+    // Submitted together: the rename does not wait for the settings write.
+    expect(mock.saveSettings).toHaveBeenCalledOnce();
+    expect(mock.updateWorkspace).toHaveBeenCalledOnce();
+    await act(async () => { finishSettings({ ...settings(), postsPerLoad: 75 }); });
+  });
+
+  it("keeps the editor open with the failure in place when the rename is refused", async () => {
+    mock.updateWorkspace.mockRejectedValue(new Error("registry refused"));
+    const { getByLabelText, getByRole, onWorkspaceRenamed, onClose } = await renderModal();
+    fireEvent.change(getByLabelText("Workspace name"), { target: { value: "Beta" } });
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+
+    expect(getByRole("alert").textContent).toContain("Settings could not be saved");
+    expect(getByRole("alert").textContent).not.toContain("registry refused");
+    expect((getByLabelText("Workspace name") as HTMLInputElement).value).toBe("Beta");
+    expect(onWorkspaceRenamed).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("reports a saved rename even when a sibling save fails, and does not resend it", async () => {
+    const renamed = { id: "ws1", name: "Beta", dataDirectory: "/data/alpha" };
+    mock.updateWorkspace.mockResolvedValue(renamed);
+    mock.saveSettings.mockRejectedValueOnce(new Error("settings refused"));
+    const { getByLabelText, getByRole, container, onWorkspaceRenamed, onClose } = await renderModal();
+    fireEvent.change(getByLabelText("Workspace name"), { target: { value: "Beta" } });
+    fireEvent.change(container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+
+    // The workspace list holds the new name, so the app shows it at once.
+    expect(onWorkspaceRenamed).toHaveBeenCalledExactlyOnceWith(renamed);
+    expect(getByRole("alert").textContent).toContain("Settings could not be saved");
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Retrying writes only what is still unsaved.
+    mock.saveSettings.mockResolvedValueOnce({ ...settings(), postsPerLoad: 75 });
+    await act(async () => { fireEvent.click(getByRole("button", { name: "Save" })); });
+    expect(mock.updateWorkspace).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("reports a rename that settles after the editor has gone", async () => {
+    let finish!: (value: { id: string; name: string; dataDirectory: string }) => void;
+    mock.updateWorkspace.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const view = await renderModal();
+    fireEvent.change(view.getByLabelText("Workspace name"), { target: { value: "Beta" } });
+    fireEvent.click(view.getByRole("button", { name: "Save" }));
+    view.unmount();
+    const renamed = { id: "ws1", name: "Beta", dataDirectory: "/data/alpha" };
+    await act(async () => { finish(renamed); });
+    expect(view.onWorkspaceRenamed).toHaveBeenCalledExactlyOnceWith(renamed);
+    expect(view.onClose).not.toHaveBeenCalled();
+  });
+});
+
+
 describe("SettingsModal — slow submitted save", () => {
   it("allows leaving after storage reports pending and never closes a successor on settlement", async () => {
     seedLoaders();
@@ -1085,18 +1202,18 @@ describe("SettingsModal — slow submitted save", () => {
     const onClose = vi.fn();
     const onSettingsChanged = vi.fn();
     const view = render(<ConfirmProvider><StoragePendingContext.Provider value={true}>
-      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
     </StoragePendingContext.Provider></ConfirmProvider>);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
     // Pending from another change prevents a new submission.
     expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
     view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={false}>
-      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
     </StoragePendingContext.Provider></ConfirmProvider>);
     fireEvent.click(view.getByRole("button", { name: "Save" }));
     view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={true}>
-      <SettingsModal workspaceId="ws1" onClose={onClose} onSettingsChanged={onSettingsChanged} />
+      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
     </StoragePendingContext.Provider></ConfirmProvider>);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);

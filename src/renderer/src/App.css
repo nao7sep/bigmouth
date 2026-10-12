@@ -2257,10 +2257,49 @@ select:is(.form-select, .prompt-select) {
   overflow-wrap: anywhere;
 }
 
-.workspace-item-actions {
+/* Marks the workspace that is open now; selection is the row's own fill. */
+.workspace-item-current {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--bm-border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--bm-text-muted);
+  white-space: nowrap;
+}
+
+.workspace-row-actions {
   display: flex;
+  justify-content: flex-end;
   gap: var(--bm-control-gap);
-  flex-shrink: 0;
+  margin-top: 8px;
+}
+
+/* The commands that add a workspace sit at the footer's start, apart from the
+   window's own Cancel and Open. */
+.workspace-footer-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bm-control-gap);
+  margin-right: auto;
+}
+
+.workspace-location-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bm-control-gap);
+}
+
+/* The folder a new workspace gets: shown whole, never typed. */
+.workspace-location {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--bm-radius-sm);
+  background: var(--bm-surface-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .workspace-edit-row {
@@ -2286,8 +2325,10 @@ select:is(.form-select, .prompt-select) {
   gap: 10px;
 }
 
-.workspace-create {
-  padding: 16px 24px 20px;
+/* Below a list, the new-workspace form is its own section. */
+.workspace-row-actions + .workspace-create {
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid var(--bm-border-subtle);
 }
 
@@ -2298,9 +2339,6 @@ select:is(.form-select, .prompt-select) {
   color: var(--bm-text);
 }
 
-.workspace-create > .modal-result + .dialog-actions {
-  margin-top: 12px;
-}
 
 /* First-run setup: each step opens by naming the one thing it asks. */
 .setup-heading {

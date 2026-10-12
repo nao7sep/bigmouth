@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import type { AppSettings, Settings, Target, AnalysisPrompt, AnthropicSettingsView, GenerationPromptsData } from "@shared/types";
+import type { AppSettings, Settings, Target, AnalysisPrompt, AnthropicSettingsView, GenerationPromptsData, Workspace } from "@shared/types";
 import { AI_ROLE_IDS, PROVIDER_LABELS, hasThinkingChoice, rowFor, thinkingAfterModelEdit, type AiRole } from "@shared/aiModels";
 import { isEndpoint } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
@@ -25,6 +25,7 @@ import {
   saveSettings,
   listTargets,
   saveTargets,
+  updateWorkspace,
   renameTarget,
   listAnalysisPrompts,
   listAnalysisPromptDefaults,
@@ -49,8 +50,14 @@ import { StoragePendingNotice, useStoragePending, useStorageResultReporter } fro
 
 interface SettingsModalProps {
   workspaceId: string;
+  /** The workspace's name as the app knows it; Settings edits it alongside the rest. */
+  workspaceName: string;
+  /** The workspace's folder, shown for reference: a workspace is never moved. */
+  workspaceFolder: string;
   onClose: () => void;
   onSettingsChanged: () => void;
+  /** A saved rename, so the open workspace shows its new name. */
+  onWorkspaceRenamed: (workspace: Workspace) => void;
 }
 
 /** A post file a target rename could not read, with the target it still names. */
@@ -94,8 +101,11 @@ function targetPayload(targets: EditableTarget[]): Target[] {
 
 export function SettingsModal({
   workspaceId,
+  workspaceName,
+  workspaceFolder,
   onClose,
   onSettingsChanged,
+  onWorkspaceRenamed,
 }: SettingsModalProps) {
   const { t, text, rich } = useI18n();
   const storagePending = useStoragePending();
@@ -105,6 +115,10 @@ export function SettingsModal({
   useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
   const close = () => { if (!current.current) return; current.current = false; onClose(); };
   const [tab, setTab] = useState<Tab>("general");
+  // The workspace's name lives in the app's workspace list, not in the
+  // workspace's settings file, and saves to it on the same Save.
+  const [name, setName] = useState(workspaceName);
+  const initialName = useRef(workspaceName);
   const [settings, setSettings] = useState<Settings | null>(null);
   // App-wide (the storage root's config.json), edited and saved with the
   // workspace's own settings so the theme applies on Save like everything else.
@@ -191,8 +205,9 @@ export function SettingsModal({
   const analysisDirty = JSON.stringify(prompts) !== JSON.stringify(initialPrompts.current);
   const targetsDirty = JSON.stringify(targetPayload(targets)) !== JSON.stringify(targetPayload(initialTargets.current));
   const anthropicDirty = JSON.stringify(anthropic) !== JSON.stringify(initialAnthropic.current);
+  const nameDirty = name.trim() !== initialName.current.trim();
   const isDirty =
-    appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty || anthropicDirty;
+    nameDirty || appSettingsDirty || settingsDirty || generationDirty || analysisDirty || targetsDirty || anthropicDirty;
 
   const handleRequestClose = async () => {
     if (!current.current) return;
@@ -210,6 +225,7 @@ export function SettingsModal({
 
   const isValid = (): boolean => {
     if (!settings) return false;
+    if (!name.trim()) return false;
     // The settings fields answer from the one module the inputs render their
     // messages from, so an inline error can never sit beside an enabled Save.
     if (firstSettingsError(settings) !== null) return false;
@@ -256,6 +272,18 @@ export function SettingsModal({
           : Promise.resolve(anthropic),
         generationDirty ? saveGenerationPrompts(generationPrompts, workspaceId) : Promise.resolve(generationPrompts),
         analysisDirty ? saveAnalysisPrompts(prompts, workspaceId) : Promise.resolve(prompts),
+        // A saved name is reported at once, even if a sibling save fails: the
+        // workspace list already holds it, so the app must show it.
+        nameDirty
+          ? updateWorkspace(workspaceId, { name: name.trim() }).then((saved) => {
+              onWorkspaceRenamed(saved);
+              if (current.current) {
+                setName(saved.name);
+                initialName.current = saved.name;
+              }
+              return saved;
+            })
+          : Promise.resolve(null),
       ] as const;
       const [savedAppSettings, savedSettings, savedAnthropic, savedGenPrompts, savedPrompts] = await Promise.all(saves).catch(async (error: unknown) => {
         // One refused set does not cancel the other already submitted writes.
@@ -352,6 +380,9 @@ export function SettingsModal({
             <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
             {tab === "general" && settings && appSettings && (
               <GeneralTab
+                workspaceName={name}
+                workspaceFolder={workspaceFolder}
+                onWorkspaceNameChange={setName}
                 workspaceId={workspaceId}
                 settings={settings}
                 onChange={setSettings}
@@ -478,12 +509,18 @@ function parseLanguages(text: string): string[] {
 }
 
 function GeneralTab({
+  workspaceName,
+  workspaceFolder,
+  onWorkspaceNameChange,
   workspaceId,
   settings,
   onChange,
   appSettings,
   onAppSettingsChange,
 }: {
+  workspaceName: string;
+  workspaceFolder: string;
+  onWorkspaceNameChange: (name: string) => void;
   workspaceId: string;
   settings: Settings;
   onChange: (s: Settings) => void;
@@ -518,6 +555,19 @@ function GeneralTab({
 
   return (
     <div className="settings-section">
+      <div className="form-field">
+        <label className="form-label" htmlFor="settings-workspace-name">{t("settings.workspaceName")}</label>
+        <input
+          id="settings-workspace-name"
+          className="form-input"
+          value={workspaceName}
+          onChange={(e) => onWorkspaceNameChange(e.target.value)}
+          aria-invalid={!workspaceName.trim() || undefined}
+        />
+        {!workspaceName.trim() && <FieldError msg={message("settings.nameRequired")} />}
+        {/* The folder is shown, never edited: a workspace stays where it is. */}
+        <p className="settings-hint">{t("settings.workspaceFolder", { path: workspaceFolder })}</p>
+      </div>
       {/* Chosen from the list, never typed. System follows the computer's zone
           on every launch. */}
       <div className="form-field">

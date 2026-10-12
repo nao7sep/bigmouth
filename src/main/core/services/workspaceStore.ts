@@ -19,6 +19,8 @@ import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { serializeError, warn } from "./logger.js";
 import { sanitizeFilenameSegment } from "@shared/assetNames";
+import { carryingText } from "@shared/i18n/carriedMessage";
+import { message } from "@shared/i18n/translate";
 import {
   containsDirectory,
   expandWorkspacePath,
@@ -249,13 +251,6 @@ function nextWorkspaceName(): string {
   return `Workspace ${index}`;
 }
 
-function resolveWorkspaceName(name: string | undefined, dataDirectory: string | undefined): string {
-  const trimmed = name?.trim();
-  if (trimmed) return trimmed;
-  if (dataDirectory) return path.basename(dataDirectory);
-  return nextWorkspaceName();
-}
-
 /**
  * Throws the reason a new workspace cannot be created at `dir` as it stands, or
  * returns when nothing stops it. One gate for a chosen location and the default
@@ -272,9 +267,7 @@ function assertCanCreateAt(dir: string): void {
       throw new Error("Location must be a directory.");
     }
     if (isWorkspaceDirectory(dir)) {
-      // The UI has one "Open or Create" control, so there is no "Open" to
-      // point at — and openOrCreateWorkspace routes this case to openWorkspace,
-      // so this is reached only by a direct createWorkspace call.
+      // Creation never adopts a workspace; adding an existing folder does.
       throw new Error("That folder already contains a workspace.");
     }
     assertCreatable(dir);
@@ -294,18 +287,18 @@ function canCreateAt(dir: string): boolean {
 }
 
 /**
- * Where a workspace created without a chosen location goes:
- * `<home>/Documents/BigMouth/<folder named after the workspace>`, or
+ * Where a new workspace goes: `<parent>/<folder named after the workspace>`, or
  * `<name> (2)`, `(3)`… when that folder exists and cannot take a new
- * workspace. The UI shows this before creating, so the name it resolves is the
- * one creation would use.
+ * workspace. The parent is the one the user chose, or `<home>/Documents/BigMouth`.
+ * The UI shows this before creating, so the folder it names is the one creation
+ * uses.
  *
  * A workspace is the user's own document, so it never defaults into the storage
  * root (storage-path conventions, "Ownership decides location").
  */
-export function suggestWorkspaceLocation(name?: string): string {
-  const parent = getDefaultWorkspacesParentDir();
-  const base = sanitizeFilenameSegment(resolveWorkspaceName(name, undefined)) || "Workspace";
+export function suggestWorkspaceLocation(name?: string, parentDirectory?: string): string {
+  const parent = parentDirectory ? expandWorkspacePath(parentDirectory) : getDefaultWorkspacesParentDir();
+  const base = sanitizeFilenameSegment(name?.trim() || nextWorkspaceName()) || "Workspace";
   const first = path.join(parent, base);
 
   // A registered workspace at or above the parent holds every candidate, so no
@@ -345,6 +338,17 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
   return workspace;
 }
 
+/**
+ * Creates a workspace named `name` in its own folder inside `parentDirectory`
+ * (the default parent when none is chosen). The folder is never typed: it is
+ * the one suggestWorkspaceLocation shows for the same name and parent.
+ */
+export function createWorkspaceIn(name: string, parentDirectory?: string): Workspace {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Workspace name is required");
+  return createWorkspace(trimmed, suggestWorkspaceLocation(trimmed, parentDirectory));
+}
+
 export function openWorkspace(dataDirectory: string, name?: string): Workspace {
   const config = ensureLoaded();
   const dir = expandWorkspacePath(dataDirectory);
@@ -353,7 +357,7 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
     return existing;
   }
   if (!isWorkspaceDirectory(dir)) {
-    throw new Error("Choose an existing BigMouth workspace folder.");
+    throw new Error(carryingText(message("workspaces.notAWorkspace", { path: dir })));
   }
   assertNoWorkspaceOverlap(dir);
 
@@ -365,30 +369,6 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
 
   writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
   return workspace;
-}
-
-export function openOrCreateWorkspace(name?: string, dataDirectory?: string): Workspace {
-  if (dataDirectory === undefined || dataDirectory.length === 0) {
-    return createWorkspace(resolveWorkspaceName(name, undefined));
-  }
-
-  const dir = expandWorkspacePath(dataDirectory);
-  const existing = findWorkspaceByDirectory(dir);
-  if (existing) {
-    return existing;
-  }
-  if (fs.existsSync(dir)) {
-    const stat = fs.statSync(dir);
-    if (!stat.isDirectory()) {
-      throw new Error("Location must be a directory.");
-    }
-    if (isWorkspaceDirectory(dir)) {
-      return openWorkspace(dir, name);
-    }
-    assertCreatable(dir);
-  }
-
-  return createWorkspace(resolveWorkspaceName(name, dir), dir);
 }
 
 /**

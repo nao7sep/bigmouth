@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 
-// WorkspaceModal talks to the main process through these api calls (the list is
-// a listbox, so pickWorkspaceDirectory backs the Browse button too).
+// WorkspaceModal talks to the main process through these api calls:
+// pickWorkspaceDirectory backs both "Change…" (a parent for a new workspace)
+// and "Add Existing Folder…" (a folder that already holds one).
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   listWorkspaces: vi.fn(),
-  openOrCreateWorkspace: vi.fn(),
+  createWorkspace: vi.fn(),
+  addExistingWorkspace: vi.fn(),
   updateWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
   pickWorkspaceDirectory: vi.fn(),
@@ -19,9 +21,12 @@ vi.mock("@renderer/api", () => ({
 import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { carryingText } from "@shared/i18n/carriedMessage";
+import { message } from "@shared/i18n/translate";
 import {
   listWorkspaces,
-  openOrCreateWorkspace,
+  createWorkspace,
+  addExistingWorkspace,
   updateWorkspace,
   deleteWorkspace,
   pickWorkspaceDirectory,
@@ -29,7 +34,8 @@ import {
 } from "@renderer/api";
 
 const mockListWorkspaces = vi.mocked(listWorkspaces);
-const mockOpenOrCreate = vi.mocked(openOrCreateWorkspace);
+const mockCreate = vi.mocked(createWorkspace);
+const mockAddExisting = vi.mocked(addExistingWorkspace);
 const mockUpdateWorkspace = vi.mocked(updateWorkspace);
 const mockDeleteWorkspace = vi.mocked(deleteWorkspace);
 const mockPickDirectory = vi.mocked(pickWorkspaceDirectory);
@@ -37,6 +43,8 @@ const mockSuggestLocation = vi.mocked(suggestWorkspaceLocation);
 const mockWriteRendererLog = vi.fn();
 
 const WORKSPACE: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/data/alpha" };
+const OTHER: Workspace = { id: "ws2", name: "Bravo", dataDirectory: "/data/bravo" };
+const CREATED: Workspace = { id: "ws3", name: "Beta", dataDirectory: "/home/me/Documents/BigMouth/Beta" };
 
 // jsdom has no layout: the workspace listbox scrolls the active row into view,
 // so stub scrollIntoView so arrowing/loading never throws.
@@ -46,8 +54,11 @@ beforeEach(() => {
     configurable: true,
     value: { writeRendererLog: mockWriteRendererLog },
   });
-  // What main answers for a blank location: a folder named after the workspace.
-  mockSuggestLocation.mockImplementation(async (name?: string) => `/home/me/Documents/BigMouth/${name ?? "Workspace"}`);
+  // What main answers: a folder named after the workspace, inside the chosen
+  // parent or the default one.
+  mockSuggestLocation.mockReset();
+  mockSuggestLocation.mockImplementation(async (name?: string, parent?: string) =>
+    `${parent ?? "/home/me/Documents/BigMouth"}/${name ?? "Workspace"}`);
   if (!("scrollIntoView" in HTMLElement.prototype)) {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
@@ -81,6 +92,7 @@ interface ModalOverrides {
   dismissable?: boolean;
   onClose?: () => void;
   onSelect?: (ws: Workspace) => void | Promise<void>;
+  onCreated?: (ws: Workspace, firstRun: boolean) => void | Promise<void>;
   activeWorkspaceId?: string | null;
   onWorkspaceDeleted?: (id: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated?: (ws: Workspace) => void;
@@ -102,7 +114,8 @@ async function renderWith(over: ModalOverrides = {}) {
         dismissable={over.dismissable ?? true}
         onClose={onClose}
         onSelect={onSelect}
-        activeWorkspaceId={over.activeWorkspaceId ?? WORKSPACE.id}
+        onCreated={over.onCreated}
+        activeWorkspaceId={over.activeWorkspaceId === undefined ? WORKSPACE.id : over.activeWorkspaceId}
         onWorkspaceDeleted={onWorkspaceDeleted}
         onWorkspaceUpdated={onWorkspaceUpdated}
         onWorkspaceRemovalCompleted={over.onWorkspaceRemovalCompleted}
@@ -139,8 +152,32 @@ function clickDeleteCancel() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 }
 
+// The window's own footer: its Cancel/Close shares labels with the ✕ and with
+// an inline rename's Cancel.
+function footerButton(container: HTMLElement, name: string) {
+  return within(container.querySelector(".modal-footer") as HTMLElement).getByRole("button", { name });
+}
+
+function option(name: string) {
+  return screen.getByRole("option", { name: new RegExp(`^${name}`) });
+}
+
+async function flush() {
+  await act(async () => {
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  });
+}
+
+// Opens the new-workspace form over the list and types a name.
+async function openNewForm(name?: string) {
+  fireEvent.click(screen.getByRole("button", { name: "New Workspace…" }));
+  if (name !== undefined) fireEvent.change(screen.getByLabelText("Name"), { target: { value: name } });
+  await flush();
+}
+
 beforeEach(() => {
-  mockOpenOrCreate.mockReset();
+  mockCreate.mockReset();
+  mockAddExisting.mockReset();
   mockUpdateWorkspace.mockReset();
   mockDeleteWorkspace.mockReset();
   mockPickDirectory.mockReset();
@@ -200,11 +237,6 @@ describe("WorkspaceModal — loading and empty states", () => {
     expect(getByText("Alpha")).toBeTruthy();
   });
 
-  it("shows the empty-state hint when no workspaces exist", async () => {
-    mockListWorkspaces.mockResolvedValue([]);
-    const { getByText } = await renderWith();
-    expect(getByText("No workspaces yet. Open or create one to get started.")).toBeTruthy();
-  });
 
   it("shows authored recovery instead of a false empty state when loading fails", async () => {
     mockListWorkspaces.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_SENTINEL"));
@@ -213,7 +245,9 @@ describe("WorkspaceModal — loading and empty states", () => {
       await Promise.resolve();
     });
     expect(queryByText("Loading…")).toBeNull();
-    expect(queryByText("No workspaces yet. Open or create one to get started.")).toBeNull();
+    expect(queryByText(/No workspaces yet/)).toBeNull();
+    // Nothing to create into while the registry is unreadable.
+    expect(screen.queryByLabelText("Name")).toBeNull();
     expect(getByRole("alert").textContent).toContain("saved registry is unchanged")
     expect(getByRole("alert").textContent).not.toContain("BIGMOUTH_SENTINEL")
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
@@ -222,188 +256,376 @@ describe("WorkspaceModal — loading and empty states", () => {
   });
 });
 
-describe("WorkspaceModal — create/open submit", () => {
-  it("opens or creates a workspace from the typed name/location and selects it", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const created: Workspace = { id: "ws2", name: "Beta", dataDirectory: "/data/beta" };
-    mockOpenOrCreate.mockResolvedValue(created);
-    const onSelect = vi.fn();
-    const { getByPlaceholderText, getByText, getByLabelText } = await renderWith({ onSelect });
-
-    fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
-      target: { value: "Beta" },
-    });
-    fireEvent.change(getByLabelText(/^Location/), {
-      target: { value: "/data/beta" },
-    });
-
-    await act(async () => {
-      fireEvent.click(getByText("Open or Create"));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mockOpenOrCreate).toHaveBeenCalledWith("Beta", "/data/beta");
-    expect(onSelect).toHaveBeenCalledWith(created);
+describe("WorkspaceModal — the list", () => {
+  it("marks the open workspace as current and selects it to begin with", async () => {
+    mockListWorkspaces.mockResolvedValue([OTHER, WORKSPACE]);
+    await renderWith();
+    // Sorted by name, whatever order the registry returned.
+    expect(screen.getAllByRole("option").map((row) => row.textContent)).toEqual([
+      "AlphaCurrent/data/alpha",
+      "Bravo/data/bravo",
+    ]);
+    expect(option("Alpha").getAttribute("aria-selected")).toBe("true");
+    expect(option("Bravo").getAttribute("aria-selected")).toBe("false");
   });
 
-  it("passes undefined for blank name/location, and submits on Enter", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockOpenOrCreate.mockResolvedValue(WORKSPACE);
-    const { getByPlaceholderText } = await renderWith();
-
-    await act(async () => {
-      fireEvent.keyDown(getByPlaceholderText("Uses the folder name if available"), {
-        key: "Enter",
-      });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mockOpenOrCreate).toHaveBeenCalledWith(undefined, undefined);
+  it("selects a clicked row without opening it", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect } = await renderWith();
+    fireEvent.click(option("Bravo"));
+    expect(option("Bravo").getAttribute("aria-selected")).toBe("true");
+    expect(option("Alpha").getAttribute("aria-selected")).toBe("false");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("submits a picker path with leading and trailing spaces unchanged", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockPickDirectory.mockResolvedValue("/picked/ Workspace ");
-    mockOpenOrCreate.mockResolvedValue(WORKSPACE);
-    const { getByText } = await renderWith();
-
-    await act(async () => {
-      fireEvent.click(getByText("Browse…"));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      fireEvent.click(getByText("Open or Create"));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mockOpenOrCreate).toHaveBeenCalledWith(undefined, "/picked/ Workspace ");
+  it("moves the selection with the arrows without opening anything", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect } = await renderWith();
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+    expect(option("Bravo").getAttribute("aria-selected")).toBe("true");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("surfaces a submit failure as an inline alert and keeps the form open", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockOpenOrCreate.mockRejectedValue(new Error("folder is not empty"));
-    const { getByPlaceholderText, getByText, getByRole } = await renderWith();
-
-    fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
-      target: { value: "Beta" },
-    });
-    await act(async () => {
-      fireEvent.click(getByText("Open or Create"));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(getByText("The workspace could not be opened or created. Check the selected folder and try again.")).toBeTruthy();
-    expect(getByRole("alert").textContent).not.toContain("Error:");
-  });
-});
-
-describe("WorkspaceModal — the location a blank field uses", () => {
-  // A blank location used to read "Default location if blank", which named no
-  // folder at all; the placeholder is now the path main would create.
-  it("shows the suggested folder for the typed name as the placeholder", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const { getByLabelText } = await renderWith();
-    const location = getByLabelText(/^Location/) as HTMLInputElement;
-
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith(undefined);
-    expect(location.placeholder).toBe("/home/me/Documents/BigMouth/Workspace");
-    expect(location.value).toBe("");
-
-    await act(async () => {
-      fireEvent.change(getByLabelText(/^Name/), { target: { value: "  Beta  " } });
-      await Promise.resolve();
-    });
-
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
-    expect(location.placeholder).toBe("/home/me/Documents/BigMouth/Beta");
-    // Shown, never poured in: the field stays blank and creation resolves it.
-    expect(location.value).toBe("");
+  it("opens a row on double-click", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect } = await renderWith();
+    fireEvent.doubleClick(option("Bravo"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
   });
 
-  it("keeps the form usable with no placeholder when the suggestion fails", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockSuggestLocation.mockRejectedValue(new Error("storage busy"));
-    const { getByLabelText, queryByRole } = await renderWith();
+  it("opens the selected row on Enter", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect } = await renderWith();
+    fireEvent.click(option("Bravo"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
+  });
 
-    expect((getByLabelText(/^Location/) as HTMLInputElement).placeholder).toBe("");
-    expect(queryByRole("alert")).toBeNull();
+  it("opens the selected row with Open", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect, container } = await renderWith();
+    fireEvent.click(option("Bravo"));
+    fireEvent.click(footerButton(container, "Open"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
+  });
+
+  it("opens the current workspace with Open when nothing else was chosen", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const { onSelect, container } = await renderWith({ activeWorkspaceId: OTHER.id });
+    fireEvent.click(footerButton(container, "Open"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
+  });
+
+  it("renames the selected row from Rename…", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    mockUpdateWorkspace.mockResolvedValue({ ...OTHER, name: "Bravo 2" });
+    await renderWith();
+    fireEvent.click(option("Bravo"));
+    fireEvent.click(screen.getByRole("button", { name: "Rename…" }));
+    const input = screen.getByDisplayValue("Bravo");
+    expect(screen.queryByDisplayValue("Alpha")).toBeNull();
+    fireEvent.change(input, { target: { value: "Bravo 2" } });
+    await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
+    expect(mockUpdateWorkspace).toHaveBeenCalledExactlyOnceWith("ws2", { name: "Bravo 2" });
+  });
+
+  it("disables the row actions and Open while a rename is open", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { container } = await renderWith();
+    fireEvent.click(screen.getByRole("button", { name: "Rename…" }));
+    expect((screen.getByRole("button", { name: "Rename…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((container.querySelector(".workspace-row-actions .btn-delete") as HTMLButtonElement).disabled).toBe(true);
+    expect((footerButton(container, "Open") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
-describe("WorkspaceModal — Browse", () => {
-  it("fills the location from the directory picker when one is chosen", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockPickDirectory.mockResolvedValue("/picked/dir");
-    const { getByText, getByDisplayValue } = await renderWith();
+describe("WorkspaceModal — first run", () => {
+  it("opens on the new-workspace form, prefilled, with no way to dismiss it", async () => {
+    mockListWorkspaces.mockResolvedValue([]);
+    const { container, onClose } = await renderWith({ dismissable: false, activeWorkspaceId: null });
+    await flush();
 
-    await act(async () => {
-      fireEvent.click(getByText("Browse…"));
-      await Promise.resolve();
-    });
-    expect(getByDisplayValue("/picked/dir")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Set Up BigMouth" })).toBeTruthy();
+    const name = screen.getByLabelText("Name") as HTMLInputElement;
+    expect(name.value).toBe("My Blog");
+    expect(screen.getByText("/home/me/Documents/BigMouth/My Blog")).toBeTruthy();
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("My Blog", undefined);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByText(/No workspaces yet/)).toBeNull();
+    // A root launch gate: no Cancel, no ✕, and Escape and the backdrop do nothing.
+    expect(within(container.querySelector(".modal-footer") as HTMLElement).queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByLabelText("Close")).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(container.querySelector(".modal-backdrop")!);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toBeTruthy();
+    // Adding an existing folder is still offered.
+    expect(screen.getByRole("button", { name: "Add Existing Folder…" })).toBeTruthy();
   });
 
-  it("leaves the location unchanged when the picker is cancelled", async () => {
+  it("reports the created workspace as the first run", async () => {
+    mockListWorkspaces.mockResolvedValueOnce([]).mockResolvedValue([CREATED]);
+    mockCreate.mockResolvedValue(CREATED);
+    const onCreated = vi.fn();
+    const { onSelect, container } = await renderWith({ dismissable: false, activeWorkspaceId: null, onCreated });
+    await flush();
+
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", undefined);
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, true);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkspaceModal — New Workspace…", () => {
+  it("shows the folder the typed name would be created in", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { container } = await renderWith();
+    await openNewForm();
+
+    expect(screen.getByText("New Workspace")).toBeTruthy();
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
+    // The form replaces its own opener while it is open.
+    expect(screen.queryByRole("button", { name: "New Workspace…" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Beta  " } });
+    await flush();
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", undefined);
+    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("creates the named workspace and reports it as a later creation", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockCreate.mockResolvedValue(CREATED);
+    const onCreated = vi.fn();
+    const { onSelect, container } = await renderWith({ onCreated });
+    await openNewForm("  Beta  ");
+
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Beta", undefined);
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, false);
+    expect(onSelect).not.toHaveBeenCalled();
+    // The list is reloaded and the form closed.
+    expect(mockListWorkspaces).toHaveBeenCalledTimes(2);
+    expect(screen.queryByLabelText("Name")).toBeNull();
+  });
+
+  it("opens the created workspace like a selected one when no creation handler is given", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockCreate.mockResolvedValue(CREATED);
+    const { onSelect } = await renderWith();
+    await openNewForm("Beta");
+
+    await act(async () => { fireEvent.keyDown(screen.getByLabelText("Name"), { key: "Enter" }); });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(CREATED);
+  });
+
+  it("re-suggests inside the parent chosen with Change… and creates there", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockCreate.mockResolvedValue(CREATED);
+    // A picked path is used as given, spaces and all.
+    mockPickDirectory.mockResolvedValue("/Volumes/ Data ");
+    const { container } = await renderWith({ onCreated: vi.fn() });
+    await openNewForm("Beta");
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await flush();
+
+    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("parent");
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", "/Volumes/ Data ");
+    expect(screen.getByText("/Volumes/ Data /Beta")).toBeTruthy();
+
+    // The name still moves the folder within the chosen parent.
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Gamma" } });
+    await flush();
+    expect(screen.getByText("/Volumes/ Data /Gamma")).toBeTruthy();
+
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Gamma", "/Volumes/ Data ");
+  });
+
+  it("keeps the parent when the Change… picker is cancelled", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue(null);
-    const { getByText, getByLabelText } = await renderWith();
+    await renderWith();
+    await openNewForm("Beta");
 
-    await act(async () => {
-      fireEvent.click(getByText("Browse…"));
-      await Promise.resolve();
-    });
-    expect((getByLabelText(/^Location/) as HTMLInputElement).value).toBe("");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await flush();
+
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", undefined);
+    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
   });
 
-  it("retains an authored form result when the native picker rejects", async () => {
+  it("retains an authored form result when the Change… picker rejects", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockPickDirectory.mockRejectedValue(
-      new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"),
-    );
-    const { getByText, getByRole, getByLabelText } = await renderWith();
+    mockPickDirectory.mockRejectedValue(new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"));
+    await renderWith();
+    await openNewForm("Beta");
 
-    await act(async () => {
-      fireEvent.click(getByText("Browse…"));
-      await Promise.resolve();
-    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
 
-    const result = getByRole("alert");
+    const result = screen.getByRole("alert");
     expect(result.textContent).toContain("location is unchanged");
     expect(result.textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
-    expect((getByLabelText(/^Location/) as HTMLInputElement).value).toBe("");
+    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
-      message: "renderer: workspace folder picker failed",
+      message: "renderer: workspace parent picker failed",
+    }));
+  });
+
+  it("keeps the form usable with no preview when the suggestion fails", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockSuggestLocation.mockRejectedValue(new Error("storage busy"));
+    const { container } = await renderWith();
+    await openNewForm("Beta");
+
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("surfaces a creation failure in place and keeps the form open", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockCreate.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_CREATE_SENTINEL"));
+    const onCreated = vi.fn();
+    const { container } = await renderWith({ onCreated });
+    await openNewForm("Beta");
+
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+
+    const result = screen.getByRole("alert");
+    expect(result.textContent).toContain("The workspace could not be created.");
+    expect(result.textContent).not.toContain("BIGMOUTH_CREATE_SENTINEL");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Beta");
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace creation failed",
     }));
   });
 });
 
+describe("WorkspaceModal — Add Existing Folder…", () => {
+  it("adds the picked folder and opens it", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const added: Workspace = { id: "ws4", name: "Notes", dataDirectory: "/picked/ Notes " };
+    mockPickDirectory.mockResolvedValue("/picked/ Notes ");
+    mockAddExisting.mockResolvedValue(added);
+    const { onSelect } = await renderWith({ onCreated: vi.fn() });
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("workspace");
+    // A picked path is used as given, spaces and all.
+    expect(mockAddExisting).toHaveBeenCalledExactlyOnceWith("/picked/ Notes ");
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(added);
+    expect(mockListWorkspaces).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing when the picker is cancelled", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockResolvedValue(null);
+    const { onSelect } = await renderWith();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    expect(mockAddExisting).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the failure the folder carries in place", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockResolvedValue("/picked/notes");
+    mockAddExisting.mockRejectedValue(new Error(carryingText(message("workspaces.notAWorkspace", { path: "/picked/notes" }))));
+    const { onSelect } = await renderWith();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    expect(screen.getByRole("alert").textContent).toContain("/picked/notes does not hold a BigMouth workspace.");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace add failed",
+    }));
+    // The list stays usable.
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("shows authored copy for a failure that carries no message of its own", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockResolvedValue("/picked/notes");
+    mockAddExisting.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_ADD_SENTINEL"));
+    await renderWith();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    expect(screen.getByRole("alert").textContent).toContain("The folder could not be added.");
+    expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH_ADD_SENTINEL");
+  });
+
+  it("retains an authored result when the folder picker rejects", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockRejectedValue(new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"));
+    await renderWith();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    expect(screen.getByRole("alert").textContent).toContain("location is unchanged");
+    expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
+    expect(mockAddExisting).not.toHaveBeenCalled();
+    expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
+      message: "renderer: workspace folder picker failed",
+    }));
+  });
+
+  it("is offered on first run too and opens the added folder", async () => {
+    mockListWorkspaces.mockResolvedValue([]);
+    mockAddExisting.mockResolvedValue(WORKSPACE);
+    mockPickDirectory.mockResolvedValue("/data/alpha");
+    const onCreated = vi.fn();
+    const { onSelect } = await renderWith({ dismissable: false, activeWorkspaceId: null, onCreated });
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+
+    // Added, not created: it opens directly rather than continuing setup.
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
 describe("WorkspaceModal — inline rename save", () => {
-  it("checks an unsubmitted create draft when leaving a pending rename", async () => {
+  it("checks an unsubmitted new-workspace draft when leaving a pending rename", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     let resolveRename!: (workspace: Workspace) => void;
     mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
     const view = await renderWith();
-    fireEvent.change(view.getByPlaceholderText("Uses the folder name if available"), { target: { value: "Unsubmitted workspace" } });
+    await openNewForm("Unsubmitted workspace");
     fireEvent.click(view.getByText("Rename…"));
     fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Submitted name" } });
     fireEvent.click(view.getByText("Save"));
     view.rerenderPending(true);
-    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    fireEvent.click(footerButton(view.container, "Cancel"));
     expect(view.onClose).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    await flush();
     expect(view.getByDisplayValue("Unsubmitted workspace")).toBeTruthy();
-    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    fireEvent.click(footerButton(view.container, "Cancel"));
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Discard" })); });
+    // Discarding the draft closes the form, not the window behind it.
+    expect(view.queryByDisplayValue("Unsubmitted workspace")).toBeNull();
+    expect(view.onClose).not.toHaveBeenCalled();
+    fireEvent.click(footerButton(view.container, "Close"));
     expect(view.onClose).toHaveBeenCalledTimes(1);
     expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
     await act(async () => { resolveRename({ ...WORKSPACE, name: "Submitted name" }); });
     expect(view.onWorkspaceUpdated).toHaveBeenCalledTimes(1);
-    expect(mockOpenOrCreate).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("keeps a departed rename failure in the app without reviving its editor", async () => {
@@ -418,7 +640,7 @@ describe("WorkspaceModal — inline rename save", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
     view.rerenderPending(true);
-    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    fireEvent.click(footerButton(view.container, "Close"));
     expect(view.onClose).toHaveBeenCalledTimes(1);
     view.leaveModal();
     await act(async () => { rejectRename(new Error("private rename diagnostic")); });
@@ -549,60 +771,93 @@ describe("WorkspaceModal — inline rename save", () => {
   });
 });
 
-describe("WorkspaceModal — pending workspace opening", () => {
-  it("retains a failed opening after the modal leaves while pending", async () => {
+describe("WorkspaceModal — pending creation and adding", () => {
+  it("retains a failed creation after the modal leaves while pending", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    let rejectOpen!: (error: Error) => void;
-    mockOpenOrCreate.mockReturnValue(new Promise((_, reject) => { rejectOpen = reject; }));
-    const view = await renderWith();
-    fireEvent.click(view.getByRole("button", { name: "Open or Create" }));
+    let rejectCreate!: (error: Error) => void;
+    mockCreate.mockReturnValue(new Promise((_, reject) => { rejectCreate = reject; }));
+    const onCreated = vi.fn();
+    const view = await renderWith({ onCreated });
+    await openNewForm("Beta");
+    fireEvent.click(footerButton(view.container, "Create"));
     view.rerenderPending(true);
-    fireEvent.click(within(view.container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" }));
+    fireEvent.click(footerButton(view.container, "Cancel"));
+    expect(view.onClose).toHaveBeenCalledTimes(1);
     view.leaveModal();
-    await act(async () => { rejectOpen(new Error("private open diagnostic")); });
+    await act(async () => { rejectCreate(new Error("private create diagnostic")); });
 
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("alert").textContent).toContain("The workspace could not be opened or created.");
-    expect(screen.getByRole("alert").textContent).not.toContain("private open diagnostic");
+    expect(screen.getByRole("alert").textContent).toContain("The workspace could not be created.");
+    expect(screen.getByRole("alert").textContent).not.toContain("private create diagnostic");
+    expect(onCreated).not.toHaveBeenCalled();
     expect(view.onSelect).not.toHaveBeenCalled();
   });
 
-  it("does not adopt an opening result after a newer workspace selection", async () => {
+  it("retains a failed add after the modal leaves while pending", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    let resolveOpen!: (workspace: Workspace) => void;
-    mockOpenOrCreate.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
-    const { getByRole, onSelect } = await renderWith();
-    fireEvent.click(getByRole("button", { name: "Open or Create" }));
-    fireEvent.click(getByRole("option"));
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
+    mockPickDirectory.mockResolvedValue("/picked/notes");
+    let rejectAdd!: (error: Error) => void;
+    mockAddExisting.mockReturnValue(new Promise((_, reject) => { rejectAdd = reject; }));
+    const view = await renderWith();
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Add Existing Folder…" })); });
+    expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
+    view.rerenderPending(true);
+    fireEvent.click(footerButton(view.container, "Close"));
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+    view.leaveModal();
+    await act(async () => { rejectAdd(new Error("private add diagnostic")); });
 
-    await act(async () => { resolveOpen({ id: "late", name: "Late workspace", dataDirectory: "/late" }); });
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert").textContent).toContain("The folder could not be added.");
+    expect(screen.getByRole("alert").textContent).not.toContain("private add diagnostic");
+    expect(view.onSelect).not.toHaveBeenCalled();
   });
-  it.each(["Close", "Escape", "backdrop"] as const)("can leave via %s without replaying or adopting a late completion", async (path) => {
+
+  it("does not open a row while a creation is in flight", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    let resolveOpen!: (workspace: Workspace) => void;
-    mockOpenOrCreate.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
-    const { getByRole, getByPlaceholderText, container, onClose, onSelect, rerenderPending } = await renderWith();
-    const name = getByPlaceholderText("Uses the folder name if available");
-    fireEvent.change(name, { target: { value: "Submitted workspace" } });
-    fireEvent.click(getByRole("button", { name: "Open or Create" }));
+    let resolveCreate!: (workspace: Workspace) => void;
+    mockCreate.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
+    const onCreated = vi.fn();
+    const { container, onSelect } = await renderWith({ onCreated });
+    await openNewForm("Beta");
+    fireEvent.click(footerButton(container, "Create"));
+    expect(footerButton(container, "Creating…").hasAttribute("disabled")).toBe(true);
+    fireEvent.doubleClick(option("Alpha"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    await act(async () => { resolveCreate(CREATED); });
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, false);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it.each(["Cancel", "✕", "Escape", "backdrop"] as const)("can leave via %s without replaying or adopting a late creation", async (path) => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let resolveCreate!: (workspace: Workspace) => void;
+    mockCreate.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
+    const onCreated = vi.fn();
+    const { getByRole, getByLabelText, container, onClose, onSelect, rerenderPending } = await renderWith({ onCreated });
+    await openNewForm("Submitted workspace");
+    const name = getByLabelText("Name");
+    fireEvent.click(footerButton(container, "Create"));
     // Enter remains a form submission path even when its button is disabled.
     fireEvent.keyDown(name, { key: "Enter" });
-    expect(mockOpenOrCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(name.hasAttribute("disabled")).toBe(true);
     rerenderPending(true);
 
     expect(getByRole("status").textContent).toContain("This change is still being saved.");
-    const leave = within(container.querySelector(".workspace-create .dialog-actions")!).getByRole("button", { name: "Close" });
+    const leave = footerButton(container, "Cancel");
     expect(leave.hasAttribute("disabled")).toBe(false);
-    if (path === "Close") fireEvent.click(leave);
+    if (path === "Cancel") fireEvent.click(leave);
+    else if (path === "✕") fireEvent.click(getByLabelText("Close"));
     else if (path === "Escape") fireEvent.keyDown(document, { key: "Escape" });
     else fireEvent.click(container.querySelector(".modal-backdrop")!);
 
     expect(onClose).toHaveBeenCalledTimes(1);
+    // A submitted draft is not a discardable one.
     expect(screen.queryByText("Discard changes?")).toBeNull();
-    await act(async () => { resolveOpen({ id: "late", name: "Late workspace", dataDirectory: "/late" }); });
+    await act(async () => { resolveCreate(CREATED); });
+    expect(onCreated).not.toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(mockListWorkspaces).toHaveBeenCalledTimes(1);
@@ -658,19 +913,22 @@ describe("WorkspaceModal — delete", () => {
     expect(await findByText('"Alpha" was removed from the workspace list, but its stored API key could not be cleared.')).toBeTruthy();
     expect(queryByRole("option")).toBeNull();
     expect(queryByRole("alertdialog")).toBeNull();
+    // With nothing left, the window turns to creating one.
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("My Blog");
     fireEvent.click(screen.getByRole("button", { name: "Close result" }));
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("deletes a non-active workspace after confirmation", async () => {
-    const other: Workspace = { id: "ws2", name: "Bravo", dataDirectory: "/data/bravo" };
-    mockListWorkspaces.mockResolvedValue([WORKSPACE, other]);
+  it("deletes the selected non-active workspace after confirmation", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
     mockDeleteWorkspace.mockResolvedValue({});
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
-    const { getAllByText } = await renderWith({ onWorkspaceDeleted });
+    const { getByText } = await renderWith({ onWorkspaceDeleted });
 
-    // Two rows, two Delete buttons; remove the non-active "Bravo" (second row).
-    fireEvent.click(getAllByText("Remove")[1]);
+    // Remove acts on the selected row: choose the non-active "Bravo" first.
+    fireEvent.click(option("Bravo"));
+    fireEvent.click(getByText("Remove"));
+    expect(screen.getByText(/Remove "Bravo" from the workspace list\?/)).toBeTruthy();
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -688,7 +946,7 @@ describe("WorkspaceModal — delete", () => {
     const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
     const { getByText } = await renderWith({ onWorkspaceDeleted });
 
-    fireEvent.click(getByText("Remove")); // the row's Remove (active workspace)
+    fireEvent.click(getByText("Remove")); // the selected row is the active workspace
     await act(async () => {
       clickDeleteConfirm();
       await Promise.resolve();
@@ -750,44 +1008,64 @@ describe("WorkspaceModal — delete", () => {
   });
 });
 
-describe("WorkspaceModal — dirty-close confirmation", () => {
-  it("asks to discard when the create form is dirty, closing only after Discard", async () => {
+describe("WorkspaceModal — closing the new-workspace form", () => {
+  it("closes an untouched form without asking, leaving the window open", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const { onClose, getByPlaceholderText, getByRole, findByText } = await renderWith();
+    const { onClose } = await renderWith();
+    await openNewForm();
 
-    fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
-      target: { value: "dirty" },
-    });
-    // Escape routes through the close guard, which now sees a dirty form.
     fireEvent.keyDown(document, { key: "Escape" });
 
-    expect(await findByText("Discard changes?")).toBeTruthy();
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.getByRole("button", { name: "New Workspace…" })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
-    fireEvent.click(getByRole("button", { name: "Discard" }));
-    await act(async () => {
-      await Promise.resolve();
-    });
+    // The next Escape leaves the window.
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the modal open when the discard is declined", async () => {
+  it("asks to discard a typed name, closing only the form after Discard", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const { onClose, getByPlaceholderText, getByRole, findByText } = await renderWith();
+    const { onClose, getByRole, findByText } = await renderWith();
+    await openNewForm("dirty");
 
-    fireEvent.change(getByPlaceholderText("Uses the folder name if available"), {
-      target: { value: "dirty" },
-    });
     fireEvent.keyDown(document, { key: "Escape" });
-    await findByText("Discard changes?");
-    fireEvent.click(getByRole("button", { name: "Keep editing" }));
-    await act(async () => {
-      await Promise.resolve();
-    });
+    expect(await findByText("Discard changes?")).toBeTruthy();
+
+    fireEvent.click(getByRole("button", { name: "Discard" }));
+    await flush();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.getByRole("listbox")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes directly via the close button when the form is clean", async () => {
+  it("keeps the form when the discard is declined", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { onClose, container, getByRole, findByText } = await renderWith();
+    await openNewForm("dirty");
+
+    fireEvent.click(footerButton(container, "Cancel"));
+    await findByText("Discard changes?");
+    fireEvent.click(getByRole("button", { name: "Keep editing" }));
+    await flush();
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("dirty");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("treats a chosen parent as a change worth asking about", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockPickDirectory.mockResolvedValue("/Volumes/Data");
+    const { findByText } = await renderWith();
+    await openNewForm();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(await findByText("Discard changes?")).toBeTruthy();
+  });
+
+  it("closes the window directly via the close button when no form is open", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { onClose, getByLabelText } = await renderWith();
     fireEvent.click(getByLabelText("Close"));
@@ -818,6 +1096,17 @@ describe("WorkspaceModal — row actions from the keyboard", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     return renderModal();
   }
+
+  it("Enter on the active row opens it", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { onSelect } = await renderWith();
+    const listbox = screen.getByRole("listbox");
+
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "Enter" });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
+  });
 
   it("F2 on the active row starts a rename", async () => {
     const { getByRole, getByDisplayValue } = await openList();

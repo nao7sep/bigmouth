@@ -3,7 +3,8 @@ import { ipcMain } from "electron";
 import { CHANNELS } from "@shared/ipc";
 import {
   listWorkspaces,
-  openOrCreateWorkspace,
+  createWorkspace,
+  addExistingWorkspace,
   suggestWorkspaceLocation,
   updateWorkspace,
   deleteWorkspace,
@@ -17,25 +18,38 @@ export function registerWorkspaceHandlers(): void {
     return workspaces;
   });
 
-  ipcMain.handle(CHANNELS.openOrCreateWorkspace, async (_event, name?: string, dataDirectory?: string) => {
+  ipcMain.handle(CHANNELS.createWorkspace, async (_event, name: unknown, parentDirectory?: unknown) => {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    if (!trimmed) throw new Error("Workspace name is required");
     try {
-      const ws = await openOrCreateWorkspace(name?.trim(), dataDirectory);
-      info("workspace selected", {
-        workspaceId: ws.id,
-        workspaceName: ws.name,
-        dataDirectory: ws.dataDirectory,
-      });
+      const ws = await createWorkspace(trimmed, typeof parentDirectory === "string" && parentDirectory ? parentDirectory : undefined);
+      info("workspace created", { workspaceId: ws.id, workspaceName: ws.name, dataDirectory: ws.dataDirectory });
       return ws;
     } catch (err) {
-      logError("workspace open-or-create failed", { error: serializeError(err) });
-      throw err instanceof Error ? err : new Error("Failed to open or create workspace");
+      logError("workspace creation failed", { error: serializeError(err) });
+      throw err instanceof Error ? err : new Error("Failed to create workspace");
     }
   });
 
-  // Read-only: what a blank location would use for this name, so the window can
-  // show the real path instead of "default". Nothing is created or logged.
-  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown) =>
-    suggestWorkspaceLocation(typeof name === "string" ? name.trim() : undefined),
+  ipcMain.handle(CHANNELS.addExistingWorkspace, async (_event, dataDirectory: unknown) => {
+    if (typeof dataDirectory !== "string" || !dataDirectory) throw new Error("A workspace folder is required");
+    try {
+      const ws = await addExistingWorkspace(dataDirectory);
+      info("workspace added", { workspaceId: ws.id, workspaceName: ws.name, dataDirectory: ws.dataDirectory });
+      return ws;
+    } catch (err) {
+      logError("workspace add failed", { dataDirectory, error: serializeError(err) });
+      throw err instanceof Error ? err : new Error("Failed to add workspace");
+    }
+  });
+
+  // Read-only: the folder creation would use for this name and parent, so the
+  // window shows the real path. Nothing is created or logged.
+  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown, parentDirectory?: unknown) =>
+    suggestWorkspaceLocation(
+      typeof name === "string" ? name.trim() : undefined,
+      typeof parentDirectory === "string" && parentDirectory ? parentDirectory : undefined,
+    ),
   );
 
   ipcMain.handle(CHANNELS.updateWorkspace, async (_event, id: string, updates: { name?: string }) => {

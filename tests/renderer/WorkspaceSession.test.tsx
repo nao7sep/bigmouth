@@ -231,6 +231,9 @@ function modalMock(testid: string) {
         void (p.onCreate as (t: string, l: string, s?: string, mayAdopt?: () => boolean) => void)("blog", "en", undefined, () => current.current)
       }>create</button> : null}
       {p.onSettingsChanged ? <button data-testid={`${testid}-changed`} onClick={() => (p.onSettingsChanged as () => void)()}>changed</button> : null}
+      {p.onWorkspaceRenamed ? <button data-testid={`${testid}-renamed`} onClick={() =>
+        (p.onWorkspaceRenamed as (ws: Workspace) => void)({ id: p.workspaceId as string, name: "Renamed", dataDirectory: p.workspaceFolder as string })
+      }>{`${p.workspaceName as string} @ ${p.workspaceFolder as string}`}</button> : null}
     </div>;
   };
 }
@@ -331,11 +334,13 @@ function renderSession(ref?: React.Ref<WorkspaceSessionHandle>) {
       onStartLeftDrag={noopDrag}
       onStartRightDrag={noopDrag}
       onSwitchWorkspace={onSwitchWorkspace}
+      onWorkspaceUpdated={onWorkspaceUpdated}
     />
   );
 }
 
 const onSwitchWorkspace = vi.fn();
+const onWorkspaceUpdated = vi.fn();
 
 // Renders and flushes the load effect (listPosts + listTargets + getSettings).
 async function mountLoaded(ref?: React.Ref<WorkspaceSessionHandle>) {
@@ -358,6 +363,7 @@ beforeEach(() => {
   rightFlush.mockReset().mockResolvedValue(true);
   insertAtCursor.mockReset();
   onSwitchWorkspace.mockReset();
+  onWorkspaceUpdated.mockReset();
 });
 
 afterEach(() => {
@@ -717,6 +723,16 @@ describe("WorkspaceSession modals", () => {
     // is only mounted with a post open, so we just assert the modal cycle here.)
     fireEvent.click(getByTestId("settings-modal-close"));
     expect(queryByTestId("settings-modal")).toBeNull();
+  });
+
+  it("gives Settings the workspace's name and folder and reports its rename to the app", async () => {
+    const { getByTestId } = await mountLoaded();
+    fireEvent.click(getByTestId("left-settings"));
+    const renamed = getByTestId("settings-modal-renamed");
+    expect(renamed.textContent).toBe("Alpha @ /d/a");
+
+    fireEvent.click(renamed);
+    expect(onWorkspaceUpdated).toHaveBeenCalledExactlyOnceWith({ id: "ws1", name: "Renamed", dataDirectory: "/d/a" });
   });
 
   it("hands the open post, reread after a settings change, to the centre pane", async () => {

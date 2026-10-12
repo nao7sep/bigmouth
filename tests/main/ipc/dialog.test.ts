@@ -38,8 +38,8 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { registerDialogHandlers } from "@main/ipc/dialog.js";
 
-function invoke<T>(channel: string, event: unknown): Promise<T> {
-  return handlers.get(channel)!(event) as Promise<T>;
+function invoke<T>(channel: string, event: unknown, purpose: "workspace" | "parent" = "workspace"): Promise<T> {
+  return handlers.get(channel)!(event, purpose) as Promise<T>;
 }
 
 beforeEach(() => {
@@ -84,7 +84,7 @@ describe("dialog IPC handler", () => {
     dialogState.window = win;
     dialogState.result = { canceled: false, filePaths: ["/with/window"] };
 
-    const picked = await invoke<string | null>(CHANNELS.pickDirectory, { sender: { fake: true } });
+    const picked = await invoke<string | null>(CHANNELS.pickDirectory, { sender: { fake: true } }, "parent");
 
     expect(picked).toBe("/with/window");
     // With a parent window the modal overload is used: (win, options).
@@ -103,6 +103,17 @@ describe("dialog IPC handler", () => {
     expect(picked).toBe("/no/window");
     // Without a parent window the single-arg overload is used: (options).
     const [firstArg] = showOpenDialog.mock.calls[0];
-    expect(firstArg).toMatchObject({ properties: ["openDirectory", "createDirectory"] });
+    expect(firstArg).toMatchObject({ properties: ["openDirectory"] });
+  });
+
+  it("titles the picker by purpose, and offers a new folder only when choosing a parent", async () => {
+    dialogState.result = { canceled: false, filePaths: ["/x"] };
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "workspace");
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "parent");
+    const [[addOptions], [parentOptions]] = showOpenDialog.mock.calls as [[Electron.OpenDialogOptions], [Electron.OpenDialogOptions]];
+    expect(addOptions.title).toBe("Choose a workspace folder");
+    expect(addOptions.properties).toEqual(["openDirectory"]);
+    expect(parentOptions.title).toBe("Choose where to create the workspace");
+    expect(parentOptions.properties).toEqual(["openDirectory", "createDirectory"]);
   });
 });

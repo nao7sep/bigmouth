@@ -93,10 +93,12 @@ const api = {
 
   // --- Workspace management ---
   listWorkspaces: () => ipcRenderer.invoke(CHANNELS.listWorkspaces) as Promise<Workspace[]>,
-  openOrCreateWorkspace: (name?: string, dataDirectory?: string) =>
-    ipcRenderer.invoke(CHANNELS.openOrCreateWorkspace, name, dataDirectory) as Promise<Workspace>,
-  suggestWorkspaceLocation: (name?: string) =>
-    ipcRenderer.invoke(CHANNELS.suggestWorkspaceLocation, name) as Promise<string>,
+  createWorkspace: (name: string, parentDirectory?: string) =>
+    ipcRenderer.invoke(CHANNELS.createWorkspace, name, parentDirectory) as Promise<Workspace>,
+  addExistingWorkspace: (dataDirectory: string) =>
+    ipcRenderer.invoke(CHANNELS.addExistingWorkspace, dataDirectory) as Promise<Workspace>,
+  suggestWorkspaceLocation: (name?: string, parentDirectory?: string) =>
+    ipcRenderer.invoke(CHANNELS.suggestWorkspaceLocation, name, parentDirectory) as Promise<string>,
   updateWorkspace: (id: string, updates: { name: string }) =>
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
   deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<WorkspaceDeleteResult>,
@@ -104,7 +106,7 @@ const api = {
   // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
   // something can never turn into a second failure the caller has to handle.
   writeRendererLog: (entry: RendererLogEntry) => ipcRenderer.send(CHANNELS.writeRendererLog, entry),
-  pickDirectory: () => ipcRenderer.invoke(CHANNELS.pickDirectory) as Promise<string | null>,
+  pickDirectory: (purpose: "workspace" | "parent") => ipcRenderer.invoke(CHANNELS.pickDirectory, purpose) as Promise<string | null>,
 
   // --- The records window ---
   openRecordsWindow: () => ipcRenderer.invoke(CHANNELS.openRecordsWindow) as Promise<void>,

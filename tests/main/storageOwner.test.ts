@@ -349,7 +349,7 @@ it.each(["async", "session-end"] as const)("runs real store writes and %s quit f
     await build({ entryPoints: [path.resolve("src/main/storageWorker.ts")], outfile: entry, bundle: true, platform: "node", format: "cjs", alias: { "@shared": path.resolve("src/shared") } });
     owner = new StorageOwner(() => new Worker(entry, { env: { ...process.env, BIGMOUTH_DATA_DIR: root } }));
     await owner.run("initialize", []);
-    const workspace = await owner.run("openOrCreateWorkspace", ["Test"]);
+    const workspace = await owner.run("createWorkspace", ["Test"]);
     await owner.run("saveTargets", [workspace.dataDirectory, [{ name: "blog", defaultLanguage: "en", requiresMetadata: false }]]);
     const post = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
     const authored = new Date(new Date(post.frontMatter.createdAtUtc).getTime() + 1);
