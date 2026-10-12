@@ -299,6 +299,7 @@ function isIndexEntry(value: unknown): value is PostIndexEntry {
   if (typeof row.fileName !== "string") return false;
   if (!ENTRY_OPTIONAL_TEXT_KEYS.every((key) => row[key] === undefined || typeof row[key] === "string")) return false;
   if (row.tags !== undefined && !(Array.isArray(row.tags) && row.tags.every((tag) => typeof tag === "string"))) return false;
+  if (row.excerptCut !== undefined && row.excerptCut !== true) return false;
   return row.locked === undefined || row.locked === true;
 }
 
@@ -526,6 +527,7 @@ function canonicalEntryObject(entry: PostIndexEntry): Record<string, unknown> {
   if (entry.title !== undefined) out.title = entry.title;
   if (entry.titleEn !== undefined) out.titleEn = entry.titleEn;
   if (entry.excerpt !== undefined) out.excerpt = entry.excerpt;
+  if (entry.excerptCut === true) out.excerptCut = true;
   if (entry.tags !== undefined) out.tags = entry.tags;
   if (entry.sourceId !== undefined) out.sourceId = entry.sourceId;
   out.createdAtUtc = entry.createdAtUtc;

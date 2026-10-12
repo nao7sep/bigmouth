@@ -6,5 +6,9 @@ import type { PostFrontMatter } from "@shared/types";
  * list summaries of untitled posts, so a real post body beats a bare id.
  */
 export function getPostTitle(fm: PostFrontMatter): string {
-  return fm.title || fm.titleEn || fm.excerpt || fm.slug || fm.id;
+  if (fm.title || fm.titleEn) return fm.title || fm.titleEn!;
+  // A cut excerpt carries one marker; where CSS truncates further it clips this
+  // one away and draws its own, so a label never shows two.
+  if (fm.excerpt) return fm.excerptCut === true ? `${fm.excerpt}…` : fm.excerpt;
+  return fm.slug || fm.id;
 }

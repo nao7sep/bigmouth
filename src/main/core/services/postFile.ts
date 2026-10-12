@@ -233,7 +233,9 @@ export function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<st
  *
  * When the post has neither a title nor a titleEn, a body-derived `excerpt` is
  * stored so the list can show a meaningful label instead of the post id. Titled
- * posts carry no excerpt, so editing their body never churns the index.
+ * posts carry no excerpt, so editing their body never churns the index. The
+ * excerpt is a display label derived from the body, which the post file keeps
+ * whole; `excerptCut` tells the renderer to mark the cut.
  */
 export function projectIndexEntry(
   frontMatter: PostFrontMatter,
@@ -262,8 +264,9 @@ export function projectIndexEntry(
   if (frontMatter.title) entry.title = frontMatter.title;
   if (frontMatter.language !== "en" && frontMatter.titleEn) entry.titleEn = frontMatter.titleEn;
   if (!entry.title && !entry.titleEn) {
-    const excerpt = truncate(body, EXCERPT_MAX_CHARS).text;
-    if (excerpt) entry.excerpt = excerpt;
+    const excerpt = truncate(body, EXCERPT_MAX_CHARS);
+    if (excerpt.text) entry.excerpt = excerpt.text;
+    if (excerpt.text && excerpt.truncated) entry.excerptCut = true;
   }
   if (Array.isArray(frontMatter.tags) && frontMatter.tags.length > 0) entry.tags = frontMatter.tags;
   if (frontMatter.sourceId) entry.sourceId = frontMatter.sourceId;

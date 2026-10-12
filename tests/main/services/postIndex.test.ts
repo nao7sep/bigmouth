@@ -135,6 +135,14 @@ describe("excerpt", () => {
     expect(indexBytes()).toContain("First line of the body.");
   });
 
+  it("flags an excerpt cut from a longer body, and only then", () => {
+    const created = createPost(dataDir, "blogger", "en");
+    updatePost(dataDir, created.frontMatter.id, { content: "Short body." });
+    expect(indexBytes()).not.toContain('"excerptCut"');
+    updatePost(dataDir, created.frontMatter.id, { content: "y".repeat(120) });
+    expect(indexBytes()).toContain('"excerptCut": true');
+  });
+
   it("stores no excerpt once a title is set", () => {
     const created = createPost(dataDir, "blogger", "en");
     updatePost(dataDir, created.frontMatter.id, { content: "Body text here." });

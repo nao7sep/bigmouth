@@ -29,6 +29,11 @@ describe("getPostTitle", () => {
     expect(getPostTitle(frontMatter({ slug: "s" }))).toBe("s");
   });
 
+  it("marks a cut body excerpt once and leaves a whole one unmarked", () => {
+    expect(getPostTitle(frontMatter({ excerpt: "Opening words", excerptCut: true, slug: "s" }))).toBe("Opening words…");
+    expect(getPostTitle(frontMatter({ excerpt: "Whole body", slug: "s" }))).toBe("Whole body");
+  });
+
   it("falls back to id when nothing else is present", () => {
     expect(getPostTitle(frontMatter())).toBe("abc123");
   });

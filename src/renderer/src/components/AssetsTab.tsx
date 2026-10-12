@@ -529,7 +529,7 @@ function AssetCard({
         )}
       </div>
       <div className="asset-info">
-        <div className="asset-name" title={asset.filename}>
+        <div className="asset-name">
           {asset.filename}
         </div>
         <div className="asset-meta">

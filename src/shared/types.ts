@@ -105,6 +105,7 @@ export interface PostFrontMatter {
   title?: string; // native language
   titleEn?: string; // English supplement (omitted when language is "en")
   excerpt?: string; // body-derived preview in list summaries (untitled posts only)
+  excerptCut?: true; // the body continues past the excerpt; the label shows its one marker
   slug?: string;
   tags?: string[]; // native language
   metaDescription?: string; // native language
@@ -139,6 +140,7 @@ export type PostIndexEntry = {
   title?: string;
   titleEn?: string;
   excerpt?: string; // body-derived preview; present only when both titles are absent
+  excerptCut?: true; // the body continues past the excerpt
   tags?: string[];
   sourceId?: string;
   createdAtUtc: string;

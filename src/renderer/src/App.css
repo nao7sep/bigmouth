@@ -716,6 +716,9 @@ button:focus-visible {
   outline: none;
 }
 
+/* The sidebar's one deliberate truncation: one line per post keeps the list
+   scannable in its narrow pane. Selecting the post shows the whole title in
+   the Metadata tab, or the whole body for an untitled post. */
 .post-item-title {
   font-size: 13px;
   font-weight: 500;
@@ -1237,6 +1240,8 @@ button:disabled,
   color: var(--bm-text);
   cursor: pointer;
   white-space: nowrap;
+  /* A menu is as wide as its longest label, so this cuts only a label wider
+     than the window. */
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1262,6 +1267,7 @@ button:disabled,
   color: var(--bm-text-muted);
   border-bottom: 1px solid var(--bm-border-subtle);
   margin: 0 -4px 4px;
+  /* Cut only past the window's width; Workspaces shows the whole name. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1897,9 +1903,8 @@ select:is(.form-select, .prompt-select) {
   flex: 1;
   font-size: 13px;
   color: var(--bm-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ── Assets Tab ─────────────────────────────────────────── */
@@ -2028,9 +2033,7 @@ select:is(.form-select, .prompt-select) {
 .asset-name {
   font-size: 12px;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .asset-meta {
@@ -2239,18 +2242,14 @@ select:is(.form-select, .prompt-select) {
 .workspace-item-name {
   font-size: 14px;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .workspace-item-dir {
   font-size: 11px;
   color: var(--bm-text-muted);
   margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .workspace-item-actions {
