@@ -242,3 +242,29 @@ describe("App.css selection, focus and hover", () => {
     expect(ruleFor('.workspace-item[aria-selected="true"]')?.style.getPropertyValue("border-color")).toBe("var(--bm-accent-fg)");
   });
 });
+
+// Truncation is a bounded exception inventory (text-cleanup-conventions rule 4):
+// each listed site shows its marker and keeps a keyboard path to the whole value.
+// A new cut must be justified and added here, or the text wraps.
+describe("App.css truncation sites", () => {
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+    selector: selector.replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+    body,
+  }));
+
+  it("cuts text only at the reviewed sites", () => {
+    const cut = rules.filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body)).map((rule) => rule.selector);
+    // Sidebar titles: the selected post's Metadata shows the whole title (or its
+    // body, for an untitled post). Menu labels and the workspace header: cut only
+    // past the window's width; Workspaces shows the whole name.
+    expect(cut).toEqual([".post-item-title", ".menu-item", ".menu-label"]);
+  });
+
+  it("never clips a single line without its marker", () => {
+    const clipped = rules
+      .filter((rule) => /white-space:\s*nowrap/.test(rule.body) && /overflow(-x)?:\s*(hidden|clip)/.test(rule.body))
+      .filter((rule) => !/text-overflow:\s*ellipsis/.test(rule.body))
+      .map((rule) => rule.selector);
+    expect(clipped).toEqual([".bm-visually-hidden"]);
+  });
+});

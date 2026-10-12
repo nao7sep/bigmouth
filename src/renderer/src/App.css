@@ -2019,10 +2019,15 @@ select:is(.form-select, .prompt-select) {
 }
 
 .asset-file-icon {
+  max-width: 100%;
+  padding: 0 2px;
   font-size: 11px;
   font-weight: 700;
   color: var(--bm-text-muted);
   letter-spacing: 0;
+  text-align: center;
+  /* A long extension wraps inside the tile instead of being clipped by it. */
+  overflow-wrap: anywhere;
 }
 
 .asset-info {
