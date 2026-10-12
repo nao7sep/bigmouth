@@ -3,8 +3,8 @@ import { render, act, cleanup, fireEvent, screen, within } from "@testing-librar
 import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 
 // WorkspaceModal talks to the main process through these api calls:
-// pickWorkspaceDirectory backs both "Change…" (a parent for a new workspace)
-// and "Add Existing Folder…" (a folder that already holds one).
+// pickWorkspaceDirectory backs both "Change" (a parent for a new workspace)
+// and "Add Existing Folder" (a folder that already holds one).
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   listWorkspaces: vi.fn(),
@@ -170,7 +170,7 @@ async function flush() {
 
 // Opens the new-workspace form over the list and types a name.
 async function openNewForm(name?: string) {
-  fireEvent.click(screen.getByRole("button", { name: "New Workspace…" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Workspace" }));
   if (name !== undefined) fireEvent.change(screen.getByLabelText("Name"), { target: { value: name } });
   await flush();
 }
@@ -195,7 +195,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
       await renderModal();
 
     // Enter inline-rename mode: the edit input is seeded with the current name.
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     const input = getByDisplayValue("Alpha");
 
     // Escape now routes solely through the modal's close guard, which unwinds
@@ -204,7 +204,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
 
     expect(queryByDisplayValue("Alpha")).toBeNull(); // edit canceled
     expect(queryByText("Discard changes?")).toBeNull(); // no spurious discard
-    expect(getByText("Rename…")).toBeTruthy(); // back to the row's normal actions
+    expect(getByText("Rename")).toBeTruthy(); // back to the row's normal actions
     expect(onClose).not.toHaveBeenCalled(); // and the modal itself stays open
   });
 
@@ -212,7 +212,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { onClose, getByText, getByDisplayValue } = await renderModal();
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     fireEvent.keyDown(getByDisplayValue("Alpha"), { key: "Escape" }); // unwinds the edit
     expect(onClose).not.toHaveBeenCalled();
 
@@ -316,12 +316,12 @@ describe("WorkspaceModal — the list", () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
   });
 
-  it("renames the selected row from Rename…", async () => {
+  it("renames the selected row from Rename", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
     mockUpdateWorkspace.mockResolvedValue({ ...OTHER, name: "Bravo 2" });
     await renderWith();
     fireEvent.click(option("Bravo"));
-    fireEvent.click(screen.getByRole("button", { name: "Rename…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
     const input = screen.getByDisplayValue("Bravo");
     expect(screen.queryByDisplayValue("Alpha")).toBeNull();
     fireEvent.change(input, { target: { value: "Bravo 2" } });
@@ -332,8 +332,8 @@ describe("WorkspaceModal — the list", () => {
   it("disables the row actions and Open while a rename is open", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { container } = await renderWith();
-    fireEvent.click(screen.getByRole("button", { name: "Rename…" }));
-    expect((screen.getByRole("button", { name: "Rename…" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    expect((screen.getByRole("button", { name: "Rename" }) as HTMLButtonElement).disabled).toBe(true);
     expect((container.querySelector(".workspace-row-actions .btn-delete") as HTMLButtonElement).disabled).toBe(true);
     expect((footerButton(container, "Open") as HTMLButtonElement).disabled).toBe(true);
   });
@@ -360,7 +360,7 @@ describe("WorkspaceModal — first run", () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Name")).toBeTruthy();
     // Adding an existing folder is still offered.
-    expect(screen.getByRole("button", { name: "Add Existing Folder…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add Existing Folder" })).toBeTruthy();
   });
 
   it("reports the created workspace as the first run", async () => {
@@ -378,7 +378,7 @@ describe("WorkspaceModal — first run", () => {
   });
 });
 
-describe("WorkspaceModal — New Workspace…", () => {
+describe("WorkspaceModal — New Workspace", () => {
   it("shows the folder the typed name would be created in", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { container } = await renderWith();
@@ -388,7 +388,7 @@ describe("WorkspaceModal — New Workspace…", () => {
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
     expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
     // The form replaces its own opener while it is open.
-    expect(screen.queryByRole("button", { name: "New Workspace…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New Workspace" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Beta  " } });
     await flush();
@@ -425,7 +425,7 @@ describe("WorkspaceModal — New Workspace…", () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(CREATED);
   });
 
-  it("re-suggests inside the parent chosen with Change… and creates there", async () => {
+  it("re-suggests inside the parent chosen with Change and creates there", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockCreate.mockResolvedValue(CREATED);
     // A picked path is used as given, spaces and all.
@@ -433,7 +433,7 @@ describe("WorkspaceModal — New Workspace…", () => {
     const { container } = await renderWith({ onCreated: vi.fn() });
     await openNewForm("Beta");
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
     await flush();
 
     expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("parent");
@@ -449,26 +449,26 @@ describe("WorkspaceModal — New Workspace…", () => {
     expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Gamma", "/Volumes/ Data ");
   });
 
-  it("keeps the parent when the Change… picker is cancelled", async () => {
+  it("keeps the parent when the Change picker is cancelled", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue(null);
     await renderWith();
     await openNewForm("Beta");
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
     await flush();
 
     expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", undefined);
     expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
   });
 
-  it("retains an authored form result when the Change… picker rejects", async () => {
+  it("retains an authored form result when the Change picker rejects", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockRejectedValue(new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"));
     await renderWith();
     await openNewForm("Beta");
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
 
     const result = screen.getByRole("alert");
     expect(result.textContent).toContain("location is unchanged");
@@ -510,7 +510,7 @@ describe("WorkspaceModal — New Workspace…", () => {
   });
 });
 
-describe("WorkspaceModal — Add Existing Folder…", () => {
+describe("WorkspaceModal — Add Existing Folder", () => {
   it("adds the picked folder and opens it", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const added: Workspace = { id: "ws4", name: "Notes", dataDirectory: "/picked/ Notes " };
@@ -518,7 +518,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     mockAddExisting.mockResolvedValue(added);
     const { onSelect } = await renderWith({ onCreated: vi.fn() });
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("workspace");
     // A picked path is used as given, spaces and all.
@@ -532,7 +532,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     mockPickDirectory.mockResolvedValue(null);
     const { onSelect } = await renderWith();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     expect(mockAddExisting).not.toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
@@ -545,7 +545,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     mockAddExisting.mockRejectedValue(new Error(carryingText(message("workspaces.notAWorkspace", { path: "/picked/notes" }))));
     const { onSelect } = await renderWith();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     expect(screen.getByRole("alert").textContent).toContain("/picked/notes does not hold a BigMouth workspace.");
     expect(onSelect).not.toHaveBeenCalled();
@@ -562,7 +562,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     mockAddExisting.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_ADD_SENTINEL"));
     await renderWith();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     expect(screen.getByRole("alert").textContent).toContain("The folder could not be added.");
     expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH_ADD_SENTINEL");
@@ -573,7 +573,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     mockPickDirectory.mockRejectedValue(new Error("EACCES IPC /private/tmp/BIGMOUTH-PICKER-SENTINEL"));
     await renderWith();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     expect(screen.getByRole("alert").textContent).toContain("location is unchanged");
     expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
@@ -590,7 +590,7 @@ describe("WorkspaceModal — Add Existing Folder…", () => {
     const onCreated = vi.fn();
     const { onSelect } = await renderWith({ dismissable: false, activeWorkspaceId: null, onCreated });
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
     // Added, not created: it opens directly rather than continuing setup.
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(WORKSPACE);
@@ -605,7 +605,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
     const view = await renderWith();
     await openNewForm("Unsubmitted workspace");
-    fireEvent.click(view.getByText("Rename…"));
+    fireEvent.click(view.getByText("Rename"));
     fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Submitted name" } });
     fireEvent.click(view.getByText("Save"));
     view.rerenderPending(true);
@@ -633,7 +633,7 @@ describe("WorkspaceModal — inline rename save", () => {
     let rejectRename!: (error: Error) => void;
     mockUpdateWorkspace.mockReturnValue(new Promise((_, reject) => { rejectRename = reject; }));
     const view = await renderWith();
-    fireEvent.click(view.getByText("Rename…"));
+    fireEvent.click(view.getByText("Rename"));
     const input = view.getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "Submitted name" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -656,7 +656,7 @@ describe("WorkspaceModal — inline rename save", () => {
     let resolveRename!: (workspace: Workspace) => void;
     mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
     const view = await renderWith();
-    fireEvent.click(view.getByText("Rename…"));
+    fireEvent.click(view.getByText("Rename"));
     fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     fireEvent.click(view.getByText("Save"));
     view.leaveModal();
@@ -673,7 +673,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_RENAME_SENTINEL"));
     const { getByText, getByDisplayValue, getByRole } = await renderWith();
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => { fireEvent.click(getByText("Save")); await Promise.resolve(); });
 
@@ -692,7 +692,7 @@ describe("WorkspaceModal — inline rename save", () => {
     const onWorkspaceUpdated = vi.fn();
     const { getByText, getByDisplayValue } = await renderWith({ onWorkspaceUpdated });
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => {
       fireEvent.click(getByText("Save"));
@@ -709,7 +709,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockResolvedValue({ ...WORKSPACE, name: "ViaEnter" });
     const { getByText, getByDisplayValue } = await renderWith();
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     const input = getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "ViaEnter" } });
     await act(async () => {
@@ -731,7 +731,7 @@ describe("WorkspaceModal — inline rename save", () => {
       onWorkspaceUpdated,
     });
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => {
       fireEvent.click(getByText("Save"));
@@ -747,7 +747,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText, getByDisplayValue } = await renderWith();
 
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     const input = getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "   " } });
     // The Save button is disabled, and Enter is guarded by the empty-name check.
@@ -762,12 +762,12 @@ describe("WorkspaceModal — inline rename save", () => {
   it("cancels the inline edit via the Cancel button", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText, queryByDisplayValue } = await renderWith();
-    fireEvent.click(getByText("Rename…"));
+    fireEvent.click(getByText("Rename"));
     // The inline-edit Cancel shares its label with the modal's footer dismiss
     // button; scope to the workspace row so the query is unambiguous.
     fireEvent.click(within(screen.getByRole("option")).getByText("Cancel"));
     expect(queryByDisplayValue("Alpha")).toBeNull();
-    expect(getByText("Rename…")).toBeTruthy();
+    expect(getByText("Rename")).toBeTruthy();
   });
 });
 
@@ -799,7 +799,7 @@ describe("WorkspaceModal — pending creation and adding", () => {
     let rejectAdd!: (error: Error) => void;
     mockAddExisting.mockReturnValue(new Promise((_, reject) => { rejectAdd = reject; }));
     const view = await renderWith();
-    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Add Existing Folder…" })); });
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Add Existing Folder" })); });
     expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
     view.rerenderPending(true);
     fireEvent.click(footerButton(view.container, "Close"));
@@ -1018,7 +1018,7 @@ describe("WorkspaceModal — closing the new-workspace form", () => {
 
     expect(screen.queryByText("Discard changes?")).toBeNull();
     expect(screen.queryByLabelText("Name")).toBeNull();
-    expect(screen.getByRole("button", { name: "New Workspace…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New Workspace" })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
     // The next Escape leaves the window.
@@ -1059,7 +1059,7 @@ describe("WorkspaceModal — closing the new-workspace form", () => {
     mockPickDirectory.mockResolvedValue("/Volumes/Data");
     const { findByText } = await renderWith();
     await openNewForm();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change…" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(await findByText("Discard changes?")).toBeTruthy();

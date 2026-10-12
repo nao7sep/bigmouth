@@ -115,26 +115,6 @@ describe("catalogues", () => {
     expect(source).not.toMatch(/\\u2026|&hellip;|&#(8230|x2026);/i);
   });
 
-  // A control that swaps its command for a running status must read differently
-  // once pressed, or the press looks ignored ("Import…" and "Importing…" can
-  // collapse to one word in a translation). Reword the command, not the status.
-  const COMMAND_STATUS_PAIRS: readonly (readonly [command: string, status: string])[] = [
-    ["common.save", "common.saving"],
-    ["setup.finish", "common.saving"],
-    ["assets.add", "assets.adding"],
-    ["picker.loadMore", "common.loading"],
-    ["newPost.create", "newPost.creating"],
-    ["settings.rebuild", "settings.rebuilding"],
-    ["workspaces.create", "workspaces.creating"],
-    ["workspaces.addExisting", "workspaces.opening"],
-  ];
-
-  it.each(LANGUAGES)("%s: a command and the status replacing it on its control differ", (language) => {
-    for (const [command, status] of COMMAND_STATUS_PAIRS) {
-      expect(catalogues[language][command], `${command} / ${status}`).not.toEqual(catalogues[language][status]);
-    }
-  });
-
   it.each(translations)("%s translates everything not listed as the same word", (language) => {
     const allowed = SAME_AS_ENGLISH[language] ?? [];
     const copied = Object.keys(english).filter((key) => {

@@ -14,9 +14,9 @@
  *
  * The list is the window: a row is selected by click or arrows, opened by
  * Enter, double-click or Open, and renamed or removed from the buttons under
- * the list. A workspace's folder is never typed. "New Workspace…" creates one
+ * the list. A workspace's folder is never typed. "New Workspace" creates one
  * in its own folder, named after it, inside a parent the user may change;
- * "Add Existing Folder…" registers a folder that already holds a workspace.
+ * "Add Existing Folder" registers a folder that already holds a workspace.
  * With nothing registered, the new-workspace form is shown straight away.
  */
 

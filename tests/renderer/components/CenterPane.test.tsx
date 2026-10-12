@@ -505,7 +505,7 @@ describe("CenterPane locked posts", () => {
     expect(screen.getAllByRole("radio").every((radio) => !(radio as HTMLButtonElement).disabled)).toBe(true);
     expect((screen.getByRole("button", { name: "Locked" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole("button", { name: "Change…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Change" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Unlink" }) as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByRole("radio", { name: "Verified" }));
@@ -533,7 +533,7 @@ describe("CenterPane source linking", () => {
     mockUpdatePost.mockResolvedValue(mutationResult(post({ sourceId: "src-1" })));
     const onPostUpdated = vi.fn();
     await renderPane({ onPostUpdated });
-    fireEvent.click(screen.getByRole("button", { name: "Link Source…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Link Source" }));
     expect(screen.getByTestId("source-picker")).toBeTruthy();
     fireEvent.click(screen.getByText("pick-source"));
     await waitFor(() =>

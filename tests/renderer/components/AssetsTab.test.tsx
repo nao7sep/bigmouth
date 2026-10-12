@@ -651,7 +651,7 @@ describe("AssetsTab locked", () => {
   it("disables Add and card actions", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "ro.png" })] });
     const { container, getByRole } = await renderTab({ locked: true });
-    expect((getByRole("button", { name: "Add…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
     const buttons = within(card).getAllByRole("button");
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
