@@ -117,6 +117,19 @@ describe("PostPickerList — selection", () => {
     expect(onSelect).toHaveBeenCalledWith("p1", "Alpha");
   });
 
+  it("continues keyboard navigation from its target after an earlier row is hovered", () => {
+    const onSelect = vi.fn();
+    const posts = ["Alpha", "Beta", "Gamma"].map((title, i) => summary({ id: `p${i + 1}`, title }));
+    const { getByLabelText, getByText } = render(<PostPickerList {...state({ posts })} onSelect={onSelect} />);
+    const listbox = getByLabelText("Posts");
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    fireEvent.mouseMove(getByText("Alpha"));
+    fireEvent.keyDown(listbox, { key: "ArrowUp" });
+    fireEvent.keyDown(listbox, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p2", "Beta");
+  });
+
   it("calls onSelect with the id and resolved title when a row is clicked", () => {
     const onSelect = vi.fn();
     const posts = [summary({ id: "p1", title: "Pick me" })];

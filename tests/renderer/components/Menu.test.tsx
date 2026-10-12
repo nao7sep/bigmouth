@@ -298,6 +298,21 @@ describe("Menu independent pointer and keyboard targets", () => {
     expect(document.activeElement).toBe(second);
   });
 
+  it("continues keyboard navigation from its target after an earlier command is hovered", () => {
+    const onSecond = vi.fn();
+    const { trigger } = renderMenu(vi.fn(), { onSecond });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const [first, second, third] = screen.getAllByRole("menuitem");
+    fireEvent.keyDown(first!, { key: "ArrowDown" });
+    fireEvent.keyDown(second!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(third);
+    fireEvent.mouseMove(first!);
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(onSecond).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["Enter", " "])("%s activates the keyboard target after another command is hovered", (key) => {
     const onFirst = vi.fn();
     const onThird = vi.fn();
