@@ -69,6 +69,11 @@ export default defineConfig({
           // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_DATA_DIR root
           // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
           setupFiles: [mainSetup],
+          // Electron's npm package downloads its ~100 MB binary the first time
+          // anything imports it while the binary is missing, as after a fresh
+          // install. Unit tests mock Electron and never run the binary, so a
+          // placeholder path keeps them from starting that download.
+          env: { ELECTRON_OVERRIDE_DIST_PATH: resolve("tests/.electron-binary-unused") },
         },
       },
       {

@@ -255,9 +255,19 @@ describe("App.css truncation sites", () => {
   it("cuts text only at the reviewed sites", () => {
     const cut = rules.filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body)).map((rule) => rule.selector);
     // Sidebar titles: the selected post's Metadata shows the whole title (or its
-    // body, for an untitled post). Menu labels and the workspace header: cut only
-    // past the window's width; Workspaces shows the whole name.
-    expect(cut).toEqual([".post-item-title", ".menu-item", ".menu-label"]);
+    // body, for an untitled post). The menu's workspace header: cut only past
+    // the window's width; Workspaces and Settings show the whole name. A closed
+    // select: opening it shows every option whole.
+    expect(cut).toEqual([".post-item-title", ".menu-label", "select:is(.form-select, .prompt-select)"]);
+  });
+
+  // Chromium draws no marker for text-overflow on a flex container's own text,
+  // so such a rule would clip silently.
+  it("never asks a flex container to mark its own cut", () => {
+    const flexCut = rules
+      .filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body) && /display:\s*(inline-)?flex/.test(rule.body))
+      .map((rule) => rule.selector);
+    expect(flexCut).toEqual([]);
   });
 
   it("never clips a single line without its marker", () => {
@@ -266,5 +276,30 @@ describe("App.css truncation sites", () => {
       .filter((rule) => !/text-overflow:\s*ellipsis/.test(rule.body))
       .map((rule) => rule.selector);
     expect(clipped).toEqual([".bm-visually-hidden"]);
+  });
+});
+
+// jsdom cannot measure a squeezed button, so the rule that prevents it is
+// checked by computed style: a dialog footer wraps, and its buttons never shrink
+// below their one-line label (modal-dialog-conventions, footer layout).
+describe("App.css dialog footers", () => {
+  it.each(["modal-footer", "dialog-actions"])("%s wraps rather than squeezing its buttons", (footerClass) => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const footer = document.createElement("div");
+    footer.className = footerClass;
+    const button = document.createElement("button");
+    button.className = "btn-action";
+    footer.appendChild(button);
+    document.body.appendChild(footer);
+    try {
+      expect(getComputedStyle(footer).flexWrap).toBe("wrap");
+      expect(getComputedStyle(button).flexShrink).toBe("0");
+      expect(getComputedStyle(button).whiteSpace).toBe("nowrap");
+    } finally {
+      footer.remove();
+      style.remove();
+    }
   });
 });
