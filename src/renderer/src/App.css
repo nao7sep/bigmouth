@@ -1229,8 +1229,8 @@ button:disabled,
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 30px;
-  padding: 5px 10px;
+  height: 30px;
+  padding: 0 10px;
   text-align: left;
   background: none;
   border: none;
@@ -1239,9 +1239,11 @@ button:disabled,
   font-size: 13px;
   color: var(--bm-text);
   cursor: pointer;
-  /* A menu is as wide as its longest label. A label wider than the window
-     wraps: a command's text has nowhere else to be read in full. */
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  /* A menu is as wide as its longest label, so this cuts only a label wider
+     than the window. */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Hover never changes the command Enter will run. A pointer-opened menu starts
@@ -1579,28 +1581,6 @@ button:disabled,
   display: flex;
   justify-content: flex-end;
   gap: var(--bm-control-gap);
-}
-
-/* A long translation never squeezes a footer button below its label: buttons
-   keep their one-line width, and a footer too narrow for all of them moves one
-   to a new row once the dialog has reached its width cap. Only a label wider
-   than a whole row wraps, inside its own button, which grows taller instead of
-   running past either edge of the dialog. */
-.modal-footer,
-.dialog-actions {
-  flex-wrap: wrap;
-}
-
-.modal-footer button,
-.dialog-actions button {
-  flex-shrink: 0;
-  max-width: 100%;
-  height: auto;
-  min-height: var(--bm-control-h);
-  padding-block: 6px;
-  line-height: 1.25;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 /* Export modal */
