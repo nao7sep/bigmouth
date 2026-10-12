@@ -1582,8 +1582,10 @@ button:disabled,
 }
 
 /* A long translation never squeezes a footer button below its label: buttons
-   keep their width, and a footer too narrow for all of them moves one to a new
-   row once the dialog has reached its width cap. */
+   keep their one-line width, and a footer too narrow for all of them moves one
+   to a new row once the dialog has reached its width cap. Only a label wider
+   than a whole row wraps, inside its own button, which grows taller instead of
+   running past either edge of the dialog. */
 .modal-footer,
 .dialog-actions {
   flex-wrap: wrap;
@@ -1592,6 +1594,13 @@ button:disabled,
 .modal-footer button,
 .dialog-actions button {
   flex-shrink: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: var(--bm-control-h);
+  padding-block: 6px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* Export modal */

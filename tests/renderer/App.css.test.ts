@@ -279,9 +279,10 @@ describe("App.css truncation sites", () => {
   });
 });
 
-// jsdom cannot measure a squeezed button, so the rule that prevents it is
-// checked by computed style: a dialog footer wraps, and its buttons never shrink
-// below their one-line label (modal-dialog-conventions, footer layout).
+// jsdom cannot measure a squeezed or overflowing button, so the rule that
+// prevents both is checked by computed style: a dialog footer wraps, its buttons
+// never shrink below their one-line label, and a label wider than a whole row
+// wraps inside a button capped at the row (modal-dialog-conventions, footer layout).
 describe("App.css dialog footers", () => {
   it.each(["modal-footer", "dialog-actions"])("%s wraps rather than squeezing its buttons", (footerClass) => {
     const style = document.createElement("style");
@@ -295,8 +296,11 @@ describe("App.css dialog footers", () => {
     document.body.appendChild(footer);
     try {
       expect(getComputedStyle(footer).flexWrap).toBe("wrap");
-      expect(getComputedStyle(button).flexShrink).toBe("0");
-      expect(getComputedStyle(button).whiteSpace).toBe("nowrap");
+      const shown = getComputedStyle(button);
+      expect(shown.flexShrink).toBe("0");
+      expect(shown.maxWidth).toBe("100%");
+      expect(shown.whiteSpace).toBe("normal");
+      expect(shown.height).toBe("auto");
     } finally {
       footer.remove();
       style.remove();
