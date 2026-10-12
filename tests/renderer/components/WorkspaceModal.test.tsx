@@ -158,7 +158,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
       await renderModal();
 
     // Enter inline-rename mode: the edit input is seeded with the current name.
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     const input = getByDisplayValue("Alpha");
 
     // Escape now routes solely through the modal's close guard, which unwinds
@@ -167,7 +167,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
 
     expect(queryByDisplayValue("Alpha")).toBeNull(); // edit canceled
     expect(queryByText("Discard changes?")).toBeNull(); // no spurious discard
-    expect(getByText("Rename")).toBeTruthy(); // back to the row's normal actions
+    expect(getByText("Rename…")).toBeTruthy(); // back to the row's normal actions
     expect(onClose).not.toHaveBeenCalled(); // and the modal itself stays open
   });
 
@@ -175,7 +175,7 @@ describe("WorkspaceModal inline rename — Escape", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { onClose, getByText, getByDisplayValue } = await renderModal();
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     fireEvent.keyDown(getByDisplayValue("Alpha"), { key: "Escape" }); // unwinds the edit
     expect(onClose).not.toHaveBeenCalled();
 
@@ -270,7 +270,7 @@ describe("WorkspaceModal — create/open submit", () => {
     const { getByText } = await renderWith();
 
     await act(async () => {
-      fireEvent.click(getByText("Browse"));
+      fireEvent.click(getByText("Browse…"));
       await Promise.resolve();
     });
     await act(async () => {
@@ -341,7 +341,7 @@ describe("WorkspaceModal — Browse", () => {
     const { getByText, getByDisplayValue } = await renderWith();
 
     await act(async () => {
-      fireEvent.click(getByText("Browse"));
+      fireEvent.click(getByText("Browse…"));
       await Promise.resolve();
     });
     expect(getByDisplayValue("/picked/dir")).toBeTruthy();
@@ -353,7 +353,7 @@ describe("WorkspaceModal — Browse", () => {
     const { getByText, getByLabelText } = await renderWith();
 
     await act(async () => {
-      fireEvent.click(getByText("Browse"));
+      fireEvent.click(getByText("Browse…"));
       await Promise.resolve();
     });
     expect((getByLabelText(/^Location/) as HTMLInputElement).value).toBe("");
@@ -367,7 +367,7 @@ describe("WorkspaceModal — Browse", () => {
     const { getByText, getByRole, getByLabelText } = await renderWith();
 
     await act(async () => {
-      fireEvent.click(getByText("Browse"));
+      fireEvent.click(getByText("Browse…"));
       await Promise.resolve();
     });
 
@@ -388,7 +388,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
     const view = await renderWith();
     fireEvent.change(view.getByPlaceholderText("Uses the folder name if available"), { target: { value: "Unsubmitted workspace" } });
-    fireEvent.click(view.getByText("Rename"));
+    fireEvent.click(view.getByText("Rename…"));
     fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Submitted name" } });
     fireEvent.click(view.getByText("Save"));
     view.rerenderPending(true);
@@ -411,7 +411,7 @@ describe("WorkspaceModal — inline rename save", () => {
     let rejectRename!: (error: Error) => void;
     mockUpdateWorkspace.mockReturnValue(new Promise((_, reject) => { rejectRename = reject; }));
     const view = await renderWith();
-    fireEvent.click(view.getByText("Rename"));
+    fireEvent.click(view.getByText("Rename…"));
     const input = view.getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "Submitted name" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -434,7 +434,7 @@ describe("WorkspaceModal — inline rename save", () => {
     let resolveRename!: (workspace: Workspace) => void;
     mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
     const view = await renderWith();
-    fireEvent.click(view.getByText("Rename"));
+    fireEvent.click(view.getByText("Rename…"));
     fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     fireEvent.click(view.getByText("Save"));
     view.leaveModal();
@@ -451,7 +451,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_RENAME_SENTINEL"));
     const { getByText, getByDisplayValue, getByRole } = await renderWith();
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => { fireEvent.click(getByText("Save")); await Promise.resolve(); });
 
@@ -470,7 +470,7 @@ describe("WorkspaceModal — inline rename save", () => {
     const onWorkspaceUpdated = vi.fn();
     const { getByText, getByDisplayValue } = await renderWith({ onWorkspaceUpdated });
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => {
       fireEvent.click(getByText("Save"));
@@ -487,7 +487,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockUpdateWorkspace.mockResolvedValue({ ...WORKSPACE, name: "ViaEnter" });
     const { getByText, getByDisplayValue } = await renderWith();
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     const input = getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "ViaEnter" } });
     await act(async () => {
@@ -509,7 +509,7 @@ describe("WorkspaceModal — inline rename save", () => {
       onWorkspaceUpdated,
     });
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     fireEvent.change(getByDisplayValue("Alpha"), { target: { value: "Renamed" } });
     await act(async () => {
       fireEvent.click(getByText("Save"));
@@ -525,7 +525,7 @@ describe("WorkspaceModal — inline rename save", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText, getByDisplayValue } = await renderWith();
 
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     const input = getByDisplayValue("Alpha");
     fireEvent.change(input, { target: { value: "   " } });
     // The Save button is disabled, and Enter is guarded by the empty-name check.
@@ -540,12 +540,12 @@ describe("WorkspaceModal — inline rename save", () => {
   it("cancels the inline edit via the Cancel button", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { getByText, queryByDisplayValue } = await renderWith();
-    fireEvent.click(getByText("Rename"));
+    fireEvent.click(getByText("Rename…"));
     // The inline-edit Cancel shares its label with the modal's footer dismiss
     // button; scope to the workspace row so the query is unambiguous.
     fireEvent.click(within(screen.getByRole("option")).getByText("Cancel"));
     expect(queryByDisplayValue("Alpha")).toBeNull();
-    expect(getByText("Rename")).toBeTruthy();
+    expect(getByText("Rename…")).toBeTruthy();
   });
 });
 

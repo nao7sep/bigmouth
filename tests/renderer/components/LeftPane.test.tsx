@@ -262,7 +262,7 @@ describe("LeftPane load-more affordance", () => {
     });
     // Paged sections start collapsed; open it to reveal the load-more button.
     fireEvent.click(findHeader(container, label));
-    const loadMore = screen.getByRole("button", { name: "Load more…" });
+    const loadMore = screen.getByRole("button", { name: "Load more" });
     expect(loadMore.getAttribute("tabindex")).toBe("-1");
   });
 
@@ -274,14 +274,14 @@ describe("LeftPane load-more affordance", () => {
       onLoadMore,
     });
     fireEvent.click(findHeader(container, label));
-    fireEvent.click(screen.getByRole("button", { name: "Load more…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(onLoadMore).toHaveBeenCalledExactlyOnceWith(status);
   });
 
   it("omits the Load more button once everything is loaded", () => {
     const { container } = renderPane({ sections: { published: [summary({ id: "p1", status: "published" })] } });
     fireEvent.click(findHeader(container, "Published"));
-    expect(screen.queryByRole("button", { name: "Load more…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 });
 

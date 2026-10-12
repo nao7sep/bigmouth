@@ -148,7 +148,7 @@ async function renderPane(over: Partial<ReturnType<typeof baseProps>> = {}) {
     </ConfirmProvider>
   );
   // Wait for the LOADED state, not merely for the toolbar element. `.center-toolbar`
-  // also renders while loading (it holds the "Loading…" label), so gating on it let this
+  // also renders while loading, so gating on it let this
   // helper return with the placeholder still on screen — after which every synchronous
   // getByRole below queries a DOM that has no controls in it yet. That is a race in every
   // test using this helper, not just the one that happened to lose it (~1 run in 30).
@@ -198,6 +198,8 @@ describe("CenterPane loading", () => {
     );
     expect(container.querySelector(".center-loading")?.textContent).toBe("Loading post…");
     expect(container.querySelector(".center-editor")).toBeNull();
+    // The toolbar's label slot names the target; nothing stands in for it while loading.
+    expect(container.querySelector(".toolbar-label")).toBeNull();
   });
 
   it("shows the load error when getPost rejects", async () => {
@@ -503,7 +505,7 @@ describe("CenterPane locked posts", () => {
     expect(screen.getAllByRole("radio").every((radio) => !(radio as HTMLButtonElement).disabled)).toBe(true);
     expect((screen.getByRole("button", { name: "Locked" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole("button", { name: "Change" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Change…" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Unlink" }) as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByRole("radio", { name: "Verified" }));
@@ -531,7 +533,7 @@ describe("CenterPane source linking", () => {
     mockUpdatePost.mockResolvedValue(mutationResult(post({ sourceId: "src-1" })));
     const onPostUpdated = vi.fn();
     await renderPane({ onPostUpdated });
-    fireEvent.click(screen.getByRole("button", { name: "Link Source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Link Source…" }));
     expect(screen.getByTestId("source-picker")).toBeTruthy();
     fireEvent.click(screen.getByText("pick-source"));
     await waitFor(() =>

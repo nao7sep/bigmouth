@@ -290,7 +290,7 @@ describe("SetupModal — the workspace step", () => {
     mockPick.mockResolvedValue("/Volumes/Data/Writing");
     const { getByText, getByLabelText } = await renderSetup();
 
-    await click(getByText("Browse"));
+    await click(getByText("Browse…"));
     fireEvent.change(getByLabelText("Name"), { target: { value: "Writing" } });
     await flush();
     expect((getByLabelText("Location") as HTMLInputElement).value).toBe("/Volumes/Data/Writing");

@@ -170,7 +170,7 @@ export function LeftPane({
         <h1>
           BigMouth
           <div className="left-header-actions">
-            <button className="btn-new-post-icon" title={t("left.newPost")} onClick={onNewPost}>
+            <button className="btn-new-post-icon" title={t("left.newPostCommand")} onClick={onNewPost}>
               <PlusIcon />
             </button>
             <Menu

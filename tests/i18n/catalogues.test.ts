@@ -99,6 +99,22 @@ describe("catalogues", () => {
     }
   });
 
+  // An ellipsis carries meaning (localization-conventions, Ellipsis): a
+  // translation has one exactly when English does, always as the literal
+  // character, and attached to its word or, in German, after a no-break space.
+  it.each(LANGUAGES)("%s writes an ellipsis exactly where English does, as one attached character", (language) => {
+    for (const [key, englishEntry] of Object.entries(english)) {
+      const expected = forms(englishEntry).some((text) => text.includes("…"));
+      for (const text of forms(catalogues[language][key] ?? "")) {
+        expect(text, key).not.toMatch(/\.\.\./);
+        expect(text.includes("…"), `${key}: ${text}`).toBe(expected);
+        expect(text, key).not.toMatch(/[ \t]…/);
+      }
+    }
+    const source = readFileSync(join(process.cwd(), `src/shared/i18n/locales/${language}.json`), "utf8");
+    expect(source).not.toMatch(/\\u2026|&hellip;|&#(8230|x2026);/i);
+  });
+
   it.each(translations)("%s translates everything not listed as the same word", (language) => {
     const allowed = SAME_AS_ENGLISH[language] ?? [];
     const copied = Object.keys(english).filter((key) => {

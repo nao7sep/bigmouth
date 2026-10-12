@@ -90,11 +90,11 @@ async function renderModal(
 }
 
 describe("NewPostModal — render", () => {
-  it("renders target/language selects with a 'Please select…' placeholder for target", async () => {
+  it("renders target/language selects with a 'Please select' placeholder for target", async () => {
     const { getByRole, getByText } = await renderModal();
     const labelId = getByRole("dialog").getAttribute("aria-labelledby");
     expect(document.getElementById(labelId!)?.textContent).toBe("New Post");
-    expect(getByText("Please select…")).toBeTruthy();
+    expect(getByText("Please select")).toBeTruthy();
     // The Create button is disabled until a target is chosen.
     expect((getByText("Create").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
@@ -175,7 +175,7 @@ describe("NewPostModal — create flow", () => {
     fireEvent.click(getByText("Existing post"));
     fireEvent.click(getByText("Unlink"));
     // The filter input returns once the source is cleared.
-    expect(getByPlaceholderText("Filter posts…")).toBeTruthy();
+    expect(getByPlaceholderText("Filter posts")).toBeTruthy();
   });
 
   it("surfaces an error thrown by onCreate and keeps the modal open", async () => {

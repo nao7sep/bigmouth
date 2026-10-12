@@ -57,7 +57,7 @@ describe("PostPickerList — render", () => {
     const { getByPlaceholderText, getByLabelText, getByText } = render(
       <PostPickerList {...state({ posts })} onSelect={vi.fn()} />,
     );
-    expect(getByPlaceholderText("Filter posts…")).toBeTruthy();
+    expect(getByPlaceholderText("Filter posts")).toBeTruthy();
     const listbox = getByLabelText("Posts");
     expect(listbox.getAttribute("role")).toBe("listbox");
     expect(getByText("First")).toBeTruthy();
@@ -100,7 +100,7 @@ describe("PostPickerList — filtering", () => {
     const { getByPlaceholderText } = render(
       <PostPickerList {...state({ setQuery })} onSelect={vi.fn()} />,
     );
-    fireEvent.change(getByPlaceholderText("Filter posts…"), { target: { value: "hello" } });
+    fireEvent.change(getByPlaceholderText("Filter posts"), { target: { value: "hello" } });
     expect(setQuery).toHaveBeenCalledWith("hello");
   });
 });
@@ -159,7 +159,7 @@ describe("PostPickerList — selection", () => {
     const { getByPlaceholderText, getByLabelText } = render(
       <PostPickerList {...state({ posts })} onSelect={vi.fn()} />,
     );
-    const input = getByPlaceholderText("Filter posts…");
+    const input = getByPlaceholderText("Filter posts");
     input.focus();
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(document.activeElement).toBe(getByLabelText("Posts"));
@@ -240,7 +240,7 @@ describe("PostPickerList — autoFocus", () => {
     const { getByPlaceholderText } = render(
       <PostPickerList {...state()} onSelect={vi.fn()} autoFocus />,
     );
-    expect(document.activeElement).toBe(getByPlaceholderText("Filter posts…"));
+    expect(document.activeElement).toBe(getByPlaceholderText("Filter posts"));
   });
 });
 

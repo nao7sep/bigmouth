@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   editorWatermark:
     "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?",
   extraFieldWatermark:
-    "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://...",
+    "Key-value pairs, one per line:\nsubtitle: Your subtitle here\ncanonical-url: https://example.com/original-post",
   // UI font empty = the built-in default stack.
   uiFontFamily: "",
   contentFont: DEFAULT_CONTENT_FONT,

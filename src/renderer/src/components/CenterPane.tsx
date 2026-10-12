@@ -360,7 +360,8 @@ export function CenterPane({
     return (
       <div className="pane-center">
         <div className="center-toolbar">
-          <span className="toolbar-label">{loadError ? t("center.loadFailedLabel") : t("common.loading")}</span>
+          {/* The body below carries the loading state; the label slot stays empty rather than stand in for the target. */}
+          {loadError && <span className="toolbar-label">{t("center.loadFailedLabel")}</span>}
         </div>
         <div className="center-loading">{loadError ? text(loadError) : t("center.loadingPost")}</div>
       </div>

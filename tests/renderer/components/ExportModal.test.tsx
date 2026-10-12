@@ -57,7 +57,7 @@ describe("ExportModal — render and format selection", () => {
     expect(preview.textContent).not.toContain("**");
     expect(preview.textContent).not.toContain("<h1>");
     // The download button reflects the .txt extension.
-    expect(getByText("Download .txt")).toBeTruthy();
+    expect(getByText("Download .txt…")).toBeTruthy();
   });
 
   it("shows the placeholder when there is no content", () => {
@@ -112,7 +112,7 @@ describe("ExportModal — download", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const { getByText } = renderExport(MARKDOWN, "my-post");
 
-    fireEvent.click(getByText("Download .html"));
+    fireEvent.click(getByText("Download .html…"));
 
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     const blob = (URL.createObjectURL as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Blob;
@@ -133,7 +133,7 @@ describe("ExportModal — download", () => {
     const { getByText, getByRole } = renderExport(MARKDOWN, "");
 
     fireEvent.click(getByRole("radio", { name: "Plain Text" }));
-    fireEvent.click(getByText("Download .txt"));
+    fireEvent.click(getByText("Download .txt…"));
 
     expect(captured.download).toBe("export.txt");
     const blob = (URL.createObjectURL as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Blob;

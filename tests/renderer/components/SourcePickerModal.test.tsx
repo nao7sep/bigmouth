@@ -84,7 +84,7 @@ describe("SourcePickerModal — render", () => {
     expect(getByText("Alpha")).toBeTruthy();
     expect(getByText("Beta")).toBeTruthy();
     // PostPickerList is rendered with autoFocus, so the filter holds focus.
-    expect(document.activeElement).toBe(getByPlaceholderText("Filter posts…"));
+    expect(document.activeElement).toBe(getByPlaceholderText("Filter posts"));
   });
 
   it("excludes the current post from the candidate list", async () => {
