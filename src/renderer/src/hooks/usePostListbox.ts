@@ -73,8 +73,6 @@ export interface PostRowProps {
   id: string;
   ref: (el: HTMLElement | null) => void;
   onClick: () => void;
-  /** Present when the pointer moves the cursor, so a list shows one highlight. */
-  onMouseMove?: () => void;
 }
 
 export interface UsePostListboxResult {
@@ -108,7 +106,6 @@ export function usePostListbox({
   composingRef,
   autoActivateFirst = false,
   followFocus = false,
-  pointerMovesCursor = false,
 }: {
   rows: readonly PostListRow[];
   selectedId: string | null;
@@ -125,12 +122,6 @@ export function usePostListbox({
    * selection is, and an unselected one rests on the container.
    */
   autoActivateFirst?: boolean;
-  /**
-   * The pointer moves the cursor, so a list with no committed selection shows
-   * one highlight wherever the pointer or the keyboard last was. Suits a
-   * picker; a list with a real selection keeps hover separate from its cursor.
-   */
-  pointerMovesCursor?: boolean;
   /**
    * Activation follows focus: every cursor move also commits the row it lands
    * on. Only for a list whose commit is cheap and discards nothing.
@@ -151,7 +142,9 @@ export function usePostListbox({
   const rowDomId = useCallback((id: string) => `${baseId}-opt-${id}`, [baseId]);
   const listboxRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLElement>());
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() =>
+    autoActivateFirst ? rows.find((row) => row.id === selectedId)?.id ?? rows[0]?.id ?? null : null,
+  );
 
   const ids = rows.map((r) => r.id);
   const labels = rows.map((r) => r.label);
@@ -161,13 +154,9 @@ export function usePostListbox({
 
   // The cursor index, resolved from the hook's own active id, falling back to
   // the committed selection so Tab into the list lands on the selected row.
-  const activeIndex = currentCompositeIndex({ ids, activeId, selectedId });
-  const resolvedActiveId =
-    activeIndex !== -1
-      ? ids[activeIndex]
-      : autoActivateFirst && ids.length > 0
-        ? ids[0]
-        : null;
+  const currentIndex = currentCompositeIndex({ ids, activeId, selectedId });
+  const activeIndex = currentIndex === -1 && autoActivateFirst && ids.length > 0 ? 0 : currentIndex;
+  const resolvedActiveId = activeIndex !== -1 ? ids[activeIndex] : null;
 
   // Focus stays on the container; moving the cursor only scrolls the active row
   // into view (aria-activedescendant carries the cursor for assistive tech).
@@ -187,15 +176,20 @@ export function usePostListbox({
     const prevRows = prevRowsRef.current;
     prevRowsRef.current = rows;
 
-    if (activeId == null) return; // never navigated yet; nothing to recover
+    if (activeId == null) {
+      // Asynchronous picker results also initialize before the first arrow.
+      if (autoActivateFirst) setActiveId(indexOfId(ids, selectedId) !== -1 ? selectedId : ids[0] ?? null);
+      return;
+    }
     if (indexOfId(ids, activeId) !== -1) return; // active row still present
 
     const neighbour =
       indexOfId(ids, selectedId) !== -1
         ? selectedId
         : removalFocusTargetId(prevRows.map((r) => r.id), activeId);
-    setActiveId(neighbour);
-    if (neighbour != null) scrollActiveIntoView(neighbour);
+    const target = autoActivateFirst && indexOfId(ids, neighbour) === -1 ? ids[0] ?? null : neighbour;
+    setActiveId(target);
+    if (target != null) scrollActiveIntoView(target);
   }, [rows]);
 
   // Type-ahead buffer with idle reset.
@@ -357,11 +351,10 @@ export function usePostListbox({
         if (expandedById.has(id)) onToggleRow?.(id);
         else onActivate(id);
       },
-      ...(pointerMovesCursor ? { onMouseMove: () => setActiveId((current) => (current === id ? current : id)) } : {}),
       // Key handling lives on the container (listboxProps.onKeyDown), which is
       // the focus holder; rows are not focusable.
     }),
-    [selectedId, rowDomId, onActivate, onToggleRow, expandedById, pointerMovesCursor],
+    [selectedId, rowDomId, onActivate, onToggleRow, expandedById],
   );
 
   return {

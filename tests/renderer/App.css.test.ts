@@ -156,8 +156,9 @@ describe("App.css focus ring on a selected segment", () => {
   );
 });
 
-// One highlight per list or menu, and focus or hover never louder than what is
-// committed (developer decision on the selection/focus/hover pilot).
+// Independent hover, keyboard target and committed selection. jsdom cannot
+// drive pointer hover or Chromium's keyboard modality: map those pseudo-classes
+// to equal-specificity attributes and let its CSS engine compute combined states.
 describe("App.css selection, focus and hover", () => {
   function rules(): CSSStyleRule[] {
     const style = document.createElement("style");
@@ -172,15 +173,68 @@ describe("App.css selection, focus and hover", () => {
   const selectors = (rule: CSSStyleRule) => rule.selectorText?.split(",").map((part) => part.trim()) ?? [];
   const ruleFor = (selector: string) => rules().find((rule) => selectors(rule).includes(selector));
 
-  it("gives menu items and picker rows no hover fill of their own", () => {
-    expect(ruleFor(".menu-item:hover")).toBeUndefined();
-    expect(ruleFor(".post-picker-item:hover")).toBeUndefined();
-    expect(ruleFor(".menu-item:focus")?.style.getPropertyValue("background")).toBe("var(--bm-panel)");
+  function stateStyle(className: string, { selected = false, hover = false, keyboard = false, parent = "" } = {}) {
+    const style = document.createElement("style");
+    style.textContent = css.replace(/:(hover|focus-visible|focus)(?![\w-])/g, (_match, state: string) => `[data-test-${state}]`);
+    const host = document.createElement("div");
+    host.className = parent;
+    if (keyboard) host.setAttribute("data-test-focus-visible", "");
+    const item = document.createElement("button");
+    item.className = `${className}${selected ? " active selected" : ""}`;
+    item.setAttribute("aria-selected", String(selected));
+    if (hover) item.setAttribute("data-test-hover", "");
+    if (keyboard) {
+      item.setAttribute("data-test-focus-visible", "");
+      item.setAttribute("data-test-focus", "");
+    }
+    host.appendChild(item);
+    document.head.appendChild(style);
+    document.body.appendChild(host);
+    try {
+      const computed = getComputedStyle(item);
+      return { background: computed.background, color: computed.color, outline: computed.outline };
+    } finally {
+      host.remove();
+      style.remove();
+    }
+  }
+
+  it.each(["right-tab", "settings-tab"])("%s keeps open-panel ink and underline while keyboard fill beats hover without a ring", (className) => {
+    const hover = stateStyle(className, { hover: true });
+    const keyboard = stateStyle(className, { keyboard: true });
+    expect(hover.background).toBe("var(--bm-control-hover)");
+    expect(keyboard.background).toBe("var(--bm-control-pressed)");
+    expect(keyboard.outline).toBe("none");
+    for (const over of [false, true]) {
+      const selected = stateStyle(className, { selected: true, hover: over });
+      expect(selected.color).toBe("var(--bm-accent-fg)");
+      const both = stateStyle(className, { selected: true, hover: over, keyboard: true });
+      expect(both.color).toBe(selected.color);
+      expect(both.background).toBe(keyboard.background);
+      expect(both.outline).toBe("none");
+    }
+    expect(ruleFor(`.${className}.active::after`)?.style.getPropertyValue("background")).toBe("var(--bm-accent-fg)");
   });
 
-  it("marks a focused tab with a thin neutral ring, not a third accent mark", () => {
-    const rule = ruleFor(".settings-tab:focus-visible");
-    expect(rule?.style.getPropertyValue("outline")).toBe("1px solid var(--bm-text-muted)");
+  it("keeps a pointer-opened menu quiet and its keyboard fill distinct from independent hover", () => {
+    const quiet = stateStyle("menu-item", { keyboard: true, parent: "menu-popup" });
+    const hover = stateStyle("menu-item", { hover: true, parent: "menu-popup" });
+    const keyboard = stateStyle("menu-item", { keyboard: true, parent: "menu-popup keyboard-navigation" });
+    expect(quiet.background).not.toBe(keyboard.background);
+    expect(quiet.outline).toBe("none");
+    expect(hover.background).toBe("var(--bm-control-hover)");
+    expect(keyboard.background).toBe("var(--bm-control-pressed)");
+    expect(stateStyle("menu-item", { hover: true, keyboard: true, parent: "menu-popup keyboard-navigation" }).background).toBe(keyboard.background);
+  });
+
+  it.each(["post-picker-item", "workspace-item", "post-item"])("%s preserves its selected appearance under hover and retains a separate keyboard indicator", (className) => {
+    const parent = className === "post-picker-item" ? "post-picker-list" : className === "workspace-item" ? "workspace-list" : "left-sections";
+    const selected = stateStyle(className, { selected: true, parent });
+    const hovered = stateStyle(className, { selected: true, hover: true, parent });
+    const focused = stateStyle(className, { selected: true, hover: true, keyboard: true, parent });
+    expect(hovered.background).toBe(selected.background);
+    expect(focused.background).toBe(selected.background);
+    expect(focused.outline).toBe("2px solid var(--bm-accent-fg)");
   });
 
   it("keeps workspace hover quieter than the open workspace", () => {

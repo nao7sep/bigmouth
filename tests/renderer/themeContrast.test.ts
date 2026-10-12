@@ -57,6 +57,10 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ["--bm-on-accent", "--bm-accent-hover"],
   ["--bm-text", "--bm-accent-soft"],
   ["--bm-text", "--bm-accent-subtle"],
+  // Tabs retain their resting/open-panel ink on hover and keyboard fills.
+  ["--bm-text-muted", "--bm-control-hover"],
+  ["--bm-accent-fg", "--bm-control-hover"],
+  ["--bm-accent-fg", "--bm-control-pressed"],
   ["--bm-warning", "--bm-surface"],
   ["--bm-warning", "--bm-panel"],
   ["--bm-warning", "--bm-warning-soft"],

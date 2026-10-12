@@ -11,6 +11,7 @@ const PAGE_SIZE = 10;
 
 interface PostPickerListProps extends PostPickerState {
   onSelect: (id: string, title: string) => void;
+  selectedId?: string | null;
   autoFocus?: boolean;
 }
 
@@ -18,8 +19,8 @@ interface PostPickerListProps extends PostPickerState {
 // the input (a synchronous local field), then the results as one listbox per the
 // composite-control conventions — arrow keys move the cursor, type-ahead jumps
 // by title, Enter/click commits, and ArrowDown from the filter drops into the
-// list. There is no committed selection (each pick is one-shot), so the first
-// row rests as the cursor via `autoActivateFirst`.
+// list. The current source, when eligible, initializes the cursor; otherwise
+// the first row does. Hover never changes that initialized keyboard target.
 export function PostPickerList({
   posts,
   hasMore,
@@ -28,6 +29,7 @@ export function PostPickerList({
   query,
   setQuery,
   onSelect,
+  selectedId = null,
   autoFocus,
   error,
 }: PostPickerListProps) {
@@ -49,12 +51,11 @@ export function PostPickerList({
 
   const { listboxProps, getRowProps, activeId } = usePostListbox({
     rows,
-    selectedId: null,
+    selectedId,
     onActivate,
     pageSize: PAGE_SIZE,
     composingRef,
     autoActivateFirst: true,
-    pointerMovesCursor: true,
   });
 
   return (
@@ -94,7 +95,7 @@ export function PostPickerList({
             return (
               <div
                 key={fm.id}
-                className={`post-picker-item${fm.id === activeId ? " active" : ""}`}
+                className={`post-picker-item${fm.id === activeId ? " active" : ""}${fm.id === selectedId ? " selected" : ""}`}
                 onCompositionStart={handlers.onCompositionStart}
                 onCompositionEnd={handlers.onCompositionEnd}
                 {...getRowProps(fm.id)}

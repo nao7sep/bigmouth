@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/I18nContext";
 
 interface SourcePickerModalProps {
   currentPostId: string;
+  selectedSourceId?: string;
   pubBatchSize: number;
   onSelect: (sourceId: string) => void;
   onClose: () => void;
@@ -12,6 +13,7 @@ interface SourcePickerModalProps {
 
 export function SourcePickerModal({
   currentPostId,
+  selectedSourceId,
   pubBatchSize,
   onSelect,
   onClose,
@@ -30,6 +32,7 @@ export function SourcePickerModal({
       <div className="modal-body" style={{ overflowY: "auto", flex: 1 }}>
         <PostPickerList
           {...picker}
+          selectedId={selectedSourceId}
           autoFocus
           onSelect={(id) => { onSelect(id); onClose(); }}
         />

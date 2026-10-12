@@ -493,6 +493,7 @@ export function CenterPane({
       {sourcePickerOpen && (
         <SourcePickerModal
           currentPostId={postId}
+          selectedSourceId={fm.sourceId}
           pubBatchSize={pubBatchSize}
           onSelect={handleSetSource}
           onClose={() => setSourcePickerOpen(false)}

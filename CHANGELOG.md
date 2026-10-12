@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Hovering menu commands or source-picker rows no longer changes the keyboard target. Menus initialize navigation on opening, and the source picker starts at the current source when available. Open tabs keep their accent underline; hover and keyboard focus use distinct background fills without a tab focus ring.
+
 - A workspace created without a location goes to `Documents/BigMouth/<workspace name>` in the home folder, numbered `(2)`, `(3)`… when that folder is taken, instead of `~/.bigmouth/workspaces/<id>`. The workspace window shows that path in the empty Location field. Existing workspaces stay where they are.
 
 - A post's lifecycle is draft, discarded, verified, published and retired. Verified replaces Ready, Retired replaces Expired, and Discarded keeps a draft that is not wanted without deleting it.

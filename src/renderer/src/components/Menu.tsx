@@ -2,10 +2,11 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { typeAheadMatch } from "../util/compositeNav";
 
@@ -16,8 +17,10 @@ const TYPE_AHEAD_RESET_MS = 700;
 //
 //   - The TRIGGER is the single tab stop (aria-haspopup="menu" / aria-expanded);
 //     the open popup is a roving-focus group outside the page tab order.
-//   - Opening moves focus into the menu (first item); closing returns focus to
-//     the trigger.
+//   - Opening initializes focus on the first eligible item (last for ArrowUp).
+//     Pointer opening starts quietly; keyboard use reveals the target. Hover
+//     is independent feedback and never retargets focus. Closing returns focus
+//     to the trigger.
 //   - Up/Down move between items (stop-at-ends, matching the app's lists),
 //     Home/End jump to the ends, type-ahead by label (composition-guarded for
 //     IME), Enter/Space activate + close, Escape / Tab / outside click close.
@@ -43,13 +46,16 @@ interface MenuProps {
     ref: (el: HTMLButtonElement | null) => void;
     "aria-haspopup": "menu";
     "aria-expanded": boolean;
-    onClick: () => void;
+    onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   }) => ReactNode;
   children: ReactNode;
 }
 
 export function Menu({ label, trigger, children }: MenuProps) {
-  const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState<"pointer" | "keyboard-first" | "keyboard-last" | null>(null);
+  const open = opening !== null;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { composingRef, handlers } = useComposing();
@@ -65,20 +71,23 @@ export function Menu({ label, trigger, children }: MenuProps) {
 
   const items = (): HTMLElement[] =>
     contentRef.current
-      ? Array.from(contentRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      ? Array.from(contentRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled):not([aria-disabled="true"])'))
       : [];
 
   const close = (focusTrigger = true) => {
-    setOpen(false);
+    setOpening(null);
     if (focusTrigger) triggerRef.current?.focus();
   };
 
-  // On open, move focus into the menu (first item).
-  useEffect(() => {
-    if (!open) return;
-    const id = requestAnimationFrame(() => items()[0]?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [open]);
+  // Ready before paint or the first key: a deferred focus callback could undo
+  // navigation that arrived before that callback.
+  useLayoutEffect(() => {
+    if (!opening) return;
+    queryRef.current = "";
+    if (queryTimerRef.current) clearTimeout(queryTimerRef.current);
+    const all = items();
+    (opening === "keyboard-last" ? all.at(-1) : all[0])?.focus();
+  }, [opening]);
 
   // Outside click closes without yanking focus back (a pointer interaction).
   useEffect(() => {
@@ -86,18 +95,25 @@ export function Menu({ label, trigger, children }: MenuProps) {
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (contentRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      setOpen(false);
+      setOpening(null);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isComposingKeyboardEvent(composingRef, e)) return;
+    setKeyboardVisible(true);
     const all = items();
     if (all.length === 0) return;
     const current = Math.max(0, all.indexOf(document.activeElement as HTMLElement));
 
-    if (e.key === "ArrowDown") {
+    if (e.key === "Enter" || e.key === " ") {
+      // Contained widgets (the zoom stepper) keep their native activation.
+      if (!(e.target instanceof HTMLElement) || e.target.getAttribute("role") !== "menuitem") return;
+      e.preventDefault();
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) all[current]?.click();
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       all[Math.min(current + 1, all.length - 1)]?.focus();
     } else if (e.key === "ArrowUp") {
@@ -141,21 +157,27 @@ export function Menu({ label, trigger, children }: MenuProps) {
         },
         "aria-haspopup": "menu",
         "aria-expanded": open,
-        onClick: () => setOpen((v) => !v),
+        onClick: (event) => {
+          if (open) { close(false); return; }
+          const keyboard = event.detail === 0;
+          setKeyboardVisible(keyboard);
+          setOpening(keyboard ? "keyboard-first" : "pointer");
+        },
+        onKeyDown: (event) => {
+          if (isComposingKeyboardEvent(composingRef, event)) return;
+          if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+          event.preventDefault();
+          setKeyboardVisible(true);
+          setOpening(event.key === "ArrowUp" ? "keyboard-last" : "keyboard-first");
+        },
       })}
       {open && (
         <div
           ref={contentRef}
           role="menu"
           aria-label={label}
-          className="menu-popup"
+          className={`menu-popup${keyboardVisible ? " keyboard-navigation" : ""}`}
           onKeyDown={onKeyDown}
-          // One highlight: the pointer moves the same cursor the arrows move, so
-          // the item under the pointer is the one Enter runs (developer decision).
-          onMouseMove={(e) => {
-            const item = (e.target as HTMLElement).closest<HTMLElement>('[role="menuitem"]');
-            if (item && item !== document.activeElement) item.focus();
-          }}
           onCompositionStart={handlers.onCompositionStart}
           onCompositionEnd={handlers.onCompositionEnd}
         >

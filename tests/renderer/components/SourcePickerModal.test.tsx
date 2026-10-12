@@ -53,13 +53,14 @@ afterEach(() => {
 });
 
 async function renderModal(
-  props: Partial<{ currentPostId: string; onSelect: (id: string) => void; onClose: () => void }> = {},
+  props: Partial<{ currentPostId: string; selectedSourceId: string; onSelect: (id: string) => void; onClose: () => void }> = {},
 ) {
   const onSelect = props.onSelect ?? vi.fn();
   const onClose = props.onClose ?? vi.fn();
   const utils = render(
     <SourcePickerModal
       currentPostId={props.currentPostId ?? "current"}
+      selectedSourceId={props.selectedSourceId}
       pubBatchSize={50}
       onSelect={onSelect}
       onClose={onClose}
@@ -102,6 +103,28 @@ describe("SourcePickerModal — render", () => {
 });
 
 describe("SourcePickerModal — selection and close", () => {
+  it("starts at the selected eligible source, preserving selection while the first arrow advances", async () => {
+    mockListPosts.mockResolvedValue(page([summary("p1", "Alpha"), summary("p2", "Beta"), summary("p3", "Gamma")]));
+    const { onSelect, getByLabelText, getByText } = await renderModal({ selectedSourceId: "p2" });
+    const selected = getByText("Beta").closest('[role="option"]')!;
+    expect(selected.getAttribute("aria-selected")).toBe("true");
+    const listbox = getByLabelText("Posts");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe(selected.id);
+    fireEvent.mouseMove(getByText("Alpha"));
+    expect(listbox.getAttribute("aria-activedescendant")).toBe(selected.id);
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    expect(selected.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(listbox, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p3");
+  });
+
+  it("starts at the first eligible source when the selected one is absent", async () => {
+    mockListPosts.mockResolvedValue(page([summary("p1", "Alpha"), summary("p2", "Beta")]));
+    const { onSelect, getByLabelText } = await renderModal({ selectedSourceId: "missing" });
+    fireEvent.keyDown(getByLabelText("Posts"), { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p1");
+  });
+
   it("selects a post and closes the modal on click", async () => {
     mockListPosts.mockResolvedValue(page([summary("p1", "Alpha"), summary("p2", "Beta")]));
     const { onSelect, onClose, getByText } = await renderModal();

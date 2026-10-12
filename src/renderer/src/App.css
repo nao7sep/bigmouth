@@ -1100,8 +1100,8 @@ button:disabled,
 
 /* ── Tabs ──────────────────────────────────────────────────
    Underlined tabs: the chosen tab takes the accent text and a rounded 2px
-   underline; hover darkens the label only. The right pane and Settings share
-   them. */
+   underline for the open panel. Hover and keyboard focus use separate fills;
+   the stronger keyboard fill wins when both occur. */
 .right-tab,
 .settings-tab {
   flex: 1;
@@ -1116,7 +1116,8 @@ button:disabled,
   border: none;
   background: transparent;
   color: var(--bm-text-muted);
-  transition: color var(--bm-motion) ease;
+  border-radius: var(--bm-radius-sm) var(--bm-radius-sm) 0 0;
+  transition: color var(--bm-motion) ease, background-color var(--bm-motion) ease;
 }
 
 .right-tab::after,
@@ -1134,7 +1135,7 @@ button:disabled,
 
 .right-tab:hover,
 .settings-tab:hover {
-  color: var(--bm-text);
+  background: var(--bm-control-hover);
 }
 
 .right-tab.active,
@@ -1147,17 +1148,12 @@ button:disabled,
   background: var(--bm-accent-fg);
 }
 
-/* Keyboard focus cursor for the roving-tabindex active tab; shown only to
-   keyboard users, inset so the tab strip's edges never clip it. The focused tab
-   is always the selected one, which already carries accent text and underline,
-   so its ring is a thin neutral one rather than a third accent mark. An
-   approved exception to the interface-styling-conventions' one focus treatment
-   (developer decision, 2026-10-09). */
+/* The underline continues to identify the open panel. Keyboard interaction is
+   a stronger fill, never a tab ring (developer decision). */
 .right-tab:focus-visible,
 .settings-tab:focus-visible {
-  outline: 1px solid var(--bm-text-muted);
-  outline-offset: -4px;
-  border-radius: var(--bm-radius-md);
+  outline: none;
+  background: var(--bm-control-pressed);
 }
 
 .right-content {
@@ -1245,14 +1241,14 @@ button:disabled,
   text-overflow: ellipsis;
 }
 
-/* The focused item is the menu's one cursor: arrows and the pointer both move
-   it (Menu.tsx), as native menus do, so hover needs no fill of its own and never
-   shows a second highlight. An approved exception to the composite-control-
-   conventions' separate hover layer (developer decision, 2026-10-09). A flat menu item takes a background highlight (not a ring): a ring
-   is clipped into stray edges by the popup's `overflow: hidden`, so suppress
-   the default outline and fill instead. */
-.menu-item:focus {
-  background: var(--bm-panel);
+/* Hover never changes the command Enter will run. A pointer-opened menu starts
+   quietly; Menu reveals the initialized target on keyboard use. */
+.menu-item:hover {
+  background: var(--bm-control-hover);
+}
+
+.menu-popup.keyboard-navigation .menu-item:focus {
+  background: var(--bm-control-pressed);
 }
 
 .menu-item:focus {
@@ -1845,10 +1841,19 @@ select:is(.form-select, .prompt-select) {
   margin-bottom: 2px;
 }
 
-/* One highlight: the pointer moves the cursor (pointerMovesCursor), so the
-   active row is both where the pointer is and what Enter picks. */
-.post-picker-item.active {
-  background: var(--bm-accent-subtle);
+.post-picker-item:hover {
+  background: var(--bm-control-hover);
+}
+
+.post-picker-item.selected {
+  background: var(--bm-accent-soft);
+}
+
+/* The existing source remains selected even under hover. The keyboard target
+   is independent, so it gets its own inset indicator without replacing that fill. */
+.post-picker-list:focus-visible .post-picker-item.active {
+  outline: 2px solid var(--bm-accent-fg);
+  outline-offset: -2px;
 }
 
 .post-picker-title {

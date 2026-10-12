@@ -106,15 +106,15 @@ describe("PostPickerList — filtering", () => {
 });
 
 describe("PostPickerList — selection", () => {
-  it("moves its one highlight with the pointer, so Enter picks the row under it", () => {
+  it("keeps the initialized keyboard target when another row is hovered", () => {
     const onSelect = vi.fn();
     const posts = [summary({ id: "p1", title: "Alpha" }), summary({ id: "p2", title: "Beta" })];
     const { getByLabelText, getByText, container } = render(<PostPickerList {...state({ posts })} onSelect={onSelect} />);
     fireEvent.mouseMove(getByText("Beta"));
     const active = container.querySelectorAll(".post-picker-item.active");
-    expect(Array.from(active).map((row) => row.textContent)).toEqual([expect.stringContaining("Beta")]);
+    expect(Array.from(active).map((row) => row.textContent)).toEqual([expect.stringContaining("Alpha")]);
     fireEvent.keyDown(getByLabelText("Posts"), { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledWith("p2", "Beta");
+    expect(onSelect).toHaveBeenCalledWith("p1", "Alpha");
   });
 
   it("calls onSelect with the id and resolved title when a row is clicked", () => {
@@ -132,14 +132,11 @@ describe("PostPickerList — selection", () => {
       <PostPickerList {...state({ posts })} onSelect={onSelect} />,
     );
     const listbox = getByLabelText("Posts");
-    // autoActivateFirst rests the *display* cursor on row 0, but the hook's own
-    // active index is still unset, so the first ArrowDown enters the list at row
-    // 0; a second ArrowDown advances to row 1. Enter then commits that one.
+    // Navigation is initialized on row 0: the first arrow advances to row 1.
     fireEvent.keyDown(listbox, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("p1", "Alpha");
 
-    fireEvent.keyDown(listbox, { key: "ArrowDown" }); // enters at row 0
-    fireEvent.keyDown(listbox, { key: "ArrowDown" }); // advances to row 1
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
     fireEvent.keyDown(listbox, { key: "Enter" });
     expect(onSelect).toHaveBeenLastCalledWith("p2", "Beta");
   });
@@ -153,6 +150,41 @@ describe("PostPickerList — selection", () => {
     input.focus();
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(document.activeElement).toBe(getByLabelText("Posts"));
+  });
+
+  it("clicks the pointed row while hover preserves the keyboard target", () => {
+    const onSelect = vi.fn();
+    const posts = [summary({ id: "p1", title: "Alpha" }), summary({ id: "p2", title: "Beta" })];
+    const { getByLabelText, getByText } = render(<PostPickerList {...state({ posts })} onSelect={onSelect} />);
+    const listbox = getByLabelText("Posts");
+    listbox.focus();
+    const initialTarget = listbox.getAttribute("aria-activedescendant");
+    fireEvent.mouseMove(getByText("Beta"));
+    expect(listbox.getAttribute("aria-activedescendant")).toBe(initialTarget);
+    expect(document.activeElement).toBe(listbox);
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(getByText("Beta"));
+    expect(onSelect).toHaveBeenCalledWith("p2", "Beta");
+  });
+
+  it("keeps the initialized target by identity when live results reorder before navigation", () => {
+    const onSelect = vi.fn();
+    const alpha = summary({ id: "p1", title: "Alpha" });
+    const beta = summary({ id: "p2", title: "Beta" });
+    const { rerender, getByLabelText } = render(<PostPickerList {...state({ posts: [alpha, beta] })} onSelect={onSelect} />);
+    rerender(<PostPickerList {...state({ posts: [beta, alpha] })} onSelect={onSelect} />);
+    fireEvent.keyDown(getByLabelText("Posts"), { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p1", "Alpha");
+  });
+
+  it("initializes asynchronous results before their first navigation arrow", () => {
+    const onSelect = vi.fn();
+    const { rerender, getByLabelText } = render(<PostPickerList {...state()} onSelect={onSelect} />);
+    const posts = [summary({ id: "p1", title: "Alpha" }), summary({ id: "p2", title: "Beta" })];
+    rerender(<PostPickerList {...state({ posts })} onSelect={onSelect} />);
+    fireEvent.keyDown(getByLabelText("Posts"), { key: "ArrowDown" });
+    fireEvent.keyDown(getByLabelText("Posts"), { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("p2", "Beta");
   });
 });
 
@@ -212,9 +244,8 @@ describe("PostPickerList — active highlight", () => {
     expect(row("Alpha").className).toContain("active");
     expect(row("Beta").className).not.toContain("active");
 
-    // The first ArrowDown enters at row 0; a second advances to row 1.
+    // The initialized cursor advances on the first ArrowDown.
     const listbox = getByLabelText("Posts");
-    fireEvent.keyDown(listbox, { key: "ArrowDown" });
     fireEvent.keyDown(listbox, { key: "ArrowDown" });
     expect(within(row("Beta")).getByText("Beta")).toBeTruthy();
     expect(row("Beta").className).toContain("active");

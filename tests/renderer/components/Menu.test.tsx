@@ -4,9 +4,8 @@ import { Menu, MenuItem } from "@renderer/components/Menu";
 
 afterEach(cleanup);
 
-// The Menu moves focus into the first item on open via requestAnimationFrame.
-// jsdom drives rAF, but the callback runs asynchronously; flushRaf advances it
-// inside act() so the focus move is observable.
+// Some existing cases wait a frame after opening; focus is already initialized
+// before paint, so waiting cannot replace or undo subsequent navigation.
 function flushRaf() {
   return act(async () => {
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
@@ -211,10 +210,6 @@ describe("MenuItem outside a Menu", () => {
   });
 });
 
-// requestAnimationFrame cleanup on unmount and the query-timer cleanup effect run
-// in real browsers; jsdom drives rAF, and these teardown paths only guard against
-// stale callbacks. They are exercised implicitly by afterEach(cleanup) unmounting
-// open menus; asserting on them directly would test framework internals.
 beforeEach(() => {
   // jsdom lacks layout; focus() works, but ensure no element method is missing.
   if (!("scrollIntoView" in HTMLElement.prototype)) {
@@ -222,20 +217,97 @@ beforeEach(() => {
   }
 });
 
-// One highlight: the pointer moves the same cursor the arrows move, so the item
-// under the pointer is the one Enter runs, never the first item opened on.
-describe("Menu pointer and keyboard share one cursor", () => {
-  it("moves focus to the item under the pointer, and Enter runs that item", async () => {
+describe("Menu independent pointer and keyboard targets", () => {
+  it("initializes and navigates only eligible commands", () => {
+    const { getByTestId, getByRole } = render(<Menu label="Actions" trigger={(props) => <button data-testid="trigger" {...props}>Open</button>}>
+      <button role="menuitem" disabled>Unavailable first</button>
+      <MenuItem onSelect={() => {}}>Apple</MenuItem>
+      <MenuItem onSelect={() => {}}>Banana</MenuItem>
+      <button role="menuitem" aria-disabled="true">Unavailable last</button>
+    </Menu>);
+    fireEvent.keyDown(getByTestId("trigger"), { key: "ArrowUp" });
+    expect(document.activeElement).toBe(getByRole("menuitem", { name: "Banana" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(getByRole("menuitem", { name: "Apple" }));
+  });
+
+  it("keeps the contained zoom widget's activation separate from menu commands", () => {
+    const command = vi.fn();
+    const zoom = vi.fn();
+    const { getByTestId, getByRole } = render(<Menu label="Actions" trigger={(props) => <button data-testid="trigger" {...props}>Open</button>}>
+      <MenuItem onSelect={command}>Apple</MenuItem>
+      <button onClick={zoom}>Zoom in</button>
+    </Menu>);
+    fireEvent.click(getByTestId("trigger"), { detail: 1 });
+    const widget = getByRole("button", { name: "Zoom in" });
+    widget.focus();
+    expect(fireEvent.keyDown(widget, { key: " " })).toBe(true);
+    fireEvent.click(widget);
+    expect(zoom).toHaveBeenCalledTimes(1);
+    expect(command).not.toHaveBeenCalled();
+    expect(getByRole("menu")).toBeTruthy();
+  });
+
+  it("ignores an IME confirmation key instead of activating the current command", () => {
+    const command = vi.fn();
+    const { trigger } = renderMenu(command);
+    fireEvent.click(trigger, { detail: 1 });
+    fireEvent.keyDown(document.activeElement!, { key: "Enter", isComposing: true });
+    expect(command).not.toHaveBeenCalled();
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("opens quietly by pointer with navigation ready, and hover leaves the keyboard target alone", () => {
+    const onFirst = vi.fn();
     const onThird = vi.fn();
-    const { trigger } = renderMenu(vi.fn(), { onThird });
-    fireEvent.click(trigger);
-    await flushRaf();
-    const [first, , third] = screen.getAllByRole("menuitem");
+    const { trigger } = renderMenu(onFirst, { onThird });
+    fireEvent.click(trigger, { detail: 1 });
+    const popup = screen.getByRole("menu");
+    const [first, second, third] = screen.getAllByRole("menuitem");
     expect(document.activeElement).toBe(first);
+    expect(popup.classList.contains("keyboard-navigation")).toBe(false);
     fireEvent.mouseMove(third!);
-    expect(document.activeElement).toBe(third);
-    fireEvent.keyDown(third!, { key: "Enter" });
-    fireEvent.click(document.activeElement as HTMLElement);
-    expect(onThird).toHaveBeenCalled();
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(second);
+    expect(popup.classList.contains("keyboard-navigation")).toBe(true);
+    fireEvent.mouseMove(third!);
+    expect(document.activeElement).toBe(second);
+    fireEvent.click(third!);
+    expect(onThird).toHaveBeenCalledTimes(1);
+    expect(onFirst).not.toHaveBeenCalled();
+  });
+
+  it.each(["Enter", " ", "ArrowDown"])("opens from %s with the first keyboard target visible", (key) => {
+    const { trigger } = renderMenu();
+    fireEvent.keyDown(trigger, { key });
+    const popup = screen.getByRole("menu");
+    const [first, second] = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(first);
+    expect(popup.classList.contains("keyboard-navigation")).toBe(true);
+    fireEvent.keyDown(first!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(second);
+  });
+
+  it("opens from ArrowUp at the last eligible command, then moves immediately", () => {
+    const { trigger } = renderMenu();
+    fireEvent.keyDown(trigger, { key: "ArrowUp" });
+    const [, second, last] = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(second);
+  });
+
+  it.each(["Enter", " "])("%s activates the keyboard target after another command is hovered", (key) => {
+    const onFirst = vi.fn();
+    const onThird = vi.fn();
+    const { trigger } = renderMenu(onFirst, { onThird });
+    fireEvent.click(trigger, { detail: 1 });
+    const [first, , third] = screen.getAllByRole("menuitem");
+    fireEvent.mouseMove(third!);
+    fireEvent.keyDown(first!, { key });
+    expect(onFirst).toHaveBeenCalledTimes(1);
+    expect(onThird).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });
