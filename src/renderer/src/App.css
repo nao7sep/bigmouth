@@ -1191,7 +1191,10 @@ button:disabled,
   flex: 1 0 100%;
 }
 
-.tab-hidden {
+/* Scoped to the pane so it outranks a panel root's own display, such as
+   .assets-tab's flex, which comes later in this file and once left the Assets
+   toolbar showing beneath every other tab. */
+.right-content > .tab-hidden {
   display: none;
 }
 
@@ -1781,9 +1784,13 @@ select:is(.form-select, .prompt-select) {
   text-decoration: underline;
 }
 
-/* Settings modal */
+/* Settings modal. The strip is laid out like the right pane's: the 40px tabs sit
+   at the bottom of a 52px band, so their rounded hover and keyboard fills have
+   room above them instead of meeting the header's line. */
 .settings-tabs {
   display: flex;
+  min-height: 52px;
+  align-items: flex-end;
   padding: 0 12px;
   border-bottom: 1px solid var(--bm-border-subtle);
 }
@@ -2300,14 +2307,14 @@ select:is(.form-select, .prompt-select) {
   margin-top: 8px;
 }
 
-/* The commands that add a workspace: a band between the header and the body,
-   so the footer keeps only the dismiss and the commit. */
+/* The commands that add a workspace, above the list rather than in the footer,
+   which keeps only the dismiss and the commit. No line of its own: the list
+   below is already bordered. */
 .workspace-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--bm-control-gap);
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--bm-border-subtle);
+  padding: 12px 24px 0;
 }
 
 /* Top-aligned so a long folder can wrap and grow below the button. */
@@ -2408,8 +2415,13 @@ select:is(.form-select, .prompt-select) {
 
 /* Shortcut groups. The per-group note is what scopes a chord that stands down
    in some context, which the keyboard-shortcut conventions require. */
-.shortcuts-group + .shortcuts-group {
-  margin-top: 20px;
+/* Two columns, read across then down, falling back to one where the modal is
+   too narrow for both. */
+.shortcuts-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px 32px;
+  align-items: start;
 }
 
 .shortcuts-group-title {

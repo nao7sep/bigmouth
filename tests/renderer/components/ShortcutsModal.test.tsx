@@ -14,8 +14,15 @@ describe("ShortcutsModal", () => {
 
   it("lists every shortcut row with its key and description", () => {
     const { container, getByText } = render(<ShortcutsModal onClose={vi.fn()} />);
-    // One <tr> per shortcut entry (11 of them).
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(11);
+    // One <tr> per shortcut entry (12 of them).
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(12);
+    // Broadest first, in the app menu's order.
+    expect(Array.from(container.querySelectorAll(".shortcuts-group-title")).map((h) => h.textContent)).toEqual([
+      "Workspaces",
+      "App",
+      "Post",
+      "Tabs",
+    ]);
     // Spot-check a representative binding and its label.
     expect(getByText("New post")).toBeTruthy();
     const kbds = Array.from(container.querySelectorAll("kbd")).map((k) => k.textContent);
@@ -27,6 +34,7 @@ describe("ShortcutsModal", () => {
     // The workspace-list rename alternatives: F2 (kept) and the Cmd+R fallback,
     // since Enter is already bound there to opening the active row.
     expect(kbds).toContain("F2 / Cmd+R");
+    expect(kbds).toContain("Delete");
   });
 
   it("autofocuses the close button", () => {

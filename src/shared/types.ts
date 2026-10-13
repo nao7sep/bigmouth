@@ -336,9 +336,9 @@ export const CONTENT_PADDING_MAX = 64;
 // from here rather than restating it.
 export const DEFAULT_CONTENT_FONT: ContentFont = {
   family: "",
-  size: 14,
-  lineHeight: 1.6,
-  padding: 16,
+  size: 15,
+  lineHeight: 1.5,
+  padding: 15,
   bold: false,
   italic: false,
   underline: false,

@@ -6,23 +6,36 @@ interface ShortcutsModalProps {
   onClose: () => void;
 }
 
-// Grouped semantically: post actions, then tab switching, then app dialogs.
-// Keys follow the display convention: single platform word, full key names, and
-// punctuation spelled as words (Comma, Slash) — no raw symbols or glyphs.
 /**
- * Grouped by area, with a note on each group that is scoped — the
- * keyboard-shortcut conventions require one wherever a chord stands down in
- * some context, because advertising an unreachable chord is the same defect as
- * listing one that does not exist.
+ * Grouped by area, broadest first and in the app menu's order: the workspace
+ * list, the app's own dialogs, the open post, then its tabs. A note sits on
+ * each group that is scoped — the keyboard-shortcut conventions require one
+ * wherever a chord stands down in some context, because advertising an
+ * unreachable chord is the same defect as listing one that does not exist.
+ *
+ * Keys follow the display convention: single platform word, full key names,
+ * and punctuation spelled as words (Comma, Slash) — no raw symbols or glyphs.
+ * Key tokens stay English on every platform (keyboard-shortcut-conventions);
+ * only the descriptions and headings are translated.
  */
-// Key tokens stay English on every platform (keyboard-shortcut-conventions);
-// only the descriptions and headings are translated.
 function buildGroups(mod: string): Array<{
   title: MessageKey;
   note: MessageKey | null;
   shortcuts: Array<{ key: string; description: MessageKey }>;
 }> {
   return [
+    {
+      title: "shortcuts.groupWorkspaces",
+      note: "shortcuts.noteWorkspaces",
+      shortcuts: [
+        // Independent chords (empty modifier vs. the command modifier), so the
+        // alternatives are spaced rather than sharing one written modifier
+        // (keyboard-shortcut-conventions). Enter is already bound to opening the
+        // active row, so it cannot double as rename here — Cmd+R is the fallback.
+        { key: `F2 / ${mod}+R`, description: "shortcuts.renameWorkspace" },
+        { key: "Delete", description: "workspaces.deleteTitle" },
+      ],
+    },
     {
       title: "shortcuts.groupApp",
       note: null,
@@ -51,17 +64,6 @@ function buildGroups(mod: string): Array<{
         { key: `${mod}+5`, description: "tabs.metadata" },
       ],
     },
-    {
-      title: "shortcuts.groupWorkspaces",
-      note: "shortcuts.noteWorkspaces",
-      shortcuts: [
-        // Independent chords (empty modifier vs. the command modifier), so the
-        // alternatives are spaced rather than sharing one written modifier
-        // (keyboard-shortcut-conventions). Enter is already bound to opening the
-        // active row, so it cannot double as rename here — Cmd+R is the fallback.
-        { key: `F2 / ${mod}+R`, description: "shortcuts.renameWorkspace" },
-      ],
-    },
   ];
 }
 
@@ -75,8 +77,8 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   const { t } = useI18n();
 
   return (
-    <ModalShell title={t("shortcuts.title")} onClose={onClose} width={420} autoFocusClose>
-      <div className="modal-body">
+    <ModalShell title={t("shortcuts.title")} onClose={onClose} width={640} autoFocusClose>
+      <div className="modal-body shortcuts-groups">
         {groups.map((group) => (
           <section key={group.title} className="shortcuts-group">
             <h3 className="shortcuts-group-title">{t(group.title)}</h3>

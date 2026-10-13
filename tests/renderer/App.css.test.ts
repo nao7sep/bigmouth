@@ -269,3 +269,27 @@ describe("App.css truncation sites", () => {
     expect(clipped).toEqual([".bm-visually-hidden"]);
   });
 });
+
+// A right-pane panel root that sets its own display (.assets-tab is a flex
+// column, declared later in the file) once outranked .tab-hidden, leaving the
+// Assets toolbar showing beneath every other tab.
+describe("App.css hidden right-pane panels", () => {
+  it("hides a panel whose root sets its own display", () => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    const pane = document.createElement("div");
+    pane.className = "right-content";
+    const panel = document.createElement("div");
+    panel.setAttribute("role", "tabpanel");
+    panel.className = "assets-tab tab-hidden";
+    pane.appendChild(panel);
+    document.body.appendChild(pane);
+
+    const display = getComputedStyle(panel).display;
+    pane.remove();
+    style.remove();
+    expect(display).toBe("none");
+  });
+});
