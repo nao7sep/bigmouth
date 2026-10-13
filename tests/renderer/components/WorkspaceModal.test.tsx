@@ -269,6 +269,15 @@ describe("WorkspaceModal — the list", () => {
     expect(option("Bravo").getAttribute("aria-selected")).toBe("false");
   });
 
+  it("keeps the add commands out of the footer, which holds only Cancel and Open", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    const { container } = await renderWith();
+    const footer = within(container.querySelector(".modal-footer") as HTMLElement);
+    expect(footer.getAllByRole("button").map((button) => button.textContent)).toEqual(["Cancel", "Open"]);
+    const toolbar = within(container.querySelector(".workspace-toolbar") as HTMLElement);
+    expect(toolbar.getAllByRole("button").map((button) => button.textContent)).toEqual(["New Workspace", "Add Existing Folder"]);
+  });
+
   it("selects a clicked row without opening it", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
     const { onSelect } = await renderWith();

@@ -504,8 +504,14 @@ body {
   font-size: 12px;
 }
 
+/* In a column a dismiss-style button keeps its own width; in a row it follows
+   the row's alignment like every other button. */
 .btn-action {
   align-self: flex-start;
+}
+
+:is(.workspace-edit-row, .workspace-location-row) > .btn-action {
+  align-self: auto;
 }
 
 :is(.btn-action, .btn-toolbar, .meta-field-copy, .meta-field-generate, .btn-generate-all, .asset-btn):hover:not(:disabled) {
@@ -1745,6 +1751,14 @@ select:is(.form-select, .prompt-select) {
   cursor: pointer;
 }
 
+/* A single-line field is exactly a control's height, so it lines up with the
+   buttons beside it; 13px at line-height 1.4 alone would make it 32.2px.
+   Multiline fields keep growing from the shared minimum. */
+input:is(.form-input, .meta-field-input),
+select:is(.form-select, .prompt-select) {
+  height: var(--bm-control-h);
+}
+
 .form-input:disabled,
 .form-select:disabled {
   background-color: var(--bm-bg);
@@ -1892,19 +1906,26 @@ select:is(.form-select, .prompt-select) {
   padding: 8px 12px;
 }
 
+/* Stands where the filter field was, so it keeps a field's 32px on one line:
+   the 28px Unlink button plus 1px padding and 1px border on each side. */
 .source-selected {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  min-height: var(--bm-control-h);
+  padding: 1px 1px 1px 10px;
   border: 1px solid var(--bm-border-subtle);
   border-radius: var(--bm-radius-md);
   background: var(--bm-surface-muted);
 }
 
+/* 5px above and below an 18px line matches the 28px button, so one line keeps
+   the 32px row and a wrapped title keeps clear of the border. */
 .source-selected-title {
   flex: 1;
+  padding: 5px 0;
   font-size: 13px;
+  line-height: 18px;
   color: var(--bm-text);
   min-width: 0;
   overflow-wrap: anywhere;
@@ -2279,29 +2300,36 @@ select:is(.form-select, .prompt-select) {
   margin-top: 8px;
 }
 
-/* The commands that add a workspace sit at the footer's start, apart from the
-   window's own Cancel and Open. */
-.workspace-footer-start {
+/* The commands that add a workspace: a band between the header and the body,
+   so the footer keeps only the dismiss and the commit. */
+.workspace-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--bm-control-gap);
-  margin-right: auto;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--bm-border-subtle);
 }
 
+/* Top-aligned so a long folder can wrap and grow below the button. */
 .workspace-location-row {
   display: flex;
   align-items: flex-start;
   gap: var(--bm-control-gap);
 }
 
-/* The folder a new workspace gets: shown whole, never typed. */
+/* The folder a new workspace gets: shown whole, never typed. A read-only value
+   in a field's footprint, so it is the Change button's height on one line. */
 .workspace-location {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  border-radius: var(--bm-radius-sm);
+  min-height: var(--bm-control-h);
+  padding: 6px 10px;
+  border: 1px solid var(--bm-border-subtle);
+  border-radius: var(--bm-radius-md);
   background: var(--bm-surface-muted);
+  font-family: var(--bm-font-mono);
   font-size: 12px;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 
@@ -2433,10 +2461,6 @@ select:is(.form-select, .prompt-select) {
   gap: 8px;
   padding: 12px;
   border-bottom: 1px solid var(--bm-border);
-}
-
-.records-filters :is(.form-input, .form-select) {
-  height: var(--bm-control-h);
 }
 
 .records-filters-row {

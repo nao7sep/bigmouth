@@ -14,7 +14,9 @@
  *
  * The list is the window: a row is selected by click or arrows, opened by
  * Enter, double-click or Open, and renamed or removed from the buttons under
- * the list. A workspace's folder is never typed. "New Workspace" creates one
+ * the list. The commands that add a workspace sit in a toolbar band above the
+ * list, so the footer holds only the dismiss and the commit (Cancel and Open,
+ * or Cancel and Create). A workspace's folder is never typed. "New Workspace" creates one
  * in its own folder, named after it, inside a parent the user may change;
  * "Add Existing Folder" registers a folder that already holds a workspace.
  * With nothing registered, the new-workspace form is shown straight away.
@@ -585,6 +587,18 @@ export function WorkspaceModal({
       showClose={dismissable}
       closeDisabled={mutationBusy && !storagePending}
     >
+      {!loading && !listError && (
+        <div className="workspace-toolbar">
+          {!creatingForm && (
+            <button className="btn-toolbar" disabled={mutationBusy || storagePending} onClick={() => openCreateForm("")}>
+              {t("workspaces.new")}
+            </button>
+          )}
+          <button className="btn-toolbar" disabled={mutationBusy || storagePending} onClick={() => void handleAddExisting()}>
+            {adding ? t("workspaces.opening") : t("workspaces.addExisting")}
+          </button>
+        </div>
+      )}
       <div className="modal-body">
         <StoragePendingNotice />
         {removalWarnings.map((warning) => (
@@ -604,18 +618,6 @@ export function WorkspaceModal({
         )}
       </div>
       <div className="modal-footer">
-        <div className="workspace-footer-start">
-          {!creatingForm && !loading && !listError && (
-            <button className="btn-action" disabled={mutationBusy || storagePending} onClick={() => openCreateForm("")}>
-              {t("workspaces.new")}
-            </button>
-          )}
-          {!loading && !listError && (
-            <button className="btn-action" disabled={mutationBusy || storagePending} onClick={() => void handleAddExisting()}>
-              {adding ? t("workspaces.opening") : t("workspaces.addExisting")}
-            </button>
-          )}
-        </div>
         {creatingForm ? (
           <>
             {listed && (
