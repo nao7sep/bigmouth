@@ -241,6 +241,7 @@
   "center.source": "Source",
   "center.change": "Changer",
   "center.linkSource": "Associer une source",
+  "center.lock": "Verrouiller",
   "center.locked": "Verrouillée",
   "center.lockHint": "Empêche de modifier le texte, les métadonnées, les ressources et la source associée de cette publication. Vous pouvez toujours changer son statut ou la supprimer.",
   "center.lockedNotice": "Cette publication est verrouillée. Déverrouillez-la pour modifier son texte, ses métadonnées, ses ressources ou sa source associée.",

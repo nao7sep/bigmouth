@@ -241,6 +241,7 @@
   "center.source": "Origine",
   "center.change": "Cambia",
   "center.linkSource": "Collega origine",
+  "center.lock": "Blocca",
   "center.locked": "Bloccato",
   "center.lockHint": "Impedisce di modificare testo, metadati, risorse e collegamento all’origine di questo post. Puoi comunque cambiarne lo stato o eliminarlo.",
   "center.lockedNotice": "Questo post è bloccato. Sbloccalo per modificarne testo, metadati, risorse o collegamento all’origine.",

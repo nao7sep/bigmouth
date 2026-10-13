@@ -239,6 +239,7 @@
   "center.source": "Quelle",
   "center.change": "Ändern",
   "center.linkSource": "Quelle verknüpfen",
+  "center.lock": "Sperren",
   "center.locked": "Gesperrt",
   "center.lockHint": "Sperrt Text, Metadaten, Assets und Quellverknüpfung dieses Beitrags gegen Änderungen. Der Status lässt sich weiterhin ändern, und der Beitrag kann weiterhin gelöscht werden.",
   "center.lockedNotice": "Dieser Beitrag ist gesperrt. Heben Sie die Sperre auf, um Text, Metadaten, Assets oder Quellverknüpfung zu bearbeiten.",

@@ -405,7 +405,10 @@ export function CenterPane({
           onClick={() => void handleLockChange(!locked)}
           disabled={mutating || storagePending}
         >
-          {t("center.locked")}
+          {/* The label names the state: "Lock" on the accent fill while the
+              post is open to edits, since locking is its completion step, and
+              "Locked" on the plain fill once it is done (developer decision). */}
+          {t(locked ? "center.locked" : "center.lock")}
         </button>
         <span className="toolbar-sep" aria-hidden="true" />
         {fm.sourceId ? (

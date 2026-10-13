@@ -239,6 +239,7 @@
   "center.source": "Source",
   "center.change": "Change",
   "center.linkSource": "Link Source",
+  "center.lock": "Lock",
   "center.locked": "Locked",
   "center.lockHint": "Locks this post's text, metadata, assets and source link against edits. Its status can still change, and it can still be deleted.",
   "center.lockedNotice": "This post is locked. Unlock it to edit its text, metadata, assets or source link.",

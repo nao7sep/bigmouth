@@ -241,6 +241,7 @@
   "center.source": "Origem",
   "center.change": "Alterar",
   "center.linkSource": "Vincular origem",
+  "center.lock": "Bloquear",
   "center.locked": "Bloqueada",
   "center.lockHint": "Impede a edição do texto, dos metadados, dos recursos e do vínculo de origem desta publicação. Você ainda pode mudar o status ou apagá-la.",
   "center.lockedNotice": "Esta publicação está bloqueada. Desbloqueie-a para editar o texto, os metadados, os recursos ou o vínculo de origem.",

@@ -293,3 +293,27 @@ describe("App.css hidden right-pane panels", () => {
     expect(display).toBe("none");
   });
 });
+
+// Accent means "do this": the unlocked post's Lock carries it, and the locked
+// post's Locked is the plain fill, so the colour never reads as the state.
+describe("App.css lock toggle", () => {
+  // jsdom does not resolve custom properties, so this reads the declared value.
+  function backgroundOf(pressed: boolean): string {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const button = document.createElement("button");
+    button.className = "btn-toolbar btn-lock";
+    button.setAttribute("aria-pressed", String(pressed));
+    document.body.appendChild(button);
+    const background = getComputedStyle(button).getPropertyValue("background");
+    button.remove();
+    style.remove();
+    return background;
+  }
+
+  it("fills Lock with the accent and leaves Locked plain", () => {
+    expect(backgroundOf(false)).toBe("var(--bm-accent)");
+    expect(backgroundOf(true)).toBe("var(--bm-control-bg)");
+  });
+});

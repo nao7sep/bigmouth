@@ -539,19 +539,21 @@ body {
   background: var(--bm-accent-pressed);
 }
 
-/* A toggle button that is on (the post's Locked button) is the accent fill,
-   as a chosen segment is, so on and off read apart at a glance. */
-.btn-toolbar[aria-pressed="true"] {
+/* The post's Lock toggle: accent means "do this", so the unlocked post's
+   "Lock" carries it, locking being the post's completion step; the locked
+   post's "Locked" is the plain fill (developer decision). A filled on-state
+   read as a call to action rather than as the current state. */
+.btn-lock[aria-pressed="false"] {
   border-color: transparent;
   background: var(--bm-accent);
   color: var(--bm-on-accent);
 }
 
-.btn-toolbar[aria-pressed="true"]:hover:not(:disabled) {
+.btn-lock[aria-pressed="false"]:hover:not(:disabled) {
   background: var(--bm-accent-hover);
 }
 
-.btn-toolbar[aria-pressed="true"]:active:not(:disabled) {
+.btn-lock[aria-pressed="false"]:active:not(:disabled) {
   background: var(--bm-accent-pressed);
 }
 

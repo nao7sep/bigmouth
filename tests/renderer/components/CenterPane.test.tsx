@@ -430,11 +430,13 @@ describe("CenterPane status changes", () => {
 });
 
 describe("CenterPane lock", () => {
-  const lockButton = () => screen.getByRole("button", { name: "Locked" });
+  // "Lock" while the post is open to edits, "Locked" once it is.
+  const lockButton = () => screen.getByRole("button", { name: /^Lock(ed)?$/ });
 
   it("is a toggle button beside the status radios, off for an unlocked post", async () => {
     await renderPane();
     expect(lockButton().getAttribute("aria-pressed")).toBe("false");
+    expect(lockButton().textContent).toBe("Lock");
   });
 
   it("locks the post, flushing the Metadata tab first, and notifies the parent", async () => {
@@ -448,6 +450,7 @@ describe("CenterPane lock", () => {
     await waitFor(() => expect(mockSetLocked).toHaveBeenCalledWith("p1", true, "w1"));
     expect(onBeforeStatusChange).toHaveBeenCalled();
     await waitFor(() => expect(lockButton().getAttribute("aria-pressed")).toBe("true"));
+    expect(lockButton().textContent).toBe("Locked");
     expect(onPostUpdated).toHaveBeenCalled();
   });
 
