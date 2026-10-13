@@ -1641,6 +1641,12 @@ button:disabled,
   margin-left: auto;
 }
 
+/* About is short and never scrolls, so a line above its lone Close would only
+   divide the identity from its own dismiss (developer decision). */
+.modal-footer.modal-footer-bare {
+  border-top: 0;
+}
+
 /* About opens with the app's name, its version tied to it. */
 .about-identity {
   display: grid;

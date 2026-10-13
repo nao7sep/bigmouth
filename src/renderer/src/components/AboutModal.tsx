@@ -84,7 +84,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           {t("about.copyright")}
         </p>
       </div>
-      <div className="modal-footer">
+      <div className="modal-footer modal-footer-bare">
         <button className="btn-action" onClick={onClose}>
           {t("common.close")}
         </button>
