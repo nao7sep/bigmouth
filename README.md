@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-The Electron window opens; on the first launch, a short setup creates a workspace, its first target and, optionally, stores an Anthropic API key. `scripts/rebuild.command` / `.ps1` builds, packages and launches the app; `scripts/run-built.command` / `.ps1` relaunches the existing build without rebuilding.
+The Electron window opens. On the first launch, the Workspaces window asks for a workspace name and shows the folder it will create (`Documents/BigMouth/<name>`, with Change to pick another parent), or adds an existing workspace folder; a second step sets up the workspace's first target. There is no API key step: the AI features say when a key is needed and point to Settings → AI. `scripts/rebuild.command` / `.ps1` builds, packages and launches the app; `scripts/run-built.command` / `.ps1` relaunches the existing build without rebuilding.
 
 ## Development
 
