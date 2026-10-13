@@ -326,3 +326,22 @@ describe("App.css lock toggle", () => {
     expect(backgroundOf(true)).toBe("var(--bm-control-bg)");
   });
 });
+
+// A menu stays narrow rather than stretching toward the window's edge
+// (composite-control-conventions); jsdom cannot measure labels, so this checks
+// the declared cap.
+describe("App.css menu width", () => {
+  it("caps the menu at a narrow width as well as the window's", () => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const popup = document.createElement("div");
+    popup.className = "menu-popup";
+    document.body.appendChild(popup);
+    const maxWidth = getComputedStyle(popup).maxWidth;
+    popup.remove();
+    style.remove();
+    // 20rem in jsdom's wide default window.
+    expect(maxWidth).toBe("320px");
+  });
+});

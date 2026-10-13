@@ -1230,7 +1230,9 @@ button:disabled,
   border-radius: var(--bm-radius-lg);
   box-shadow: var(--bm-shadow-popover);
   min-width: 200px;
-  max-width: calc(100vw - 16px);
+  /* Narrow even in a wide window, so it reads as a menu: every command fits in
+     the longest language, and only a long workspace name reaches the cap. */
+  max-width: min(20rem, calc(100vw - 16px));
   z-index: 50;
   overflow: hidden;
   padding: 4px;
