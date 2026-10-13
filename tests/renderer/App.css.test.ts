@@ -258,7 +258,16 @@ describe("App.css truncation sites", () => {
     // body, for an untitled post). Menu labels and the workspace header: cut only
     // past the window's width; Workspaces and Settings show the whole name. A
     // closed select: opening it shows every option whole.
-    expect(cut).toEqual([".post-item-title", ".menu-item", ".menu-label", "select:is(.form-select, .prompt-select)"]);
+    expect(cut).toEqual([".post-item-title", ".menu-item-text", ".menu-label", "select:is(.form-select, .prompt-select)"]);
+  });
+
+  // A flex or grid container cuts its text but draws no "…", which once left
+  // menu commands clipped with no marker.
+  it("marks a cut on a box that can draw the ellipsis", () => {
+    const flexCut = rules
+      .filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body) && /display:\s*(inline-)?(flex|grid)/.test(rule.body))
+      .map((rule) => rule.selector);
+    expect(flexCut).toEqual([]);
   });
 
   it("never clips a single line without its marker", () => {

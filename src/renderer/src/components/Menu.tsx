@@ -211,7 +211,9 @@ export function MenuItem({ onSelect, children }: MenuItemProps) {
         onSelect();
       }}
     >
-      {children}
+      {/* The label's own box carries the "…": a flex row cuts its text but
+          draws no ellipsis. */}
+      <span className="menu-item-text">{children}</span>
     </button>
   );
 }

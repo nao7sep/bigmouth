@@ -1250,11 +1250,16 @@ button:disabled,
   font-size: 13px;
   color: var(--bm-text);
   cursor: pointer;
-  white-space: nowrap;
-  /* A menu is as wide as its longest label, so this cuts only a label wider
-     than the window. */
+}
+
+/* Menu text stays on one line and ends in "…" only past the window's width: a
+   menu is as wide as its longest label, and the beginning tells commands and
+   workspace names apart (developer decision). */
+.menu-item-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Hover never changes the command Enter will run. A pointer-opened menu starts
