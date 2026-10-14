@@ -227,14 +227,14 @@ describe("WorkspaceModal — loading and empty states", () => {
     // A pending list keeps the modal in its loading state.
     let resolve!: (ws: Workspace[]) => void;
     mockListWorkspaces.mockReturnValue(new Promise<Workspace[]>((r) => (resolve = r)));
-    const { getByText, queryByText } = await renderWith();
-    expect(getByText("Loading…")).toBeTruthy();
+    const { queryByText } = await renderWith();
+    expect(queryByText("Loading…")).toBeTruthy();
     await act(async () => {
       resolve([WORKSPACE]);
       await Promise.resolve();
     });
     expect(queryByText("Loading…")).toBeNull();
-    expect(getByText("Alpha")).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Alpha/ })).toBeTruthy();
   });
 
 
@@ -293,6 +293,31 @@ describe("WorkspaceModal — the list", () => {
     fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
     expect(option("Bravo").getAttribute("aria-selected")).toBe("true");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  // A row holds one line of name and one of folder; the selected row's whole
+  // name and folder are under the list, which the arrows and a tap reach.
+  it("shortens each row and shows the selected row's whole name and folder", async () => {
+    const longName = "Zeta, a workspace whose name runs on well past the width of any row";
+    const longDir = "/Users/me/Documents/BigMouth/Clients/Long Running Project/Drafts/Gamma";
+    const LONG: Workspace = { id: "ws9", name: longName, dataDirectory: longDir };
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, LONG]);
+    const { container } = await renderWith();
+    const row = option(longName.slice(0, 10));
+    expect(row.querySelector(".workspace-item-name-text")?.textContent).toBe(longName);
+    expect(row.querySelector(".short-path-head")?.textContent).toBe("/Users/me/Documents/BigMouth/Clients/Long Running Project/Drafts/");
+    expect(row.querySelector(".short-path-tail")?.textContent).toBe("Gamma");
+
+    const detail = () => container.querySelector(".workspace-detail") as HTMLElement;
+    expect(detail().querySelector(".workspace-detail-name")?.textContent).toBe("Alpha");
+    expect(detail().querySelector(".workspace-detail-dir")?.textContent).toBe("/data/alpha");
+
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+    expect(detail().querySelector(".workspace-detail-name")?.textContent).toBe(longName);
+    expect(detail().querySelector(".workspace-detail-dir")?.textContent).toBe(longDir);
+
+    fireEvent.click(option("Alpha"));
+    expect(detail().querySelector(".workspace-detail-name")?.textContent).toBe("Alpha");
   });
 
   it("opens a row on double-click", async () => {

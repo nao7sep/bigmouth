@@ -11,6 +11,7 @@ import {
 import type { AssetMeta } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { OperationalResult } from "./OperationalResult";
+import { ListedMessageView, type ListedMessage, type NamedItem } from "./NamedItems";
 import { inspectAssetDragOffer } from "../util/assetDrop";
 import { AssetUploadAdmissionError } from "../util/assetUpload";
 import { useI18n } from "../i18n/I18nContext";
@@ -30,8 +31,9 @@ interface AssetsTabProps extends Pick<
 }
 
 type DragState = "idle" | "delivery" | "accepting" | "rejecting";
-// One line of a notice, with the files it is about listed under it.
-type NoticeLine = { message: Message; items?: Array<{ name: string; reason: Message }> };
+// One line of a notice. A line about several files names a few and keeps the
+// whole list, with each file's reason, behind a disclosure.
+type NoticeLine = ListedMessage;
 type AssetNotice = {
   severity: "warning" | "error";
   lines: NoticeLine[];
@@ -41,7 +43,10 @@ type AssetNotice = {
 function notAdded(items: Array<{ file: File; reason: Message }>, count = items.length): NoticeLine {
   return {
     message: message("assets.notAdded", { count }),
-    items: items.map(({ file, reason }) => ({ name: file.name, reason })),
+    items: items.map(({ file, reason }) => ({
+      name: file.name,
+      line: message("assets.itemReason", { name: file.name, reason }),
+    })),
   };
 }
 
@@ -103,10 +108,7 @@ export function AssetsTab({
   useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
   const showNotice = (notice: AssetNotice) => {
     if (current.current) { setUploadNotice(notice); return; }
-    for (const line of notice.lines) {
-      reportStorageResult(line.message, notice.severity);
-      for (const item of line.items ?? []) reportStorageResult(message("assets.itemReason", { name: item.name, reason: item.reason }), notice.severity);
-    }
+    for (const line of notice.lines) reportStorageResult(line, notice.severity);
   };
   const [assets, setAssets] = useState<AssetMeta[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -168,15 +170,15 @@ export function AssetsTab({
     const admissionFailures: Array<{ file: File; reason: Message }> = [];
     const operationalFailures: Array<{ file: File; reason: Message }> = [];
     // Added, but something that records the addition could not be saved.
-    const unsavedLines: NoticeLine[] = [];
+    const unsaved: NamedItem[] = [];
     for (const file of files) {
       try {
-        const { asset, unsaved } = await uploadAsset(postId, file, workspaceId);
-        if (unsaved?.includes("details")) {
-          unsavedLines.push({ message: message("assets.addedWithoutDetails", { name: asset.filename }) });
+        const { asset, unsaved: unsavedParts } = await uploadAsset(postId, file, workspaceId);
+        if (unsavedParts?.includes("details")) {
+          unsaved.push({ name: asset.filename, line: message("assets.addedWithoutDetails", { name: asset.filename }) });
         }
-        if (unsaved?.includes("modifiedTime")) {
-          unsavedLines.push({ message: message("assets.addedWithoutPostTime", { name: asset.filename }) });
+        if (unsavedParts?.includes("modifiedTime")) {
+          unsaved.push({ name: asset.filename, line: message("assets.addedWithoutPostTime", { name: asset.filename }) });
         }
       } catch (err) {
         if (err instanceof AssetUploadAdmissionError) {
@@ -191,11 +193,14 @@ export function AssetsTab({
     }
     const refreshFailure = await load();
     const invalid = [...rejected, ...admissionFailures];
-    if (invalid.length > 0 || operationalFailures.length > 0 || unsavedLines.length > 0 || refreshFailure) {
+    if (invalid.length > 0 || operationalFailures.length > 0 || unsaved.length > 0 || refreshFailure) {
       const addedCount = files.length - admissionFailures.length - operationalFailures.length;
       const lines: NoticeLine[] = [];
       if (addedCount > 0) lines.push({ message: message("assets.added", { count: addedCount }) });
-      lines.push(...unsavedLines);
+      if (unsaved.length > 0) {
+        const count = new Set(unsaved.map((item) => item.name)).size;
+        lines.push({ message: message("assets.addedIncomplete", { count }), items: unsaved });
+      }
       if (invalid.length > 0) lines.push(notAdded(invalid));
       if (operationalFailures.length > 0) lines.push(notAdded(operationalFailures));
       if (refreshFailure) lines.push({ message: refreshFailure });
@@ -203,7 +208,7 @@ export function AssetsTab({
         severity: operationalFailures.length > 0 || refreshFailure ? "error" : "warning",
         lines,
         issueKeys: [
-          ...(unsavedLines.length > 0 ? files.map(assetIssueKey) : []),
+          ...(unsaved.length > 0 ? files.map(assetIssueKey) : []),
           ...invalid.map(({ file }) => assetIssueKey(file)),
           ...operationalFailures.map(({ file }) => assetIssueKey(file)),
           ...(refreshFailure ? [`refresh:${postId}`] : []),
@@ -254,7 +259,8 @@ export function AssetsTab({
         severity: "warning",
         lines: [
           notAdded(rejected, fileArray.length),
-          { message: message("assets.collision", { names: list(batchCollisions) }) },
+          // The sentence names a few of the colliding names itself.
+          { message: message("assets.collision"), items: batchCollisions.map((name) => ({ name })), namesIn: "names" },
         ],
         issueKeys: operationKeys,
       });
@@ -461,16 +467,7 @@ export function AssetsTab({
         >
           {uploadNotice.lines.map((line, index) => (
             <div key={index}>
-              {text(line.message)}
-              {line.items && (
-                <ul className="modal-result-list">
-                  {line.items.map((item, itemIndex) => (
-                    <li key={`${itemIndex}:${item.name}`}>
-                      {t("assets.itemReason", { name: item.name, reason: item.reason })}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <ListedMessageView listed={line} />
             </div>
           ))}
         </OperationalResult>
@@ -516,6 +513,7 @@ function AssetCard({
   locked: boolean;
 }) {
   const { t, locale } = useI18n();
+  const [nameOpen, setNameOpen] = useState(false);
   const src = assetUrl(postId, asset.filename, workspaceId);
   const img = isImage(asset.filename);
 
@@ -529,9 +527,20 @@ function AssetCard({
         )}
       </div>
       <div className="asset-info">
-        <div className="asset-name">
-          {asset.filename}
-        </div>
+        {/* Beside the fixed-height thumbnail the name gets two lines, then an
+            ellipsis that keeps its beginning. The name is a disclosure button,
+            so keyboard and touch can open the whole name in place, wrapped in
+            a height-limited area; its accessible name is always the whole
+            name, and `title` repeats it on hover. */}
+        <button
+          type="button"
+          className="asset-name"
+          aria-expanded={nameOpen}
+          title={asset.filename}
+          onClick={() => setNameOpen((open) => !open)}
+        >
+          <span className="asset-name-text">{asset.filename}</span>
+        </button>
         <div className="asset-meta">
           {formatBytes(asset.size, locale)}
           {asset.width && asset.height && (

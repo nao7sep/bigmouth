@@ -155,6 +155,11 @@
   "session.empty": "Select a post or create a new one",
   "common.confirm": "Confirm",
   "result.close": "Close result",
+  "result.namesAndMore": {
+    "one": "{names} and {count} more",
+    "other": "{names} and {count} more"
+  },
+  "result.fullList": "Full list",
   "confirm.failed": "The action could not be completed. Nothing was changed; try again.",
   "about.title": "About BigMouth",
   "about.version": "Version {version}",
@@ -363,6 +368,10 @@
   },
   "assets.addedWithoutDetails": "{name} was added, but its upload time and image details could not be saved.",
   "assets.addedWithoutPostTime": "{name} was added, but this post's modified time could not be updated.",
+  "assets.addedIncomplete": {
+    "one": "{count} asset was added, but not everything about it could be saved:",
+    "other": "{count} assets were added, but not everything about them could be saved:"
+  },
   "assets.deletedWithoutPostTime": "{name} was deleted, but this post's modified time could not be updated.",
   "assets.notAdded": {
     "one": "{count} item could not be added:",

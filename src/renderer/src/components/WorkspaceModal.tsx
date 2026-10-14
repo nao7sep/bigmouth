@@ -41,6 +41,7 @@ import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { OperationalResult } from "./OperationalResult";
+import { ShortPath } from "./ShortPath";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
@@ -551,12 +552,15 @@ export function WorkspaceModal({
                     )}
                   </div>
                 ) : (
+                  // One line each, so every row keeps its height: the name keeps
+                  // its beginning and the folder its last segment. The selected
+                  // row's whole name and folder are in the detail under the list.
                   <div className="workspace-item-main">
                     <div className="workspace-item-name">
-                      {ws.name}
+                      <span className="workspace-item-name-text" title={ws.name}>{ws.name}</span>
                       {ws.id === activeWorkspaceId && <span className="workspace-item-current">{t("workspaces.current")}</span>}
                     </div>
-                    <div className="workspace-item-dir">{ws.dataDirectory}</div>
+                    <ShortPath className="workspace-item-dir" path={ws.dataDirectory} />
                   </div>
                 )}
               </div>
@@ -564,12 +568,23 @@ export function WorkspaceModal({
           })}
         </div>
         <div className="workspace-row-actions">
-          <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
-            {t("common.rename")}
-          </button>
-          <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
-            {t("workspaces.remove")}
-          </button>
+          {/* The keyboard and touch route to what a row shortens: arrows or a
+              tap select a row, and its whole name and folder wrap here as
+              selectable text, scrolling past a few lines. */}
+          {selected && (
+            <div className="workspace-detail" data-passive-scroll-region="">
+              <div className="workspace-detail-name">{selected.name}</div>
+              <div className="workspace-detail-dir">{selected.dataDirectory}</div>
+            </div>
+          )}
+          <div className="workspace-row-buttons">
+            <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
+              {t("common.rename")}
+            </button>
+            <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
+              {t("workspaces.remove")}
+            </button>
+          </div>
         </div>
       </>
     );

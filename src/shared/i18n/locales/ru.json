@@ -157,6 +157,13 @@
   "session.empty": "Выберите публикацию или создайте новую",
   "common.confirm": "Подтвердить",
   "result.close": "Закрыть сообщение",
+  "result.namesAndMore": {
+    "one": "{names} и ещё {count}",
+    "few": "{names} и ещё {count}",
+    "many": "{names} и ещё {count}",
+    "other": "{names} и ещё {count}"
+  },
+  "result.fullList": "Полный список",
   "confirm.failed": "Не удалось выполнить действие. Ничего не изменилось; попробуйте ещё раз.",
   "about.title": "О программе BigMouth",
   "about.version": "Версия {version}",
@@ -377,6 +384,12 @@
   },
   "assets.addedWithoutDetails": "Файл {name} добавлен, но не удалось сохранить время загрузки и сведения об изображении.",
   "assets.addedWithoutPostTime": "Файл {name} добавлен, но не удалось обновить время изменения этой публикации.",
+  "assets.addedIncomplete": {
+    "one": "Добавлен {count} файл, но сохранить все сведения не удалось:",
+    "few": "Добавлено {count} файла, но сохранить все сведения не удалось:",
+    "many": "Добавлено {count} файлов, но сохранить все сведения не удалось:",
+    "other": "Добавлено {count} файла, но сохранить все сведения не удалось:"
+  },
   "assets.deletedWithoutPostTime": "Файл {name} удалён, но не удалось обновить время изменения этой публикации.",
   "assets.notAdded": {
     "one": "Не удалось добавить {count} элемент:",

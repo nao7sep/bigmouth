@@ -156,6 +156,12 @@
   "session.empty": "Sélectionnez une publication ou créez-en une",
   "common.confirm": "Confirmer",
   "result.close": "Fermer le message",
+  "result.namesAndMore": {
+    "one": "{names} et {count} autre",
+    "many": "{names} et {count} d’autres",
+    "other": "{names} et {count} autres"
+  },
+  "result.fullList": "Liste complète",
   "confirm.failed": "L’action n’a pas pu aboutir. Rien n’a été modifié\u00a0; réessayez.",
   "about.title": "À propos de BigMouth",
   "about.version": "Version {version}",
@@ -370,6 +376,11 @@
   },
   "assets.addedWithoutDetails": "{name} a été ajouté, mais son heure d’envoi et ses informations d’image n’ont pas pu être enregistrées.",
   "assets.addedWithoutPostTime": "{name} a été ajouté, mais l’heure de modification de cette publication n’a pas pu être mise à jour.",
+  "assets.addedIncomplete": {
+    "one": "{count} ressource a été ajoutée, mais certaines informations la concernant n’ont pas pu être enregistrées\u00a0:",
+    "many": "{count} de ressources ont été ajoutées, mais certaines informations les concernant n’ont pas pu être enregistrées\u00a0:",
+    "other": "{count} ressources ont été ajoutées, mais certaines informations les concernant n’ont pas pu être enregistrées\u00a0:"
+  },
   "assets.deletedWithoutPostTime": "{name} a été supprimé, mais l’heure de modification de cette publication n’a pas pu être mise à jour.",
   "assets.notAdded": {
     "one": "{count} élément n’a pas pu être ajouté\u00a0:",

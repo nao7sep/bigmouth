@@ -254,11 +254,48 @@ describe("App.css truncation sites", () => {
 
   it("cuts text only at the reviewed sites", () => {
     const cut = rules.filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body)).map((rule) => rule.selector);
-    // Sidebar titles: the selected post's Metadata shows the whole title (or its
-    // body, for an untitled post). Menu labels and the workspace header: cut only
-    // past the window's width; Workspaces and Settings show the whole name. A
-    // closed select: opening it shows every option whole.
-    expect(cut).toEqual([".post-item-title", ".menu-item-text", ".menu-label", "select:is(.form-select, .prompt-select)"]);
+    // Each site, and where its whole value is reached by keyboard and touch:
+    expect(cut).toEqual([
+      // Sidebar titles: the selected post's Metadata shows the whole title (or
+      // its body, for an untitled post).
+      ".post-item-title",
+      // Sidebar and toolbar target names: Settings' Targets tab shows them whole.
+      ".post-item-target",
+      ".toolbar-target",
+      // A path's head, then its final segment (ShortPath): each use shows the
+      // whole path elsewhere, such as the selected workspace's detail.
+      ".short-path-head",
+      ".short-path-tail",
+      // Menu labels and the workspace header: cut only past the window's width;
+      // Workspaces and Settings show the whole name.
+      ".menu-item-text",
+      ".menu-label",
+      // A closed select: opening it shows every option whole.
+      "select:is(.form-select, .prompt-select)",
+      // Picker rows and New Post's linked source: linking or opening the post
+      // shows its whole title in Metadata; Settings shows the target names.
+      ".post-picker-title",
+      ".post-picker-sub",
+      ".source-selected-title",
+      // Workspace rows: the selected row's detail shows the whole name.
+      ".workspace-item-name-text",
+      // Records rows: the selected record's detail shows the whole message.
+      ".records-row-title",
+      ".records-row-text",
+    ]);
+  });
+
+  // Several lines, then an ellipsis: the same inventory for -webkit-line-clamp.
+  it("clamps lines only at the reviewed sites", () => {
+    const clamped = rules
+      .filter((rule) => /(^|[\s;])-webkit-line-clamp:\s*\d/.test(rule.body))
+      .map((rule) => rule.selector);
+    // An asset's name beside its thumbnail: the name is a disclosure that shows
+    // it whole. Its extension in the file tile: the name beside it holds it.
+    expect(clamped).toEqual([".asset-file-icon", ".asset-name-text"]);
+    for (const rule of rules.filter((candidate) => clamped.includes(candidate.selector))) {
+      expect(rule.body, `${rule.selector} must hide what it clamps`).toMatch(/overflow:\s*hidden/);
+    }
   });
 
   // A flex or grid container cuts its text but draws no "…", which once left

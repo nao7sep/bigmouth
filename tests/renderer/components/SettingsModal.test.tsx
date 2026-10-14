@@ -50,7 +50,7 @@ vi.mock("@shared/timeZone", async (importActual) => {
 import { SettingsModal } from "@renderer/components/SettingsModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import * as api from "@renderer/api";
-import { StoragePendingContext } from "@renderer/StoragePending";
+import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 
 const mock = {
   getAppSettings: vi.mocked(api.getAppSettings),
@@ -1239,6 +1239,39 @@ it("finishes a dismissed multi-step settings intent against its original workspa
   expect(mock.renameTarget).toHaveBeenCalledExactlyOnceWith("blog", "renamed", "ws1");
   expect(mock.saveTargets).toHaveBeenCalledExactlyOnceWith([{ name: "renamed", defaultLanguage: "en", requiresMetadata: false }], "ws1");
   expect(view.onClose).not.toHaveBeenCalled();
+});
+
+
+// After Settings has closed, the files a rename skipped come back as one
+// result naming a few, not one result per file.
+it("reports a departed rename's skipped files as one result", async () => {
+  seedLoaders();
+  let finish!: (settings: Settings) => void;
+  mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const skipped = Array.from({ length: 5 }, (_, index) => ({ fileName: `2026010${index}-000000-utc-post.md`, reason: "bad YAML" }));
+  mock.renameTarget.mockResolvedValue({ targets: targets(), postsUpdated: 0, postsSkipped: skipped });
+  mock.saveTargets.mockResolvedValue([{ name: "renamed", defaultLanguage: "en", requiresMetadata: false }]);
+  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+    {shown && <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} onWorkspaceRenamed={vi.fn()} />}
+    <StoragePendingResults />
+  </ConfirmProvider></StoragePendingProvider>;
+  const view = render(surface(true));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
+  const panel = openTab(view.getByRole, "Targets");
+  fireEvent.change(within(panel).getAllByRole("textbox")[0], { target: { value: "renamed" } });
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  view.rerender(surface(false));
+  await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
+
+  const results = view.getAllByRole("status");
+  expect(results).toHaveLength(1);
+  expect(results[0].querySelector(".named-items-summary")?.textContent).toBe(
+    "20260100-000000-utc-post.md, 20260101-000000-utc-post.md, 20260102-000000-utc-post.md and 2 more",
+  );
+  expect([...results[0].querySelectorAll(".named-items-list li")].map((item) => item.textContent)).toEqual(
+    skipped.map((file) => `${file.fileName} (blog): bad YAML`),
+  );
 });
 
 

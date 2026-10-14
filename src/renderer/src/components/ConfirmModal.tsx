@@ -42,8 +42,9 @@ export function ConfirmModal({
     <ModalShell title={heading} onClose={onCancel} width={360} describedBy={messageId} closeDisabled={busy && !pending}>
       <div className="modal-body">
         {/* Announced with the title: this sentence is the whole content of every
-            confirm in the app, and it is what the choice turns on. */}
-        <p id={messageId} style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+            confirm in the app, and it is what the choice turns on. It is never
+            cut: a long name in it breaks to fit and the body scrolls. */}
+        <p id={messageId} style={{ margin: 0, fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>
           {message}
         </p>
         {busy && pending && <StoragePendingNotice />}

@@ -21,6 +21,8 @@ import {
 import { presentFailure } from "./util/presentFailure";
 import { LeftPane } from "./components/LeftPane";
 import { OperationalResult } from "./components/OperationalResult";
+import { ListedMessageView } from "./components/NamedItems";
+import { finalSegment } from "./util/shortenedText";
 import { CenterPane } from "./components/CenterPane";
 import { RightPane, type RightPaneHandle, type RightTab } from "./components/RightPane";
 import type { MarkdownEditorHandle } from "./components/MarkdownEditor";
@@ -673,12 +675,15 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             className="toolbar-warning"
             onDismiss={() => setDismissedUnreadable(unreadableKey)}
           >
-            <div>{t("session.unreadablePosts", { count: unreadablePosts.length })}</div>
-            {unreadablePosts.map((file) => (
-              <div key={file.path}>
-                {text(message(file.newer ? "store.newerFormat" : "store.unreadable", { path: file.path }))}
-              </div>
-            ))}
+            {/* A few file names here; each file's whole path and what to do
+                about it are in the full list behind the disclosure. */}
+            <ListedMessageView listed={{
+              message: message("session.unreadablePosts", { count: unreadablePosts.length }),
+              items: unreadablePosts.map((file) => ({
+                name: finalSegment(file.path),
+                line: message(file.newer ? "store.newerFormat" : "store.unreadable", { path: file.path }),
+              })),
+            }} />
           </OperationalResult>
         )}
         {configNotice && (

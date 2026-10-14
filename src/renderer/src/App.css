@@ -735,10 +735,28 @@ button:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* One line under the title. The target name is identifying text that gives
+   way first, behind its own ellipsis; the time keeps its room. Settings'
+   Targets tab shows every target name whole. */
 .post-item-meta {
+  display: flex;
+  min-width: 0;
   font-size: 11px;
   color: var(--bm-text-muted);
   margin-top: 2px;
+}
+
+.post-item-target {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.post-item-time {
+  flex-shrink: 0;
+  margin-left: 0.3em;
+  white-space: nowrap;
 }
 
 /* Center pane toolbar */
@@ -756,6 +774,16 @@ button:focus-visible {
 
 .toolbar-label {
   color: var(--bm-text-soft);
+}
+
+/* The target name never widens or wraps the toolbar: one line, cut at the end
+   past a modest cap. Settings' Targets tab shows the whole name. */
+.toolbar-target {
+  min-width: 0;
+  max-width: 16em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Drawn geometry, not a typed `|`. The character's height, weight and vertical
@@ -1014,9 +1042,64 @@ button:disabled,
   color: var(--bm-danger);
 }
 
-.modal-result-list {
-  margin: 6px 0 0;
+/* A path as identifying text (ShortPath): one line that loses its middle. The
+   head — everything through the last separator — shrinks first behind its own
+   ellipsis. The tail, the final segment, does not shrink while any head is
+   left (flex-shrink 0), and is capped at the whole width so that, once the head
+   is gone, it ends with its own ellipsis as a last resort. A cap rather than a
+   small shrink factor, so the tail is never nibbled while the head remains. */
+.short-path {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.short-path-head {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.short-path-tail {
+  flex: 0 0 auto;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A message about several items (NamedItems): a few names, then a disclosure
+   holding every item whole in a height-limited list that scrolls. */
+.named-items-summary {
+  margin-top: 2px;
+}
+
+.named-items {
+  margin-top: 4px;
+}
+
+.named-items-toggle {
+  width: fit-content;
+  border-radius: var(--bm-radius-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.named-items-toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.named-items-list {
+  max-height: calc(8 * 1.45em);
+  overflow-y: auto;
+  margin: 4px 0 0;
   padding-left: 18px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .modal-footer-result {
@@ -1851,10 +1934,13 @@ select:is(.form-select, .prompt-select) {
   color: var(--bm-text);
 }
 
+/* A hint can carry a value such as the workspace's folder: it wraps whole
+   rather than running past the dialog. */
 .settings-hint {
   font-size: 12px;
   color: var(--bm-text-muted);
   margin: 0 0 8px;
+  overflow-wrap: anywhere;
 }
 
 .settings-field-error {
@@ -1901,16 +1987,25 @@ select:is(.form-select, .prompt-select) {
   outline-offset: -2px;
 }
 
+/* A picker row is identifying text: one line each, cut at the end. Linking or
+   opening the post shows its whole title in Metadata; Settings' Targets tab
+   shows every target name whole. */
 .post-picker-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--bm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .post-picker-sub {
   font-size: 11px;
   color: var(--bm-text-muted);
   margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .post-picker-list {
@@ -1941,8 +2036,10 @@ select:is(.form-select, .prompt-select) {
   background: var(--bm-surface-muted);
 }
 
-/* 5px above and below an 18px line matches the 28px button, so one line keeps
-   the 32px row and a wrapped title keeps clear of the border. */
+/* 5px above and below an 18px line matches the 28px button, so the box keeps
+   the 32px row. The title is identifying text: one line, cut at the end.
+   The created post's Source opens the linked post, whose Metadata shows the
+   whole title. */
 .source-selected-title {
   flex: 1;
   padding: 5px 0;
@@ -1950,7 +2047,9 @@ select:is(.form-select, .prompt-select) {
   line-height: 18px;
   color: var(--bm-text);
   min-width: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Assets Tab ─────────────────────────────────────────── */
@@ -2072,8 +2171,15 @@ select:is(.form-select, .prompt-select) {
   color: var(--bm-text-muted);
   letter-spacing: 0;
   text-align: center;
-  /* A long extension wraps inside the tile instead of being clipped by it. */
+  /* A long extension wraps inside the tile and, past three lines, ends with
+     an ellipsis instead of being clipped by it; the name beside it holds the
+     whole extension. */
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .asset-info {
@@ -2081,10 +2187,42 @@ select:is(.form-select, .prompt-select) {
   min-width: 0;
 }
 
+/* The name beside the fixed-height thumbnail: two lines, then an ellipsis
+   that keeps its beginning. It is a disclosure button; opened, it shows the
+   whole name wrapped, scrolling past a height limit. */
 .asset-name {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bm-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: 12px;
   font-weight: 500;
+  line-height: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.asset-name-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* 255 bytes, the longest name a file system allows, fits in about nine lines
+   at the narrowest pane; the limit only guards a wider font. */
+.asset-name[aria-expanded="true"] .asset-name-text {
+  display: block;
+  max-height: calc(10 * 16px);
+  overflow-y: auto;
+  -webkit-line-clamp: none;
+  line-clamp: none;
 }
 
 .asset-meta {
@@ -2290,21 +2428,33 @@ select:is(.form-select, .prompt-select) {
   text-align: left;
 }
 
+/* A row is identifying text on fixed lines: the name keeps its beginning, the
+   folder its last segment (ShortPath). The selected row's whole name and
+   folder are in .workspace-detail under the list. */
 .workspace-item-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
-  overflow-wrap: anywhere;
+}
+
+.workspace-item-name-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-item-dir {
   font-size: 11px;
   color: var(--bm-text-muted);
   margin-top: 2px;
-  overflow-wrap: anywhere;
 }
 
 /* Marks the workspace that is open now; selection is the row's own fill. */
 .workspace-item-current {
+  flex-shrink: 0;
   margin-left: 8px;
   padding: 0 6px;
   border: 1px solid var(--bm-border);
@@ -2317,9 +2467,39 @@ select:is(.form-select, .prompt-select) {
 
 .workspace-row-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--bm-control-gap);
+  align-items: flex-start;
+  gap: 12px;
   margin-top: 8px;
+}
+
+/* The selected row's whole name and folder, as text to be read: wrapped,
+   selectable, scrolling past five lines. */
+.workspace-detail {
+  flex: 1;
+  min-width: 0;
+  max-height: calc(5 * 18px);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.workspace-detail-name {
+  font-weight: 500;
+}
+
+.workspace-detail-dir {
+  font-family: var(--bm-font-mono);
+  font-size: 11px;
+  color: var(--bm-text-muted);
+}
+
+.workspace-row-buttons {
+  display: flex;
+  gap: var(--bm-control-gap);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* The commands that add a workspace, above the list rather than in the footer,
@@ -2339,12 +2519,16 @@ select:is(.form-select, .prompt-select) {
   gap: var(--bm-control-gap);
 }
 
-/* The folder a new workspace gets: shown whole, never typed. A read-only value
-   in a field's footprint, so it is the Change button's height on one line. */
+/* The folder a new workspace gets: a value being confirmed, so shown whole,
+   never typed and never cut. A read-only value in a field's footprint, so it is
+   the Change button's height on one line; a long folder wraps and, past three
+   lines, scrolls. */
 .workspace-location {
   flex: 1;
   min-width: 0;
   min-height: var(--bm-control-h);
+  max-height: calc(3 * 18px + 2 * 6px + 2px);
+  overflow-y: auto;
   padding: 6px 10px;
   border: 1px solid var(--bm-border-subtle);
   border-radius: var(--bm-radius-md);
@@ -2551,17 +2735,23 @@ select:is(.form-select, .prompt-select) {
   font-weight: 600;
 }
 
+/* A row is identifying text: one line each, cut at the end. The selected
+   record's detail shows the whole message and model. */
 .records-row-title {
   font-size: 13px;
   font-weight: 500;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .records-row-text {
   font-family: var(--bm-font-mono);
   font-size: 12px;
   color: var(--bm-text-soft);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .records-note {
@@ -2589,9 +2779,15 @@ select:is(.form-select, .prompt-select) {
   gap: var(--bm-control-gap);
 }
 
+/* The opened record's whole message: wrapped in full, scrolling past three
+   lines so the header stays a header. */
 .records-detail-title {
+  min-width: 0;
+  max-height: calc(3 * 20px);
+  overflow-y: auto;
   font-size: 15px;
   font-weight: 600;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 

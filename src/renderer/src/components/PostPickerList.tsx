@@ -100,8 +100,11 @@ export function PostPickerList({
                 onCompositionEnd={handlers.onCompositionEnd}
                 {...getRowProps(fm.id)}
               >
-                <div className="post-picker-title">{title}</div>
-                <div className="post-picker-sub">{sub}</div>
+                {/* One line each, cut at the end: linking or opening the post
+                    shows its whole title in Metadata, and Settings' Targets
+                    tab shows every target name whole. */}
+                <div className="post-picker-title" title={title}>{title}</div>
+                <div className="post-picker-sub" title={sub}>{sub}</div>
               </div>
             );
           })

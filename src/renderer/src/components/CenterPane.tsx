@@ -380,7 +380,9 @@ export function CenterPane({
             <ChevronLeftIcon /> {t("center.back")}
           </button>
         )}
-        <span className="toolbar-label">{fm.target}</span>
+        {/* One line with an ellipsis, so a long target name never widens or
+            wraps the toolbar; Settings' Targets tab shows it whole. */}
+        <span className="toolbar-label toolbar-target" title={fm.target}>{fm.target}</span>
         <span className="toolbar-sep" aria-hidden="true" />
         <span className="toolbar-label">{fm.language}</span>
         <span className="toolbar-sep" aria-hidden="true" />

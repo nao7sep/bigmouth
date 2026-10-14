@@ -46,6 +46,8 @@ import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useTablist } from "../hooks/useTablist";
 import { OperationalResult } from "./OperationalResult";
+import { ListedMessageView, type ListedMessage } from "./NamedItems";
+import { finalSegment } from "../util/shortenedText";
 import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 interface SettingsModalProps {
@@ -62,6 +64,21 @@ interface SettingsModalProps {
 
 /** A post file a target rename could not read, with the target it still names. */
 type RenameSkip = { fileName: string; reason: string; oldName: string };
+
+/**
+ * One result for every file a rename skipped, whether this editor shows it or
+ * the app shell does after Settings has closed: a few file names, then the full
+ * list with each file's target and reason behind a disclosure.
+ */
+function renameSkipsResult(skips: readonly RenameSkip[]): ListedMessage {
+  return {
+    message: message("settings.renameSkipped", { count: skips.length }),
+    items: skips.map((skip) => ({
+      name: finalSegment(skip.fileName),
+      line: message("settings.renameSkippedFile", { file: skip.fileName, target: skip.oldName, reason: skip.reason }),
+    })),
+  };
+}
 
 type Tab = "general" | "targets" | "ai" | "analysis" | "generation";
 
@@ -107,7 +124,7 @@ export function SettingsModal({
   onSettingsChanged,
   onWorkspaceRenamed,
 }: SettingsModalProps) {
-  const { t, text, rich } = useI18n();
+  const { t, text } = useI18n();
   const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
@@ -303,10 +320,7 @@ export function SettingsModal({
       // original live editor may adopt snapshots or close itself.
       onSettingsChanged();
       if (!current.current) {
-        if (skips.length > 0) {
-          reportStorageResult(message("settings.renameSkipped", { count: skips.length }), "warning");
-          for (const skip of skips) reportStorageResult(message("settings.renameSkippedFile", { file: skip.fileName, target: skip.oldName, reason: skip.reason }), "warning");
-        }
+        if (skips.length > 0) reportStorageResult(renameSkipsResult(skips), "warning");
         if (savedAnthropic.keyNotice?.key === "settings.keyFileMovedAside") reportStorageResult(savedAnthropic.keyNotice, "warning");
         return;
       }
@@ -427,18 +441,7 @@ export function SettingsModal({
           )}
           {renameSkips.length > 0 && (
             <OperationalResult severity="warning" className="modal-result modal-footer-result">
-              {t("settings.renameSkipped", { count: renameSkips.length })}
-              <ul className="modal-result-list">
-                {renameSkips.map((skip) => (
-                  <li key={`${skip.oldName}/${skip.fileName}`}>
-                    {rich("settings.renameSkippedFile", {
-                      file: <code>{skip.fileName}</code>,
-                      target: skip.oldName,
-                      reason: skip.reason,
-                    })}
-                  </li>
-                ))}
-              </ul>
+              <ListedMessageView listed={renameSkipsResult(renameSkips)} />
             </OperationalResult>
           )}
           <div className="modal-footer">

@@ -227,7 +227,7 @@ describe("CenterPane loading", () => {
 describe("CenterPane toolbar metadata", () => {
   it("renders target, language, and the five status radios in status order", async () => {
     await renderPane();
-    const labels = screen.getAllByText((_, el) => el?.className === "toolbar-label").map((e) => e.textContent);
+    const labels = screen.getAllByText((_, el) => el?.classList.contains("toolbar-label") ?? false).map((e) => e.textContent);
     expect(labels).toContain("blog");
     expect(labels).toContain("en");
     expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual([

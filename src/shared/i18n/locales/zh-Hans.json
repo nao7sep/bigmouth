@@ -154,6 +154,10 @@
   "session.empty": "选择一篇文章或新建一篇",
   "common.confirm": "确认",
   "result.close": "关闭消息",
+  "result.namesAndMore": {
+    "other": "{names} 及其他 {count} 项"
+  },
+  "result.fullList": "完整列表",
   "confirm.failed": "无法完成此操作。没有做任何更改；请重试。",
   "about.title": "关于 BigMouth",
   "about.version": "版本 {version}",
@@ -356,6 +360,9 @@
   },
   "assets.addedWithoutDetails": "已添加 {name}，但无法保存其上传时间和图像信息。",
   "assets.addedWithoutPostTime": "已添加 {name}，但无法更新这篇文章的修改时间。",
+  "assets.addedIncomplete": {
+    "other": "已添加 {count} 个素材，但部分信息无法保存："
+  },
   "assets.deletedWithoutPostTime": "已删除 {name}，但无法更新这篇文章的修改时间。",
   "assets.notAdded": {
     "other": "有 {count} 项无法添加："

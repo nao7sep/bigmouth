@@ -179,6 +179,23 @@ describe("AssetsTab upload via file input", () => {
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
 
+  it("names three refused files, counts the rest and lists every reason behind the disclosure", async () => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    const { container } = await renderTab({ maxUploadMb: 1 });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const files = ["a.png", "b.png", "c.png", "d.png", "e.png"].map((name) => makeFile(name, 2 * 1024 * 1024));
+    await act(async () => {
+      fireEvent.change(input, { target: { files } });
+    });
+
+    const result = container.querySelector(".assets-result--warning") as HTMLElement;
+    expect(result.textContent).toContain("5 items could not be added:");
+    expect(result.querySelector(".named-items-summary")?.textContent).toBe("a.png, b.png, c.png and 2 more");
+    expect([...result.querySelectorAll(".named-items-list li")].map((item) => item.textContent)).toEqual(
+      files.map((file) => `${file.name}: It is larger than the 1 MB asset size limit.`),
+    );
+  });
+
   it("collects per-file failures into one persistent result", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset.mockRejectedValue(new Error("server said no"));
@@ -647,14 +664,34 @@ describe("AssetsTab result", () => {
   });
 });
 
+// Beside the thumbnail a name gets two lines; the name itself is the keyboard
+// and touch route to all of it.
+describe("AssetsTab asset names", () => {
+  it("opens and closes the whole name from the name itself", async () => {
+    const filename = "a-very-long-asset-name-that-would-run-on-for-several-lines-beside-its-thumbnail.png";
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename })] });
+    const { getByRole } = await renderTab();
+    const name = getByRole("button", { name: filename });
+    expect(name.getAttribute("aria-expanded")).toBe("false");
+    expect(name.getAttribute("title")).toBe(filename);
+    fireEvent.click(name);
+    expect(name.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(name);
+    expect(name.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
 describe("AssetsTab locked", () => {
-  it("disables Add and card actions", async () => {
+  it("disables Add and card actions, but still opens the whole name", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "ro.png" })] });
     const { container, getByRole } = await renderTab({ locked: true });
     expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
-    const buttons = within(card).getAllByRole("button");
-    expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    for (const name of ["Insert", "Delete"]) {
+      expect((within(card).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    // Reading a name changes nothing, so a locked post still shows it whole.
+    expect((within(card).getByRole("button", { name: "ro.png" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("explains a committed drop while locked", async () => {
@@ -684,5 +721,12 @@ it("keeps delayed upload partial-success warnings after leaving Assets", async (
   view.rerender(surface(false));
   await act(async () => { finish({ asset: asset(), unsaved: ["details", "modifiedTime"] }); });
   expect(view.getAllByRole("status").map((node) => node.textContent).join(" ")).toContain("pic.png");
-  expect(view.getAllByRole("status")).toHaveLength(3);
+  // "Added 1 asset." and one result for what could not be saved about it,
+  // whose full list keeps both of its lines.
+  expect(view.getAllByRole("status")).toHaveLength(2);
+  const items = [...view.container.querySelectorAll(".named-items-list li")].map((item) => item.textContent);
+  expect(items).toEqual([
+    "pic.png was added, but its upload time and image details could not be saved.",
+    "pic.png was added, but this post's modified time could not be updated.",
+  ]);
 });

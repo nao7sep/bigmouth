@@ -321,9 +321,11 @@ function PostItem({
       {...rowProps}
     >
       <div className="post-item-title">{displayName}</div>
+      {/* One line: the target name gives way behind an ellipsis before the
+          time does. Settings' Targets tab shows every target name whole. */}
       <div className="post-item-meta">
-        {fm.target}
-        {ts && <> &middot; {formatLocalDateTime(ts, timezone, dateTime)}</>}
+        <span className="post-item-target" title={fm.target}>{fm.target}</span>
+        {ts && <span className="post-item-time">&middot; {formatLocalDateTime(ts, timezone, dateTime)}</span>}
       </div>
     </div>
   );

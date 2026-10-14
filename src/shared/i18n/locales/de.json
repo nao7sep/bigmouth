@@ -155,6 +155,11 @@
   "session.empty": "Wählen Sie einen Beitrag aus oder erstellen Sie einen neuen",
   "common.confirm": "Bestätigen",
   "result.close": "Meldung schließen",
+  "result.namesAndMore": {
+    "one": "{names} und {count} weitere",
+    "other": "{names} und {count} weitere"
+  },
+  "result.fullList": "Vollständige Liste",
   "confirm.failed": "Die Aktion konnte nicht abgeschlossen werden. Es wurde nichts geändert; versuchen Sie es erneut.",
   "about.title": "Über BigMouth",
   "about.version": "Version {version}",
@@ -363,6 +368,10 @@
   },
   "assets.addedWithoutDetails": "{name} wurde hinzugefügt, aber Hochladezeit und Bildangaben konnten nicht gespeichert werden.",
   "assets.addedWithoutPostTime": "{name} wurde hinzugefügt, aber die Änderungszeit dieses Beitrags konnte nicht aktualisiert werden.",
+  "assets.addedIncomplete": {
+    "one": "{count} Asset wurde hinzugefügt, aber nicht alle Angaben dazu konnten gespeichert werden:",
+    "other": "{count} Assets wurden hinzugefügt, aber nicht alle Angaben dazu konnten gespeichert werden:"
+  },
   "assets.deletedWithoutPostTime": "{name} wurde gelöscht, aber die Änderungszeit dieses Beitrags konnte nicht aktualisiert werden.",
   "assets.notAdded": {
     "one": "{count} Element konnte nicht hinzugefügt werden:",

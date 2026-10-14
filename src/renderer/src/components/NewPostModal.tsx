@@ -175,7 +175,10 @@ export function NewPostModal({
           <label className="form-label">{t("newPost.source")}</label>
           {sourceId ? (
             <div className="source-selected">
-              <span className="source-selected-title">{sourceTitle}</span>
+              {/* One line, cut at the end, so the box keeps a field's height.
+                  The created post's Source opens this post, whose Metadata
+                  shows the whole title. */}
+              <span className="source-selected-title" title={sourceTitle}>{sourceTitle}</span>
               <button
                 className="btn-toolbar"
                 onClick={() => { setSourceId(""); setSourceTitle(""); }}

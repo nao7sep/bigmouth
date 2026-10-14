@@ -1,11 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { getStoragePending, onStoragePendingChanged, reportProblem } from "./api";
 import { OperationalResult } from "./components/OperationalResult";
+import { ListedMessageView, type ListedMessage } from "./components/NamedItems";
 import { useI18n } from "./i18n/I18nContext";
 import type { Message } from "@shared/i18n/translate";
 
-type ResultReporter = (message: Message, severity?: "warning" | "error") => void;
-type StorageResult = { id: number; message: Message; severity: "warning" | "error" };
+// A result about several items arrives as one ListedMessage — a few names and
+// the full list behind a disclosure — never as one result per item.
+type ResultReporter = (message: Message | ListedMessage, severity?: "warning" | "error") => void;
+type StorageResult = { id: number; listed: ListedMessage; severity: "warning" | "error" };
 export const StoragePendingContext = createContext(false);
 const StorageResultContext = createContext<ResultReporter>(() => {});
 const StorageResultsContext = createContext<{ results: StorageResult[]; dismiss: (id: number) => void }>({ results: [], dismiss: () => {} });
@@ -19,7 +22,8 @@ export function StoragePendingProvider({ children }: { children: ReactNode }) {
   const nextResult = useRef(0);
   const report = useCallback<ResultReporter>((message, severity = "error") => {
     const id = ++nextResult.current;
-    setResults((current) => [...current, { id, message, severity }]);
+    const listed = "key" in message ? { message } : message;
+    setResults((current) => [...current, { id, listed, severity }]);
   }, []);
   const dismiss = useCallback((id: number) => setResults((current) => current.filter((result) => result.id !== id)), []);
   useEffect(() => {
@@ -53,7 +57,6 @@ export function StoragePendingNotice({ className = "modal-result" }: { className
 
 export function StoragePendingResults() {
   const { results, dismiss } = useContext(StorageResultsContext);
-  const { text } = useI18n();
   return results.map((result) => <OperationalResult key={result.id} severity={result.severity}
-    className="app-operational-result" onDismiss={() => dismiss(result.id)}>{text(result.message)}</OperationalResult>);
+    className="app-operational-result" onDismiss={() => dismiss(result.id)}><ListedMessageView listed={result.listed} /></OperationalResult>);
 }

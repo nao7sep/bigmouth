@@ -156,6 +156,12 @@
   "session.empty": "Seleziona un post o creane uno nuovo",
   "common.confirm": "Conferma",
   "result.close": "Chiudi messaggio",
+  "result.namesAndMore": {
+    "one": "{names} e {count} altro",
+    "many": "{names} e altri {count}",
+    "other": "{names} e altri {count}"
+  },
+  "result.fullList": "Elenco completo",
   "confirm.failed": "Non è stato possibile completare l’azione. Non è cambiato nulla; riprova.",
   "about.title": "Informazioni su BigMouth",
   "about.version": "Versione {version}",
@@ -370,6 +376,11 @@
   },
   "assets.addedWithoutDetails": "{name} è stato aggiunto, ma non è stato possibile salvare l’orario di caricamento e i dati dell’immagine.",
   "assets.addedWithoutPostTime": "{name} è stato aggiunto, ma non è stato possibile aggiornare l’orario di modifica di questo post.",
+  "assets.addedIncomplete": {
+    "one": "{count} risorsa è stata aggiunta, ma non è stato possibile salvare tutte le sue informazioni:",
+    "many": "{count} di risorse sono state aggiunte, ma non è stato possibile salvare tutte le loro informazioni:",
+    "other": "{count} risorse sono state aggiunte, ma non è stato possibile salvare tutte le loro informazioni:"
+  },
   "assets.deletedWithoutPostTime": "{name} è stato eliminato, ma non è stato possibile aggiornare l’orario di modifica di questo post.",
   "assets.notAdded": {
     "one": "Non è stato possibile aggiungere {count} elemento:",

@@ -154,6 +154,10 @@
   "session.empty": "게시물을 선택하거나 새로 만드십시오",
   "common.confirm": "확인",
   "result.close": "메시지 닫기",
+  "result.namesAndMore": {
+    "other": "{names} 외 {count}개"
+  },
+  "result.fullList": "전체 목록",
   "confirm.failed": "작업을 완료할 수 없습니다. 아무것도 바뀌지 않았습니다. 다시 시도하십시오.",
   "about.title": "BigMouth 정보",
   "about.version": "버전 {version}",
@@ -356,6 +360,9 @@
   },
   "assets.addedWithoutDetails": "{name}을(를) 추가했지만 업로드 시간과 이미지 정보를 저장할 수 없었습니다.",
   "assets.addedWithoutPostTime": "{name}을(를) 추가했지만 이 게시물의 수정 시간을 업데이트할 수 없었습니다.",
+  "assets.addedIncomplete": {
+    "other": "에셋 {count}개를 추가했지만 일부 정보를 저장할 수 없었습니다:"
+  },
   "assets.deletedWithoutPostTime": "{name}을(를) 삭제했지만 이 게시물의 수정 시간을 업데이트할 수 없었습니다.",
   "assets.notAdded": {
     "other": "항목 {count}개를 추가할 수 없습니다:"

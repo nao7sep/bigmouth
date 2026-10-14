@@ -441,6 +441,22 @@ describe("WorkspaceSession initial load", () => {
     expect(queryByText(/post files are not in the list/)).toBeNull();
   });
 
+  // One banner however many files: a few final segments, a count of the rest,
+  // and every whole path behind the disclosure, so the banner stays short.
+  it("names three unreadable files by their final segment and counts the rest", async () => {
+    const paths = Array.from({ length: 6 }, (_, index) => `/d/a/posts/2026010${index}-000000-utc-file.md`);
+    mockListPosts.mockResolvedValue({ ...LIST, unreadable: paths.map((path) => ({ path, newer: false })) });
+    const { container } = await mountLoaded();
+
+    const banner = container.querySelector(".toolbar-warning") as HTMLElement;
+    expect(banner.querySelector(".named-items-summary")?.textContent).toBe(
+      "20260100-000000-utc-file.md, 20260101-000000-utc-file.md, 20260102-000000-utc-file.md and 3 more",
+    );
+    const listed = [...banner.querySelectorAll(".named-items-list li")].map((item) => item.textContent);
+    expect(listed).toHaveLength(6);
+    expect(listed[5]).toContain(paths[5]);
+  });
+
   it("cannot apply a workspace font after the session unmounts", async () => {
     let resolveSettings!: (settings: Settings) => void;
     mockGetSettings.mockReturnValue(
