@@ -329,8 +329,17 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
   } catch (cause) {
     // A raw errno ("EACCES: permission denied, mkdir '…/posts'") sat next to the
     // clean sentences above it, and named an internal subdirectory the user
-    // never chose.
-    throw new Error(`Cannot create a workspace in ${dir}: the folder is not writable.`, { cause });
+    // never chose. Only a refusal is called "not writable"; a full disk, a name
+    // too long or a file in the way says only that creation failed, and the
+    // cause carries the detail for the log.
+    const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+    const refused = code === "EACCES" || code === "EPERM" || code === "EROFS";
+    throw new Error(
+      refused
+        ? `Cannot create a workspace in ${dir}: the folder is not writable.`
+        : `Cannot create a workspace in ${dir}: its folders could not be created.`,
+      { cause },
+    );
   }
 
   writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });

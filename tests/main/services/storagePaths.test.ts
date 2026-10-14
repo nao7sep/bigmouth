@@ -107,10 +107,11 @@ describe("storage root (BIGMOUTH_DATA_DIR)", () => {
     }
   });
 
-  it("expands a leading ~ in BIGMOUTH_DATA_DIR against the home directory", () => {
+  // A Windows user types ~\ as readily as ~/; either expands on every OS.
+  it.each(["~/", "~\\"])("expands a leading %s in BIGMOUTH_DATA_DIR against the home directory", (prefix) => {
     const expected = path.join(os.homedir(), ".bigmouth-test-tilde");
     try {
-      process.env.BIGMOUTH_DATA_DIR = "~/.bigmouth-test-tilde";
+      process.env.BIGMOUTH_DATA_DIR = `${prefix}.bigmouth-test-tilde`;
       initAppDir();
       expect(getLogsDir()).toBe(path.join(expected, "logs"));
       expect(fs.existsSync(path.join(expected, "logs"))).toBe(true);

@@ -4,32 +4,93 @@
 //
 // Electron is mocked because these helpers need no real window; the parts that
 // genuinely require one (the navigation handlers, the load path) are not
-// exercised here and do not pretend to be.
+// exercised here and do not pretend to be. The one exception is the zoom-key
+// listener, reached through createMainWindow on a stand-in window that records
+// its listeners, with the UI-state store stubbed at its boundary.
 
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 
-vi.mock("electron", () => ({
-  BrowserWindow: class {},
-  Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
-  nativeTheme: { themeSource: "system", shouldUseDarkColors: false },
-  screen: {
-    getDisplayMatching: () => ({ workAreaSize: { width: 1440, height: 900 } }),
-    getPrimaryDisplay: () => ({ workAreaSize: { width: 1440, height: 900 } }),
-    on: vi.fn(),
-    removeListener: vi.fn(),
+const zoom = vi.hoisted(() => ({
+  // The level Electron's zoom role has left the page at.
+  level: 0,
+  saved: [] as number[],
+  window: null as null | {
+    once: Map<string, () => unknown>;
+    content: Map<string, (...args: unknown[]) => unknown>;
   },
-  shell: { openExternal: vi.fn() },
 }));
+
+vi.mock("@main/storageAccess.js", () => ({
+  getUiState: async () => ({ zoomLevel: 0 }),
+  updateUiState: async (patch: { zoomLevel: number }) => { zoom.saved.push(patch.zoomLevel); },
+}));
+
+vi.mock("electron", () => {
+  class BrowserWindow {
+    readonly onceHandlers = new Map<string, () => unknown>();
+    readonly contentHandlers = new Map<string, (...args: unknown[]) => unknown>();
+    readonly webContents = {
+      on: (event: string, listener: (...args: unknown[]) => unknown) => { this.contentHandlers.set(event, listener); },
+      setWindowOpenHandler: () => {},
+      setZoomLevel: () => {},
+      getZoomLevel: () => zoom.level,
+      getZoomFactor: () => 1.2 ** zoom.level,
+    };
+    constructor() {
+      zoom.window = { once: this.onceHandlers, content: this.contentHandlers };
+    }
+    on(): this { return this; }
+    once(event: string, listener: () => unknown): this { this.onceHandlers.set(event, listener); return this; }
+    isDestroyed(): boolean { return false; }
+    isFocused(): boolean { return false; }
+    isMaximized(): boolean { return false; }
+    isMinimized(): boolean { return false; }
+    isFullScreen(): boolean { return false; }
+    getNormalBounds() { return { x: 0, y: 0, width: 1440, height: 900 }; }
+    getBounds() { return { x: 0, y: 0, width: 1440, height: 900 }; }
+    getContentBounds() { return { x: 0, y: 0, width: 1440, height: 900 }; }
+    getMinimumSize(): number[] { return [0, 0]; }
+    setMinimumSize(): void {}
+    show(): void {}
+    async loadFile(): Promise<void> {}
+    async loadURL(): Promise<void> {}
+  }
+  return {
+    BrowserWindow,
+    Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
+    nativeTheme: { themeSource: "system", shouldUseDarkColors: false },
+    screen: {
+      getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1440, height: 900 } }],
+      getDisplayMatching: () => ({ workAreaSize: { width: 1440, height: 900 } }),
+      getPrimaryDisplay: () => ({ workAreaSize: { width: 1440, height: 900 } }),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    },
+    shell: { openExternal: vi.fn() },
+  };
+});
 
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import {
   boundWindowMinimum,
   buildWindowOptions,
   configureWindowActivity,
+  createMainWindow,
   isAllowedExternalUrl,
   zoomFactorForLevel,
 } from "@main/window.js";
 import { CHANNELS } from "@shared/ipc";
+
+const PLATFORM = process.platform;
+
+/** Runs the rest of the test as if on `platform`; afterEach puts the real one back. */
+function onPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, "platform", { value: platform });
+}
+
+afterEach(() => {
+  Object.defineProperty(process, "platform", { value: PLATFORM });
+});
 
 describe("isAllowedExternalUrl", () => {
   it("allows the three schemes a link in a post can legitimately use", () => {
@@ -80,14 +141,14 @@ describe("buildWindowOptions", () => {
     expect(options.height).toBeGreaterThanOrEqual(WINDOW_MIN_HEIGHT);
   });
 
-  it("uses Electron's bounds-only persistence for the main window", () => {
+  // Only Windows restores the saved maximized (and full-screen) state; the Mac
+  // always discards it (window-conventions, Placement).
+  it.each([["win32", true], ["darwin", false], ["linux", false]] as const)("persists the main window's display mode on %s: %s", (platform, displayMode) => {
+    onPlatform(platform);
     const options = buildWindowOptions();
 
     expect(options.name).toBe("main");
-    expect(options.windowStatePersistence).toEqual({
-      bounds: true,
-      displayMode: process.platform === "win32",
-    });
+    expect(options.windowStatePersistence).toEqual({ bounds: true, displayMode });
   });
 
   it("constructs a restored zoom window with a matching native floor", () => {
@@ -155,5 +216,52 @@ describe("native window activity transport", () => {
     destroyed = true;
     windowListeners.get("focus")?.();
     expect(send).toHaveBeenCalledTimes(3);
+  });
+});
+
+// The menu's zoom roles change the page without raising zoom-changed, so the
+// window reads the level back after each zoom shortcut. The shortcut's modifier
+// is Cmd on macOS and Ctrl elsewhere; the other one is not a zoom shortcut.
+describe("zoom shortcuts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Opens the main window and returns its before-input-event listener. */
+  async function openZoomedWindow(): Promise<(input: { key: string; meta: boolean; control: boolean }) => void> {
+    zoom.level = 0;
+    zoom.saved = [];
+    await createMainWindow();
+    await zoom.window!.once.get("ready-to-show")!();
+    // Electron's role runs on the key before the read-back the listener schedules.
+    zoom.level = 1;
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const listener = zoom.window!.content.get("before-input-event")!;
+    return (input) => { listener({}, input); };
+  }
+
+  it.each([
+    ["darwin", "meta", "control"],
+    ["win32", "control", "meta"],
+    ["linux", "control", "meta"],
+  ] as const)("on %s saves the level after %s with a zoom key, and ignores %s", async (platform, modifier, other) => {
+    onPlatform(platform);
+    const press = await openZoomedWindow();
+
+    press({ key: "=", meta: other === "meta", control: other === "control" });
+    expect(vi.getTimerCount()).toBe(0);
+
+    press({ key: "=", meta: modifier === "meta", control: modifier === "control" });
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.runOnlyPendingTimersAsync();
+    await vi.waitFor(() => expect(zoom.saved).toEqual([1]));
+  });
+
+  it("ignores the modifier with a key that is not a zoom key", async () => {
+    onPlatform("darwin");
+    const press = await openZoomedWindow();
+
+    press({ key: "s", meta: true, control: false });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

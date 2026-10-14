@@ -1,7 +1,11 @@
 // navigator.platform is deprecated but still reliable in Electron's renderer.
-const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
-  typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
-);
+// Read at each call rather than once at import, so tests can supply either
+// platform.
+function isApplePlatform(): boolean {
+  return /Mac|iPhone|iPad|iPod/.test(
+    typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
+  );
+}
 
 /**
  * Alt is excluded because Chromium delivers Windows AltGr as Ctrl+Alt. Typed
@@ -20,7 +24,7 @@ export function hasMod(e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean 
  * Cmd half is the binding and always fires.
  */
 export function shadowsMacTextBinding(e: KeyboardEvent): boolean {
-  return isApplePlatform && e.ctrlKey && !e.metaKey;
+  return isApplePlatform() && e.ctrlKey && !e.metaKey;
 }
 
 /**

@@ -43,6 +43,8 @@ const shell = vi.hoisted(() => ({
   // Answers an open dialog with its cancel choice, as an ending session does.
   cancelOpenDialog: null as (() => void) | null,
   windowLoadFailure: null as Error | null,
+  // How many main windows the app has asked for.
+  windowOpens: 0,
   windowCloses: 0,
   loggedErrors: [] as unknown[][],
   // Signals the app sent to its own process: a forced exit, never a real kill here.
@@ -87,6 +89,10 @@ const flush = vi.hoisted(() => ({
   calls: 0,
   // Whether the storage worker finishes within the exit bound.
   finishSettles: true,
+  // The backup drain each asynchronous finish was given, in ms.
+  backupDrains: [] as number[],
+  // How many times exit let the records window's reader go.
+  recordsReaderCloses: 0,
   store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes" | "holdPendingFlushes">,
 }));
 vi.mock("@main/storageOwner.js", () => {
@@ -98,7 +104,8 @@ vi.mock("@main/storageOwner.js", () => {
   };
   return { storageOwner: {
     onRecordStored: () => {}, flushAsync: async () => flushNow(), flushWithin: flushNow,
-    finishAsync: async () => flush.finishSettles, finishWithin: () => flush.finishSettles, stop: async () => {},
+    finishAsync: async (_boundMs: number, backupDrainMs: number) => { flush.backupDrains.push(backupDrainMs); return flush.finishSettles; },
+    finishWithin: () => flush.finishSettles, stop: async () => {},
   } };
 });
 vi.mock("@main/storageAccess.js", async () => ({
@@ -113,7 +120,7 @@ vi.mock("@main/storageAccess.js", async () => ({
 }));
 
 vi.mock("@main/window.js", () => ({
-  createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : Promise.resolve({
+  createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : (shell.windowOpens++, Promise.resolve({
     on: (event: string, cb: (...args: unknown[]) => unknown) => windowHandlers.set(event, cb),
     webContents: { id: MAIN_WINDOW_ID },
     isDestroyed: () => false,
@@ -121,9 +128,13 @@ vi.mock("@main/window.js", () => ({
     isMinimized: () => shell.mainWindow.minimized,
     restore: () => { shell.mainWindow.restores++; },
     focus: () => { shell.mainWindow.focuses++; },
-  }),
+  })),
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
+vi.mock("@main/core/services/recordsReader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@main/core/services/recordsReader.js")>();
+  return { ...actual, closeRecordsReader: () => { flush.recordsReaderCloses++; actual.closeRecordsReader(); } };
+});
 vi.mock("@main/assetProtocol.js", () => ({
   registerAssetScheme: () => {},
   handleAssetProtocol: () => {},
@@ -220,8 +231,11 @@ async function bootApp(): Promise<PostStore> {
   flush.plan = [];
   flush.calls = 0;
   flush.finishSettles = true;
+  flush.backupDrains = [];
+  flush.recordsReaderCloses = 0;
   shell.kills.length = 0;
   shell.windowLoadFailure = null;
+  shell.windowOpens = 0;
   shell.windowCloses = 0;
   shell.loggedErrors.length = 0;
 
@@ -485,6 +499,19 @@ describe("an ending OS session", () => {
     expect(shell.dialogs).toEqual([]);
     expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush failed at quit");
     expect(shell.exits).toEqual([0]);
+  });
+
+  it("gives pending backup writes part of the bound at an ordinary quit and none at shutdown", async () => {
+    await bootApp();
+    await quit();
+    expect(flush.backupDrains).toEqual([300]);
+    expect(flush.recordsReaderCloses).toBe(1);
+
+    await bootApp();
+    powerHandlers.get("shutdown")!();
+    await quit();
+    expect(flush.backupDrains).toEqual([0]);
+    expect(flush.recordsReaderCloses).toBe(1);
   });
 
   it("answers a quit question already open, and exits", async () => {
@@ -805,11 +832,30 @@ describe("single app-process ownership", () => {
     expect(other.focus).not.toHaveBeenCalled();
   });
 
-  it("quits off macOS when the main window closes, whatever else is open, and only once", async () => {
+  it.each(["win32", "linux"] as const)("quits on %s when the main window closes, whatever else is open, and only once", async (platform) => {
+    onPlatform(platform);
     await bootApp();
     const quits = shell.quitRequests;
     windowHandlers.get("closed")!();
     appHandlers.get("window-all-closed")!();
-    expect(shell.quitRequests).toBe(process.platform === "darwin" ? quits : quits + 1);
+    expect(shell.quitRequests).toBe(quits + 1);
+  });
+
+  it("stays alive on macOS when the main window closes, and the Dock reopens it", async () => {
+    onPlatform("darwin");
+    await bootApp();
+    const quits = shell.quitRequests;
+    // While the window exists, activating the app opens no second one.
+    appHandlers.get("activate")!();
+    expect(shell.windowOpens).toBe(1);
+
+    windowHandlers.get("closed")!();
+    appHandlers.get("window-all-closed")!();
+    expect(shell.quitRequests).toBe(quits);
+
+    windowHandlers.clear();
+    appHandlers.get("activate")!();
+    await vi.waitFor(() => expect(windowHandlers.has("session-end")).toBe(true));
+    expect(shell.windowOpens).toBe(2);
   });
 });

@@ -37,6 +37,20 @@ describe("ShortcutsModal", () => {
     expect(kbds).toContain("Delete");
   });
 
+  it("names Ctrl off macOS", () => {
+    const saved = window.bigmouth;
+    Object.defineProperty(window, "bigmouth", { value: { ...saved, platform: "win32" }, configurable: true, writable: true });
+    try {
+      const { container } = render(<ShortcutsModal onClose={vi.fn()} />);
+      const kbds = Array.from(container.querySelectorAll("kbd")).map((k) => k.textContent);
+      expect(kbds).toContain("Ctrl+N");
+      expect(kbds).toContain("F2 / Ctrl+R");
+      expect(kbds.some((k) => k?.includes("Cmd"))).toBe(false);
+    } finally {
+      Object.defineProperty(window, "bigmouth", { value: saved, configurable: true, writable: true });
+    }
+  });
+
   it("autofocuses the close button", () => {
     const { getByLabelText } = render(<ShortcutsModal onClose={vi.fn()} />);
     expect(document.activeElement).toBe(getByLabelText("Close"));

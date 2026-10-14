@@ -70,7 +70,7 @@ export function ownsProcess(processInfo, identity) {
   throw new Error(`Unknown runtime identity: ${identity.kind}`);
 }
 
-function parsePosixProcesses(stdout) {
+export function parsePosixProcesses(stdout) {
   return stdout.trim().split("\n").filter(Boolean).map((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
     if (!match) return undefined;

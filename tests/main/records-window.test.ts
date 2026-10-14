@@ -97,13 +97,26 @@ describe("records window options", () => {
 
     expect(options).toMatchObject({
       name: "records",
-      windowStatePersistence: { bounds: true, displayMode: process.platform === "win32" },
+      windowStatePersistence: { bounds: true },
       title: "Records",
       show: false,
       minWidth: RECORDS_WINDOW_MIN_WIDTH,
       minHeight: RECORDS_WINDOW_MIN_HEIGHT,
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
+  });
+
+  // Only Windows restores the saved maximized (and full-screen) state; the Mac
+  // always discards it (window-conventions, Placement).
+  it.each([["win32", true], ["darwin", false], ["linux", false]] as const)("persists the display mode on %s: %s", async (platform, displayMode) => {
+    const { buildRecordsWindowOptions } = await freshModule();
+    const real = process.platform;
+    Object.defineProperty(process, "platform", { value: platform });
+    try {
+      expect(buildRecordsWindowOptions("Records").windowStatePersistence).toEqual({ bounds: true, displayMode });
+    } finally {
+      Object.defineProperty(process, "platform", { value: real });
+    }
   });
 
   it("fits its designed size and minimum inside a small work area", async () => {

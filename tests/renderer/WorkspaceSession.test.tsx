@@ -1134,21 +1134,47 @@ describe("WorkspaceSession keyboard shortcuts", () => {
     host.remove();
   });
 
-  it("leaves the Ctrl half alone inside a text field on macOS", async () => {
-    // The one rule that genuinely bites: on macOS Ctrl inside a text field
-    // belongs to the text system whatever the key is.
-    const { queryByTestId } = await mountLoaded();
-    const textarea = document.createElement("textarea");
-    document.body.appendChild(textarea);
+  // The one rule that genuinely bites: on macOS Ctrl inside a text field
+  // belongs to the text system whatever the key is. jsdom reports no platform,
+  // so each case supplies its own; the check once read the running one and
+  // took the non-Mac branch everywhere.
+  it.each([
+    ["macOS", "MacIntel", false],
+    ["Windows", "Win32", true],
+  ])("on %s, Ctrl+N inside a text field opens New Post: %s", async (_name, platform, opens) => {
+    Object.defineProperty(navigator, "platform", { value: platform, configurable: true });
+    try {
+      const { queryByTestId } = await mountLoaded();
+      const textarea = document.createElement("textarea");
+      document.body.appendChild(textarea);
 
-    const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-    act(() => {
-      fireEvent.keyDown(textarea, { key: "n", ctrlKey: true });
-    });
+      act(() => {
+        fireEvent.keyDown(textarea, { key: "n", ctrlKey: true });
+      });
 
-    if (isApple) expect(queryByTestId("newpost-modal")).toBeNull();
-    else expect(queryByTestId("newpost-modal")).toBeTruthy();
-    textarea.remove();
+      expect(queryByTestId("newpost-modal") !== null).toBe(opens);
+      textarea.remove();
+    } finally {
+      delete (navigator as { platform?: string }).platform;
+    }
+  });
+
+  it("opens New Post on macOS from Cmd+N inside a text field", async () => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
+    try {
+      const { queryByTestId } = await mountLoaded();
+      const textarea = document.createElement("textarea");
+      document.body.appendChild(textarea);
+
+      act(() => {
+        fireEvent.keyDown(textarea, { key: "n", metaKey: true });
+      });
+
+      expect(queryByTestId("newpost-modal")).toBeTruthy();
+      textarea.remove();
+    } finally {
+      delete (navigator as { platform?: string }).platform;
+    }
   });
 });
 

@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // The launcher helper is plain ESM because both shell families execute it directly.
 // @ts-expect-error The directly executed .mjs helper intentionally has no declaration file.
-import { ownsProcess, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
+import { ownsProcess, parsePosixProcesses, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
   const identity = { kind: "electron", label: "BigMouth", executable: "BigMouth" };
@@ -38,6 +38,32 @@ describe("launcher process identity", () => {
       executablePath: "/another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
       commandLine: "",
     }, identity)).toBe(false);
+  });
+
+  // macOS and Linux read processes from `ps -axo pid=,ppid=,command=`: right-
+  // aligned numbers and the whole command line, spaces included, with no
+  // executable path of its own.
+  it("reads ps output into processes and owns only this repository's Electron among them", () => {
+    const electron = `${REPO_ROOT}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`;
+    const stdout = [
+      "    1     0 /sbin/launchd",
+      `  812     1 ${electron} ${REPO_ROOT}`,
+      `  813   812 ${electron.replace("/MacOS/Electron", "/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer)")} --type=renderer`,
+      "  900     1 /another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /another/repo",
+      "not a process line",
+      "",
+    ].join("\n");
+
+    const processes = parsePosixProcesses(stdout);
+
+    expect(processes).toEqual([
+      { pid: 1, parentPid: 0, executablePath: "", commandLine: "/sbin/launchd" },
+      { pid: 812, parentPid: 1, executablePath: "", commandLine: `${electron} ${REPO_ROOT}` },
+      { pid: 813, parentPid: 812, executablePath: "", commandLine: expect.stringContaining("Electron Helper (Renderer).app") },
+      { pid: 900, parentPid: 1, executablePath: "", commandLine: "/another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /another/repo" },
+    ]);
+    expect(processes.filter((item: { pid: number; parentPid: number; executablePath: string; commandLine: string }) => ownsProcess(item, identity)).map((item: { pid: number }) => item.pid))
+      .toEqual([812, 813]);
   });
 
   it.each(["success", "assertion failure", "partial setup"])("isolates ownership and stale generations after %s", async (outcome) => {
@@ -190,4 +216,101 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 90_000);
+});
+
+// Elsewhere the launcher lists processes with ps and stops them with SIGTERM,
+// then SIGKILL for whatever is left after its five-second wait. Signals are what
+// differ from Windows, so this runs everywhere but there. The helper is copied
+// into a disposable folder, which becomes its repository root: only processes
+// started under that folder are its own, so a BigMouth the developer is running
+// from this checkout is never stopped.
+describe.runIf(process.platform !== "win32")("launcher stop on macOS and Linux", () => {
+  const run = promisify(execFile);
+
+  function alive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A node process carrying `marker` on its command line, which records a
+   * SIGTERM in `termLog` and stays alive through it, with a child of its own
+   * that carries nothing the launcher recognizes and ends on SIGTERM. Resolves
+   * once the child's pid is known.
+   */
+  async function processTree(script: string, marker: string, termLog: string, cleanupPids: number[]): Promise<{ parent: ChildProcess; childPid: number }> {
+    const parent = spawn(process.execPath, [script, marker, termLog], { stdio: ["ignore", "pipe", "inherit"] });
+    if (parent.pid) cleanupPids.push(parent.pid);
+    const childPid = await new Promise<number>((resolvePid, rejectPid) => {
+      let output = "";
+      parent.stdout!.on("data", (chunk) => {
+        output += String(chunk);
+        if (output.includes("\n")) {
+          const pid = Number(output.trim());
+          cleanupPids.push(pid);
+          resolvePid(pid);
+        }
+      });
+      parent.once("error", rejectPid);
+      parent.once("exit", () => rejectPid(new Error("The test process tree exited before it started.")));
+    });
+    return { parent, childPid };
+  }
+
+  it("stops the folder's runtime and its tree with SIGTERM, then SIGKILL, and nothing outside the folder", async () => {
+    // ps reports the resolved path the helper's own REPO_ROOT is built from.
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-launcher-posix-")));
+    const repo = path.join(root, "fixture");
+    const helper = path.join(repo, "scripts", "launcher-runtime.mjs");
+    fs.mkdirSync(path.dirname(helper), { recursive: true });
+    fs.copyFileSync(path.join(REPO_ROOT, "scripts", "launcher-runtime.mjs"), helper);
+    const script = path.join(root, "tree.cjs");
+    fs.writeFileSync(script, [
+      'const fs = require("node:fs");',
+      'const { spawn } = require("node:child_process");',
+      'const termLog = process.argv[3];',
+      'process.on("SIGTERM", () => fs.appendFileSync(termLog, "SIGTERM\\n"));',
+      'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });',
+      'process.stdout.write(`${child.pid}\\n`);',
+      "setInterval(() => {}, 1000);",
+    ].join("\n"));
+    const ownMarker = path.join(repo, "node_modules", "electron", "dist", "posix-test-marker");
+    const foreignMarker = path.join(root, "elsewhere", "node_modules", "electron", "dist", "posix-test-marker");
+    const ownTerms = path.join(root, "own-terms.log");
+    const foreignTerms = path.join(root, "foreign-terms.log");
+    const cleanupPids: number[] = [];
+    try {
+      const own = await processTree(script, ownMarker, ownTerms, cleanupPids);
+      const foreign = await processTree(script, foreignMarker, foreignTerms, cleanupPids);
+
+      const { stdout } = await run(process.execPath, [helper, "stop", "electron", "BigMouth", "BigMouth"], {
+        encoding: "utf8",
+        timeout: 30_000,
+        env: { ...process.env, TMPDIR: root },
+      });
+      expect(stdout).toContain(`pid ${own.parent.pid}`);
+      expect(stdout).not.toContain(String(foreign.parent.pid));
+
+      // The parent was asked first and declined; SIGKILL ended it. A killed
+      // process can linger until its parent reaps it, so wait for both to go.
+      expect(fs.readFileSync(ownTerms, "utf8")).toBe("SIGTERM\n");
+      await vi.waitFor(() => {
+        expect(alive(own.parent.pid!)).toBe(false);
+        expect(alive(own.childPid)).toBe(false);
+      }, { timeout: 5000 });
+      expect(fs.existsSync(foreignTerms)).toBe(false);
+      expect(alive(foreign.parent.pid!)).toBe(true);
+      expect(alive(foreign.childPid)).toBe(true);
+    } finally {
+      for (const pid of cleanupPids) {
+        try { process.kill(pid, "SIGKILL"); } catch {}
+      }
+      await vi.waitFor(() => expect(cleanupPids.filter(alive)).toEqual([]));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 40_000);
 });

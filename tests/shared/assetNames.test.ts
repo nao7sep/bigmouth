@@ -34,6 +34,18 @@ describe("asset filename rules", () => {
     expect(sanitizeAssetFilename("..")).toBe("asset");
   });
 
+  // Windows drops a trailing dot or space from a name, so a file saved as
+  // "notes." would come back as "notes"; the stored name never ends in one.
+  it("trims trailing dots and spaces, then checks the trimmed name", () => {
+    expect(sanitizeFilenameSegment("Blog. ")).toBe("Blog");
+    expect(sanitizeFilenameSegment("notes.")).toBe("notes");
+    expect(sanitizeFilenameSegment("Drafts . .")).toBe("Drafts");
+    expect(sanitizeFilenameSegment(" Blog")).toBe(" Blog");
+    expect(sanitizeFilenameSegment("nul. ")).toBe("_nul");
+    expect(sanitizeAssetFilename("photo.png. ")).toBe("photo.png");
+    expect(sanitizeAssetFilename(". .")).toBe("asset");
+  });
+
   it("escapes Windows device names even when they have multiple suffixes", () => {
     expect(sanitizeAssetFilename("CON.backup.txt")).toBe("_CON.backup.txt");
   });

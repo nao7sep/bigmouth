@@ -3,7 +3,7 @@
 // updateWorkspace leaves the in-memory registry untouched (no partial mutation).
 // Path expansion / cwd-independence is covered separately in storagePaths.test.ts.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +28,17 @@ function unreadable(fn: () => unknown): UnreadableStoreError {
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
 const DIRECTORY_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
+
+// Whether the volume holding the temp folders folds case, probed once while the
+// tests are collected so a case-only test is skipped visibly where it cannot apply.
+const CASE_INSENSITIVE_TMP = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-CaseProbe-"));
+  try {
+    return fs.existsSync(path.join(path.dirname(probe), path.basename(probe).toLowerCase()));
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `bigmouth-${prefix}-`));
@@ -143,6 +154,42 @@ describe("where a workspace may be created", () => {
     }
   });
 
+  // The chmod case above needs POSIX modes; the message itself does not depend
+  // on the OS or on which refusal the folder raised.
+  it("says the folder is not writable when creating its folders is refused, on any OS", () => {
+    const dir = tempDir("refused");
+    const mkdir = fs.mkdirSync;
+    const refuse = vi.spyOn(fs, "mkdirSync").mockImplementation((target, options) => {
+      if (String(target).startsWith(dir)) {
+        throw Object.assign(new Error(`EPERM: operation not permitted, mkdir '${String(target)}'`), { code: "EPERM" });
+      }
+      return mkdir(target, options);
+    });
+    try {
+      expect(() => createWorkspace("Refused", dir)).toThrow(`Cannot create a workspace in ${dir}: the folder is not writable.`);
+      expect(listWorkspaces()).toHaveLength(0);
+    } finally {
+      refuse.mockRestore();
+    }
+  });
+
+  it("says only that creation failed when its folders cannot be made for another reason", () => {
+    const dir = tempDir("full");
+    const mkdir = fs.mkdirSync;
+    const fail = vi.spyOn(fs, "mkdirSync").mockImplementation((target, options) => {
+      if (String(target).startsWith(dir)) {
+        throw Object.assign(new Error(`ENOSPC: no space left on device, mkdir '${String(target)}'`), { code: "ENOSPC" });
+      }
+      return mkdir(target, options);
+    });
+    try {
+      expect(() => createWorkspace("Full", dir)).toThrow(`Cannot create a workspace in ${dir}: its folders could not be created.`);
+      expect(listWorkspaces()).toHaveLength(0);
+    } finally {
+      fail.mockRestore();
+    }
+  });
+
   it("still allows a sibling folder next to a workspace", () => {
     const parent = tempDir("siblings");
     const a = path.join(parent, "a");
@@ -165,17 +212,15 @@ describe("workspace identity", () => {
     expect(listWorkspaces()).toHaveLength(1);
   });
 
-  it("rejects the same folder reached with different case on a case-insensitive volume", () => {
+  // Only meaningful where the volume actually folds case; on a case-sensitive
+  // one these are genuinely two folders and registering both would be correct.
+  it.runIf(CASE_INSENSITIVE_TMP)("rejects the same folder reached with different case on a case-insensitive volume", () => {
     const parent = tempDir("case");
     const dir = path.join(parent, "MyWorkspace");
     fs.mkdirSync(dir);
     createWorkspace("A", dir);
 
-    // Only meaningful where the volume actually folds case; on a case-sensitive
-    // one these are genuinely two folders and registering both would be correct.
     const variant = path.join(parent, "myworkspace");
-    if (!fs.existsSync(variant)) return;
-
     expect(() => createWorkspace("B", variant)).toThrow(/already registered as workspace "A"/);
     expect(listWorkspaces()).toHaveLength(1);
   });
@@ -507,7 +552,8 @@ describe("creating inside a parent, and adding an existing folder", () => {
   it("refuses a parent that is a file", () => {
     const filePath = path.join(tempDir("hostdir"), "afile");
     fs.writeFileSync(filePath, "x");
-    expect(() => createWorkspaceIn("X", filePath)).toThrow(/not writable/i);
+    // A file in the way is not a permission refusal.
+    expect(() => createWorkspaceIn("X", filePath)).toThrow(/could not be created/i);
     expect(listWorkspaces()).toHaveLength(0);
   });
 

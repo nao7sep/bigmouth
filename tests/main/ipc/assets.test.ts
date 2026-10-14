@@ -380,6 +380,7 @@ describe("uploadAsset", () => {
     const id = (await createDraft());
     const sourcePath = path.join(home, "picked.png");
     fs.writeFileSync(sourcePath, PNG_1x1);
+    // Windows has no POSIX permission bits, so only the modified time is checked there.
     if (process.platform !== "win32") fs.chmodSync(sourcePath, 0o640);
     const then = new Date("2021-03-04T05:06:07.000Z");
     fs.utimesSync(sourcePath, then, then);

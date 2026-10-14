@@ -274,6 +274,40 @@ describe("file permissions (POSIX only)", () => {
     expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
   });
 
+  // Windows has no owner-only mode to enforce, so the module decides at import
+  // to leave the file's mode alone there. That decision runs here with the
+  // platform supplied; reading the untouched mode back needs a POSIX host.
+  it.runIf(process.platform !== "win32")("neither tightens nor warns about the file's mode on Windows", async () => {
+    const real = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    vi.resetModules();
+    try {
+      const keys = await import("@main/core/services/apiKeys.js");
+      const freshLogger = await import("@main/core/services/logger.js");
+      const warnSpy = vi.spyOn(freshLogger, "warn").mockImplementation(() => {});
+      const chmodSpy = vi.spyOn(fs, "chmodSync");
+      try {
+        fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
+        fs.chmodSync(keyFile, 0o644);
+        chmodSpy.mockClear();
+
+        expect(keys.resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-plain");
+        keys.writeApiKey(keyFile, W2, "anthropic", "sk-second");
+        expect(keys.resolveApiKey(keyFile, W2, "anthropic")).toBe("sk-second");
+
+        expect(fs.statSync(keyFile).mode & 0o777).toBe(0o644);
+        expect(chmodSpy).not.toHaveBeenCalled();
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        chmodSpy.mockRestore();
+        warnSpy.mockRestore();
+      }
+    } finally {
+      Object.defineProperty(process, "platform", { value: real });
+      vi.resetModules();
+    }
+  });
+
   describe("format version", () => {
     it("reads a file without its format version as this build's format", () => {
       fs.writeFileSync(keyFile, JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));

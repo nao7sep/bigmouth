@@ -153,6 +153,7 @@ describe("an uploaded copy keeps its source's metadata", () => {
     saveAssetFile(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"), source);
     const stat = fs.statSync(path.join(assetDir(dataDir, POST), "a.png"));
     expect(stat.mtime.toISOString()).toBe("2021-03-04T05:06:07.000Z");
+    // Windows has no POSIX permission bits to carry over.
     if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(0o640);
     // The upload time stays the moment of the upload, apart from the file's time.
     expect(listAssets(dataDir, POST).assets[0].uploadedAt).toBe("2026-01-01T00:00:00.000Z");
