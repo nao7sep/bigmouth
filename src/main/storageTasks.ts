@@ -12,7 +12,7 @@ import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath, serializeError } from "./core/services/logger.js";
 import { stopBackups } from "./core/services/backupStore.js";
-import { getLogsDir, getRecordsDbPath } from "./core/services/storagePaths.js";
+import { getLogsDir, getRecordsDbPath, setDocumentsDirectory } from "./core/services/storagePaths.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
 import { message } from "@shared/i18n/translate";
@@ -45,7 +45,9 @@ function mutationResult(post: ReturnType<typeof postStore.updatePost>) {
 }
 
 export const storageTasks = {
-  initialize() {
+  /** `documentsDirectory` is the OS's Documents folder, which only the main process can ask Electron for. */
+  initialize(documentsDirectory?: string) {
+    if (documentsDirectory) setDocumentsDirectory(documentsDirectory);
     const config = initAppDir();
     initLogger(getRecordsDbPath(), getLogsDir());
     const state = initStateStore();

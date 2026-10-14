@@ -21,6 +21,7 @@ import {
   expandWorkspacePath,
   getDefaultWorkspacesParentDir,
   initStorageRoot,
+  setDocumentsDirectory,
 } from "@main/core/services/storagePaths.js";
 
 const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
@@ -208,6 +209,19 @@ describe("the default workspace folder", () => {
     } finally {
       removeTestTree(root);
     }
+  });
+
+  it("follows the Documents folder the OS reports, even one moved out of the home directory", () => {
+    // Windows lets the user, or OneDrive, move Documents; Electron's
+    // app.getPath("documents") reports where it is now.
+    const moved = path.join(os.tmpdir(), "OneDrive", "Documents");
+    setDocumentsDirectory(moved);
+    try {
+      expect(getDefaultWorkspacesParentDir()).toBe(path.join(moved, "BigMouth"));
+    } finally {
+      setDocumentsDirectory(null);
+    }
+    expect(getDefaultWorkspacesParentDir()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
   });
 });
 

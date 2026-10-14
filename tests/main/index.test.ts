@@ -61,6 +61,7 @@ vi.mock("electron", () => ({
     whenReady: () => Promise.resolve(),
     on: (event: string, cb: (...args: unknown[]) => unknown) => appHandlers.set(event, cb),
     quit: () => { shell.quitRequests++; },
+    getPath: (name: string) => `/os-reported/${name}`,
     exit: (code: number) => shell.exits.push(code),
   },
   systemPreferences: { setUserDefault: () => {}, removeUserDefault: () => {} },
@@ -93,6 +94,8 @@ const flush = vi.hoisted(() => ({
   backupDrains: [] as number[],
   // How many times exit let the records window's reader go.
   recordsReaderCloses: 0,
+  // The Documents folder each storage initialization was handed.
+  initializedDocuments: [] as (string | undefined)[],
   store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes" | "holdPendingFlushes">,
 }));
 vi.mock("@main/storageOwner.js", () => {
@@ -109,7 +112,8 @@ vi.mock("@main/storageOwner.js", () => {
   } };
 });
 vi.mock("@main/storageAccess.js", async () => ({
-  initialize: async () => {
+  initialize: async (documentsDirectory?: string) => {
+    flush.initializedDocuments.push(documentsDirectory);
     const store = await import("@main/core/services/workspaceStore.js");
     const paths = await import("@main/core/services/storagePaths.js");
     const config = store.initAppDir();
@@ -233,6 +237,7 @@ async function bootApp(): Promise<PostStore> {
   flush.finishSettles = true;
   flush.backupDrains = [];
   flush.recordsReaderCloses = 0;
+  flush.initializedDocuments = [];
   shell.kills.length = 0;
   shell.windowLoadFailure = null;
   shell.windowOpens = 0;
@@ -296,6 +301,15 @@ afterEach(async () => {
   else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
   fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+// The storage worker cannot reach Electron, so startup asks for the folder the
+// OS reports, which follows a Documents folder moved out of the home directory.
+describe("startup", () => {
+  it("hands storage the Documents folder Electron reports", async () => {
+    await bootApp();
+    expect(flush.initializedDocuments).toEqual(["/os-reported/documents"]);
+  });
 });
 
 describe("quit flushes the write-behind buffer", () => {

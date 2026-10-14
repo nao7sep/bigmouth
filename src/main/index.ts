@@ -69,7 +69,7 @@ async function bootstrap(): Promise<void> {
   // First, so that even a failure below is reported in the computer's language.
   await detectComputerLanguage();
   storageOwner.onRecordStored(notifyRecordsChanged);
-  const initialized = await initialize();
+  const initialized = await initialize(app.getPath("documents"));
   const appConfig = initialized.config;
   const appSettings = initialized.settings;
   initRecordsReader(initialized.recordsDbPath);

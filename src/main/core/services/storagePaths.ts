@@ -233,16 +233,27 @@ export function getApiKeysPath(): string {
   return required(apiKeysPath);
 }
 
+// The user's Documents folder as the OS reports it (Electron's
+// app.getPath("documents")), handed in by the main process at initialization
+// because this module also runs on the storage worker, which cannot reach
+// Electron. It follows a Documents folder the user or OneDrive moved elsewhere
+// on Windows; <home>/Documents stands in only where nothing was handed in.
+let documentsDirectory: string | null = null;
+
+/** Sets the Documents folder the default workspace parent sits in; null returns to <home>/Documents. */
+export function setDocumentsDirectory(directory: string | null): void {
+  documentsDirectory = directory;
+}
+
 /**
  * The folder a workspace created without a chosen location goes into:
- * `<home>/Documents/BigMouth`. A workspace is the user's own document, so it
- * never defaults into the storage root (storage-path conventions, "Ownership
- * decides location"). Resolved from the home directory on each call rather than
- * at initStorageRoot, because it is not under the root and BIGMOUTH_DATA_DIR
- * does not move it.
+ * `<Documents>/BigMouth`. A workspace is the user's own document, so it never
+ * defaults into the storage root (storage-path conventions, "Ownership decides
+ * location"). Resolved on each call rather than at initStorageRoot, because it
+ * is not under the root and BIGMOUTH_DATA_DIR does not move it.
  */
 export function getDefaultWorkspacesParentDir(): string {
-  return path.join(os.homedir(), "Documents", "BigMouth");
+  return path.join(documentsDirectory ?? path.join(os.homedir(), "Documents"), "BigMouth");
 }
 
 /** The app-wide settings store — the storage root's config.json, distinct from
