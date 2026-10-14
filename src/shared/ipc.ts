@@ -13,7 +13,7 @@ import type {
   AnthropicSettingsInput,
   AnthropicSettingsView,
   AppSettings,
-  AppSettingsLoad,
+  AppSettingsView,
   AnalysisPrompt,
   AssetListing,
   AssetMeta,
@@ -348,7 +348,7 @@ export interface BigMouthApi {
 
   // App-wide settings (the storage root's config.json) — the theme, which
   // applies in every workspace. Saving applies it to the whole app.
-  getAppSettings(): Promise<AppSettingsLoad>;
+  getAppSettings(): Promise<AppSettingsView>;
   saveAppSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
 
   // The interface language: what the window speaks and formats in, as the main

@@ -119,7 +119,7 @@ function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSetting
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AnthropicSettingsView = anthropic()) {
-  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null });
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "dark" });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
   mock.getAnthropicSettings.mockResolvedValue(ai);
@@ -531,6 +531,11 @@ describe("SettingsModal — theme", () => {
     const radios = within(group).getAllByRole("radio") as HTMLInputElement[];
     expect(radios.map((radio) => radio.value)).toEqual(["system", "light", "dark"]);
     expect(radios.find((radio) => radio.checked)?.value).toBe("system");
+  });
+
+  it("names what System resolves to now", async () => {
+    const { getByRole } = await renderModal();
+    expect(getByRole("radio", { name: "System (Dark)" })).toBeTruthy();
   });
 
   it("stages the theme until Save, then saves it app-wide", async () => {

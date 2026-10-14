@@ -140,6 +140,8 @@ export function SettingsModal({
   // App-wide (the storage root's config.json), edited and saved with the
   // workspace's own settings so the theme applies on Save like everything else.
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  // What System resolves to as Settings opens, shown beside it.
+  const [systemAppearance, setSystemAppearance] = useState<"light" | "dark">("light");
   const [anthropic, setAnthropic] = useState<AnthropicDraft | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
@@ -185,6 +187,7 @@ export function SettingsModal({
       .then(([app, s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
         if (cancelled) return;
         setAppSettings(app.settings);
+        setSystemAppearance(app.systemAppearance);
         initialAppSettings.current = app.settings;
         setSettings(s);
         initialSettings.current = s;
@@ -401,6 +404,7 @@ export function SettingsModal({
                 settings={settings}
                 onChange={setSettings}
                 appSettings={appSettings}
+                systemAppearance={systemAppearance}
                 onAppSettingsChange={setAppSettings}
               />
             )}
@@ -519,6 +523,7 @@ function GeneralTab({
   settings,
   onChange,
   appSettings,
+  systemAppearance,
   onAppSettingsChange,
 }: {
   workspaceName: string;
@@ -528,6 +533,7 @@ function GeneralTab({
   settings: Settings;
   onChange: (s: Settings) => void;
   appSettings: AppSettings;
+  systemAppearance: "light" | "dark";
   onAppSettingsChange: (s: AppSettings) => void;
 }) {
   const { t } = useI18n();
@@ -690,7 +696,10 @@ function GeneralTab({
                 checked={appSettings.theme === value}
                 onChange={() => onAppSettingsChange({ ...appSettings, theme: value })}
               />
-              {t(label)}
+              {/* System names what it resolves to now (app-chrome conventions, Theme). */}
+              {value === "system"
+                ? t(label, { appearance: t(systemAppearance === "dark" ? "settings.themeDark" : "settings.themeLight") })
+                : t(label)}
             </label>
           ))}
         </div>

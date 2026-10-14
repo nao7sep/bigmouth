@@ -4,7 +4,7 @@
   "settings.language": "Langue de l’interface",
   "settings.languageSystem": "Système",
   "settings.languageHint": "Système suit la langue de l’ordinateur. S’applique à tous les espaces de travail.",
-  "settings.themeSystem": "Système",
+  "settings.themeSystem": "Système ({appearance})",
   "settings.themeLight": "Clair",
   "settings.themeDark": "Sombre",
   "fatal.title": "BigMouth a rencontré une erreur dont il n’a pas pu se remettre",

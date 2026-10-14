@@ -4,7 +4,7 @@
   "settings.language": "Sprache der Oberfläche",
   "settings.languageSystem": "System",
   "settings.languageHint": "„System“ folgt der Sprache des Computers. Gilt für alle Arbeitsbereiche.",
-  "settings.themeSystem": "System",
+  "settings.themeSystem": "System ({appearance})",
   "settings.themeLight": "Hell",
   "settings.themeDark": "Dunkel",
   "fatal.title": "BigMouth ist auf einen Fehler gestoßen, den es nicht beheben konnte",

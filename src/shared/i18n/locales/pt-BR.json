@@ -4,7 +4,7 @@
   "settings.language": "Idioma da interface",
   "settings.languageSystem": "Sistema",
   "settings.languageHint": "Sistema segue o idioma do computador. Vale para todos os espaços de trabalho.",
-  "settings.themeSystem": "Sistema",
+  "settings.themeSystem": "Sistema ({appearance})",
   "settings.themeLight": "Claro",
   "settings.themeDark": "Escuro",
   "fatal.title": "O BigMouth encontrou um erro do qual não conseguiu se recuperar",

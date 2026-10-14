@@ -7,10 +7,10 @@ import { getAppSettingsLoad, saveAppSettings } from "../storageAccess.js";
 import { info } from "../core/services/logger.js";
 import { changeLanguagePreference, interfaceLanguage } from "../i18n.js";
 import { installApplicationMenu } from "../menu.js";
-import { applyThemePreference } from "../theme.js";
+import { applyThemePreference, systemAppearance } from "../theme.js";
 
 export function registerAppSettingsHandlers(): void {
-  ipcMain.handle(CHANNELS.getAppSettings, async () => await getAppSettingsLoad());
+  ipcMain.handle(CHANNELS.getAppSettings, async () => ({ ...await getAppSettingsLoad(), systemAppearance: systemAppearance() }));
 
   ipcMain.handle(CHANNELS.getInterfaceLanguage, () => interfaceLanguage());
 

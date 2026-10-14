@@ -1,6 +1,6 @@
 import type {
   AppSettings,
-  AppSettingsLoad,
+  AppSettingsView,
   Post,
   PostDeleteResult,
   PostStatus,
@@ -140,7 +140,7 @@ export function updateUiState(patch: Partial<UiState>): Promise<UiState> {
 // --- App settings (the storage root's config.json) ---
 
 /** The app-wide settings, and where an unreadable file was moved this launch. */
-export function getAppSettings(): Promise<AppSettingsLoad> {
+export function getAppSettings(): Promise<AppSettingsView> {
   return bridge().getAppSettings();
 }
 

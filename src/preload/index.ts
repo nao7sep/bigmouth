@@ -25,7 +25,7 @@ import type {
   AnthropicSettingsInput,
   AnthropicSettingsView,
   AppSettings,
-  AppSettingsLoad,
+  AppSettingsView,
   AssetListing,
   EditablePostMetadata,
   GenerationPromptsData,
@@ -134,7 +134,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.updateUiState, patch) as Promise<UiState>,
 
   // --- App settings ---
-  getAppSettings: () => ipcRenderer.invoke(CHANNELS.getAppSettings) as Promise<AppSettingsLoad>,
+  getAppSettings: () => ipcRenderer.invoke(CHANNELS.getAppSettings) as Promise<AppSettingsView>,
   saveAppSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke(CHANNELS.saveAppSettings, settings) as Promise<AppSettings>,
   getInterfaceLanguage: () => ipcRenderer.invoke(CHANNELS.getInterfaceLanguage) as Promise<InterfaceLanguage>,

@@ -92,6 +92,11 @@ export interface AppSettingsLoad {
   notice: Message | null;
 }
 
+/** App settings as Settings shows them: with what the System theme resolves to now. */
+export interface AppSettingsView extends AppSettingsLoad {
+  systemAppearance: "light" | "dark";
+}
+
 // --- Post ---
 
 export type PostStatus = "draft" | "discarded" | "verified" | "published" | "retired";

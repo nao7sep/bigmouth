@@ -4,7 +4,7 @@
   "settings.language": "Язык интерфейса",
   "settings.languageSystem": "Как в системе",
   "settings.languageHint": "«Как в системе» следует языку компьютера. Действует во всех рабочих пространствах.",
-  "settings.themeSystem": "Как в системе",
+  "settings.themeSystem": "Как в системе ({appearance})",
   "settings.themeLight": "Светлая",
   "settings.themeDark": "Тёмная",
   "fatal.title": "В BigMouth произошла ошибка, после которой работа невозможна",

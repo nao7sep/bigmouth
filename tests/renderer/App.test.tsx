@@ -176,7 +176,7 @@ beforeEach(() => {
   mockGetUiState.mockResolvedValue(uiState(""));
   // Default: one workspace is registered, so a launch is not a first run.
   mockList.mockResolvedValue([WS1]);
-  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null });
+  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "light" });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
 });
@@ -323,6 +323,7 @@ describe("App bootstrap — app settings recovery", () => {
     mockGetAppSettings.mockResolvedValue({
       settings: { theme: "system", language: "system" },
       notice: message("app.settingsRecovered", { path: "/home/me/.bigmouth/config-20260918-020000-000-utc.invalid" }),
+      systemAppearance: "light",
     });
     const { findByText } = await renderApp();
 

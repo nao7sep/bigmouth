@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 
 const electron = vi.hoisted(() => {
@@ -11,20 +11,31 @@ const electron = vi.hoisted(() => {
       listeners[event] = listener;
     }),
   };
-  return { windows, listeners, nativeTheme };
+  const defaults: Record<string, string> = {};
+  return { windows, listeners, nativeTheme, defaults };
 });
 
 vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => electron.windows },
   nativeTheme: electron.nativeTheme,
+  systemPreferences: { getUserDefault: (key: string) => electron.defaults[key] ?? "" },
 }));
 
-import { applyThemePreference, followOsThemeChanges, windowBackground } from "@main/theme.js";
+import { applyThemePreference, followOsThemeChanges, systemAppearance, windowBackground } from "@main/theme.js";
 
 beforeEach(() => {
   electron.windows.splice(0);
   electron.nativeTheme.themeSource = "system";
   electron.nativeTheme.shouldUseDarkColors = false;
+  delete electron.defaults.AppleInterfaceStyle;
+});
+
+const PLATFORM = process.platform;
+function onPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, "platform", { value: platform });
+}
+afterEach(() => {
+  Object.defineProperty(process, "platform", { value: PLATFORM });
 });
 
 function fakeWindow() {
@@ -63,5 +74,34 @@ describe("theme", () => {
     const bg = (block: string) => block.match(/--bm-bg:\s*(#[0-9a-f]{6});/i)?.[1]?.toLowerCase();
     expect(windowBackground(false)).toBe(bg(light));
     expect(windowBackground(true)).toBe(bg(dark));
+  });
+});
+
+// What Settings shows beside System: the OS appearance, whatever the app applied.
+describe("the System appearance", () => {
+  it("reads macOS's own appearance even under a saved Light or Dark", () => {
+    onPlatform("darwin");
+    applyThemePreference("light");
+    electron.defaults.AppleInterfaceStyle = "Dark";
+    expect(systemAppearance()).toBe("dark");
+    delete electron.defaults.AppleInterfaceStyle;
+    expect(systemAppearance()).toBe("light");
+  });
+
+  it("keeps the appearance last seen under System once a fixed theme is applied elsewhere", () => {
+    onPlatform("win32");
+    electron.nativeTheme.shouldUseDarkColors = true; // System, OS dark
+    applyThemePreference("light");
+    electron.nativeTheme.shouldUseDarkColors = false; // Electron now reports Light
+    expect(systemAppearance()).toBe("dark");
+  });
+
+  it("follows the OS live while the app is on System", () => {
+    onPlatform("linux");
+    electron.nativeTheme.themeSource = "system";
+    electron.nativeTheme.shouldUseDarkColors = false;
+    expect(systemAppearance()).toBe("light");
+    electron.nativeTheme.shouldUseDarkColors = true;
+    expect(systemAppearance()).toBe("dark");
   });
 });
