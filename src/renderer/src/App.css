@@ -2171,15 +2171,8 @@ select:is(.form-select, .prompt-select) {
   color: var(--bm-text-muted);
   letter-spacing: 0;
   text-align: center;
-  /* A long extension wraps inside the tile and, past three lines, ends with
-     an ellipsis instead of being clipped by it; the name beside it holds the
-     whole extension. */
+  /* A long extension wraps inside the tile instead of being clipped by it. */
   overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  overflow: hidden;
 }
 
 .asset-info {
@@ -2188,41 +2181,17 @@ select:is(.form-select, .prompt-select) {
 }
 
 /* The name beside the fixed-height thumbnail: two lines, then an ellipsis
-   that keeps its beginning. It is a disclosure button; opened, it shows the
-   whole name wrapped, scrolling past a height limit. */
+   that keeps its beginning. Its `title` shows it whole on hover. */
 .asset-name {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: var(--bm-radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.asset-name-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
-}
-
-/* 255 bytes, the longest name a file system allows, fits in about nine lines
-   at the narrowest pane; the limit only guards a wider font. */
-.asset-name[aria-expanded="true"] .asset-name-text {
-  display: block;
-  max-height: calc(10 * 16px);
-  overflow-y: auto;
-  -webkit-line-clamp: none;
-  line-clamp: none;
 }
 
 .asset-meta {
@@ -2429,8 +2398,8 @@ select:is(.form-select, .prompt-select) {
 }
 
 /* A row is identifying text on fixed lines: the name keeps its beginning, the
-   folder its last segment (ShortPath). The selected row's whole name and
-   folder are in .workspace-detail under the list. */
+   folder its last segment (ShortPath). Each shows whole on hover, and Rename's
+   field holds the whole name. */
 .workspace-item-name {
   display: flex;
   align-items: center;
@@ -2467,39 +2436,9 @@ select:is(.form-select, .prompt-select) {
 
 .workspace-row-actions {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-/* The selected row's whole name and folder, as text to be read: wrapped,
-   selectable, scrolling past five lines. */
-.workspace-detail {
-  flex: 1;
-  min-width: 0;
-  max-height: calc(5 * 18px);
-  overflow-y: auto;
-  font-size: 12px;
-  line-height: 18px;
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
-.workspace-detail-name {
-  font-weight: 500;
-}
-
-.workspace-detail-dir {
-  font-family: var(--bm-font-mono);
-  font-size: 11px;
-  color: var(--bm-text-muted);
-}
-
-.workspace-row-buttons {
-  display: flex;
+  justify-content: flex-end;
   gap: var(--bm-control-gap);
-  flex-shrink: 0;
-  margin-left: auto;
+  margin-top: 8px;
 }
 
 /* The commands that add a workspace, above the list rather than in the footer,

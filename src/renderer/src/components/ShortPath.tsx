@@ -5,8 +5,7 @@ import { splitPath } from "../util/shortenedText";
  * final segment (interface-styling conventions, Labels). The head shrinks
  * first, behind its own ellipsis; the tail gives way only once the head is
  * gone. The whole path stays in the DOM, so assistive technology reads it all,
- * and in `title` as a hover bonus. The caller provides the keyboard and touch
- * route to the full value, such as the selected item's detail.
+ * and in `title`, which shows it whole on hover.
  */
 export function ShortPath({ path, className }: { path: string; className?: string }) {
   const { head, tail } = splitPath(path);

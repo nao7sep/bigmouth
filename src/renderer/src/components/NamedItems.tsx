@@ -34,10 +34,10 @@ export function fewNamesText(translator: Pick<Translator, "t" | "list">, names: 
 /**
  * A message about several items, as a compact surface shows it (interface-
  * styling conventions, Labels): the sentence, a few names and a count of the
- * rest, and a disclosure whose height-limited, scrolling list holds every item
- * whole. The disclosure is a native <details>, so keyboard and touch open it.
- * It is left out when the summary already names every item and none carries
- * more than its name.
+ * rest. When the items carry their own lines — a reason or message to be read
+ * — a disclosure follows whose height-limited, scrolling list holds every line
+ * whole; it is a native <details>, so keyboard and touch open it. Items that
+ * are only names get no disclosure: the summary already tells them apart.
  */
 export function ListedMessageView({ listed }: { listed: ListedMessage }) {
   const translator = useI18n();
@@ -49,17 +49,17 @@ export function ListedMessageView({ listed }: { listed: ListedMessage }) {
   const sentence = listed.namesIn
     ? text({ ...listed.message, values: { ...listed.message.values, [listed.namesIn]: summary } })
     : text(listed.message);
-  const needsList = nameFew(names).more > 0 || items.some((item) => item.line !== undefined);
+  const lines = items.flatMap((item) => (item.line ? [item.line] : []));
   return (
     <>
       <div>{sentence}</div>
       {!listed.namesIn && <div className="named-items-summary">{summary}</div>}
-      {needsList && (
+      {lines.length > 0 && (
         <details className="named-items">
           <summary className="named-items-toggle">{t("result.fullList")}</summary>
           <ul className="named-items-list" data-passive-scroll-region="">
-            {items.map((item, index) => (
-              <li key={`${index}:${item.name}`}>{item.line ? text(item.line) : item.name}</li>
+            {lines.map((line, index) => (
+              <li key={index}>{text(line)}</li>
             ))}
           </ul>
         </details>

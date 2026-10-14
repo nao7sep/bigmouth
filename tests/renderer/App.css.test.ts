@@ -254,7 +254,7 @@ describe("App.css truncation sites", () => {
 
   it("cuts text only at the reviewed sites", () => {
     const cut = rules.filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body)).map((rule) => rule.selector);
-    // Each site, and where its whole value is reached by keyboard and touch:
+    // Each site, and where its whole value is reached:
     expect(cut).toEqual([
       // Sidebar titles: the selected post's Metadata shows the whole title (or
       // its body, for an untitled post).
@@ -262,8 +262,8 @@ describe("App.css truncation sites", () => {
       // Sidebar and toolbar target names: Settings' Targets tab shows them whole.
       ".post-item-target",
       ".toolbar-target",
-      // A path's head, then its final segment (ShortPath): each use shows the
-      // whole path elsewhere, such as the selected workspace's detail.
+      // A path's head, then its final segment (ShortPath): its tooltip shows
+      // the whole path.
       ".short-path-head",
       ".short-path-tail",
       // Menu labels and the workspace header: cut only past the window's width;
@@ -277,7 +277,7 @@ describe("App.css truncation sites", () => {
       ".post-picker-title",
       ".post-picker-sub",
       ".source-selected-title",
-      // Workspace rows: the selected row's detail shows the whole name.
+      // Workspace rows: the tooltip and Rename's field show the whole name.
       ".workspace-item-name-text",
       // Records rows: the selected record's detail shows the whole message.
       ".records-row-title",
@@ -290,9 +290,8 @@ describe("App.css truncation sites", () => {
     const clamped = rules
       .filter((rule) => /(^|[\s;])-webkit-line-clamp:\s*\d/.test(rule.body))
       .map((rule) => rule.selector);
-    // An asset's name beside its thumbnail: the name is a disclosure that shows
-    // it whole. Its extension in the file tile: the name beside it holds it.
-    expect(clamped).toEqual([".asset-file-icon", ".asset-name-text"]);
+    // An asset's name beside its thumbnail: its tooltip shows it whole.
+    expect(clamped).toEqual([".asset-name"]);
     for (const rule of rules.filter((candidate) => clamped.includes(candidate.selector))) {
       expect(rule.body, `${rule.selector} must hide what it clamps`).toMatch(/overflow:\s*hidden/);
     }

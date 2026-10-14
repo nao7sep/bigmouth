@@ -64,7 +64,7 @@ describe("ListedMessageView", () => {
     expect(container.querySelector(".named-items-list li")?.textContent).toMatch(/^bad\.png: The file could not be added/);
   });
 
-  it("leaves the disclosure out when the summary already names every item", () => {
+  it("leaves the disclosure out when the items are names alone", () => {
     const { container } = render(
       <ListedMessageView listed={{ message: message("assets.notAdded", { count: 2 }), items: [{ name: "a.png" }, { name: "b.png" }] }} />,
     );
@@ -79,7 +79,8 @@ describe("ListedMessageView", () => {
     );
     expect(container.textContent).toContain("resolve to the same asset name (a.png, b.png, c.png and 1 more)");
     expect(container.querySelector(".named-items-summary")).toBeNull();
-    expect([...container.querySelectorAll(".named-items-list li")].map((item) => item.textContent)).toEqual(["a.png", "b.png", "c.png", "d.png"]);
+    // Names alone, past the count, are not repeated behind a disclosure.
+    expect(container.querySelector("details")).toBeNull();
   });
 
   it("is the plain sentence when no items are given", () => {

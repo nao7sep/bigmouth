@@ -553,8 +553,8 @@ export function WorkspaceModal({
                   </div>
                 ) : (
                   // One line each, so every row keeps its height: the name keeps
-                  // its beginning and the folder its last segment. The selected
-                  // row's whole name and folder are in the detail under the list.
+                  // its beginning and the folder its last segment. Hovering
+                  // either shows it whole, and Rename's field holds the whole name.
                   <div className="workspace-item-main">
                     <div className="workspace-item-name">
                       <span className="workspace-item-name-text" title={ws.name}>{ws.name}</span>
@@ -568,23 +568,12 @@ export function WorkspaceModal({
           })}
         </div>
         <div className="workspace-row-actions">
-          {/* The keyboard and touch route to what a row shortens: arrows or a
-              tap select a row, and its whole name and folder wrap here as
-              selectable text, scrolling past a few lines. */}
-          {selected && (
-            <div className="workspace-detail" data-passive-scroll-region="">
-              <div className="workspace-detail-name">{selected.name}</div>
-              <div className="workspace-detail-dir">{selected.dataDirectory}</div>
-            </div>
-          )}
-          <div className="workspace-row-buttons">
-            <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
-              {t("common.rename")}
-            </button>
-            <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
-              {t("workspaces.remove")}
-            </button>
-          </div>
+          <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
+            {t("common.rename")}
+          </button>
+          <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
+            {t("workspaces.remove")}
+          </button>
         </div>
       </>
     );

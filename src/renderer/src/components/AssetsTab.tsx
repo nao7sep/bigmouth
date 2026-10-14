@@ -513,7 +513,6 @@ function AssetCard({
   locked: boolean;
 }) {
   const { t, locale } = useI18n();
-  const [nameOpen, setNameOpen] = useState(false);
   const src = assetUrl(postId, asset.filename, workspaceId);
   const img = isImage(asset.filename);
 
@@ -528,19 +527,10 @@ function AssetCard({
       </div>
       <div className="asset-info">
         {/* Beside the fixed-height thumbnail the name gets two lines, then an
-            ellipsis that keeps its beginning. The name is a disclosure button,
-            so keyboard and touch can open the whole name in place, wrapped in
-            a height-limited area; its accessible name is always the whole
-            name, and `title` repeats it on hover. */}
-        <button
-          type="button"
-          className="asset-name"
-          aria-expanded={nameOpen}
-          title={asset.filename}
-          onClick={() => setNameOpen((open) => !open)}
-        >
-          <span className="asset-name-text">{asset.filename}</span>
-        </button>
+            ellipsis that keeps its beginning; hovering shows it whole. */}
+        <div className="asset-name" title={asset.filename}>
+          {asset.filename}
+        </div>
         <div className="asset-meta">
           {formatBytes(asset.size, locale)}
           {asset.width && asset.height && (

@@ -664,34 +664,26 @@ describe("AssetsTab result", () => {
   });
 });
 
-// Beside the thumbnail a name gets two lines; the name itself is the keyboard
-// and touch route to all of it.
+// Beside the thumbnail a name gets two lines; hovering shows it whole.
 describe("AssetsTab asset names", () => {
-  it("opens and closes the whole name from the name itself", async () => {
+  it("keeps the whole name as the name's tooltip", async () => {
     const filename = "a-very-long-asset-name-that-would-run-on-for-several-lines-beside-its-thumbnail.png";
     mockListAssets.mockResolvedValue({ assets: [asset({ filename })] });
-    const { getByRole } = await renderTab();
-    const name = getByRole("button", { name: filename });
-    expect(name.getAttribute("aria-expanded")).toBe("false");
+    const { container } = await renderTab();
+    const name = container.querySelector(".asset-name") as HTMLElement;
+    expect(name.textContent).toBe(filename);
     expect(name.getAttribute("title")).toBe(filename);
-    fireEvent.click(name);
-    expect(name.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(name);
-    expect(name.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
 describe("AssetsTab locked", () => {
-  it("disables Add and card actions, but still opens the whole name", async () => {
+  it("disables Add and card actions", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "ro.png" })] });
     const { container, getByRole } = await renderTab({ locked: true });
     expect((getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     const card = container.querySelector(".asset-card") as HTMLElement;
-    for (const name of ["Insert", "Delete"]) {
-      expect((within(card).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
-    }
-    // Reading a name changes nothing, so a locked post still shows it whole.
-    expect((within(card).getByRole("button", { name: "ro.png" }) as HTMLButtonElement).disabled).toBe(false);
+    const buttons = within(card).getAllByRole("button");
+    expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("explains a committed drop while locked", async () => {
