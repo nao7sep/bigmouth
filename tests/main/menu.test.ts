@@ -39,6 +39,16 @@ describe("application menu", () => {
     );
   });
 
+  // Cmd+W comes from the close role's own accelerator; with no File menu,
+  // the Window menu is what carries it, on macOS as everywhere else.
+  it("closes the key window from the Window menu on macOS", () => {
+    const template = applicationMenuTemplate(createTranslator("en"), "darwin");
+    const windowMenu = template.find((item) => item.role === "windowMenu")!;
+    const close = (windowMenu.submenu as MenuItemConstructorOptions[]).find((item) => item.role === "close");
+    expect(close).toMatchObject({ role: "close", label: "Close" });
+    expect(close!.accelerator).toBeUndefined();
+  });
+
   it("has no app menu off macOS and closes the window from the Window menu", () => {
     const template = applicationMenuTemplate(createTranslator("fr"), "win32");
     expect(template.map((item) => item.role ?? item.label)).toEqual(["editMenu", "Présentation", "windowMenu"]);

@@ -9,7 +9,8 @@ const APP = "BigMouth";
 // default). BigMouth's own actions live in the in-window UI; this menu carries
 // only the platform essentials — the app/quit menu, the full Edit roles (so
 // copy/paste/undo work in text inputs), a View menu (dev reload + devtools in dev
-// only, plus zoom and fullscreen), and the standard Window menu.
+// only, plus zoom and fullscreen), and the standard Window menu, whose Close
+// gives every window Cmd/Ctrl+W.
 //
 // Every item is labelled from the catalogues: Electron's role labels are
 // English. Roles still carry the behavior — the standard actions sent to
@@ -97,6 +98,11 @@ export function applicationMenuTemplate(
     label: t("nativeMenu.window"),
     submenu: isMac
       ? [
+          // Cmd+W closes the key window as its close button would, on every
+          // window BigMouth opens: the main window (which saves and asks first),
+          // Records, and a message dialog (which answers it with its cancel
+          // choice). There is no File menu to carry it.
+          { role: "close", label: t("nativeMenu.close") },
           { role: "minimize", label: t("nativeMenu.minimize") },
           { role: "zoom", label: t("nativeMenu.zoom") },
           separator,
