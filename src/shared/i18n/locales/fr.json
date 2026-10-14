@@ -49,6 +49,8 @@
   "dialog.unsavedChanges.message": "Certaines modifications n’ont pas pu être enregistrées.",
   "dialog.unsavedChanges.detail": "BigMouth ne s’est pas fermé, car il n’a pas pu écrire vos dernières modifications sur le disque. Vous pouvez réessayer, quitter quand même et les perdre, ou annuler et copier votre texte en lieu sûr. Chaque publication qui n’a pas pu être enregistrée en indique la raison dans l’éditeur.",
   "dialog.unsavedChanges.detailWithMetadata": "BigMouth ne s’est pas fermé, car il n’a pas pu écrire vos dernières modifications sur le disque. {refused} Vous pouvez réessayer, quitter quand même et les perdre, ou annuler et copier votre texte en lieu sûr. Chaque publication qui n’a pas pu être enregistrée en indique la raison dans l’éditeur.",
+  "dialog.unsavedChanges.closeDetail": "BigMouth n’a pas fermé la fenêtre, car il n’a pas pu écrire vos dernières modifications sur le disque. Vous pouvez réessayer, fermer quand même et les perdre, ou annuler et copier votre texte en lieu sûr. Chaque publication qui n’a pas pu être enregistrée en indique la raison dans l’éditeur.",
+  "dialog.unsavedChanges.closeDetailWithMetadata": "BigMouth n’a pas fermé la fenêtre, car il n’a pas pu écrire vos dernières modifications sur le disque. {refused} Vous pouvez réessayer, fermer quand même et les perdre, ou annuler et copier votre texte en lieu sûr. Chaque publication qui n’a pas pu être enregistrée en indique la raison dans l’éditeur.",
   "dialog.unsavedMetadata.title": "Métadonnées non enregistrées",
   "dialog.unsavedMetadata.message": "Une valeur de métadonnées n’a pas été enregistrée.",
   "dialog.unsavedMetadata.quitDetail": "{refused} Quitter quand même et la perdre, ou annuler et corriger le champ\u00a0?",

@@ -703,12 +703,85 @@ describe("a refused metadata value on screen", () => {
     windowHandlers.get("close")!({ preventDefault: again });
     expect(again).not.toHaveBeenCalled();
   });
+});
 
-  it("closes on macOS without asking when nothing on screen was refused", async () => {
+// On macOS the app outlives its window, so the close saves as a quit does and
+// asks then, while the posts are still on screen, rather than at a later quit.
+describe("closing the main window on macOS", () => {
+  it("writes buffered edits and closes without asking when they are on disk", async () => {
+    onPlatform("darwin");
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "written at close");
+    const preventDefault = vi.fn();
+
+    windowHandlers.get("close")!({ preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
+    expect(shell.dialogs).toEqual([]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("written at close");
+    // The close that window.close() raises goes through.
+    const again = vi.fn();
+    windowHandlers.get("close")!({ preventDefault: again });
+    expect(again).not.toHaveBeenCalled();
+  });
+
+  it("asks about an edit it could not write, and Cancel keeps the window", async () => {
+    onPlatform("darwin");
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+
+    windowHandlers.get("close")!({ preventDefault: () => {} });
+
+    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+    expect(shell.dialogs[0].buttons).toEqual(["Cancel", "Retry", "Close Anyway"]);
+    expect(shell.dialogs[0].detail).toContain("did not close the window");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shell.windowCloses).toBe(0);
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("writes again on Retry and closes once the posts are written", async () => {
     onPlatform("darwin");
     await bootApp();
+    flush.plan = ["stall", "store"];
+    shell.dialogChoices = [1]; // Retry
+
+    windowHandlers.get("close")!({ preventDefault: () => {} });
+
+    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
+    expect(shell.dialogs).toHaveLength(1);
+    expect(flush.calls).toBe(2);
+  });
+
+  it("closes without the edits on Close Anyway", async () => {
+    onPlatform("darwin");
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+    shell.dialogChoice = 2;
+
+    windowHandlers.get("close")!({ preventDefault: () => {} });
+
+    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
+    expect(shell.exits).toEqual([]);
+  });
+
+  it("never asks while the OS session is ending", async () => {
+    onPlatform("darwin");
+    const store = await bootApp();
+    const post = store.createPost(dataDir, "blogger", "en");
+    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
+    fs.unlinkSync(post.filePath);
+    powerHandlers.get("shutdown")!();
     const preventDefault = vi.fn();
+
     windowHandlers.get("close")!({ preventDefault });
+
     expect(preventDefault).not.toHaveBeenCalled();
     expect(shell.dialogs).toEqual([]);
   });

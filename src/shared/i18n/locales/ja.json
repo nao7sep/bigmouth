@@ -49,6 +49,8 @@
   "dialog.unsavedChanges.message": "一部の編集を保存できませんでした。",
   "dialog.unsavedChanges.detail": "最新の変更をディスクに書き込めなかったため、BigMouth は終了しませんでした。再試行するか、このまま終了して変更を失うか、キャンセルしてテキストを安全な場所にコピーしてください。保存できなかった投稿には、それぞれその理由がエディタに表示されています。",
   "dialog.unsavedChanges.detailWithMetadata": "最新の変更をディスクに書き込めなかったため、BigMouth は終了しませんでした。{refused}再試行するか、このまま終了して変更を失うか、キャンセルしてテキストを安全な場所にコピーしてください。保存できなかった投稿には、それぞれその理由がエディタに表示されています。",
+  "dialog.unsavedChanges.closeDetail": "最新の変更をディスクに書き込めなかったため、BigMouth はウィンドウを閉じませんでした。再試行するか、このまま閉じて変更を失うか、キャンセルしてテキストを安全な場所にコピーしてください。保存できなかった投稿には、それぞれその理由がエディタに表示されています。",
+  "dialog.unsavedChanges.closeDetailWithMetadata": "最新の変更をディスクに書き込めなかったため、BigMouth はウィンドウを閉じませんでした。{refused}再試行するか、このまま閉じて変更を失うか、キャンセルしてテキストを安全な場所にコピーしてください。保存できなかった投稿には、それぞれその理由がエディタに表示されています。",
   "dialog.unsavedMetadata.title": "保存されていないメタデータ",
   "dialog.unsavedMetadata.message": "メタデータの値が保存されませんでした。",
   "dialog.unsavedMetadata.quitDetail": "{refused}このまま終了して値を失いますか？それともキャンセルしてフィールドを修正しますか？",

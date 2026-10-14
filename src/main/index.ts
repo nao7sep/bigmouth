@@ -1,10 +1,6 @@
 import { app, BrowserWindow, powerMonitor } from "electron";
 
-import {
-  confirmCloseWithRefusedMetadata,
-  confirmQuitWithUnsavedChanges,
-  showStartupFailure,
-} from "./dialogs.js";
+import { confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
 import { initialize, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
 import { storageOwner } from "./storageOwner.js";
@@ -104,9 +100,10 @@ async function bootstrap(): Promise<void> {
 //
 // Off macOS, closing the main window is how the app quits, so the close becomes
 // the quit: it saves first, and the window stays open when the user cancels.
-// On macOS the app stays alive after the window closes, and the store writes
-// the buffer on its debounce; closing it drops only what its fields show, so a
-// metadata value the store refused (and so never buffered) asks first.
+// On macOS the app stays alive after the window closes, so the close saves as a
+// quit does and asks then, while the posts are still on screen, about edits it
+// could not write and metadata values the store refused; a later quit would ask
+// about posts no longer in view.
 async function openMainWindow(): Promise<void> {
   const window = await createMainWindow();
   mainWindow = window;
@@ -117,31 +114,46 @@ async function openMainWindow(): Promise<void> {
   window.on("session-end", () => {
     sessionEnding = true;
     shuttingDown = true;
-    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS));
+    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS), "quit");
     exitAppWithin();
   });
   const ownerId = window.webContents.id;
   let askingToClose = false;
+  // Set once the close was settled, so the window.close() that follows passes.
+  let closeSettled = false;
   window.on("close", (event) => {
-    if (systemShutdown()) return;
+    if (systemShutdown() || shuttingDown) return;
     if (process.platform !== "darwin") {
       event.preventDefault();
       app.quit();
       return;
     }
-    if (!holdsRefusedMetadata(ownerId)) return;
+    if (closeSettled) {
+      closeSettled = false;
+      return;
+    }
     event.preventDefault();
     if (askingToClose) return;
     askingToClose = true;
     void (async () => {
       try {
-        if (await confirmCloseWithRefusedMetadata() === "cancel") return;
+        for (;;) {
+          const writeFailures = !await flushPendingEdits("close");
+          const refusedMetadata = holdsRefusedMetadata(ownerId);
+          if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
+          const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata }, "close");
+          if (systemShutdown() || choice === "proceed") break;
+          if (choice === "cancel") return;
+        }
         forgetRefusedMetadata(ownerId);
+        closeSettled = true;
         if (!window.isDestroyed()) window.close();
       } catch (error) {
         logError("close confirmation failed; window remains open", { error: serializeError(error) });
       } finally {
         askingToClose = false;
+        // The flush held the store's debounce; the app goes on running.
+        if (!shuttingDown) void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
       }
     })();
   });
@@ -151,21 +163,21 @@ async function openMainWindow(): Promise<void> {
  * Writes the buffered post edits within the bound and logs what it could not
  * write. Returns whether they are all known to be on disk.
  */
-async function flushAtQuit(): Promise<boolean> {
-  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS));
+async function flushPendingEdits(occasion: "quit" | "close"): Promise<boolean> {
+  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS), occasion);
 }
 
-function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>): boolean {
+function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>, occasion: "quit" | "close"): boolean {
   switch (outcome.kind) {
     case "flushed":
       if (outcome.failures.length === 0) return true;
-      logError("pending edits flush failed at quit", { failures: outcome.failures });
+      logError(`pending edits flush failed at ${occasion}`, { failures: outcome.failures });
       return false;
     case "expired":
-      logError("pending edits flush did not finish at quit", { boundMs: QUIT_FLUSH_BOUND_MS });
+      logError(`pending edits flush did not finish at ${occasion}`, { boundMs: QUIT_FLUSH_BOUND_MS });
       return false;
     case "crashed":
-      logError("pending edits flush could not run at quit", { error: outcome.error });
+      logError(`pending edits flush could not run at ${occasion}`, { error: outcome.error });
       return false;
   }
 }
@@ -260,11 +272,11 @@ if (!ownsInstance) {
     void (async () => {
       try {
         for (;;) {
-          const writeFailures = !await flushAtQuit();
+          const writeFailures = !await flushPendingEdits("quit");
           const refusedMetadata = anyRefusedMetadata();
           if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
-          const choice = await confirmQuitWithUnsavedChanges({ writeFailures, refusedMetadata });
-          if (systemShutdown() || choice === "quit-anyway") break;
+          const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata }, "quit");
+          if (systemShutdown() || choice === "proceed") break;
           if (choice === "cancel") {
             shuttingDown = false;
             void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));

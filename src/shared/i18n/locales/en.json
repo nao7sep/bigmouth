@@ -49,6 +49,8 @@
   "dialog.unsavedChanges.message": "Some edits could not be saved.",
   "dialog.unsavedChanges.detail": "BigMouth did not quit, because it could not write your latest changes to disk. Retry, quit anyway and lose them, or cancel and copy your text somewhere safe. Each post that could not be saved shows why in the editor.",
   "dialog.unsavedChanges.detailWithMetadata": "BigMouth did not quit, because it could not write your latest changes to disk. {refused} Retry, quit anyway and lose them, or cancel and copy your text somewhere safe. Each post that could not be saved shows why in the editor.",
+  "dialog.unsavedChanges.closeDetail": "BigMouth did not close the window, because it could not write your latest changes to disk. Retry, close anyway and lose them, or cancel and copy your text somewhere safe. Each post that could not be saved shows why in the editor.",
+  "dialog.unsavedChanges.closeDetailWithMetadata": "BigMouth did not close the window, because it could not write your latest changes to disk. {refused} Retry, close anyway and lose them, or cancel and copy your text somewhere safe. Each post that could not be saved shows why in the editor.",
   "dialog.unsavedMetadata.title": "Unsaved metadata",
   "dialog.unsavedMetadata.message": "A metadata value was not saved.",
   "dialog.unsavedMetadata.quitDetail": "{refused} Quit anyway and lose it, or cancel and fix the field?",

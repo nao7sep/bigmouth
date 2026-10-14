@@ -15,9 +15,9 @@ import { mainTranslator } from "./i18n.js";
 import { showPlainMessageDialog } from "./plain-message-dialog.js";
 
 /** What the user chose when told their unsaved edits could not be written. */
-export type UnsavedChangesChoice = "cancel" | "retry" | "quit-anyway";
+export type UnsavedChangesChoice = "cancel" | "retry" | "proceed";
 
-/** What quitting now would lose. */
+/** What quitting, or closing the window, now would lose. */
 export interface UnsavedAtQuit {
   /** Buffered edits the store could not write. */
   writeFailures: boolean;
@@ -26,57 +26,48 @@ export interface UnsavedAtQuit {
 }
 
 /**
- * Asks whether to quit with edits that could not be saved.
+ * Asks whether to quit, or on macOS to close the main window, with edits that
+ * could not be saved. The question comes while the edits are still on screen:
+ * on macOS the app outlives its window, so leaving the question to a later quit
+ * would ask about posts no longer in view.
  *
  * Edits that could not be written offer Retry, the default; a refused value
  * alone does not, because writing again cannot change it. Cancel is the Escape
  * path, because it loses nothing.
  */
-export async function confirmQuitWithUnsavedChanges(unsaved: UnsavedAtQuit): Promise<UnsavedChangesChoice> {
+export async function confirmUnsavedChanges(unsaved: UnsavedAtQuit, action: "quit" | "close"): Promise<UnsavedChangesChoice> {
   const { t } = mainTranslator();
   const refused = message("dialog.refusedMetadata.explanation");
+  const proceed = t(action === "quit" ? "dialog.quitAnyway" : "dialog.closeAnyway");
   if (unsaved.writeFailures) {
+    const detail = action === "quit"
+      ? unsaved.refusedMetadata
+        ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
+        : t("dialog.unsavedChanges.detail")
+      : unsaved.refusedMetadata
+        ? t("dialog.unsavedChanges.closeDetailWithMetadata", { refused })
+        : t("dialog.unsavedChanges.closeDetail");
     const choice = await showPlainMessageDialog({
       title: t("dialog.unsavedChanges.title"),
       message: t("dialog.unsavedChanges.message"),
-      detail: unsaved.refusedMetadata
-        ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
-        : t("dialog.unsavedChanges.detail"),
-      buttons: [t("common.cancel"), t("common.retry"), t("dialog.quitAnyway")],
+      detail,
+      buttons: [t("common.cancel"), t("common.retry"), proceed],
       defaultId: 1,
       cancelId: 0,
       destructiveId: 2,
     });
-    return choice === 1 ? "retry" : choice === 2 ? "quit-anyway" : "cancel";
+    return choice === 1 ? "retry" : choice === 2 ? "proceed" : "cancel";
   }
   const choice = await showPlainMessageDialog({
     title: t("dialog.unsavedMetadata.title"),
     message: t("dialog.unsavedMetadata.message"),
-    detail: t("dialog.unsavedMetadata.quitDetail", { refused }),
-    buttons: [t("common.cancel"), t("dialog.quitAnyway")],
+    detail: t(action === "quit" ? "dialog.unsavedMetadata.quitDetail" : "dialog.unsavedMetadata.closeDetail", { refused }),
+    buttons: [t("common.cancel"), proceed],
     defaultId: 0,
     cancelId: 0,
     destructiveId: 1,
   });
-  return choice === 1 ? "quit-anyway" : "cancel";
-}
-
-/** What the user chose when closing a window that shows a refused metadata value. */
-export type RefusedMetadataCloseChoice = "cancel" | "close-anyway";
-
-/** Asks whether to close a window whose Metadata tab shows a refused value. */
-export async function confirmCloseWithRefusedMetadata(): Promise<RefusedMetadataCloseChoice> {
-  const { t } = mainTranslator();
-  const choice = await showPlainMessageDialog({
-    title: t("dialog.unsavedMetadata.title"),
-    message: t("dialog.unsavedMetadata.message"),
-    detail: t("dialog.unsavedMetadata.closeDetail", { refused: message("dialog.refusedMetadata.explanation") }),
-    buttons: [t("common.cancel"), t("dialog.closeAnyway")],
-    defaultId: 0,
-    cancelId: 0,
-    destructiveId: 1,
-  });
-  return choice === 0 ? "cancel" : "close-anyway";
+  return choice === 1 ? "proceed" : "cancel";
 }
 
 /**

@@ -49,6 +49,8 @@
   "dialog.unsavedChanges.message": "Alcune modifiche non sono state salvate.",
   "dialog.unsavedChanges.detail": "BigMouth non è stato chiuso perché non è riuscito a scrivere le tue ultime modifiche sul disco. Puoi riprovare, uscire comunque e perderle, oppure annullare e copiare il testo in un posto sicuro. Ogni post che non è stato salvato mostra il motivo nell’editor.",
   "dialog.unsavedChanges.detailWithMetadata": "BigMouth non è stato chiuso perché non è riuscito a scrivere le tue ultime modifiche sul disco. {refused} Puoi riprovare, uscire comunque e perderle, oppure annullare e copiare il testo in un posto sicuro. Ogni post che non è stato salvato mostra il motivo nell’editor.",
+  "dialog.unsavedChanges.closeDetail": "BigMouth non ha chiuso la finestra perché non è riuscito a scrivere le tue ultime modifiche sul disco. Puoi riprovare, chiudere comunque e perderle, oppure annullare e copiare il testo in un posto sicuro. Ogni post che non è stato salvato mostra il motivo nell’editor.",
+  "dialog.unsavedChanges.closeDetailWithMetadata": "BigMouth non ha chiuso la finestra perché non è riuscito a scrivere le tue ultime modifiche sul disco. {refused} Puoi riprovare, chiudere comunque e perderle, oppure annullare e copiare il testo in un posto sicuro. Ogni post che non è stato salvato mostra il motivo nell’editor.",
   "dialog.unsavedMetadata.title": "Metadati non salvati",
   "dialog.unsavedMetadata.message": "Un valore dei metadati non è stato salvato.",
   "dialog.unsavedMetadata.quitDetail": "{refused} Vuoi uscire comunque e perderlo, oppure annullare e correggere il campo?",
