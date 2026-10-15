@@ -62,6 +62,12 @@ export function trackAiRequest(owner: AiRequestOwner, requestId: string, abort: 
   };
 }
 
+/** Whether any window has a paid AI request still running, which quitting would stop. */
+export function anyAiRequestRunning(): boolean {
+  for (const requests of byOwner.values()) if (requests.size > 0) return true;
+  return false;
+}
+
 /**
  * Registers the one abort channel every AI request shares.
  *

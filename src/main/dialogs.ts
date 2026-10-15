@@ -17,7 +17,7 @@ import { showPlainMessageDialog } from "./plain-message-dialog.js";
 /** What the user chose when told their unsaved edits could not be written. */
 export type UnsavedChangesChoice = "cancel" | "retry" | "proceed";
 
-/** What quitting, or closing the window, now would lose. */
+/** What quitting now would lose. */
 export interface UnsavedAtQuit {
   /** Buffered edits the store could not write. */
   writeFailures: boolean;
@@ -26,32 +26,24 @@ export interface UnsavedAtQuit {
 }
 
 /**
- * Asks whether to quit, or on macOS to close the main window, with edits that
- * could not be saved. The question comes while the edits are still on screen:
- * on macOS the app outlives its window, so leaving the question to a later quit
- * would ask about posts no longer in view.
+ * Asks whether to quit with edits that could not be saved. Closing the main
+ * window quits too, so the question comes while the posts are on screen.
  *
  * Edits that could not be written offer Retry, the default; a refused value
  * alone does not, because writing again cannot change it. Cancel is the Escape
  * path, because it loses nothing.
  */
-export async function confirmUnsavedChanges(unsaved: UnsavedAtQuit, action: "quit" | "close"): Promise<UnsavedChangesChoice> {
+export async function confirmUnsavedChanges(unsaved: UnsavedAtQuit): Promise<UnsavedChangesChoice> {
   const { t } = mainTranslator();
   const refused = message("dialog.refusedMetadata.explanation");
-  const proceed = t(action === "quit" ? "dialog.quitAnyway" : "dialog.closeAnyway");
   if (unsaved.writeFailures) {
-    const detail = action === "quit"
-      ? unsaved.refusedMetadata
-        ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
-        : t("dialog.unsavedChanges.detail")
-      : unsaved.refusedMetadata
-        ? t("dialog.unsavedChanges.closeDetailWithMetadata", { refused })
-        : t("dialog.unsavedChanges.closeDetail");
     const choice = await showPlainMessageDialog({
       title: t("dialog.unsavedChanges.title"),
       message: t("dialog.unsavedChanges.message"),
-      detail,
-      buttons: [t("common.cancel"), t("common.retry"), proceed],
+      detail: unsaved.refusedMetadata
+        ? t("dialog.unsavedChanges.detailWithMetadata", { refused })
+        : t("dialog.unsavedChanges.detail"),
+      buttons: [t("common.cancel"), t("common.retry"), t("dialog.quitAnyway")],
       defaultId: 1,
       cancelId: 0,
       destructiveId: 2,
@@ -61,8 +53,27 @@ export async function confirmUnsavedChanges(unsaved: UnsavedAtQuit, action: "qui
   const choice = await showPlainMessageDialog({
     title: t("dialog.unsavedMetadata.title"),
     message: t("dialog.unsavedMetadata.message"),
-    detail: t(action === "quit" ? "dialog.unsavedMetadata.quitDetail" : "dialog.unsavedMetadata.closeDetail", { refused }),
-    buttons: [t("common.cancel"), proceed],
+    detail: t("dialog.unsavedMetadata.quitDetail", { refused }),
+    buttons: [t("common.cancel"), t("dialog.quitAnyway")],
+    defaultId: 0,
+    cancelId: 0,
+    destructiveId: 1,
+  });
+  return choice === 1 ? "proceed" : "cancel";
+}
+
+/**
+ * Asks whether to quit while a paid AI request is still running: quitting
+ * stops it and loses its result. Cancel, the default and the Escape path,
+ * lets it finish.
+ */
+export async function confirmRunningWork(): Promise<"cancel" | "proceed"> {
+  const { t } = mainTranslator();
+  const choice = await showPlainMessageDialog({
+    title: t("dialog.runningWork.title"),
+    message: t("dialog.runningWork.message"),
+    detail: t("dialog.runningWork.detail"),
+    buttons: [t("common.cancel"), t("dialog.quitAnyway")],
     defaultId: 0,
     cancelId: 0,
     destructiveId: 1,

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, powerMonitor } from "electron";
 
-import { confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
+import { confirmRunningWork, confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
 import { initialize, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
 import { storageOwner } from "./storageOwner.js";
@@ -20,7 +20,8 @@ import { createMainWindow } from "./window.js";
 import { notifyRecordsChanged } from "./records-window.js";
 import { closeRecordsReader, initRecordsReader } from "./core/services/recordsReader.js";
 import { registerIpcHandlers } from "./ipc/index.js";
-import { anyRefusedMetadata, forgetRefusedMetadata, holdsRefusedMetadata } from "./ipc/refusedMetadata.js";
+import { anyRefusedMetadata } from "./ipc/refusedMetadata.js";
+import { anyAiRequestRunning } from "./ipc/aiRequests.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { installApplicationMenu } from "./menu.js";
 import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
@@ -84,12 +85,6 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers();
   installApplicationMenu();
   await openMainWindow();
-
-  app.on("activate", () => {
-    if (mainWindow === null) {
-      void openMainWindow().catch(handleStartupFailure);
-    }
-  });
 }
 
 // Opens the window and subscribes to the platform's session-end signal. Windows
@@ -98,64 +93,27 @@ async function bootstrap(): Promise<void> {
 // the session may end as soon as it returns. macOS and Linux raise powerMonitor
 // "shutdown" below, and their quit then arrives through before-quit.
 //
-// Off macOS, closing the main window is how the app quits, so the close becomes
-// the quit: it saves first, and the window stays open when the user cancels.
-// On macOS the app stays alive after the window closes, so the close saves as a
-// quit does and asks then, while the posts are still on screen, about edits it
-// could not write and metadata values the store refused; a later quit would ask
-// about posts no longer in view.
+// Closing the main window quits the app on every platform, through the quit
+// below, and every other window goes with it (window conventions): it saves
+// first and asks while the posts are still on screen, and the window stays open
+// when the user cancels.
 async function openMainWindow(): Promise<void> {
   const window = await createMainWindow();
   mainWindow = window;
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    if (process.platform !== "darwin") app.quit();
+    app.quit();
   });
   window.on("session-end", () => {
     sessionEnding = true;
     shuttingDown = true;
-    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS), "quit");
+    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS));
     exitAppWithin();
   });
-  const ownerId = window.webContents.id;
-  let askingToClose = false;
-  // Set once the close was settled, so the window.close() that follows passes.
-  let closeSettled = false;
   window.on("close", (event) => {
-    if (systemShutdown() || shuttingDown) return;
-    if (process.platform !== "darwin") {
-      event.preventDefault();
-      app.quit();
-      return;
-    }
-    if (closeSettled) {
-      closeSettled = false;
-      return;
-    }
+    if (systemShutdown()) return;
     event.preventDefault();
-    if (askingToClose) return;
-    askingToClose = true;
-    void (async () => {
-      try {
-        for (;;) {
-          const writeFailures = !await flushPendingEdits("close");
-          const refusedMetadata = holdsRefusedMetadata(ownerId);
-          if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
-          const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata }, "close");
-          if (systemShutdown() || choice === "proceed") break;
-          if (choice === "cancel") return;
-        }
-        forgetRefusedMetadata(ownerId);
-        closeSettled = true;
-        if (!window.isDestroyed()) window.close();
-      } catch (error) {
-        logError("close confirmation failed; window remains open", { error: serializeError(error) });
-      } finally {
-        askingToClose = false;
-        // The flush held the store's debounce; the app goes on running.
-        if (!shuttingDown) void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
-      }
-    })();
+    app.quit();
   });
 }
 
@@ -163,21 +121,21 @@ async function openMainWindow(): Promise<void> {
  * Writes the buffered post edits within the bound and logs what it could not
  * write. Returns whether they are all known to be on disk.
  */
-async function flushPendingEdits(occasion: "quit" | "close"): Promise<boolean> {
-  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS), occasion);
+async function flushPendingEdits(): Promise<boolean> {
+  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS));
 }
 
-function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>, occasion: "quit" | "close"): boolean {
+function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>): boolean {
   switch (outcome.kind) {
     case "flushed":
       if (outcome.failures.length === 0) return true;
-      logError(`pending edits flush failed at ${occasion}`, { failures: outcome.failures });
+      logError("pending edits flush failed at quit", { failures: outcome.failures });
       return false;
     case "expired":
-      logError(`pending edits flush did not finish at ${occasion}`, { boundMs: QUIT_FLUSH_BOUND_MS });
+      logError("pending edits flush did not finish at quit", { boundMs: QUIT_FLUSH_BOUND_MS });
       return false;
     case "crashed":
-      logError(`pending edits flush could not run at ${occasion}`, { error: outcome.error });
+      logError("pending edits flush could not run at quit", { error: outcome.error });
       return false;
   }
 }
@@ -272,16 +230,23 @@ if (!ownsInstance) {
     void (async () => {
       try {
         for (;;) {
-          const writeFailures = !await flushPendingEdits("quit");
+          const writeFailures = !await flushPendingEdits();
           const refusedMetadata = anyRefusedMetadata();
           if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
-          const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata }, "quit");
+          const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata });
           if (systemShutdown() || choice === "proceed") break;
           if (choice === "cancel") {
             shuttingDown = false;
             void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
             return;
           }
+        }
+        // A paid AI request still running would be stopped and its result lost;
+        // the user started it, so a quit they started asks first.
+        if (!systemShutdown() && anyAiRequestRunning() && await confirmRunningWork() === "cancel" && !systemShutdown()) {
+          shuttingDown = false;
+          void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
+          return;
         }
         await exitApp();
       } catch (error) {

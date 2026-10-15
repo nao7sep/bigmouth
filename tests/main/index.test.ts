@@ -617,9 +617,11 @@ describe("a macOS or Linux shutdown signal with no quit after it", () => {
 
 // Off macOS the main window's close is the quit, so it goes through the same
 // save and stays open when the user cancels.
-describe("closing the main window off macOS", () => {
-  it("is held and becomes the quit", async () => {
-    onPlatform("win32");
+// Closing the main window ends the app on every platform, through the quit,
+// which saves and asks while the posts are still on screen (window conventions).
+describe("closing the main window", () => {
+  it.each(["darwin", "win32", "linux"] as const)("is held and becomes the quit on %s", async (platform) => {
+    onPlatform(platform);
     await bootApp();
     const preventDefault = vi.fn();
 
@@ -630,8 +632,8 @@ describe("closing the main window off macOS", () => {
     expect(shell.windowCloses).toBe(0);
   });
 
-  it("asks about a refused metadata value as a quit, not a close", async () => {
-    onPlatform("linux");
+  it.each(["darwin", "linux"] as const)("asks about a refused metadata value as a quit on %s", async (platform) => {
+    onPlatform(platform);
     await bootApp();
     const { setMetadataRefusal } = await import("@main/ipc/refusedMetadata.js");
     setMetadataRefusal({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "p1", true);
@@ -683,107 +685,57 @@ describe("a refused metadata value on screen", () => {
     await vi.waitFor(() => expect(shell.exits).toEqual([0]));
   });
 
-  it("holds the window close on macOS until the user chooses, then closes on Close Anyway", async () => {
-    onPlatform("darwin");
-    await bootApp();
-    await refuseInMainWindow();
-    const preventDefault = vi.fn();
-
-    windowHandlers.get("close")!({ preventDefault });
-    expect(preventDefault).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(shell.windowCloses).toBe(0);
-
-    shell.dialogChoice = 1;
-    windowHandlers.get("close")!({ preventDefault });
-    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
-    // The refusal is forgotten, so the close that follows goes through.
-    const again = vi.fn();
-    windowHandlers.get("close")!({ preventDefault: again });
-    expect(again).not.toHaveBeenCalled();
-  });
 });
 
-// On macOS the app outlives its window, so the close saves as a quit does and
-// asks then, while the posts are still on screen, rather than at a later quit.
-describe("closing the main window on macOS", () => {
-  it("writes buffered edits and closes without asking when they are on disk", async () => {
-    onPlatform("darwin");
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "written at close");
-    const preventDefault = vi.fn();
+// Quitting stops a paid AI request still running, so a quit the user started
+// asks first; an ending OS session never asks.
+describe("a running AI request at quit", () => {
+  async function startRequest(): Promise<() => void> {
+    const { trackAiRequest } = await import("@main/ipc/aiRequests.js");
+    return trackAiRequest({ id: MAIN_WINDOW_ID, once: () => {}, on: () => {} }, "r1", () => {});
+  }
 
-    windowHandlers.get("close")!({ preventDefault });
-
-    expect(preventDefault).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
-    expect(shell.dialogs).toEqual([]);
-    expect(fs.readFileSync(post.filePath, "utf8")).toContain("written at close");
-    // The close that window.close() raises goes through.
-    const again = vi.fn();
-    windowHandlers.get("close")!({ preventDefault: again });
-    expect(again).not.toHaveBeenCalled();
-  });
-
-  it("asks about an edit it could not write, and Cancel keeps the window", async () => {
-    onPlatform("darwin");
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
-    fs.unlinkSync(post.filePath);
-
-    windowHandlers.get("close")!({ preventDefault: () => {} });
-
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
-    expect(shell.dialogs[0].buttons).toEqual(["Cancel", "Retry", "Close Anyway"]);
-    expect(shell.dialogs[0].detail).toContain("did not close the window");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(shell.windowCloses).toBe(0);
-    expect(shell.exits).toEqual([]);
-  });
-
-  it("writes again on Retry and closes once the posts are written", async () => {
-    onPlatform("darwin");
+  it("asks, and Cancel keeps the app running", async () => {
     await bootApp();
-    flush.plan = ["stall", "store"];
-    shell.dialogChoices = [1]; // Retry
+    await startRequest();
 
-    windowHandlers.get("close")!({ preventDefault: () => {} });
+    await quit();
 
-    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
     expect(shell.dialogs).toHaveLength(1);
-    expect(flush.calls).toBe(2);
-  });
-
-  it("closes without the edits on Close Anyway", async () => {
-    onPlatform("darwin");
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
-    fs.unlinkSync(post.filePath);
-    shell.dialogChoice = 2;
-
-    windowHandlers.get("close")!({ preventDefault: () => {} });
-
-    await vi.waitFor(() => expect(shell.windowCloses).toBe(1));
+    expect(shell.dialogs[0].buttons).toEqual(["Cancel", "Quit Anyway"]);
+    expect(shell.dialogs[0].detail).toContain("its result is lost");
     expect(shell.exits).toEqual([]);
   });
 
-  it("never asks while the OS session is ending", async () => {
-    onPlatform("darwin");
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
-    fs.unlinkSync(post.filePath);
-    powerHandlers.get("shutdown")!();
-    const preventDefault = vi.fn();
+  it("quits on Quit Anyway", async () => {
+    await bootApp();
+    await startRequest();
+    shell.dialogChoice = 1;
 
-    windowHandlers.get("close")!({ preventDefault });
+    await quit();
+    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+  });
 
-    expect(preventDefault).not.toHaveBeenCalled();
+  it("quits without asking once the request finished", async () => {
+    await bootApp();
+    const release = await startRequest();
+    release();
+
+    await quit();
+
     expect(shell.dialogs).toEqual([]);
+    expect(shell.exits).toEqual([0]);
+  });
+
+  it("never asks at an OS shutdown", async () => {
+    await bootApp();
+    await startRequest();
+    powerHandlers.get("shutdown")!();
+
+    await quit();
+
+    expect(shell.dialogs).toEqual([]);
+    expect(shell.exits).toEqual([0]);
   });
 });
 
@@ -919,7 +871,7 @@ describe("single app-process ownership", () => {
     expect(other.focus).not.toHaveBeenCalled();
   });
 
-  it.each(["win32", "linux"] as const)("quits on %s when the main window closes, whatever else is open, and only once", async (platform) => {
+  it.each(["darwin", "win32", "linux"] as const)("quits on %s when the main window closes, whatever else is open, and only once", async (platform) => {
     onPlatform(platform);
     await bootApp();
     const quits = shell.quitRequests;
@@ -928,21 +880,4 @@ describe("single app-process ownership", () => {
     expect(shell.quitRequests).toBe(quits + 1);
   });
 
-  it("stays alive on macOS when the main window closes, and the Dock reopens it", async () => {
-    onPlatform("darwin");
-    await bootApp();
-    const quits = shell.quitRequests;
-    // While the window exists, activating the app opens no second one.
-    appHandlers.get("activate")!();
-    expect(shell.windowOpens).toBe(1);
-
-    windowHandlers.get("closed")!();
-    appHandlers.get("window-all-closed")!();
-    expect(shell.quitRequests).toBe(quits);
-
-    windowHandlers.clear();
-    appHandlers.get("activate")!();
-    await vi.waitFor(() => expect(windowHandlers.has("session-end")).toBe(true));
-    expect(shell.windowOpens).toBe(2);
-  });
 });

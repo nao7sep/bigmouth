@@ -34,20 +34,10 @@ export function setMetadataRefusal(owner: RefusalOwner, postId: string, refused:
   else posts.delete(postId);
 }
 
-/** Whether this window shows a refused metadata value. */
-export function holdsRefusedMetadata(ownerId: number): boolean {
-  return (byOwner.get(ownerId)?.size ?? 0) > 0;
-}
-
 /** Whether any window shows a refused metadata value. */
 export function anyRefusedMetadata(): boolean {
   for (const posts of byOwner.values()) if (posts.size > 0) return true;
   return false;
-}
-
-/** The user chose to close this window anyway: its refusals no longer count. */
-export function forgetRefusedMetadata(ownerId: number): void {
-  byOwner.get(ownerId)?.clear();
 }
 
 export function registerRefusedMetadataHandlers(): void {
