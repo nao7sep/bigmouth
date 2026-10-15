@@ -5,7 +5,7 @@ import { AI_ROLE_IDS, PROVIDER_LABELS, hasThinkingChoice, rowFor, thinkingAfterM
 import { isEndpoint } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
-import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from "@shared/i18n/languages";
+import { LANGUAGE_NAMES, LANGUAGES, languageNameIn, normalizeLanguagePreference, type Language } from "@shared/i18n/languages";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import type { MessageKey } from "@shared/i18n/catalogues";
@@ -142,6 +142,7 @@ export function SettingsModal({
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   // What System resolves to as Settings opens, shown beside it.
   const [systemAppearance, setSystemAppearance] = useState<"light" | "dark">("light");
+  const [systemLanguage, setSystemLanguage] = useState<Language>("en");
   const [anthropic, setAnthropic] = useState<AnthropicDraft | null>(null);
   const [generationPrompts, setGenerationPrompts] = useState<GenerationPromptsData | null>(null);
   const [generationPromptDefaults, setGenerationPromptDefaults] = useState<GenerationPromptsData | null>(null);
@@ -188,6 +189,7 @@ export function SettingsModal({
         if (cancelled) return;
         setAppSettings(app.settings);
         setSystemAppearance(app.systemAppearance);
+        setSystemLanguage(app.systemLanguage);
         initialAppSettings.current = app.settings;
         setSettings(s);
         initialSettings.current = s;
@@ -405,6 +407,7 @@ export function SettingsModal({
                 onChange={setSettings}
                 appSettings={appSettings}
                 systemAppearance={systemAppearance}
+                systemLanguage={systemLanguage}
                 onAppSettingsChange={setAppSettings}
               />
             )}
@@ -524,6 +527,7 @@ function GeneralTab({
   onChange,
   appSettings,
   systemAppearance,
+  systemLanguage,
   onAppSettingsChange,
 }: {
   workspaceName: string;
@@ -534,9 +538,10 @@ function GeneralTab({
   onChange: (s: Settings) => void;
   appSettings: AppSettings;
   systemAppearance: "light" | "dark";
+  systemLanguage: Language;
   onAppSettingsChange: (s: AppSettings) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
@@ -673,7 +678,10 @@ function GeneralTab({
             onAppSettingsChange({ ...appSettings, language: normalizeLanguagePreference(e.target.value) })
           }
         >
-          <option value="system">{t("settings.languageSystem")}</option>
+          {/* System names the language it resolves to, in the interface language
+              (localization conventions, Translation); the options below keep their
+              own names. */}
+          <option value="system">{t("settings.languageSystem", { language: languageNameIn(locale, systemLanguage) })}</option>
           {LANGUAGES.map((language) => (
             <option key={language} value={language} lang={language}>
               {LANGUAGE_NAMES[language]}

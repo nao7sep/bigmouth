@@ -2,7 +2,7 @@
   "common.ok": "OK",
   "common.cancel": "Abbrechen",
   "settings.language": "Sprache der Oberfläche",
-  "settings.languageSystem": "System",
+  "settings.languageSystem": "System ({language})",
   "settings.languageHint": "„System“ folgt der Sprache des Computers. Gilt für alle Arbeitsbereiche.",
   "settings.themeSystem": "System ({appearance})",
   "settings.themeLight": "Hell",

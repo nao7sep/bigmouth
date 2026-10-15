@@ -5,12 +5,16 @@ import { APP_SETTINGS_SET_KEYS, appSettingsSetHasShape, appSettingsShapeIssue } 
 import type { AppSettings } from "@shared/types";
 import { getAppSettingsLoad, saveAppSettings } from "../storageAccess.js";
 import { info } from "../core/services/logger.js";
-import { changeLanguagePreference, interfaceLanguage } from "../i18n.js";
+import { changeLanguagePreference, interfaceLanguage, systemInterfaceLanguage } from "../i18n.js";
 import { installApplicationMenu } from "../menu.js";
 import { applyThemePreference, systemAppearance } from "../theme.js";
 
 export function registerAppSettingsHandlers(): void {
-  ipcMain.handle(CHANNELS.getAppSettings, async () => ({ ...await getAppSettingsLoad(), systemAppearance: systemAppearance() }));
+  ipcMain.handle(CHANNELS.getAppSettings, async () => ({
+    ...await getAppSettingsLoad(),
+    systemAppearance: systemAppearance(),
+    systemLanguage: systemInterfaceLanguage(),
+  }));
 
   ipcMain.handle(CHANNELS.getInterfaceLanguage, () => interfaceLanguage());
 

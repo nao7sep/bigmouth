@@ -2,7 +2,7 @@
   "common.ok": "OK",
   "common.cancel": "キャンセル",
   "settings.language": "表示言語",
-  "settings.languageSystem": "システム",
+  "settings.languageSystem": "システム（{language}）",
   "settings.languageHint": "「システム」はコンピュータの言語に従います。すべてのワークスペースに適用されます。",
   "settings.themeSystem": "システム（{appearance}）",
   "settings.themeLight": "ライト",

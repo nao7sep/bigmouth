@@ -2,7 +2,7 @@
   "common.ok": "OK",
   "common.cancel": "Cancelar",
   "settings.language": "Idioma da interface",
-  "settings.languageSystem": "Sistema",
+  "settings.languageSystem": "Sistema ({language})",
   "settings.languageHint": "Sistema segue o idioma do computador. Vale para todos os espaços de trabalho.",
   "settings.themeSystem": "Sistema ({appearance})",
   "settings.themeLight": "Claro",

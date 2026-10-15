@@ -2,7 +2,7 @@
   "common.ok": "OK",
   "common.cancel": "Cancel",
   "settings.language": "Interface language",
-  "settings.languageSystem": "System",
+  "settings.languageSystem": "System ({language})",
   "settings.languageHint": "System follows the computer's language. Applies to every workspace.",
   "settings.themeSystem": "System ({appearance})",
   "settings.themeLight": "Light",

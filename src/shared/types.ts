@@ -67,7 +67,7 @@ export function defaultUiState(): UiState {
 
 // --- App settings (the storage root's config.json) ---
 
-import type { LanguagePreference } from "./i18n/languages.js";
+import type { Language, LanguagePreference } from "./i18n/languages.js";
 
 /** The saved appearance choice. System follows the OS appearance. */
 export type ThemePreference = "system" | "light" | "dark";
@@ -92,9 +92,10 @@ export interface AppSettingsLoad {
   notice: Message | null;
 }
 
-/** App settings as Settings shows them: with what the System theme resolves to now. */
+/** App settings as Settings shows them: with what each System choice resolves to now. */
 export interface AppSettingsView extends AppSettingsLoad {
   systemAppearance: "light" | "dark";
+  systemLanguage: Language;
 }
 
 // --- Post ---

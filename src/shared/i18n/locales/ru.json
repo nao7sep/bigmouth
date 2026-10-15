@@ -2,7 +2,7 @@
   "common.ok": "ОК",
   "common.cancel": "Отменить",
   "settings.language": "Язык интерфейса",
-  "settings.languageSystem": "Как в системе",
+  "settings.languageSystem": "Как в системе ({language})",
   "settings.languageHint": "«Как в системе» следует языку компьютера. Действует во всех рабочих пространствах.",
   "settings.themeSystem": "Как в системе ({appearance})",
   "settings.themeLight": "Светлая",

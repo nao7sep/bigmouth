@@ -2,7 +2,7 @@
   "common.ok": "确定",
   "common.cancel": "取消",
   "settings.language": "界面语言",
-  "settings.languageSystem": "跟随系统",
+  "settings.languageSystem": "跟随系统（{language}）",
   "settings.languageHint": "“跟随系统”使用电脑的语言。适用于所有工作区。",
   "settings.themeSystem": "跟随系统（{appearance}）",
   "settings.themeLight": "浅色",

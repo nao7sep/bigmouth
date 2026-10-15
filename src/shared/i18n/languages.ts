@@ -27,6 +27,19 @@ export const LANGUAGE_NAMES: Readonly<Record<Language, string>> = {
   "zh-Hans": "中文",
 };
 
+/**
+ * A language's name in the language of `locale` ("Japanese" in English), for a
+ * choice that names what it resolves to; its own name where the runtime cannot
+ * name it.
+ */
+export function languageNameIn(locale: string, language: Language): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(language) ?? LANGUAGE_NAMES[language];
+  } catch {
+    return LANGUAGE_NAMES[language];
+  }
+}
+
 // The saved choice. System follows the computer's language on every launch.
 export type LanguagePreference = "system" | Language;
 

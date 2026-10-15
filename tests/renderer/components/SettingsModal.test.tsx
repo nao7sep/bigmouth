@@ -119,7 +119,7 @@ function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSetting
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AnthropicSettingsView = anthropic()) {
-  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "dark" });
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "dark", systemLanguage: "ja" });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
   mock.getAnthropicSettings.mockResolvedValue(ai);
@@ -504,7 +504,7 @@ describe("SettingsModal — interface language", () => {
       "system", "en", "de", "es", "fr", "it", "pt-BR", "ru", "ja", "ko", "zh-Hans",
     ]);
     expect(options.map((option) => option.textContent)).toEqual([
-      "System", "English", "Deutsch", "Español", "Français", "Italiano", "Português", "Русский", "日本語", "한국어", "中文",
+      "System (Japanese)", "English", "Deutsch", "Español", "Français", "Italiano", "Português", "Русский", "日本語", "한국어", "中文",
     ]);
     expect(options[8]!.lang).toBe("ja");
   });

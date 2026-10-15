@@ -127,6 +127,11 @@ export async function changeLanguagePreference(
   return true;
 }
 
+/** The language System resolves to: the computer's, as read at launch. */
+export function systemInterfaceLanguage(): Language {
+  return computerLanguage;
+}
+
 /** The language the window speaks and the locale it formats in. */
 export function interfaceLanguage(): InterfaceLanguage {
   return current;
