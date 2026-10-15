@@ -148,7 +148,6 @@ export function getSettings(dataDir: string): Settings {
     timezone: c.timezone,
     supportedLanguages: c.supportedLanguages,
     postsPerLoad: c.postsPerLoad,
-    maxUploadMb: c.maxUploadMb,
     editorWatermark: c.editorWatermark,
     extraFieldWatermark: c.extraFieldWatermark,
     uiFontFamily: c.uiFontFamily,

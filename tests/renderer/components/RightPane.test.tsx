@@ -92,7 +92,6 @@ function baseProps() {
     analysisTrigger: 0,
     analysisPromptsVersion: 0,
     onInsertAtCursor: vi.fn(),
-    maxUploadMb: 10,
     loading: false,
     contentFont: DEFAULT_CONTENT_FONT,
   };

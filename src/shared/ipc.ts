@@ -5,9 +5,9 @@
 // side imports a type from the other across the process line.
 //
 // One method per data operation, grouped by domain. Each workspace-scoped method
-// takes the workspace id explicitly. DOM types never appear here (e.g. uploads
-// cross as bytes, not `File`), keeping the contract valid under both the node and
-// web typechecks.
+// takes the workspace id explicitly. The only DOM type here is `File`, which Node
+// declares too, so the contract holds under both the node and web typechecks: the
+// renderer hands a picked file to the preload, which streams its bytes to main.
 
 import type {
   AnthropicSettingsInput,
@@ -219,26 +219,68 @@ export function assetUrl(wsId: string, postId: string, filename: string): string
 
 // --- Method payload/result helpers ---
 
-/** Raw bytes for an asset upload. The sandboxed renderer also supplies optional
- * dimensions from Chromium's image decoder; main treats them as untrusted IPC
- * input and stores them only when they form a valid pair. */
-export interface AssetUploadInput {
+/**
+ * How an upload starts: the preload posts this on `CHANNELS.uploadAsset` with
+ * one end of a fresh MessageChannel, and the file's bytes follow on that port
+ * (see {@link AssetUploadToMain}). The renderer is an untrusted IPC peer, so
+ * main checks every field and never reads `sourcePath`'s bytes: it only takes
+ * the original's times and permissions from it when its size matches the bytes
+ * that arrived.
+ */
+export interface AssetUploadStart {
+  wsId: string;
+  postId: string;
   name: string;
-  data: ArrayBuffer;
-  width?: number;
-  height?: number;
   /** Where the picked or dropped file is on disk, so the copy keeps its metadata. */
   sourcePath?: string;
 }
+
+/**
+ * The largest slice of a file one upload message carries. Main answers each
+ * slice it has written with `next`, and grants {@link ASSET_UPLOAD_SLICES_IN_FLIGHT}
+ * to begin with, so an upload of any size holds only a few slices in either
+ * process.
+ */
+export const ASSET_UPLOAD_SLICE_BYTES = 4 * 1024 * 1024;
+export const ASSET_UPLOAD_SLICES_IN_FLIGHT = 2;
+
+/** Renderer to main on an upload's port: the next slice, the end of the file, or a read that failed. */
+export type AssetUploadToMain =
+  | { type: "slice"; data: ArrayBuffer }
+  | { type: "end" }
+  | { type: "abort" };
+
+/**
+ * Main to renderer on an upload's port: room for one more slice, the upload's
+ * result, or a failure the renderer reports with `message`, which is fixed text
+ * or a carried catalogue message, never a raw error (error-handling-conventions).
+ */
+export type AssetUploadFromMain =
+  | { type: "next" }
+  | { type: "result"; result: AssetUploadResult }
+  | { type: "failed"; message: string };
 
 /** Where each paged list section's requested page starts. */
 export type PostListOffsets = Readonly<Record<PagedPostStatus, number>>;
 
 /** Predictable upload admissions cross IPC as data, never serialized exceptions. */
 export type AssetUploadAdmission =
-  | { code: "file-too-large"; limitMb: number }
   | { code: "reserved-name"; filename: string }
-  | { code: "post-locked" };
+  | { code: "post-locked" }
+  | { code: "post-missing" };
+
+/**
+ * Why the file's bytes did not reach the workspace, as data the renderer maps to
+ * its own copy. Each leaves nothing behind: the partial copy is removed.
+ * `source-unreadable`: the picked file could not be read to the end.
+ * `workspace-unwritable`: the copy could not be written into the workspace
+ * folder, because its disk is `full`, writing there is `denied`, or the write
+ * otherwise `failed`.
+ */
+export type AssetUploadFailure =
+  | { code: "source-unreadable" }
+  | { code: "workspace-unwritable"; problem: WorkspaceWriteProblem };
+export type WorkspaceWriteProblem = "full" | "denied" | "failed";
 
 /**
  * What could not be saved after the attached file itself was added or removed;
@@ -249,7 +291,8 @@ export type AssetUnsavedStep = "details" | "modifiedTime";
 
 export type AssetUploadResult =
   | { ok: true; asset: AssetMeta; unsaved?: AssetUnsavedStep[] }
-  | { ok: false; admission: AssetUploadAdmission };
+  | { ok: false; admission: AssetUploadAdmission }
+  | { ok: false; failure: AssetUploadFailure };
 
 export interface AssetDeleteResult {
   unsaved?: AssetUnsavedStep[];
@@ -417,9 +460,8 @@ export interface BigMouthApi {
 
   // Assets
   listAssets(wsId: string, postId: string): Promise<AssetListing>;
-  uploadAsset(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetUploadResult>;
-  /** The on-disk path of a picked or dropped file, or "" when it has none. */
-  pathForFile(file: File): string;
+  /** Streams `file` to main and settles with the upload's result; see {@link AssetUploadStart}. */
+  uploadAsset(wsId: string, postId: string, file: File): Promise<AssetUploadResult>;
   deleteAsset(wsId: string, postId: string, filename: string): Promise<AssetDeleteResult>;
 
   // AI generation

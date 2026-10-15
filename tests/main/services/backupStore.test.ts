@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot, getStateJsonPath } from "@main/core/services/storagePaths.js";
 import { writeManagedText } from "@main/core/shared/atomicWrite.js";
-import { closeBackupStore, drainBackups, record, stopBackups, useBackupPartSize } from "@main/core/services/backupStore.js";
+import { closeBackupStore, drainBackups, record, recordFile, stopBackups, useBackupPartSize } from "@main/core/services/backupStore.js";
 import * as logger from "@main/core/services/logger.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
@@ -159,7 +159,7 @@ describe("one row per path per session", () => {
 });
 
 describe("files larger than one value", () => {
-  afterEach(() => useBackupPartSize(256 * 1024 * 1024));
+  afterEach(() => useBackupPartSize(8 * 1024 * 1024));
 
   it("keeps a large file in parts that join to its exact bytes, and replaces them on a later save", () => {
     useBackupPartSize(4);
@@ -184,6 +184,99 @@ describe("files larger than one value", () => {
     const [after] = rows(file);
     expect(Buffer.from(after!.content).toString()).toBe("tiny");
     expect(parts()).toEqual([]);
+  });
+});
+
+// An installed attachment the app never held whole is read from disk by the recorder.
+describe("a file recorded from disk", () => {
+  afterEach(() => useBackupPartSize(8 * 1024 * 1024));
+
+  const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+  const partsOf = (id: number) => {
+    const db = new DatabaseSync(storeFile());
+    try {
+      return (db.prepare("SELECT content FROM backup_parts WHERE backup_id = ? ORDER BY part").all(id) as { content: Uint8Array }[])
+        .map((part) => Buffer.from(part.content));
+    } finally { db.close(); }
+  };
+  /** Holds the store's write lock, so a hand-off waits until `release` while the test acts. */
+  const holdStore = () => {
+    record(path.join(root, "opens-the-store.md"), Buffer.from("opens the store"));
+    expect(drainBackups(5000)).toBe(true);
+    const locker = new DatabaseSync(storeFile());
+    locker.exec("BEGIN EXCLUSIVE");
+    return () => { locker.exec("COMMIT"); locker.close(); };
+  };
+
+  it("keeps a file larger than a part in parts that join to its exact bytes", () => {
+    useBackupPartSize(4);
+    const file = path.join(root, "photo.bin");
+    const bytes = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    fs.writeFileSync(file, bytes);
+    recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
+    const [row] = rows(file);
+    expect(row!.byte_size).toBe(10);
+    expect(row!.content_sha256).toBe(sha(bytes));
+    expect(Buffer.from(row!.content).byteLength).toBe(0);
+    expect(partsOf(row!.id).map((part) => part.length)).toEqual([4, 4, 2]);
+    expect(Buffer.concat(partsOf(row!.id)).equals(bytes)).toBe(true);
+  });
+
+  it("keeps a file no larger than a part in one value", () => {
+    const file = path.join(root, "small.bin");
+    const bytes = Buffer.from("small attachment");
+    fs.writeFileSync(file, bytes);
+    recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
+    const [row] = rows(file);
+    expect(Buffer.from(row!.content).equals(bytes)).toBe(true);
+    expect(partsOf(row!.id)).toEqual([]);
+  });
+
+  it("records the bytes installed even when the file is replaced and deleted before the recorder reads it", () => {
+    useBackupPartSize(4);
+    const file = path.join(root, "photo.bin");
+    const original = Buffer.from("the installed bytes");
+    fs.writeFileSync(file, original);
+    const release = holdStore();
+    try {
+      recordFile(file, fs.openSync(file, "r"), sha(original), original.length);
+      const replacement = path.join(root, "replacement.bin");
+      fs.writeFileSync(replacement, "a different file put in its place");
+      fs.renameSync(replacement, file);
+      fs.rmSync(file);
+    } finally { release(); }
+    const [row] = rows(file);
+    expect(row!.content_sha256).toBe(sha(original));
+    expect(Buffer.concat(partsOf(row!.id)).equals(original)).toBe(true);
+  });
+
+  it("records nothing when the installed file is rewritten in place before the recorder reads it", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const file = path.join(root, "photo.bin");
+    const original = Buffer.from("the installed bytes");
+    fs.writeFileSync(file, original);
+    const release = holdStore();
+    try {
+      recordFile(file, fs.openSync(file, "r"), sha(original), original.length);
+      fs.writeFileSync(file, "the same inode, other bytes");
+    } finally { release(); }
+    try {
+      expect(rows(file)).toEqual([]);
+      // The warning reaches this thread as a message once the wait above ends.
+      await vi.waitFor(() => {
+        expect(warn.mock.calls.filter(([message]) => /changed on disk before it was recorded/.test(message))).toHaveLength(1);
+      });
+    } finally { warn.mockRestore(); }
+  });
+
+  it("writes nothing for a file equal to the path's row from this session", () => {
+    const file = path.join(root, "photo.bin");
+    const bytes = Buffer.from("once");
+    fs.writeFileSync(file, bytes);
+    recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
+    const [first] = rows(file);
+    recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
+    expect(rows(file)).toEqual([first]);
   });
 });
 
@@ -287,10 +380,13 @@ describe("protected writes", () => {
 
   it("records an attachment's bytes and its meta.json, so a deleted post's attachments can be restored", async () => {
     const { createWorkspace } = await import("@main/core/services/workspaceStore.js");
-    const { saveAssetFile, assetDir } = await import("@main/core/services/assetStore.js");
+    const { installAsset, assetDir, stagingDir } = await import("@main/core/services/assetStore.js");
     const ws = createWorkspace("Asset WS");
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
-    saveAssetFile(ws.dataDirectory, "post-1", "a.png", bytes, { filename: "a.png", size: 6, uploadedAt: "2026-10-09T00:00:00.000Z" });
+    fs.mkdirSync(stagingDir(ws.dataDirectory), { recursive: true });
+    fs.writeFileSync(path.join(stagingDir(ws.dataDirectory), "upload.part"), bytes);
+    const staged = { name: "upload.part", sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length };
+    installAsset(ws.dataDirectory, "post-1", "a.png", staged, { filename: "a.png", size: 6, uploadedAt: "2026-10-09T00:00:00.000Z" });
     const dir = assetDir(ws.dataDirectory, "post-1");
     expect(Buffer.from(rows(path.join(dir, "a.png"))[0]!.content).equals(bytes)).toBe(true);
     expect(text(rows(path.join(dir, "meta.json"))[0]!)).toContain("2026-10-09T00:00:00.000Z");

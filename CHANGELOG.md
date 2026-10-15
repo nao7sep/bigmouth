@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Adding an asset streams the file into the workspace instead of reading it whole into memory, so a file of any size can be added. A file that cannot be read to its end, or that the workspace folder cannot take because its disk is full or it cannot be written, is not added, nothing of it is left behind, and the message says what to check. An image added now records no width and height.
+- An asset's details are no longer checked by reading its whole file every time the Assets tab lists it; the file is read again only when its size or modified time has changed since its details were saved.
+- A PNG is no longer marked as having metadata only because of its image header, and XMP and IPTC metadata now mark an image too.
+
 - Hovering menu commands or source-picker rows no longer changes the keyboard target. Menus initialize navigation on opening, and the source picker starts at the current source when available. Open tabs keep their accent underline; hover and keyboard focus use distinct background fills without a tab focus ring.
 
 - A workspace created without a location goes to `Documents/BigMouth/<workspace name>` in the home folder, numbered `(2)`, `(3)`… when that folder is taken, instead of `~/.bigmouth/workspaces/<id>`. The workspace window shows that path in the empty Location field. Existing workspaces stay where they are.
@@ -38,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A Windows logoff or shutdown writes the posts before BigMouth exits, and closing the main window on Windows or Linux stays open when that quit is cancelled.
 - Quitting right after locking a post, changing its status or setting its source link no longer reports unsaved changes for text that was already saved.
 - Text typed while storage is busy shows the autosave notice that it will retry and is saved once storage responds, instead of saying the post's workspace could not be opened.
+
+### Removed
+
+- The Maximum asset size setting. Uploads no longer hold a whole file in memory, so the limit no longer protects anything; a workspace's saved value is kept in its settings file and ignored.
 
 ## [0.1.0] - 2026-07-08
 

@@ -34,7 +34,6 @@ interface RightPaneProps {
   analysisTrigger: number;
   analysisPromptsVersion: number;
   onInsertAtCursor: (text: string) => void;
-  maxUploadMb: number;
   contentFont: ContentFont;
   loading?: boolean;
 }
@@ -57,7 +56,6 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
     analysisTrigger,
     analysisPromptsVersion,
     onInsertAtCursor,
-    maxUploadMb,
     contentFont,
     loading = false,
   },
@@ -189,7 +187,6 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             workspaceId={workspaceId}
             postId={postId}
             onInsertAtCursor={onInsertAtCursor}
-            maxUploadMb={maxUploadMb}
             locked={locked}
           />
         )}

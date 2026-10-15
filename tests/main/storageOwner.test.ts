@@ -89,6 +89,40 @@ describe("storage mutation ownership", () => {
     } finally { await owner.stop(); }
   });
 
+  // A hand-off that cannot be read must not leave its request, or storage, waiting forever.
+  it("fails a request the worker could not read as not done, and moves on", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const pending: boolean[] = [];
+    owner.onStoragePending((value) => pending.push(value));
+    try {
+      const mutation = owner.run("createPost", ["/workspace", "blog", "en"], 10).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10);
+      worker.emit("message", { event: "request-unreadable" });
+      expect(await mutation).toEqual(expect.objectContaining({ message: expect.stringContaining("Nothing was done") }));
+      expect(pending).toEqual([true, false]);
+      expect(owner.storagePending()).toBe(false);
+      const next = owner.run("getUiState", []).catch((error: unknown) => error);
+      expect(worker.requests).toHaveLength(2);
+      worker.emit("message", { id: worker.requests[1].id, ok: true, value: { zoomLevel: 1 } });
+      expect(await next).toEqual({ zoomLevel: 1 });
+    } finally { await owner.stop(); }
+  });
+
+  it("fails a request whose reply could not be read with its outcome unknown, and moves on", async () => {
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    try {
+      const mutation = owner.run("installAsset", ["/workspace", "post", "a.png", { name: "a.part", sha256: "00", size: 1 }, { filename: "a.png", size: 1 }]).catch((error: unknown) => error);
+      worker.emit("messageerror", new Error("Unable to deserialize cloned data."));
+      expect(await mutation).toEqual(expect.objectContaining({ message: expect.stringContaining("Whether it took effect is unknown") }));
+      const next = owner.run("getUiState", []);
+      worker.emit("message", { id: worker.requests[1].id, ok: true, value: {} });
+      await expect(next).resolves.toEqual({});
+    } finally { await owner.stop(); }
+  });
+
   it("expires a queued creation before it starts without issuing the effect", async () => {
     vi.useFakeTimers();
     const worker = new HeldWorker();

@@ -8,7 +8,6 @@ function settings(over: Partial<Settings> = {}): Settings {
     timezone: "UTC",
     supportedLanguages: ["en", "ja"],
     postsPerLoad: 50,
-    maxUploadMb: 500,
     editorWatermark: "",
     extraFieldWatermark: "",
     uiFontFamily: "",
@@ -25,12 +24,12 @@ describe("settings value rules", () => {
 
   // The three sites had already drifted apart, each in a different direction.
   // These are the exact disagreements.
-  it("rejects a fractional maxUploadMb, which the boundary used to accept", () => {
+  it("rejects a fractional postsPerLoad, as the boundary once failed to", () => {
     // The UI said "integer >= 1"; the boundary said "> 0", so 0.5 was refused on
     // screen and accepted on the wire.
-    expect(settingsFieldErrors(settings({ maxUploadMb: 0.5 }))).toHaveProperty("maxUploadMb");
-    expect(settingsFieldErrors(settings({ maxUploadMb: 0 }))).toHaveProperty("maxUploadMb");
-    expect(settingsFieldErrors(settings({ maxUploadMb: 1 }))).not.toHaveProperty("maxUploadMb");
+    expect(settingsFieldErrors(settings({ postsPerLoad: 0.5 }))).toHaveProperty("postsPerLoad");
+    expect(settingsFieldErrors(settings({ postsPerLoad: 0 }))).toHaveProperty("postsPerLoad");
+    expect(settingsFieldErrors(settings({ postsPerLoad: 1 }))).not.toHaveProperty("postsPerLoad");
   });
 
   it("rejects an empty language list and a non-two-letter code, which the boundary used to accept", () => {
@@ -72,7 +71,7 @@ describe("settings value rules", () => {
   it("reports every offending field at once, not just the first", () => {
     // The modal renders a message beside each input, so it needs them all; the
     // boundary takes the first. One source, two readings.
-    const errors = settingsFieldErrors(settings({ timezone: "", maxUploadMb: 0 }));
-    expect(Object.keys(errors).sort()).toEqual(["maxUploadMb", "timezone"]);
+    const errors = settingsFieldErrors(settings({ timezone: "", postsPerLoad: 0 }));
+    expect(Object.keys(errors).sort()).toEqual(["postsPerLoad", "timezone"]);
   });
 });

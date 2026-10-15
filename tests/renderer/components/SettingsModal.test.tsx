@@ -84,7 +84,6 @@ function settings(): Settings {
     timezone: "UTC",
     supportedLanguages: ["en", "ja"],
     postsPerLoad: 50,
-    maxUploadMb: 500,
     editorWatermark: "",
     extraFieldWatermark: "",
     uiFontFamily: "",

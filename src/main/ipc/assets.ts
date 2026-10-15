@@ -1,3 +1,5 @@
+import type { FileHandle } from "node:fs/promises";
+import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { ipcMain } from "electron";
@@ -6,22 +8,25 @@ import exifr from "exifr";
 import {
   CHANNELS,
   type AssetDeleteResult,
-  type AssetUploadInput,
+  type AssetUploadFromMain,
   type AssetUploadResult,
+  type AssetUploadStart,
 } from "@shared/ipc";
 import { isImageAssetFilename, isReservedAssetName } from "@shared/assetNames";
+import { carriedMessage, carryingText } from "@shared/i18n/carriedMessage";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
-import { getSettings } from "../storageAccess.js";
 import { getPost } from "../storageAccess.js";
 import {
   assetDir,
   sanitizeFilename,
   safeResolveUnder,
+  stagingDir,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
-import { listAssets, saveAssetFile, deleteAsset, readSourceMetadata, fileExists } from "../storageAccess.js";
+import { listAssets, installAsset, deleteAsset, readSourceMetadata, fileExists } from "../storageAccess.js";
 import { isPostId } from "../core/shared/filenames.js";
+import { receiveUpload, type UploadPort } from "../assetUpload.js";
 
 // Identifier validation (defense against path traversal). postId is a nanoid;
 // filename is a single path component with no separators or `..`.
@@ -42,29 +47,133 @@ function assetStoreErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Asset store error";
 }
 
-/**
- * The renderer is sandboxed but still an untrusted IPC peer. Dimensions are an
- * optional, presentation-only pair: accept both positive safe integers for an
- * image filename, or accept neither. The values never govern paths, allocation,
- * or parsing; a forged half-pair or non-image annotation never reaches disk.
- */
-function readUploadDimensions(
-  filename: string,
-  file: AssetUploadInput,
-): { width?: number; height?: number } {
-  if (!isImageAssetFilename(filename)) return {};
-  const { width, height } = file;
-  if (
-    typeof width !== "number" ||
-    !Number.isSafeInteger(width) ||
-    width <= 0 ||
-    typeof height !== "number" ||
-    !Number.isSafeInteger(height) ||
-    height <= 0
-  ) {
-    return {};
+/** The renderer is an untrusted IPC peer: an upload's start is checked field by field. */
+function readUploadStart(raw: unknown): AssetUploadStart {
+  const start = (raw !== null && typeof raw === "object" ? raw : {}) as Partial<Record<keyof AssetUploadStart, unknown>>;
+  if (typeof start.wsId !== "string") throw new Error("Invalid workspace id");
+  if (typeof start.name !== "string" || !start.name) throw new Error("No file provided");
+  const postId = readPostId(start.postId);
+  if (!postId) throw new Error("Invalid postId");
+  return {
+    wsId: start.wsId,
+    postId,
+    name: start.name,
+    ...(typeof start.sourcePath === "string" && { sourcePath: start.sourcePath }),
+  };
+}
+
+// exifr 7.1.3, its latest release, sizes a file it opens by path with
+// `handle.stat(path)`, which current Node rejects because it takes options
+// there, so every read by path throws and leaves the handle open. This reader
+// opens and sizes the file as Node expects; carriesMetadata closes it.
+type ExifrFsReader = { input: string; fh?: FileHandle; size?: number };
+const BrokenFsReader = exifr.fileReaders.get("fs") as new (...args: never[]) => ExifrFsReader;
+class FsReader extends BrokenFsReader {
+  async open(): Promise<void> {
+    if (this.fh !== undefined) return;
+    this.fh = await fsp.open(this.input, "r");
+    this.size = (await this.fh.stat()).size;
   }
-  return { width, height };
+}
+exifr.fileReaders.set("fs", FsReader);
+
+type ExifrReading = { read(input: string): Promise<void>; parse(): Promise<unknown>; file?: { close?(): Promise<void> } };
+const Exifr = (exifr as unknown as { Exifr: new (options: object) => ExifrReading }).Exifr;
+
+/**
+ * Whether an image carries EXIF, IPTC or XMP metadata. exifr reads the staged
+ * file by path, in a few chunks, so a large image is never read whole. A PNG's
+ * IHDR header is not metadata, so it is not asked for.
+ *
+ * Image dimensions are not read here: they need a decoder's header parse, and
+ * the renderer no longer decodes uploads, so new uploads record none.
+ */
+async function carriesMetadata(filePath: string): Promise<boolean> {
+  const reading = new Exifr({ ihdr: false, xmp: true, iptc: true });
+  try {
+    await reading.read(filePath);
+    const found = await reading.parse();
+    return found !== null && typeof found === "object" && Object.keys(found).length > 0;
+  } catch {
+    // Not a format exifr recognises.
+    return false;
+  } finally {
+    try { await reading.file?.close?.(); } catch { /* Nothing was written; the handle is let go. */ }
+  }
+}
+
+/**
+ * One upload, from its start message to its result. Refusals that need no bytes
+ * are answered before any are sent. Whatever happens after the bytes are staged,
+ * the staged file is removed once the upload settles; an installed one has
+ * already been renamed away.
+ */
+async function upload(port: UploadPort, raw: unknown): Promise<AssetUploadResult | null> {
+  const start = readUploadStart(raw);
+  const { wsId, postId } = start;
+  const dir = (await resolveWorkspace(wsId)).dataDirectory;
+  const filename = sanitizeFilename(start.name);
+  if (isReservedAssetName(filename)) return { ok: false, admission: { code: "reserved-name", filename } };
+  const post = await getPost(dir, postId);
+  if (!post) return { ok: false, admission: { code: "post-missing" } };
+  if (post.frontMatter.locked === true) return { ok: false, admission: { code: "post-locked" } };
+
+  const received = await receiveUpload(port, stagingDir(dir));
+  switch (received.kind) {
+    case "abandoned":
+      logWarn("asset upload abandoned", { workspace: wsId, postId, filename });
+      return null;
+    case "source-unreadable":
+      logWarn("asset upload stopped: the renderer could not read the file", { workspace: wsId, postId, filename });
+      return { ok: false, failure: { code: "source-unreadable" } };
+    case "write-failed":
+      logError("asset upload could not be staged", { workspace: wsId, postId, filename, problem: received.problem, error: serializeError(received.error) });
+      return { ok: false, failure: { code: "workspace-unwritable", problem: received.problem } };
+  }
+
+  const { staging, staged } = received;
+  try {
+    const hasMetadata = isImageAssetFilename(filename) && (await carriesMetadata(staging.path));
+    const meta = {
+      filename,
+      size: staged.size,
+      ...(hasMetadata && { hasMetadata }),
+      uploadedAt: formatUtcIso(utcNow()),
+    };
+    // The post's lock is checked again at publication, inside the storage task.
+    const result = await installAsset(dir, postId, filename, staged, meta, await readSourceMetadata(start.sourcePath, staged.size));
+    if (result.ok) {
+      logInfo("asset uploaded", { workspace: wsId, postId, filename: result.asset.filename, size: staged.size, hasMetadata });
+    }
+    return result;
+  } finally {
+    await staging.discard();
+  }
+}
+
+/**
+ * Answers an upload on its port, once. An unexpected failure is logged here and
+ * reaches the renderer only as fixed text, or as the catalogue message the
+ * failure carries (error-handling-conventions).
+ */
+export async function handleUpload(port: UploadPort & { close(): void }, raw: unknown): Promise<void> {
+  let reply: AssetUploadFromMain | null;
+  try {
+    const result = await upload(port, raw);
+    reply = result && { type: "result", result };
+  } catch (err) {
+    const { wsId, postId } = (raw !== null && typeof raw === "object" ? raw : {}) as { wsId?: unknown; postId?: unknown };
+    logError("asset upload failed", { workspace: String(wsId), postId: String(postId), error: serializeError(err) });
+    const carried = carriedMessage(err);
+    reply = { type: "failed", message: carried ? carryingText(carried) : "The file could not be added." };
+  }
+  try {
+    if (reply) port.postMessage(reply);
+  } catch {
+    // The window went away; nobody is waiting for the answer.
+  } finally {
+    port.close();
+  }
 }
 
 export function registerAssetHandlers(): void {
@@ -83,72 +192,12 @@ export function registerAssetHandlers(): void {
     return listing;
   });
 
-  // Upload receives raw bytes over IPC: the renderer reads the picked File to an
-  // ArrayBuffer, and the byte length is checked against the workspace's limit.
-  ipcMain.handle(CHANNELS.uploadAsset, async (_event, wsId: string, postId: string, file: AssetUploadInput) => {
-    const dir = (await resolveWorkspace(wsId)).dataDirectory;
-    const pid = readPostId(postId);
-    if (!pid) throw new Error("Invalid postId");
-    if (!file || typeof file.name !== "string" || !file.data) throw new Error("No file provided");
-
-    const buffer = Buffer.from(file.data);
-    const limitMb = (await getSettings(dir)).maxUploadMb;
-    if (buffer.length > limitMb * 1024 * 1024) {
-      return { ok: false, admission: { code: "file-too-large", limitMb } } satisfies AssetUploadResult;
-    }
-
-    const filename = sanitizeFilename(file.name);
-    if (isReservedAssetName(filename)) {
-      return { ok: false, admission: { code: "reserved-name", filename } } satisfies AssetUploadResult;
-    }
-
-    const { width, height } = readUploadDimensions(filename, file);
-    let hasMetadata: boolean | undefined;
-    if (isImageAssetFilename(filename)) {
-      try {
-        const exif = await exifr.parse(buffer);
-        if (exif && Object.keys(exif).length > 0) hasMetadata = true;
-      } catch {
-        // Not a format exifr recognises
-      }
-    }
-
-    const meta = {
-      filename,
-      size: buffer.length,
-      ...(width !== undefined && { width }),
-      ...(height !== undefined && { height }),
-      ...(hasMetadata && { hasMetadata }),
-      uploadedAt: formatUtcIso(utcNow()),
-    };
-
-    // Refuse a lock that arrived during image parsing. The storage task checks
-    // again at publication, after the remaining source-metadata lookup.
-    const post = (await getPost(dir, pid));
-    if (!post) throw new Error("Post not found");
-    if (post.frontMatter.locked === true) {
-      return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
-    }
-
-    let saved: Extract<AssetUploadResult, { ok: true }>;
-    try {
-      saved = (await saveAssetFile(dir, pid, filename, buffer, meta, (await readSourceMetadata(file.sourcePath, buffer.length))));
-    } catch (err) {
-      logError("asset metadata save failed", { workspace: wsId, postId: pid, filename, error: serializeError(err) });
-      if (err instanceof Error && err.name === "PostLockedError") return { ok: false, admission: { code: "post-locked" } } satisfies AssetUploadResult;
-      throw new Error(assetStoreErrorMessage(err));
-    }
-    const storedMeta = saved.asset;
-    logInfo("asset uploaded", {
-      workspace: wsId,
-      postId: pid,
-      filename: storedMeta.filename,
-      size: buffer.length,
-      width: width ?? null,
-      height: height ?? null,
-      hasMetadata: hasMetadata ?? false,
-    });
-    return saved;
+  // An upload arrives as a start message with a port, and its bytes follow on the
+  // port (see handleUpload); `invoke` cannot carry a port.
+  ipcMain.on(CHANNELS.uploadAsset, (event, start: unknown) => {
+    const [port] = event.ports;
+    if (!port) return;
+    void handleUpload(port, start);
   });
 
   ipcMain.handle(CHANNELS.deleteAsset, async (_event, wsId: string, postId: string, filename: string) => {

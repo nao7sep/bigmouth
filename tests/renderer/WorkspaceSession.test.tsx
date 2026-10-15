@@ -290,7 +290,6 @@ const SETTINGS: Settings = {
   timezone: "America/New_York",
   supportedLanguages: ["en", "ja"],
   postsPerLoad: 25,
-  maxUploadMb: 100,
   editorWatermark: "WATER",
   extraFieldWatermark: "EXTRA",
   uiFontFamily: "",

@@ -13,7 +13,7 @@ const mutationCommands = new Set<StorageCommand>([
   "createWorkspace", "addExistingWorkspace", "updateWorkspace", "deleteWorkspace", "saveSettings",
   "saveAnthropicSettings", "saveTargets", "saveAnalysisPrompts", "saveGenerationPrompts",
   "rebuildIndex", "createPost", "updatePost", "changeStatus",
-  "setLocked", "deletePost", "renameTarget", "saveAssetFile", "deleteAsset", "saveAppSettings",
+  "setLocked", "deletePost", "renameTarget", "installAsset", "deleteAsset", "saveAppSettings",
 ]);
 const retainsSettlement = (name: StorageCommand) => mutationCommands.has(name);
 const isContent = (name: StorageCommand) => name === "queueContent" || name === "queueWorkspaceContent";
@@ -28,7 +28,9 @@ export type StorageReply =
   | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown } }
   | { event: "content-save"; value: ContentSaveEvent }
   | { event: "record-stored" }
-  | { event: "flush-settled" };
+  | { event: "flush-settled" }
+  // The worker could not read a request it was sent, so it never ran it.
+  | { event: "request-unreadable" };
 
 export type StorageFlushOutcome =
   | { kind: "flushed"; failures: { id: string; message: string }[] }
@@ -317,6 +319,14 @@ export class StorageOwner {
         this.worker = worker;
         worker.unref();
         worker.on("message", (reply: StorageReply) => this.receive(reply));
+        // A reply the worker sent that could not be read here would otherwise
+        // leave its request waiting, and a retained mutation pending, forever.
+        // Requests run one at a time, so the lost reply is most likely the active
+        // request's; it fails with its outcome unknown rather than as undone.
+        worker.on("messageerror", (error) => this.loseActive(new Error(
+          "Storage could not return this operation's result. Whether it took effect is unknown.",
+          { cause: error },
+        )));
         worker.on("error", (error) => { this.failed = true; this.failWaiting(error instanceof Error ? error : new Error("Storage worker failed.", { cause: error })); });
         worker.on("exit", () => {
           if (this.worker !== worker) return;
@@ -335,29 +345,45 @@ export class StorageOwner {
     if ("event" in reply) {
       if (reply.event === "record-stored") this.recordListener?.();
       else if (reply.event === "flush-settled") { this.flushing = false; this.flushSettled?.(); this.flushSettled = null; this.dispatch(); }
+      else if (reply.event === "request-unreadable") this.loseActive(new Error("Storage could not read this request. Nothing was done."));
       else this.contentListener?.(reply.value);
       return;
     }
     const delivered = this.delivering.get(reply.id);
     const waiting = delivered ?? this.active;
     if (!waiting || reply.id !== waiting.request.id) return;
-    clearTimeout(waiting.timer);
     if (delivered) this.delivering.delete(reply.id);
     else this.active = null;
-    // A timed-out authored edit was reported as held, not discarded. Its
-    // eventual refusal still belongs to the field/save-status owner.
-    if (reply.ok) {
-      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.resolve(reply.value);
-      else if (isAuthored(waiting.request.name) && !isContent(waiting.request.name) && reply.value !== null) {
-        this.heldFailureListener?.(waiting.request, reply.value);
-      }
-    } else {
+    if (reply.ok) this.settle(waiting, { ok: true, value: reply.value });
+    else {
       const data = reply.error;
       const error = new Error(data.message, { cause: data.cause });
       error.name = data.name;
       error.stack = data.stack;
-      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.reject(error);
-      else if (isAuthored(waiting.request.name)) this.heldFailureListener?.(waiting.request, error);
+      this.settle(waiting, { ok: false, error });
+    }
+  }
+
+  /** Fails the active request, whose reply will not arrive, and moves on to the next. */
+  private loseActive(error: Error): void {
+    const waiting = this.active;
+    if (!waiting) return;
+    this.active = null;
+    this.settle(waiting, { ok: false, error });
+  }
+
+  private settle(waiting: Waiting, outcome: { ok: true; value: unknown } | { ok: false; error: Error }): void {
+    clearTimeout(waiting.timer);
+    // A timed-out authored edit was reported as held, not discarded. Its
+    // eventual refusal still belongs to the field/save-status owner.
+    if (outcome.ok) {
+      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.resolve(outcome.value);
+      else if (isAuthored(waiting.request.name) && !isContent(waiting.request.name) && outcome.value !== null) {
+        this.heldFailureListener?.(waiting.request, outcome.value);
+      }
+    } else {
+      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.reject(outcome.error);
+      else if (isAuthored(waiting.request.name)) this.heldFailureListener?.(waiting.request, outcome.error);
     }
     if (waiting.expired && waiting.started && retainsSettlement(waiting.request.name)) this.pendingListener?.(false);
     this.dispatch();

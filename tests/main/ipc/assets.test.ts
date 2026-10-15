@@ -2,18 +2,27 @@
 // the real assetStore + postStore + configStore run against a throwaway
 // BIGMOUTH_DATA_DIR + a real registered workspace. The async storageAccess mock
 // calls real services and task guards; Electron and the logger are mocked.
-// The upload handler receives raw bytes plus optional image
-// dimensions from the sandboxed renderer, then validates that IPC payload before
-// storing it (see src/renderer/src/api.ts `uploadAsset`).
+// An upload is driven as the preload drives it: a start message and a port, on
+// which the file's bytes follow in slices main asks for (see tests/main/uploadStream.ts).
 //
 // A fresh workspace has no targets, so a target is registered through the real
 // configStore before any post is created (createPost would otherwise reject).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CHANNELS, type AssetDeleteResult, type AssetUploadInput, type AssetUploadResult } from "@shared/ipc";
+import { MessageChannel } from "node:worker_threads";
+import { createHash } from "node:crypto";
+import {
+  ASSET_UPLOAD_SLICE_BYTES,
+  CHANNELS,
+  type AssetDeleteResult,
+  type AssetUploadFromMain,
+  type AssetUploadResult,
+} from "@shared/ipc";
+import { mainEnd, playRenderer, slicesOf, type SliceStep } from "../uploadStream.js";
 import type { AssetListing, AssetMeta, Post, Target } from "@shared/types";
 
 const transport = vi.hoisted(() => ({ afterPublication: null as null | (() => Promise<void>) }));
@@ -47,8 +56,8 @@ vi.mock("@main/storageAccess.js", async () => {
     recordAssetChange: async (...args: Parameters<typeof post.recordAssetChange>) => post.recordAssetChange(...args),
     createPost: async (...args: Parameters<typeof storageTasks.createPost>) => storageTasks.createPost(...args),
     updatePost: async (...args: Parameters<typeof storageTasks.updatePost>) => storageTasks.updatePost(...args),
-    saveAssetFile: async (...args: Parameters<typeof storageTasks.saveAssetFile>) => {
-      const result = storageTasks.saveAssetFile(...args);
+    installAsset: async (...args: Parameters<typeof storageTasks.installAsset>) => {
+      const result = storageTasks.installAsset(...args);
       await transport.afterPublication?.();
       return result;
     },
@@ -79,10 +88,10 @@ vi.mock("@main/core/services/logger.js", () => ({
 }));
 
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
-import { saveTargets, saveSettings, getSettings } from "@main/core/services/configStore.js";
-import { changeStatus, clearCache, getPost, setLocked } from "@main/core/services/postStore.js";
-import { assetDir } from "@main/core/services/assetStore.js";
-import { registerAssetHandlers } from "@main/ipc/assets.js";
+import { saveTargets } from "@main/core/services/configStore.js";
+import { changeStatus, clearCache, deletePost, getPost, setLocked } from "@main/core/services/postStore.js";
+import { assetDir, stagingDir } from "@main/core/services/assetStore.js";
+import { handleUpload, registerAssetHandlers } from "@main/ipc/assets.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
 
 let home: string;
@@ -98,6 +107,19 @@ const PNG_1x1 = Buffer.from(
   "base64",
 );
 
+// The smallest JPEG exifr reads metadata from: an APP1 Exif segment whose one
+// IFD0 entry names the camera's make ("abc").
+const JPEG_WITH_EXIF = Buffer.from([
+  0xff, 0xd8, // SOI
+  0xff, 0xe1, 0x00, 0x22, // APP1, 34 bytes
+  0x45, 0x78, 0x69, 0x66, 0x00, 0x00, // "Exif\0\0"
+  0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, // little-endian TIFF, IFD0 at 8
+  0x01, 0x00, // one entry
+  0x0f, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0x00, 0x61, 0x62, 0x63, 0x00, // Make, ASCII, 4: "abc"
+  0x00, 0x00, 0x00, 0x00, // no next IFD
+  0xff, 0xd9, // EOI
+]);
+
 function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return handlers.get(channel)!({}, ...args) as Promise<T>;
 }
@@ -106,24 +128,44 @@ async function invokeAsync<T>(channel: string, ...args: unknown[]): Promise<T> {
   return (await handlers.get(channel)!({}, ...args)) as Promise<T> as T;
 }
 
-async function invokeUpload(wsId: string, postId: string, file: AssetUploadInput): Promise<AssetMeta> {
-  const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, postId, file);
-  expect(result.ok).toBe(true);
-  if (!result.ok) throw new Error(`Unexpected upload admission: ${result.admission.code}`);
+/** A file as the renderer offers it: its name, its bytes, and where it is on disk. */
+interface Offered {
+  name: string;
+  bytes: Buffer;
+  sourcePath?: unknown;
+}
+
+function upload(name: string, bytes: Buffer): Offered {
+  return { name, bytes };
+}
+
+/**
+ * Uploads `file` the way the preload does, answering main's requests with
+ * `steps` (its slices by default), and returns main's final message, or null
+ * when main answered nothing.
+ */
+async function send(postId: string, file: Offered, steps?: (index: number) => SliceStep, start?: unknown): Promise<AssetUploadFromMain | null> {
+  const { port1, port2 } = new MessageChannel();
+  const renderer = playRenderer(port1, steps ?? slicesOf(file.bytes, ASSET_UPLOAD_SLICE_BYTES));
+  const offered = { wsId, postId, name: file.name, ...(file.sourcePath !== undefined && { sourcePath: file.sourcePath }) };
+  await handleUpload(mainEnd(port2), start === undefined ? offered : start);
+  return renderer;
+}
+
+/** The upload's result; an upload that failed outright fails the test. */
+async function uploadResult(postId: string, file: Offered): Promise<AssetUploadResult> {
+  const reply = await send(postId, file);
+  if (reply?.type !== "result") throw new Error(`Upload failed: ${JSON.stringify(reply)}`);
+  return reply.result;
+}
+
+async function invokeUpload(postId: string, file: Offered): Promise<AssetMeta> {
+  const result = await uploadResult(postId, file);
+  if (!result.ok) throw new Error(`Unexpected upload refusal: ${JSON.stringify(result)}`);
   return result.asset;
 }
 
-/** Builds the byte payload the handler expects from a Buffer. */
-function upload(
-  name: string,
-  bytes: Buffer,
-  dimensions: Pick<AssetUploadInput, "width" | "height"> = {},
-): AssetUploadInput {
-  // Slice to a tight ArrayBuffer so a pooled Node Buffer's backing store is not
-  // handed across with extra bytes.
-  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  return { name, data: ab as ArrayBuffer, ...dimensions };
-}
+const staged = () => (fs.existsSync(stagingDir(dataDir)) ? fs.readdirSync(stagingDir(dataDir)) : []);
 
 /** Creates a draft post through the post handler and returns its id. */
 async function createDraft(): Promise<string> {
@@ -170,26 +212,34 @@ describe("listAssets", () => {
 });
 
 describe("uploadAsset", () => {
+  it("answers on the port that arrives with the start message", async () => {
+    const id = await createDraft();
+    const { port1, port2 } = new MessageChannel();
+    const renderer = playRenderer(port1, slicesOf(Buffer.from("hello"), ASSET_UPLOAD_SLICE_BYTES));
+    handlers.get(CHANNELS.uploadAsset)!({ ports: [mainEnd(port2)] }, { wsId, postId: id, name: "notes.txt" });
+    expect(await renderer).toEqual({ type: "result", result: { ok: true, asset: expect.objectContaining({ filename: "notes.txt", size: 5 }) } });
+  });
+
   it("preserves shared attachments when copied post files duplicate an id", async () => {
     const id = await createDraft();
-    await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, { width: 1, height: 1 }));
+    await invokeUpload(id, upload("pic.png", PNG_1x1));
     const post = await invoke<Post>(CHANNELS.getPost, wsId, id);
     const filename = fs.readdirSync(path.join(dataDir, "posts")).find((name) => name.endsWith(".md"))!;
     fs.copyFileSync(path.join(dataDir, "posts", filename), path.join(dataDir, "posts", "duplicate.md"));
-    await expect(invokeUpload(wsId, id, upload("pic.png", Buffer.from("changed")))).rejects.toThrow("bigmouth-message:");
+    // The refusal carries its catalogue message to the renderer, not the raw error.
+    expect(await send(id, upload("pic.png", Buffer.from("changed")))).toEqual({ type: "failed", message: expect.stringContaining("bigmouth-message:") });
     await expect(invoke(CHANNELS.deleteAsset, wsId, id, "pic.png")).rejects.toThrow("bigmouth-message:");
     expect(fs.readFileSync(path.join(assetDir(dataDir, id), "pic.png"))).toEqual(PNG_1x1);
     expect(post.frontMatter.id).toBe(id);
+    expect(staged()).toEqual([]);
   });
 
-  it("stores a renderer-inspected image with its validated dimensions and lists it back", async () => {
+  it("stores an image and lists it back", async () => {
     const id = (await createDraft());
-    const meta = await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, { width: 1, height: 1 }));
+    const meta = await invokeUpload(id, upload("pic.png", PNG_1x1));
 
     expect(meta.filename).toBe("pic.png");
     expect(meta.size).toBe(PNG_1x1.length);
-    expect(meta.width).toBe(1);
-    expect(meta.height).toBe(1);
     expect(meta.uploadedAt).toBeTruthy();
 
     const listed = (await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets;
@@ -198,39 +248,26 @@ describe("uploadAsset", () => {
     expect(fs.existsSync(path.join(assetDir(dataDir, id), "pic.png"))).toBe(true);
   });
 
-  it.each([
-    ["missing height", { width: 640 }],
-    ["missing width", { height: 480 }],
-    ["zero", { width: 0, height: 480 }],
-    ["negative", { width: -1, height: 480 }],
-    ["fractional", { width: 1.5, height: 480 }],
-    ["infinite", { width: Number.POSITIVE_INFINITY, height: 480 }],
-    ["unsafe integer", { width: Number.MAX_SAFE_INTEGER + 1, height: 480 }],
-  ])("drops a forged %s dimension payload as an indivisible pair", async (_label, dimensions) => {
-    const id = (await createDraft());
-    const meta = await invokeUpload(wsId, id, upload("pic.png", PNG_1x1, dimensions));
+  it("installs the exact bytes of a file sent in several slices, with their hash, and leaves no stage", async () => {
+    const id = await createDraft();
+    const bytes = Buffer.alloc(ASSET_UPLOAD_SLICE_BYTES * 2 + 123);
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = (index * 31) & 0xff;
+    const meta = await invokeUpload(id, upload("clip.bin", bytes));
 
-    expect(meta.width).toBeUndefined();
-    expect(meta.height).toBeUndefined();
+    const file = path.join(assetDir(dataDir, id), "clip.bin");
+    expect(meta.size).toBe(bytes.length);
+    expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+    const [record] = JSON.parse(fs.readFileSync(path.join(assetDir(dataDir, id), "meta.json"), "utf8")).assets;
+    expect(record.contentHash).toBe(createHash("sha256").update(bytes).digest("hex"));
+    expect(staged()).toEqual([]);
   });
 
-  it("drops runtime type violations even though the shared TypeScript contract is numeric", async () => {
+  // Dimensions need a decoder; the renderer no longer decodes uploads, and main
+  // takes nothing it sends but the name, the bytes and where the file is.
+  it("records no dimensions, whatever the renderer sends with the file", async () => {
     const id = (await createDraft());
-    const forged = upload("pic.png", PNG_1x1, { width: 640, height: 480 }) as unknown as Record<string, unknown>;
-    forged.width = "640";
-
-    const meta = await invokeUpload(wsId, id, forged as unknown as AssetUploadInput);
-
-    expect(meta.width).toBeUndefined();
-    expect(meta.height).toBeUndefined();
-  });
-
-  it("never annotates a non-image file with forged renderer dimensions", async () => {
-    const id = (await createDraft());
-    const meta = await invokeUpload(wsId, id, upload("notes.txt", Buffer.from("hello"), { width: 640, height: 480 }));
-
-    expect(meta.width).toBeUndefined();
-    expect(meta.height).toBeUndefined();
+    const reply = await send(id, upload("pic.png", PNG_1x1), undefined, { wsId, postId: id, name: "pic.png", width: 640, height: 480 });
+    expect(reply).toEqual({ type: "result", result: { ok: true, asset: expect.not.objectContaining({ width: expect.anything() }) } });
   });
 
   it("stores a crafted box-format payload without parsing image dimensions in main", async () => {
@@ -238,72 +275,128 @@ describe("uploadAsset", () => {
     // Zero-sized `ftyp` box: the shape behind the removed image-size HEIF/JXL
     // infinite-loop advisories. The misleading .jpg name cannot make main decode it.
     const crafted = Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
-    const meta = await invokeUpload(wsId, id, upload("renamed.jpg", crafted));
+    const meta = await invokeUpload(id, upload("renamed.jpg", crafted));
 
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
     expect(fs.readFileSync(path.join(assetDir(dataDir, id), "renamed.jpg"))).toEqual(crafted);
   });
 
+  // exifr reads the staged file itself, in chunks, rather than bytes in memory.
+  it("flags an image whose staged file carries EXIF metadata", async () => {
+    const id = await createDraft();
+    const meta = await invokeUpload(id, upload("camera.jpg", JPEG_WITH_EXIF));
+    expect(meta.hasMetadata).toBe(true);
+    expect((await invokeUpload(id, upload("plain.png", PNG_1x1))).hasMetadata).toBeUndefined();
+  });
+
   it("stores a non-image file without dimensions", async () => {
     const id = (await createDraft());
-    const meta = await invokeUpload(wsId, id, upload("notes.txt", Buffer.from("hello")));
+    const meta = await invokeUpload(id, upload("notes.txt", Buffer.from("hello")));
     expect(meta.filename).toBe("notes.txt");
     expect(meta.size).toBe(5);
     expect(meta.width).toBeUndefined();
     expect(meta.height).toBeUndefined();
   });
 
+  it("stores an empty file", async () => {
+    const id = await createDraft();
+    expect(await invokeUpload(id, upload("empty.txt", Buffer.alloc(0)))).toMatchObject({ filename: "empty.txt", size: 0 });
+  });
+
   it("sanitizes the filename (strips path components)", async () => {
     const id = (await createDraft());
-    const meta = await invokeUpload(wsId, id, upload("../../etc/passwd", Buffer.from("x")));
+    const meta = await invokeUpload(id, upload("../../etc/passwd", Buffer.from("x")));
     expect(meta.filename).toBe("passwd");
   });
 
-  it("rejects an invalid postId before reaching the store", async () => {
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, "../escape", upload("a.png", PNG_1x1))).rejects.toThrow(
-      /Invalid postId/,
-    );
+  it.each([
+    ["an invalid postId", { postId: "../escape", name: "a.png" }],
+    ["no name", { postId: "VALID", name: "" }],
+    ["no start at all", null],
+  ])("fails an upload with %s before any bytes are asked for, in fixed words", async (_label, start) => {
+    const id = await createDraft();
+    const asked = vi.fn((): SliceStep => null);
+    const reply = await send(id, upload("a.png", PNG_1x1), asked, start && { wsId, ...start, postId: start.postId === "VALID" ? id : start.postId });
+    expect(reply).toEqual({ type: "failed", message: "The file could not be added." });
+    expect(asked).not.toHaveBeenCalled();
   });
 
-  it("rejects a missing/empty file payload", async () => {
+  it("refuses an upload to a post that does not exist before any bytes are asked for", async () => {
+    const asked = vi.fn((): SliceStep => null);
+    expect(await send("missingid", upload("a.png", PNG_1x1), asked)).toEqual({ type: "result", result: { ok: false, admission: { code: "post-missing" } } });
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it("refuses an upload when the post is locked while its bytes stream in, and removes the stage", async () => {
     const id = (await createDraft());
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, id, undefined as unknown as AssetUploadInput)).rejects.toThrow(
-      /No file provided/,
-    );
-    await expect(
-      invokeAsync(CHANNELS.uploadAsset, wsId, id, { name: "a.png" } as unknown as AssetUploadInput),
-    ).rejects.toThrow(/No file provided/);
-  });
+    const reply = await send(id, upload("late.png", PNG_1x1), (index) => {
+      if (index === 0) setLocked(dataDir, id, true);
+      return slicesOf(PNG_1x1, ASSET_UPLOAD_SLICE_BYTES)(index);
+    });
 
-  it("rejects an upload to a post that does not exist", async () => {
-    await expect(invokeAsync(CHANNELS.uploadAsset, wsId, "missingid", upload("a.png", PNG_1x1))).rejects.toThrow(
-      /Post not found/,
-    );
-  });
-
-  it("rejects an upload that exceeds the configured size limit", async () => {
-    const id = (await createDraft());
-    // The smallest valid limit keeps the oversized buffer small.
-    const settings = getSettings(dataDir);
-    saveSettings(dataDir, { ...settings, maxUploadMb: 1 });
-    const oversized = Buffer.concat([PNG_1x1, Buffer.alloc(1024 * 1024)]);
-    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", oversized))).resolves.toEqual(
-      { ok: false, admission: { code: "file-too-large", limitMb: 1 } },
-    );
-  });
-
-  it("refuses an upload when the post is locked while the handler is awaiting metadata", async () => {
-    // The lock used to be read at the top of the handler, before the exifr parse.
-    // Calling the handler runs it synchronously up to that await and hands control
-    // back here, so locking now lands inside the window - and an asset was
-    // written into a post the app had already locked.
-    const id = (await createDraft());
-    const pending = invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("late.png", PNG_1x1));
-    setLocked(dataDir, id, true);
-
-    await expect(pending).resolves.toEqual({ ok: false, admission: { code: "post-locked" } });
+    expect(reply).toEqual({ type: "result", result: { ok: false, admission: { code: "post-locked" } } });
     expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets).toEqual([]);
+    expect(staged()).toEqual([]);
+  });
+
+  it("refuses an upload when the post is deleted while its bytes stream in, and removes the stage", async () => {
+    const id = (await createDraft());
+    const reply = await send(id, upload("late.png", PNG_1x1), (index) => {
+      if (index === 0) deletePost(dataDir, id);
+      return slicesOf(PNG_1x1, ASSET_UPLOAD_SLICE_BYTES)(index);
+    });
+
+    expect(reply).toEqual({ type: "result", result: { ok: false, admission: { code: "post-missing" } } });
+    expect(staged()).toEqual([]);
+  });
+
+  it("says the file could not be read when the renderer stops reading it, and removes the stage", async () => {
+    const id = await createDraft();
+    const reply = await send(id, upload("moved.png", PNG_1x1), (index) => (index === 0 ? Buffer.from("first part") : "abort"));
+    expect(reply).toEqual({ type: "result", result: { ok: false, failure: { code: "source-unreadable" } } });
+    expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets).toEqual([]);
+    expect(staged()).toEqual([]);
+  });
+
+  it("answers nothing and removes the stage when the renderer goes away mid-file", async () => {
+    const id = await createDraft();
+    const reply = await send(id, upload("gone.png", PNG_1x1), (index) => (index === 0 ? Buffer.from("first part") : "close"));
+    expect(reply).toBeNull();
+    expect(staged()).toEqual([]);
+  });
+
+  it("says the workspace folder is full when a staged write meets ENOSPC, and removes the stage", async () => {
+    const id = await createDraft();
+    const open = fsp.open;
+    const spy = vi.spyOn(fsp, "open").mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+      const handle = await open(...args);
+      (handle as unknown as { write: () => Promise<never> }).write = () =>
+        Promise.reject(Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }));
+      return handle;
+    });
+    let reply: AssetUploadFromMain | null;
+    try {
+      reply = await send(id, upload("big.mov", Buffer.alloc(1024)));
+    } finally { spy.mockRestore(); }
+    expect(reply).toEqual({ type: "result", result: { ok: false, failure: { code: "workspace-unwritable", problem: "full" } } });
+    expect(staged()).toEqual([]);
+  });
+
+  it("says the workspace folder refused the file when installing it fails, and removes the stage", async () => {
+    const id = await createDraft();
+    const realRename = fs.renameSync.bind(fs);
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith(".part")) throw Object.assign(new Error("EACCES: permission denied, rename"), { code: "EACCES" });
+      return realRename(from, to);
+    });
+    let result: AssetUploadResult;
+    try {
+      result = await uploadResult(id, upload("a.png", PNG_1x1));
+    } finally { spy.mockRestore(); }
+    expect(result).toEqual({ ok: false, failure: { code: "workspace-unwritable", problem: "denied" } });
+    expect(fs.existsSync(path.join(assetDir(dataDir, id), "a.png"))).toBe(false);
+    expect(staged()).toEqual([]);
   });
 
   // The reader has always filtered these names out of every listing, so storing
@@ -314,10 +407,10 @@ describe("uploadAsset", () => {
     "refuses to store %s rather than losing it",
     async (name) => {
       const id = (await createDraft());
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("keep.png", PNG_1x1));
+      await uploadResult(id, upload("keep.png", PNG_1x1));
 
       await expect(
-        invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload(name, Buffer.from("USER-PAYLOAD"))),
+        uploadResult(id, upload(name, Buffer.from("USER-PAYLOAD"))),
       ).resolves.toEqual({ ok: false, admission: { code: "reserved-name", filename: name } });
 
       // The asset that was already there is untouched.
@@ -332,8 +425,8 @@ describe("uploadAsset", () => {
     // as a re-upload of the same asset - so the second silently replaced the
     // first. This app ships `ja` as a first-class post language.
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("桜.png", PNG_1x1));
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("梅.png", PNG_1x1));
+    await uploadResult(id, upload("桜.png", PNG_1x1));
+    await uploadResult(id, upload("梅.png", PNG_1x1));
 
     expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets.map((a) => a.filename).sort()).toEqual(
       ["梅.png", "桜.png"].sort(),
@@ -343,7 +436,7 @@ describe("uploadAsset", () => {
   it("refuses to upload to a locked post", async () => {
     const id = (await createDraft());
     setLocked(dataDir, id, true);
-    await expect(invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))).resolves.toEqual(
+    await expect(uploadResult(id, upload("a.png", PNG_1x1))).resolves.toEqual(
       { ok: false, admission: { code: "post-locked" } },
     );
   });
@@ -351,7 +444,7 @@ describe("uploadAsset", () => {
   it("uploads to a published post that is not locked", async () => {
     const id = (await createDraft());
     changeStatus(dataDir, id, "published");
-    const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    const result = await uploadResult(id, upload("a.png", PNG_1x1));
     expect(result.ok).toBe(true);
   });
 
@@ -363,11 +456,11 @@ describe("uploadAsset", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      await uploadResult(id, upload("a.png", PNG_1x1));
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
 
       vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", Buffer.concat([PNG_1x1, Buffer.from([0])])));
+      await uploadResult(id, upload("a.png", Buffer.concat([PNG_1x1, Buffer.from([0])])));
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-02T00:00:00.000Z");
     } finally {
       vi.useRealTimers();
@@ -385,7 +478,7 @@ describe("uploadAsset", () => {
     const then = new Date("2021-03-04T05:06:07.000Z");
     fs.utimesSync(sourcePath, then, then);
 
-    await invokeUpload(wsId, id, { ...upload("pic.png", PNG_1x1), sourcePath });
+    await invokeUpload(id, { ...upload("pic.png", PNG_1x1), sourcePath });
 
     const stat = fs.statSync(path.join(dataDir, "assets", id, "pic.png"));
     expect(stat.mtime.toISOString()).toBe(then.toISOString());
@@ -401,7 +494,7 @@ describe("uploadAsset", () => {
 
     for (const [index, sourcePath] of [other, "relative.png", 42].entries()) {
       const bytes = Buffer.concat([PNG_1x1, Buffer.from([index])]);
-      await invokeUpload(wsId, id, { ...upload("pic.png", bytes), sourcePath } as AssetUploadInput);
+      await invokeUpload(id, { ...upload("pic.png", bytes), sourcePath });
       const stat = fs.statSync(path.join(dataDir, "assets", id, "pic.png"));
       expect(stat.mtime.toISOString()).not.toBe(then.toISOString());
     }
@@ -413,13 +506,13 @@ describe("uploadAsset", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-      await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+      await uploadResult(id, upload("a.png", PNG_1x1));
+      await uploadResult(id, upload("b.txt", Buffer.from("notes")));
       const metaFile = path.join(dataDir, "assets", id, "meta.json");
       const metaBefore = fs.readFileSync(metaFile, "utf8");
 
       vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
-      const result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      const result = await uploadResult(id, upload("a.png", PNG_1x1));
 
       expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png", uploadedAt: "2030-01-01T00:00:00.000Z" }) });
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
@@ -434,7 +527,7 @@ describe("uploadAsset", () => {
     const id = (await createDraft());
     setLocked(dataDir, id, true);
     const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("a.png", PNG_1x1));
     expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe(before);
   });
 });
@@ -460,7 +553,7 @@ describe("an asset change whose record could not be saved", () => {
 
   it.each(["upload", "delete"])("owns the post timestamp before a delayed %s reply reaches IPC", async (operation) => {
     const id = await createDraft();
-    if (operation === "delete") await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    if (operation === "delete") await uploadResult(id, upload("a.png", PNG_1x1));
     const before = getPost(dataDir, id)!.frontMatter.updatedAtUtc;
     laterClock();
     let release!: () => void;
@@ -469,7 +562,7 @@ describe("an asset change whose record could not be saved", () => {
     const heldReply = new Promise<void>((resolve) => { release = resolve; });
     transport.afterPublication = () => { published(); return heldReply; };
     const pending = operation === "upload"
-      ? invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1))
+      ? uploadResult(id, upload("a.png", PNG_1x1))
       : invokeAsync(CHANNELS.deleteAsset, wsId, id, "a.png");
     try {
       await publication;
@@ -490,11 +583,11 @@ describe("an asset change whose record could not be saved", () => {
 
   it("keeps an added file and says its details were not saved", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("first.png", PNG_1x1));
+    await uploadResult(id, upload("first.png", PNG_1x1));
     const spy = failRenamesOnto("meta.json");
     let result: AssetUploadResult;
     try {
-      result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      result = await uploadResult(id, upload("a.png", PNG_1x1));
     } finally {
       spy.mockRestore();
     }
@@ -510,7 +603,7 @@ describe("an asset change whose record could not be saved", () => {
     const spy = failRenamesOnto(".md");
     let result: AssetUploadResult;
     try {
-      result = await invokeAsync<AssetUploadResult>(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+      result = await uploadResult(id, upload("a.png", PNG_1x1));
     } finally {
       spy.mockRestore();
       vi.useRealTimers();
@@ -522,8 +615,8 @@ describe("an asset change whose record could not be saved", () => {
 
   it("keeps a deleted file deleted and says the post's modified time was not updated", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+    await uploadResult(id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("b.txt", Buffer.from("notes")));
     // A later instant, so the modified-time write is a real change that the failing rename meets.
     laterClock();
     const spy = failRenamesOnto(".md");
@@ -540,8 +633,8 @@ describe("an asset change whose record could not be saved", () => {
 
   it("keeps a deleted file deleted when meta.json cannot be rewritten, and lists it gone", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("b.txt", Buffer.from("notes")));
+    await uploadResult(id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("b.txt", Buffer.from("notes")));
     const spy = failRenamesOnto("meta.json");
     let result: AssetDeleteResult;
     try {
@@ -557,7 +650,7 @@ describe("an asset change whose record could not be saved", () => {
 describe("deleteAsset", () => {
   it("removes a previously uploaded asset", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("a.png", PNG_1x1));
     expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets.map((a) => a.filename)).toEqual(["a.png"]);
 
     const result = (await invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png"));
@@ -588,7 +681,7 @@ describe("deleteAsset", () => {
 
   it("refuses to delete an asset on a locked post, whatever its status", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("a.png", PNG_1x1));
     setLocked(dataDir, id, true);
     await expect(invoke(CHANNELS.deleteAsset, wsId, id, "a.png")).rejects.toThrow(/This post is locked/);
     expect(fs.existsSync(path.join(assetDir(dataDir, id), "a.png"))).toBe(true);
@@ -596,7 +689,7 @@ describe("deleteAsset", () => {
 
   it("moves the post's modified time to the moment of the delete", async () => {
     const id = (await createDraft());
-    await invokeAsync(CHANNELS.uploadAsset, wsId, id, upload("a.png", PNG_1x1));
+    await uploadResult(id, upload("a.png", PNG_1x1));
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2030-02-01T00:00:00.000Z"));

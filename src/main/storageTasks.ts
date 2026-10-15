@@ -15,6 +15,7 @@ import { stopBackups } from "./core/services/backupStore.js";
 import { getLogsDir, getRecordsDbPath, setDocumentsDirectory } from "./core/services/storagePaths.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
+import { workspaceWriteProblem } from "./core/shared/writeProblem.js";
 import { message } from "@shared/i18n/translate";
 import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import type { AssetDeleteResult, AssetUploadResult, AssetUnsavedStep } from "@shared/ipc";
@@ -43,6 +44,9 @@ function recordAssetEdit(dataDirectory: string, postId: string, filename: string
 function mutationResult(post: ReturnType<typeof postStore.updatePost>) {
   return post ? { ...post, summary: projectIndexEntry(post.frontMatter, path.basename(post.filePath), post.content) } : null;
 }
+
+// Workspaces whose leftover staged uploads this launch has cleared.
+const sweptWorkspaces = new Set<string>();
 
 export const storageTasks = {
   /** `documentsDirectory` is the OS's Documents folder, which only the main process can ask Electron for. */
@@ -154,28 +158,54 @@ export const storageTasks = {
     const saved = configStore.saveTargets(dir, targets);
     return { targets: saved, postsUpdated: renamed.updated, postsSkipped: renamed.skipped };
   },
-  refreshIndex: postStore.refreshIndex,
+  refreshIndex(dataDirectory: string) {
+    // Listing its posts is the first thing an opened workspace does, so staged
+    // uploads an earlier launch left behind are cleared here, once per launch.
+    if (!sweptWorkspaces.has(dataDirectory)) {
+      sweptWorkspaces.add(dataDirectory);
+      try {
+        const removed = assetStore.sweepStaging(dataDirectory);
+        if (removed > 0) info("leftover staged uploads removed", { dataDirectory, removed });
+      } catch (cause) {
+        warn("leftover staged uploads could not be cleared", { dataDirectory, error: serializeError(cause) });
+      }
+    }
+    return postStore.refreshIndex(dataDirectory);
+  },
   listByStatus: postStore.listByStatus,
   countByStatus: postStore.countByStatus,
   holdPendingFlushes: postStore.holdPendingFlushes,
   resumePendingFlushes: postStore.resumePendingFlushes,
   listAssets: assetStore.listAssets,
-  saveAssetFile(...args: Parameters<typeof assetStore.saveAssetFile>): Extract<AssetUploadResult, { ok: true }> {
-    postStore.assertUnambiguousPostId(args[0], args[1]);
-    const post = postStore.getPost(args[0], args[1]);
-    if (!post) throw new Error("Post not found");
-    if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to change its assets."), { name: "PostLockedError" });
-    let saved: ReturnType<typeof assetStore.saveAssetFile>;
+  /**
+   * Publishes a staged upload. The post's identity and lock are checked here, at
+   * publication, since either can change while the bytes stream in. A write the
+   * workspace folder refuses before the file is installed is a result the user
+   * can act on, not an exception; the upload that staged the file removes it.
+   */
+  installAsset(...args: Parameters<typeof assetStore.installAsset>): AssetUploadResult {
+    const [dataDirectory, postId, filename] = args;
+    postStore.assertUnambiguousPostId(dataDirectory, postId);
+    const post = postStore.getPost(dataDirectory, postId);
+    if (!post) return { ok: false, admission: { code: "post-missing" } };
+    if (post.frontMatter.locked) return { ok: false, admission: { code: "post-locked" } };
+    let saved: ReturnType<typeof assetStore.installAsset>;
     const unsaved: AssetUnsavedStep[] = [];
     try {
-      saved = assetStore.saveAssetFile(...args);
+      saved = assetStore.installAsset(...args);
     } catch (cause) {
-      if (!(cause instanceof assetStore.AssetRecordError)) throw cause;
-      error("asset metadata save failed", { dataDirectory: args[0], postId: args[1], filename: args[2], error: serializeError(cause) });
-      saved = { asset: cause.asset, changed: true };
-      unsaved.push("details");
+      if (cause instanceof assetStore.AssetRecordError) {
+        error("asset metadata save failed", { dataDirectory, postId, filename, error: serializeError(cause) });
+        saved = { asset: cause.asset, changed: true };
+        unsaved.push("details");
+      } else {
+        const problem = workspaceWriteProblem(cause);
+        if (problem === null) throw cause;
+        error("asset install failed", { dataDirectory, postId, filename, error: serializeError(cause) });
+        return { ok: false, failure: { code: "workspace-unwritable", problem } };
+      }
     }
-    if (saved.changed && !recordAssetEdit(args[0], args[1], saved.asset.filename)) unsaved.push("modifiedTime");
+    if (saved.changed && !recordAssetEdit(dataDirectory, postId, saved.asset.filename)) unsaved.push("modifiedTime");
     return { ok: true, asset: saved.asset, ...(unsaved.length > 0 ? { unsaved } : {}) };
   },
   deleteAsset(...args: Parameters<typeof assetStore.deleteAsset>): AssetDeleteResult {

@@ -13,7 +13,7 @@ import { useConfirm } from "./ConfirmHost";
 import { OperationalResult } from "./OperationalResult";
 import { ListedMessageView, type ListedMessage, type NamedItem } from "./NamedItems";
 import { inspectAssetDragOffer } from "../util/assetDrop";
-import { AssetUploadAdmissionError } from "../util/assetUpload";
+import { AssetUploadAdmissionError, AssetUploadFailureError } from "../util/assetUpload";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
@@ -26,7 +26,6 @@ interface AssetsTabProps extends Pick<
   workspaceId: string;
   postId: string;
   onInsertAtCursor: (text: string) => void;
-  maxUploadMb: number;
   locked?: boolean;
 }
 
@@ -97,7 +96,6 @@ export function AssetsTab({
   workspaceId,
   postId,
   onInsertAtCursor,
-  maxUploadMb,
   locked = false,
   ...containerProps
 }: AssetsTabProps) {
@@ -183,6 +181,11 @@ export function AssetsTab({
       } catch (err) {
         if (err instanceof AssetUploadAdmissionError) {
           admissionFailures.push({ file, reason: err.reason });
+        } else if (err instanceof AssetUploadFailureError) {
+          // Said in the words of what went wrong: the file could not be read,
+          // or the workspace folder could not take it.
+          operationalFailures.push({ file, reason: err.reason });
+          reportProblem("Asset upload failed.", err, { postId, filename: file.name });
         } else {
           // A failure that carries its own words, such as a meta.json a newer
           // version saved, is told in them.
@@ -227,19 +230,9 @@ export function AssetsTab({
   const checkAndUpload = async (files: FileList | File[]) => {
     if (locked) return;
     const fileArray = Array.from(files);
-    const limitBytes = maxUploadMb * 1024 * 1024;
-
-    const tooLarge = fileArray.filter((f) => f.size > limitBytes);
-    const reserved = fileArray.filter((file) =>
-      file.size <= limitBytes && isReservedAssetName(sanitizeAssetFilename(file.name))
-    );
-    const uploadable = fileArray.filter((file) =>
-      file.size <= limitBytes && !isReservedAssetName(sanitizeAssetFilename(file.name))
-    );
-    const rejected = [
-      ...tooLarge.map((file) => ({ file, reason: message("assets.admissionTooLarge", { max: maxUploadMb }) })),
-      ...reserved.map((file) => ({ file, reason: message("assets.reservedName") })),
-    ];
+    const reserved = fileArray.filter((file) => isReservedAssetName(sanitizeAssetFilename(file.name)));
+    const uploadable = fileArray.filter((file) => !isReservedAssetName(sanitizeAssetFilename(file.name)));
+    const rejected = reserved.map((file) => ({ file, reason: message("assets.reservedName") }));
     const operationKeys = fileArray.map(assetIssueKey);
 
     if (uploadable.length === 0) {
@@ -408,7 +401,7 @@ export function AssetsTab({
       onDragOver={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        const offer = inspectAssetDragOffer(e.dataTransfer, maxUploadMb * 1024 * 1024);
+        const offer = inspectAssetDragOffer(e.dataTransfer);
         if (locked || storagePending || offer === "rejected") {
           e.dataTransfer.dropEffect = "none";
           setDragState("rejecting");

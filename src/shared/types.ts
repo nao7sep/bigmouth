@@ -356,7 +356,6 @@ export interface Settings {
   timezone: string;
   supportedLanguages: string[];
   postsPerLoad: number; // posts per page of each paged list section
-  maxUploadMb: number;
   editorWatermark: string;
   extraFieldWatermark: string;
   // UI (chrome) font family. Blank = the built-in default stack (App.css

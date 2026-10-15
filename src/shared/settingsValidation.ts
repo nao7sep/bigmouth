@@ -31,7 +31,6 @@ export type SettingsField =
   | "timezone"
   | "supportedLanguages"
   | "postsPerLoad"
-  | "maxUploadMb"
   | "contentFont.size"
   | "contentFont.lineHeight"
   | "contentFont.padding";
@@ -86,7 +85,6 @@ export function settingsSetErrors<K extends keyof Settings>(key: K, value: Setti
       set("supportedLanguages", languagesError(value as Settings["supportedLanguages"]));
       break;
     case "postsPerLoad":
-    case "maxUploadMb":
       set(key, isPositiveInteger(value as number) ? null : positiveInteger);
       break;
     case "contentFont": {
@@ -100,7 +98,7 @@ export function settingsSetErrors<K extends keyof Settings>(key: K, value: Setti
   return errors;
 }
 
-const RULED_SETS = ["timezone", "supportedLanguages", "postsPerLoad", "maxUploadMb", "contentFont"] as const;
+const RULED_SETS = ["timezone", "supportedLanguages", "postsPerLoad", "contentFont"] as const;
 
 export function settingsFieldErrors(settings: Settings): SettingsFieldErrors {
   return Object.assign({}, ...RULED_SETS.map((key) => settingsSetErrors(key, settings[key])));

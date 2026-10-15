@@ -18,7 +18,7 @@ vi.mock("@renderer/api", () => ({
 
 import { AssetsTab } from "@renderer/components/AssetsTab";
 import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
-import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
+import { AssetUploadAdmissionError, AssetUploadFailureError } from "@renderer/util/assetUpload";
 import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
@@ -38,11 +38,9 @@ function asset(overrides: Partial<AssetMeta> = {}): AssetMeta {
   };
 }
 
-// A File whose byte size we control; jsdom's File reports the real content
-// length, so a tiny string keeps every file under the limit by default.
+// A File whose reported byte size we control without allocating it.
 function makeFile(name: string, sizeBytes = 10): File {
-  const file = new File(["x".repeat(Math.max(1, sizeBytes))], name);
-  // Force an exact size for the limit-check branches.
+  const file = new File(["x"], name);
   Object.defineProperty(file, "size", { value: sizeBytes });
   return file;
 }
@@ -57,7 +55,7 @@ afterEach(() => {
 });
 
 async function renderTab(
-  props: Partial<{ maxUploadMb: number; locked: boolean; onInsertAtCursor: (t: string) => void }> = {}
+  props: Partial<{ locked: boolean; onInsertAtCursor: (t: string) => void }> = {}
 ) {
   const onInsertAtCursor = props.onInsertAtCursor ?? vi.fn();
   const utils = render(
@@ -66,7 +64,6 @@ async function renderTab(
         workspaceId="w1"
         postId="p1"
         onInsertAtCursor={onInsertAtCursor}
-        maxUploadMb={props.maxUploadMb ?? 5}
         locked={props.locked ?? false}
       />
     </ConfirmProvider>
@@ -162,37 +159,35 @@ describe("AssetsTab upload via file input", () => {
     await waitFor(() => expect(container.querySelector(".asset-card")).toBeTruthy());
   });
 
-  it("rejects files over the size limit and uploads nothing", async () => {
+  // Uploads stream, so no size is refused up front.
+  it("uploads a file of any size", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
-    const { container, getByText } = await renderTab({ maxUploadMb: 1 });
+    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "huge.mov" }) });
+    const { container } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-
-    // 2 MB > 1 MB limit.
-    const big = makeFile("big.png", 2 * 1024 * 1024);
+    const huge = makeFile("huge.mov", 64 * 1024 * 1024 * 1024);
     await act(async () => {
-      fireEvent.change(input, { target: { files: [big] } });
+      fireEvent.change(input, { target: { files: [huge] } });
     });
 
-    expect(getByText("1 item could not be added:")).toBeTruthy();
-    expect(getByText("big.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
-    expect(container.querySelector(".assets-result--warning")).toBeTruthy();
-    expect(mockUploadAsset).not.toHaveBeenCalled();
+    expect(mockUploadAsset).toHaveBeenCalledWith("p1", huge, "w1");
+    expect(container.querySelector(".assets-result")).toBeNull();
   });
 
   it("names three refused files, counts the rest and lists every reason behind the disclosure", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
-    const { container } = await renderTab({ maxUploadMb: 1 });
+    const { container } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const files = ["a.png", "b.png", "c.png", "d.png", "e.png"].map((name) => makeFile(name, 2 * 1024 * 1024));
+    const files = ["a.tmp", "b.tmp", "c.tmp", "d.tmp", "e.tmp"].map((name) => makeFile(name));
     await act(async () => {
       fireEvent.change(input, { target: { files } });
     });
 
     const result = container.querySelector(".assets-result--warning") as HTMLElement;
     expect(result.textContent).toContain("5 items could not be added:");
-    expect(result.querySelector(".named-items-summary")?.textContent).toBe("a.png, b.png, c.png and 2 more");
+    expect(result.querySelector(".named-items-summary")?.textContent).toBe("a.tmp, b.tmp, c.tmp and 2 more");
     expect([...result.querySelectorAll(".named-items-list li")].map((item) => item.textContent)).toEqual(
-      files.map((file) => `${file.name}: It is larger than the 1 MB asset size limit.`),
+      files.map((file) => `${file.name}: It uses a name BigMouth keeps for its own bookkeeping. Rename it and try again.`),
     );
   });
 
@@ -230,6 +225,23 @@ describe("AssetsTab upload via file input", () => {
     });
 
     expect(getByText(`new.png: A newer version of BigMouth saved ${metaPath}, so this version cannot use it. The file was left unchanged; open it with that version.`)).toBeTruthy();
+  });
+
+  it.each([
+    ["source-unreadable", { key: "assets.sourceUnreadable" }, /^moved\.png: It could not be read\. It may have been moved/],
+    ["workspace full", { key: "assets.workspaceFull" }, /^moved\.png: The disk holding the workspace folder is full/],
+  ] as const)("tells a %s upload failure as an error, in its own words", async (_label, reason, line) => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    mockUploadAsset.mockRejectedValue(new AssetUploadFailureError(reason));
+    const { container, getByText } = await renderTab();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [makeFile("moved.png")] } });
+    });
+
+    expect(getByText(line)).toBeTruthy();
+    expect(container.querySelector(".assets-result--error")).toBeTruthy();
   });
 
   it("presents predictable upload admission rejection as a warning without error logging", async () => {
@@ -285,21 +297,21 @@ describe("AssetsTab upload via file input", () => {
   it("summarizes a partial batch and does not clear it after an unrelated success", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
     mockUploadAsset.mockResolvedValue({ asset: asset() });
-    const { container, getByText } = await renderTab({ maxUploadMb: 1 });
+    const { container, getByText } = await renderTab();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
     await act(async () => {
       fireEvent.change(input, {
-        target: { files: [makeFile("ready.png"), makeFile("large.png", 2 * 1024 * 1024)] },
+        target: { files: [makeFile("ready.png"), makeFile("notes.tmp")] },
       });
     });
     expect(getByText("Added 1 asset.")).toBeTruthy();
-    expect(getByText("large.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
+    expect(getByText(/^notes\.tmp: It uses a name BigMouth keeps/)).toBeTruthy();
 
     await act(async () => {
       fireEvent.change(input, { target: { files: [makeFile("another.png")] } });
     });
-    expect(getByText("large.png: It is larger than the 1 MB asset size limit.")).toBeTruthy();
+    expect(getByText(/^notes\.tmp: It uses a name BigMouth keeps/)).toBeTruthy();
   });
 
   it("asks to replace a duplicate filename and uploads when confirmed", async () => {
@@ -437,23 +449,23 @@ describe("AssetsTab drag and drop", () => {
     expect(zone.classList.contains("drag-over")).toBe(false);
   });
 
-  it("rejects an inspectable batch when every file exceeds the upload limit", () => {
-    const oversized = new File(["too large"], "oversized.bin");
+  it("rejects an inspectable batch when every file uses a reserved name", () => {
+    const reserved = new File(["{}"], "meta.json");
     expect(inspectAssetDragOffer({
       types: ["Files"],
-      items: [{ kind: "file", getAsFile: () => oversized }] as unknown as DataTransferItemList,
-      files: [oversized] as unknown as FileList,
-    }, oversized.size - 1)).toBe("rejected");
+      items: [{ kind: "file", getAsFile: () => reserved }] as unknown as DataTransferItemList,
+      files: [reserved] as unknown as FileList,
+    })).toBe("rejected");
   });
 
   it("keeps a mixed inspectable batch neutral", () => {
     const ready = makeFile("ready.png", 10);
-    const oversized = makeFile("oversized.png", 30);
+    const reserved = makeFile("notes.tmp", 30);
     expect(inspectAssetDragOffer({
       types: ["Files"],
       items: [] as unknown as DataTransferItemList,
-      files: [ready, oversized] as unknown as FileList,
-    }, 20)).toBe("delivery-only");
+      files: [ready, reserved] as unknown as FileList,
+    })).toBe("delivery-only");
   });
 
   it("serializes rapid drops through admission, upload, and refresh", async () => {
@@ -703,7 +715,7 @@ it("keeps delayed upload partial-success warnings after leaving Assets", async (
   let finish!: (value: { asset: AssetMeta; unsaved: Array<"details" | "modifiedTime"> }) => void;
   mockUploadAsset.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
-    {shown && <AssetsTab workspaceId="w1" postId="p1" onInsertAtCursor={vi.fn()} maxUploadMb={5} />}
+    {shown && <AssetsTab workspaceId="w1" postId="p1" onInsertAtCursor={vi.fn()} />}
     <StoragePendingResults />
   </ConfirmProvider></StoragePendingProvider>;
   const view = render(surface(true));

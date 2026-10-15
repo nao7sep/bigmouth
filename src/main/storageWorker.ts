@@ -20,6 +20,9 @@ setContentSaveListener((value) => {
   port.postMessage({ event: "content-save", value: event } satisfies StorageReply);
 });
 onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies StorageReply));
+// A request that could not be read is said to be, so the owner fails it rather
+// than waiting for a reply that cannot come.
+port.on("messageerror", () => port.postMessage({ event: "request-unreadable" } satisfies StorageReply));
 port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinishRequest) => {
   if ("finish" in request) {
     try {

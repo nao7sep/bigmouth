@@ -28,8 +28,8 @@ import type {
 import {
   type AssetDeleteResult,
   type AssetUnsavedStep,
-  type AssetUploadInput,
   type AssetUploadAdmission,
+  type AssetUploadFailure,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
   type PostMetadataRefusedEvent,
@@ -40,10 +40,9 @@ import {
   type PostUpdate,
   type TargetRenameResult,
 } from "@shared/ipc";
-import { AssetUploadAdmissionError } from "./util/assetUpload";
+import { AssetUploadAdmissionError, AssetUploadFailureError } from "./util/assetUpload";
 import { FIRST_PAGES } from "@shared/postStatus";
 import { message, type Message } from "@shared/i18n/translate";
-import { isImageAssetFilename } from "@shared/assetNames";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
@@ -338,64 +337,45 @@ export function listAssets(postId: string, workspaceId?: string): Promise<AssetL
   return bridge().listAssets(requireWs(workspaceId), postId);
 }
 
-/**
- * Image decoding belongs in the sandboxed renderer, not Electron's privileged
- * main process. Dimensions are presentation metadata only: a missing decoder,
- * malformed file, or unsupported format must never prevent the original bytes
- * from being stored. Always release the decoded bitmap promptly.
- */
-async function imageDimensions(file: File): Promise<Pick<AssetUploadInput, "width" | "height">> {
-  if (!isImageAssetFilename(file.name) || typeof createImageBitmap !== "function") return {};
-
-  let bitmap: ImageBitmap | undefined;
-  try {
-    bitmap = await createImageBitmap(file);
-    const { width, height } = bitmap;
-    if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
-      return {};
-    }
-    return { width, height };
-  } catch {
-    return {};
-  } finally {
-    try {
-      bitmap?.close();
-    } catch {
-      // Releasing optional presentation metadata must never cancel byte storage.
-    }
-  }
-}
-
 /** An added asset, and what could not be saved after the file itself was added. */
 export interface UploadedAsset {
   asset: AssetMeta;
   unsaved?: AssetUnsavedStep[];
 }
 
+/**
+ * Adds `file` to a post. The bridge streams the file to the main process, so
+ * nothing here reads it whole; a refusal throws AssetUploadAdmissionError and a
+ * file that could not be read or written throws AssetUploadFailureError, each
+ * with the reason to show.
+ */
 export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<UploadedAsset> {
-  // Decode and read concurrently; dimension failure is deliberately contained
-  // inside imageDimensions, while a byte-read failure still aborts the upload.
-  const [data, dimensions] = await Promise.all([file.arrayBuffer(), imageDimensions(file)]);
-  // The file's place on disk lets the main process keep its metadata on the copy.
-  const sourcePath = bridge().pathForFile(file);
-  const result = await bridge().uploadAsset(requireWs(workspaceId), postId, {
-    name: file.name,
-    data,
-    ...dimensions,
-    ...(typeof sourcePath === "string" && sourcePath.length > 0 ? { sourcePath } : {}),
-  });
+  const result = await bridge().uploadAsset(requireWs(workspaceId), postId, file);
   if (result.ok) return result.unsaved ? { asset: result.asset, unsaved: result.unsaved } : { asset: result.asset };
+  if ("failure" in result) throw new AssetUploadFailureError(assetUploadFailureMessage(result.failure));
   throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));
 }
 
 function assetUploadAdmissionMessage(admission: AssetUploadAdmission): Message {
   switch (admission.code) {
-    case "file-too-large":
-      return message("assets.admissionTooLarge", { max: admission.limitMb });
     case "reserved-name":
       return message("assets.admissionReserved", { name: admission.filename });
     case "post-locked":
       return message("assets.admissionLocked");
+    case "post-missing":
+      return message("assets.admissionPostMissing");
+  }
+}
+
+function assetUploadFailureMessage(failure: AssetUploadFailure): Message {
+  if (failure.code === "source-unreadable") return message("assets.sourceUnreadable");
+  switch (failure.problem) {
+    case "full":
+      return message("assets.workspaceFull");
+    case "denied":
+      return message("assets.workspaceDenied");
+    case "failed":
+      return message("assets.workspaceWriteFailed");
   }
 }
 

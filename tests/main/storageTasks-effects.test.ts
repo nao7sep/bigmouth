@@ -4,16 +4,18 @@ import { AssetRecordError } from "@main/core/services/assetStore.js";
 
 const effects = vi.hoisted(() => ({
   getPost: vi.fn(), recordAssetChange: vi.fn(), assertUnambiguousPostId: vi.fn(), clearCache: vi.fn(),
-  saveAssetFile: vi.fn(), deleteAsset: vi.fn(), getWorkspace: vi.fn(), deleteWorkspace: vi.fn(),
+  installAsset: vi.fn(), deleteAsset: vi.fn(), getWorkspace: vi.fn(), deleteWorkspace: vi.fn(),
+  sweepStaging: vi.fn(), refreshIndex: vi.fn(),
 }));
 vi.mock("@main/core/services/postStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/postStore.js")>(),
   getPost: effects.getPost, recordAssetChange: effects.recordAssetChange,
   assertUnambiguousPostId: effects.assertUnambiguousPostId, clearCache: effects.clearCache,
+  refreshIndex: effects.refreshIndex,
 }));
 vi.mock("@main/core/services/assetStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/assetStore.js")>(),
-  saveAssetFile: effects.saveAssetFile, deleteAsset: effects.deleteAsset,
+  installAsset: effects.installAsset, deleteAsset: effects.deleteAsset, sweepStaging: effects.sweepStaging,
 }));
 vi.mock("@main/core/services/workspaceStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/workspaceStore.js")>(),
@@ -25,13 +27,13 @@ vi.mock("@main/core/services/logger.js", async (original) => ({
 }));
 
 const asset = { filename: "a.txt", size: 1, uploadedAt: "2026-01-01T00:00:00.000Z" };
-const save = () => storageTasks.saveAssetFile("/workspace", "post", "a.txt", Buffer.from("a"), asset);
+const save = () => storageTasks.installAsset("/workspace", "post", "a.txt", { name: "staged.part", sha256: "00", size: 1 }, asset);
 
 beforeEach(() => {
   vi.resetAllMocks();
   effects.getPost.mockReturnValue({ frontMatter: { locked: false } });
   effects.recordAssetChange.mockReturnValue({ frontMatter: {} });
-  effects.saveAssetFile.mockReturnValue({ asset, changed: true });
+  effects.installAsset.mockReturnValue({ asset, changed: true });
   effects.getWorkspace.mockReturnValue({ dataDirectory: "/workspace" });
   effects.deleteWorkspace.mockReturnValue({});
 });
@@ -42,12 +44,12 @@ describe("storage tasks own consequences before replying", () => {
     expect(effects.recordAssetChange).toHaveBeenCalledExactlyOnceWith("/workspace", "post");
   });
   it("does not edit the post for an unchanged upload", () => {
-    effects.saveAssetFile.mockReturnValue({ asset, changed: false });
+    effects.installAsset.mockReturnValue({ asset, changed: false });
     expect(save()).toEqual({ ok: true, asset });
     expect(effects.recordAssetChange).not.toHaveBeenCalled();
   });
   it("continues after published upload details fail", () => {
-    effects.saveAssetFile.mockImplementation(() => { throw new AssetRecordError(asset, new Error("details")); });
+    effects.installAsset.mockImplementation(() => { throw new AssetRecordError(asset, new Error("details")); });
     expect(save()).toEqual({ ok: true, asset, unsaved: ["details"] });
     expect(effects.recordAssetChange).toHaveBeenCalledTimes(1);
   });
@@ -66,7 +68,7 @@ describe("storage tasks own consequences before replying", () => {
   });
   it.each(["upload", "delete"])("does not report a primary %s failure as partial success", (kind) => {
     const failure = new Error("primary write failed");
-    (kind === "upload" ? effects.saveAssetFile : effects.deleteAsset).mockImplementation(() => { throw failure; });
+    (kind === "upload" ? effects.installAsset : effects.deleteAsset).mockImplementation(() => { throw failure; });
     expect(() => kind === "upload" ? save() : storageTasks.deleteAsset("/workspace", "post", "a.txt")).toThrow(failure);
     expect(effects.recordAssetChange).not.toHaveBeenCalled();
   });
@@ -85,11 +87,42 @@ describe("storage tasks own consequences before replying", () => {
     expect(storageTasks.deleteWorkspace("workspace")).toBeNull();
     expect(effects.clearCache).not.toHaveBeenCalled();
   });
-  it.each(["upload", "delete"])("refuses a locked post before %s publication", (kind) => {
+  it("refuses a locked post before delete publication", () => {
     effects.getPost.mockReturnValue({ frontMatter: { locked: true } });
-    expect(() => kind === "upload" ? save() : storageTasks.deleteAsset("/workspace", "post", "a.txt")).toThrow("locked");
-    expect(effects.saveAssetFile).not.toHaveBeenCalled();
+    expect(() => storageTasks.deleteAsset("/workspace", "post", "a.txt")).toThrow("locked");
     expect(effects.deleteAsset).not.toHaveBeenCalled();
     expect(effects.recordAssetChange).not.toHaveBeenCalled();
+  });
+  // An upload's bytes stream in before publication, so the post is checked again
+  // here and a refusal is a result, not an exception.
+  it.each([
+    ["locked", { frontMatter: { locked: true } }, "post-locked"],
+    ["deleted", null, "post-missing"],
+  ] as const)("refuses to publish an upload to a post %s meanwhile", (_label, post, code) => {
+    effects.getPost.mockReturnValue(post);
+    expect(save()).toEqual({ ok: false, admission: { code } });
+    expect(effects.installAsset).not.toHaveBeenCalled();
+    expect(effects.recordAssetChange).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["ENOSPC", "full"],
+    ["EACCES", "denied"],
+    ["EIO", "failed"],
+  ] as const)("reports a %s install as a write the workspace folder refused", (code, problem) => {
+    effects.installAsset.mockImplementation(() => { throw Object.assign(new Error(`${code}: /secret/path`), { code }); });
+    expect(save()).toEqual({ ok: false, failure: { code: "workspace-unwritable", problem } });
+    expect(effects.recordAssetChange).not.toHaveBeenCalled();
+  });
+  it("clears a workspace's leftover staged uploads at its first post listing of the launch, once", () => {
+    effects.refreshIndex.mockReturnValue([]);
+    storageTasks.refreshIndex("/swept-workspace");
+    storageTasks.refreshIndex("/swept-workspace");
+    expect(effects.sweepStaging).toHaveBeenCalledExactlyOnceWith("/swept-workspace");
+    expect(effects.refreshIndex).toHaveBeenCalledTimes(2);
+  });
+  it("lists the posts even when the staging folder cannot be cleared", () => {
+    effects.refreshIndex.mockReturnValue([]);
+    effects.sweepStaging.mockImplementation(() => { throw new Error("EACCES"); });
+    expect(storageTasks.refreshIndex("/unsweepable-workspace")).toEqual([]);
   });
 });

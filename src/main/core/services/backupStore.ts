@@ -2,19 +2,21 @@
  * The data-backup history (data-backup-conventions): `backups.sqlite3` directly under BigMouth's
  * storage root (`BIGMOUTH_DATA_DIR` or `~/.bigmouth`, resolved in one place by {@link getAppRoot}),
  * holding the last version of each protected file saved in each session. What is protected is decided
- * at each write boundary: post files, the workspace registry, both settings files, and attachments with
- * their `meta.json` call {@link record} after their write lands; the post index, view state, secrets and
- * records never do. There is no capture at launch, on a timer or at exit, and no restore path.
+ * at each write boundary: post files, the workspace registry, both settings files and an attachment's
+ * `meta.json` call {@link record} after their write lands, and an installed attachment calls
+ * {@link recordFile}; the post index, view state, secrets and records never do. There is no capture at launch, on a timer or at exit, and no restore path.
  *
  * Recording runs on its own thread (backupWorker.ts), which applies writes in save order, so a slow or
  * locked store never holds up the save that called it or the storage work behind it. `record` hands the
- * thread a copy of the exact bytes written and returns. Failures are the thread's to report: one warn,
+ * thread a copy of the exact bytes written and returns; `recordFile` hands it an installed attachment the
+ * app never held whole, to be read from disk in parts. Failures are the thread's to report: one warn,
  * never a failed save. At an ordinary quit the pending writes get a short bound; at OS session end they
  * are skipped.
  *
  * SQLite binding: Node's built-in `node:sqlite`, which needs no native rebuild against Electron's Node ABI.
  */
 
+import fs from "node:fs";
 import { Worker } from "node:worker_threads";
 import { getBackupsDbPath } from "./storagePaths.js";
 import { formatUtcIso } from "../shared/timestamps.js";
@@ -34,8 +36,9 @@ export function useBackupRecorderModule(url: URL): void {
 }
 
 // The largest file kept in one value; a larger one is kept in parts of this size. Well under
-// SQLite's limit of about 1 GB per value, since an attachment's size is a user setting.
-let partSize = 256 * 1024 * 1024;
+// SQLite's limit of about 1 GB per value, and small enough that recording an attachment of any
+// size holds only one part in the recorder's memory.
+let partSize = 8 * 1024 * 1024;
 
 /** For tests: the part size, so a small file can exercise the parts. */
 export function useBackupPartSize(bytes: number): void {
@@ -54,6 +57,7 @@ function ensureRecorder(): Worker | null {
     const created = new Worker(recorderModule);
     created.unref();
     created.on("message", (notice: BackupWorkerNotice) => logWarn(notice.text, notice.fields));
+    created.on("messageerror", (error) => logWarn("backup recorder: a notice could not be read", { error: serializeError(error) }));
     const lost = (error: unknown) => {
       if (recorder !== created) return;
       recorder = null;
@@ -94,6 +98,40 @@ export function record(absolutePath: string, bytes: Uint8Array): void {
     );
   } catch (error) {
     logWarn("backup store: failed to hand a write to the recorder", { file: absolutePath, error: serializeError(error) });
+  }
+}
+
+/**
+ * Records an attachment installed from a staged copy whose bytes the app never held whole:
+ * `fd` is open for reading on the installed file, taken right after it was installed, and
+ * `sha256` and `size` describe the bytes the app copied. The recorder reads the file through `fd`
+ * in parts, so a later replace or delete of the path cannot change what is recorded, and records
+ * it only if it still hashes to `sha256`. This call owns `fd` and closes it, here or on the
+ * recorder once read. Returns at once; never throws.
+ */
+export function recordFile(absolutePath: string, fd: number, sha256: string, size: number): void {
+  let handedOver = false;
+  try {
+    const worker = ensureRecorder();
+    if (!worker) return;
+    worker.postMessage({
+      kind: "record-file",
+      file: getBackupsDbPath(),
+      sessionId: SESSION_ID,
+      path: absolutePath,
+      fd,
+      sha256,
+      size,
+      writtenAt: new Date().toISOString(),
+      partSize,
+    } satisfies BackupWorkerRequest);
+    handedOver = true;
+  } catch (error) {
+    logWarn("backup store: failed to hand a write to the recorder", { file: absolutePath, error: serializeError(error) });
+  } finally {
+    if (!handedOver) {
+      try { fs.closeSync(fd); } catch { /* The descriptor has nothing left to protect. */ }
+    }
   }
 }
 

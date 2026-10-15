@@ -114,7 +114,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const [targets, setTargets] = useState<Target[]>([]);
     const [supportedLanguages, setSupportedLanguages] = useState<string[]>(["en"]);
     const [pubBatchSize, setPubBatchSize] = useState(50);
-    const [maxUploadMb, setMaxUploadMb] = useState(500);
     const [watermark, setWatermark] = useState(DEFAULT_WATERMARK);
     const [extraFieldWatermark, setExtraFieldWatermark] = useState("");
     const [contentFont, setContentFont] = useState<ContentFont>(DEFAULT_CONTENT_FONT);
@@ -308,7 +307,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const applySettings = useCallback((settings: Settings) => {
       if (settings.postsPerLoad) setPubBatchSize(settings.postsPerLoad);
-      setMaxUploadMb(settings.maxUploadMb);
       setWatermark(settings.editorWatermark);
       setExtraFieldWatermark(settings.extraFieldWatermark);
       if (settings.supportedLanguages?.length) setSupportedLanguages(settings.supportedLanguages);
@@ -757,7 +755,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 analysisTrigger={analysisTrigger}
                 analysisPromptsVersion={analysisPromptsVersion}
                 onInsertAtCursor={(text) => editorRef.current?.insertAtCursor(text)}
-                maxUploadMb={maxUploadMb}
                 contentFont={contentFont}
                 loading={postLoading}
               />

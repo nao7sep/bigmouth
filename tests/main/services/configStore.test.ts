@@ -90,6 +90,19 @@ describe("time zone", () => {
     expect(saved).toEqual({ timezone: "Asia/Tokyo", uiFontFamily: "Inter", schemaVersion: 1 });
   });
 
+  // The asset size limit was removed when uploads began to stream: a file that
+  // still holds it loads without a notice, and keeps it as a key this build does
+  // not know (config-sets-conventions).
+  it("loads a config that still holds the retired maxUploadMb, and keeps it through a save", () => {
+    writeConfig({ maxUploadMb: 100, postsPerLoad: 20 });
+    expect(getSettings(dataDir)).toEqual({ ...DEFAULT_SETTINGS, postsPerLoad: 20 });
+    expect(getSettings(dataDir)).not.toHaveProperty("maxUploadMb");
+    expect(getConfigNotice(dataDir)).toBeNull();
+
+    saveSettings(dataDir, { ...getSettings(dataDir), uiFontFamily: "Inter" });
+    expect(setsIn(path.join(dataDir, "config.json"))).toEqual({ postsPerLoad: 20, uiFontFamily: "Inter", maxUploadMb: 100 });
+  });
+
   it("keeps any other zone a version-1 file names, because the user typed it", () => {
     writeConfig({ schemaVersion: 1, timezone: "Europe/Berlin" });
     expect(getSettings(dataDir).timezone).toBe("Europe/Berlin");

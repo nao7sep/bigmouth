@@ -36,7 +36,7 @@ import {
   assetUrl,
 } from "@renderer/api";
 import type { AnalysisStreamHandle, BigMouthApi } from "@shared/ipc";
-import { AssetUploadAdmissionError } from "@renderer/util/assetUpload";
+import { AssetUploadAdmissionError, AssetUploadFailureError } from "@renderer/util/assetUpload";
 import type { ImagingOptions } from "@shared/types";
 
 // api.ts is a thin adapter over the preload bridge (`window.bigmouth`); these
@@ -319,7 +319,6 @@ describe("api wrappers — call-through and argument shape", () => {
         timezone: "UTC",
         supportedLanguages: ["en"],
         postsPerLoad: 50,
-        maxUploadMb: 500,
         editorWatermark: "",
         extraFieldWatermark: "",
         uiFontFamily: "",
@@ -393,159 +392,44 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.listAssets).toHaveBeenCalledWith("other", "p1");
     });
 
-    it("uploadAsset decodes an image in the renderer and forwards name, bytes, and dimensions", async () => {
-      const b = bridge();
-      installBridge(b);
-      const buffer = new TextEncoder().encode("hello").buffer;
-      const close = vi.fn();
-      const decode = vi.fn().mockResolvedValue({ width: 640, height: 480, close });
-      vi.stubGlobal("createImageBitmap", decode);
-      // A minimal File stand-in exposing name + arrayBuffer().
-      const file = {
-        name: "pic.png",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
-      await uploadAsset("p1", file);
-      expect(file.arrayBuffer).toHaveBeenCalled();
-      expect(decode).toHaveBeenCalledWith(file);
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "pic.png",
-        data: buffer,
-        width: 640,
-        height: 480,
-      });
-    });
-
-    it("uploadAsset forwards where the file is on disk when the bridge knows it", async () => {
-      const b = bridge();
-      b.pathForFile = vi.fn().mockReturnValue("/Users/me/notes.txt");
-      installBridge(b);
-      const buffer = new TextEncoder().encode("notes").buffer;
-      const file = { name: "notes.txt", arrayBuffer: vi.fn().mockResolvedValue(buffer) } as unknown as File;
-
-      await uploadAsset("p1", file);
-
-      expect(b.pathForFile).toHaveBeenCalledWith(file);
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "notes.txt",
-        data: buffer,
-        sourcePath: "/Users/me/notes.txt",
-      });
-    });
-
-    it("uploads malformed images without dimensions when Chromium rejects the decode", async () => {
-      const b = bridge();
-      installBridge(b);
-      const buffer = new TextEncoder().encode("not really a png").buffer;
-      vi.stubGlobal("createImageBitmap", vi.fn().mockRejectedValue(new Error("bad image")));
-      const file = {
-        name: "broken.png",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
-
-      await uploadAsset("p1", file);
-
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "broken.png",
-        data: buffer,
-      });
-    });
-
-    it("drops nonsensical decoder dimensions and still releases the bitmap", async () => {
-      const b = bridge();
-      installBridge(b);
-      const close = vi.fn();
-      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 0, height: 480, close }));
-      const buffer = new ArrayBuffer(2);
-      const file = {
-        name: "empty.jpg",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
-
-      await uploadAsset("p1", file);
-
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "empty.jpg",
-        data: buffer,
-      });
-    });
-
-    it("does not ask the image decoder to inspect non-image assets", async () => {
+    // The bridge streams the file; the renderer never reads or decodes it whole.
+    it("uploadAsset hands the file itself to the bridge without reading it", async () => {
       const b = bridge();
       installBridge(b);
       const decode = vi.fn();
       vi.stubGlobal("createImageBitmap", decode);
-      const buffer = new TextEncoder().encode("notes").buffer;
-      const file = {
-        name: "notes.txt",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
-
-      await uploadAsset("p1", file);
-
-      expect(decode).not.toHaveBeenCalled();
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "notes.txt",
-        data: buffer,
-      });
-    });
-
-    it("uploads an image without dimensions when the decoder API is unavailable", async () => {
-      const b = bridge();
-      installBridge(b);
-      vi.stubGlobal("createImageBitmap", undefined);
-      const buffer = new ArrayBuffer(3);
-      const file = {
-        name: "photo.webp",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
-
-      await uploadAsset("p1", file);
-
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "photo.webp",
-        data: buffer,
-      });
-    });
-
-    it("does not let bitmap cleanup failure cancel a valid upload", async () => {
-      const b = bridge();
-      installBridge(b);
-      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({
-        width: 320,
-        height: 200,
-        close: vi.fn(() => { throw new Error("already closed"); }),
-      }));
-      const buffer = new ArrayBuffer(4);
-      const file = {
-        name: "photo.gif",
-        arrayBuffer: vi.fn().mockResolvedValue(buffer),
-      } as unknown as File;
+      const file = { name: "pic.png", arrayBuffer: vi.fn(), stream: vi.fn() } as unknown as File;
 
       await expect(uploadAsset("p1", file)).resolves.toEqual({ asset: undefined });
-      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", {
-        name: "photo.gif",
-        data: buffer,
-        width: 320,
-        height: 200,
-      });
+
+      expect(b.uploadAsset).toHaveBeenCalledWith("w1", "p1", file);
+      expect(file.arrayBuffer).not.toHaveBeenCalled();
+      expect(decode).not.toHaveBeenCalled();
     });
 
-    it("releases a decoded bitmap even when reading the original bytes fails", async () => {
+    it.each([
+      [{ code: "source-unreadable" }, "assets.sourceUnreadable"],
+      [{ code: "workspace-unwritable", problem: "full" }, "assets.workspaceFull"],
+      [{ code: "workspace-unwritable", problem: "denied" }, "assets.workspaceDenied"],
+      [{ code: "workspace-unwritable", problem: "failed" }, "assets.workspaceWriteFailed"],
+    ])("maps the structured upload failure %o to its own copy", async (failure, key) => {
       const b = bridge();
+      b.uploadAsset.mockResolvedValue({ ok: false, failure });
       installBridge(b);
-      const close = vi.fn();
-      vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 10, height: 20, close }));
-      const file = {
-        name: "photo.avif",
-        arrayBuffer: vi.fn().mockRejectedValue(new Error("read failed")),
-      } as unknown as File;
 
-      await expect(uploadAsset("p1", file)).rejects.toThrow("read failed");
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(b.uploadAsset).not.toHaveBeenCalled();
+      const refusal = await uploadAsset("p1", { name: "photo.png" } as File).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(AssetUploadFailureError);
+      expect((refusal as AssetUploadFailureError).reason).toEqual({ key });
+    });
+
+    it("maps a deleted post to its own admission copy", async () => {
+      const b = bridge();
+      b.uploadAsset.mockResolvedValue({ ok: false, admission: { code: "post-missing" } });
+      installBridge(b);
+
+      const refusal = await uploadAsset("p1", { name: "photo.png" } as File).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(AssetUploadAdmissionError);
+      expect((refusal as AssetUploadAdmissionError).reason).toEqual({ key: "assets.admissionPostMissing" });
     });
 
     it("maps a structured main-process admission without parsing Electron rejection prose", async () => {

@@ -10,9 +10,12 @@ import {
   type AnalysisStreamFrame,
   type AnalysisStreamHandle,
   type AnalysisStreamParams,
+  ASSET_UPLOAD_SLICE_BYTES,
   type AssetDeleteResult,
-  type AssetUploadInput,
+  type AssetUploadFromMain,
   type AssetUploadResult,
+  type AssetUploadStart,
+  type AssetUploadToMain,
   type BigMouthApi,
   type MetadataGenerationResults,
   type PostListOffsets,
@@ -72,6 +75,64 @@ function startAiRequest<T>(channel: string, ...args: unknown[]): AiRequestHandle
       if (!settled) sendAiAbort(requestId);
     },
   };
+}
+
+/**
+ * Streams a picked or dropped file to main for an upload (see AssetUploadStart):
+ * main asks for each slice with `next`, and each is read from the file only when
+ * asked for, so a file of any size holds a few slices here at most. Slices are
+ * sent as copies, not transferred: Electron drops a message whose ArrayBuffer is
+ * transferred to a main-process port.
+ *
+ * A file that cannot be read to its end, because it was moved, changed or its
+ * drive went away, stops the upload; main removes what it staged, and the
+ * caller is told the file could not be read.
+ */
+function streamAssetUpload(wsId: string, postId: string, file: File): Promise<AssetUploadResult> {
+  const { port1, port2 } = new MessageChannel();
+  const send = (message: AssetUploadToMain): void => port1.postMessage(message);
+  return new Promise<AssetUploadResult>((resolve, reject) => {
+    let offset = 0;
+    let ended = false;
+    let settled = false;
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      port1.close();
+      settle();
+    };
+    // Requests are served one after another, so slices go out in file order even
+    // when main asks for two at once.
+    let reading = Promise.resolve();
+    const sendNext = async (): Promise<void> => {
+      if (settled || ended) return;
+      if (offset === file.size) {
+        ended = true;
+        send({ type: "end" });
+        return;
+      }
+      const end = Math.min(offset + ASSET_UPLOAD_SLICE_BYTES, file.size);
+      let data: ArrayBuffer;
+      try {
+        data = await file.slice(offset, end).arrayBuffer();
+      } catch {
+        if (!settled) send({ type: "abort" });
+        finish(() => resolve({ ok: false, failure: { code: "source-unreadable" } }));
+        return;
+      }
+      offset = end;
+      if (!settled) send({ type: "slice", data });
+    };
+    port1.onmessage = (event: { data: AssetUploadFromMain }) => {
+      const reply = event.data;
+      if (reply.type === "next") reading = reading.then(sendNext);
+      else if (reply.type === "result") finish(() => resolve(reply.result));
+      else if (reply.type === "failed") finish(() => reject(new Error(reply.message)));
+    };
+    const sourcePath = webUtils.getPathForFile(file);
+    const start: AssetUploadStart = { wsId, postId, name: file.name, ...(sourcePath ? { sourcePath } : {}) };
+    ipcRenderer.postMessage(CHANNELS.uploadAsset, start, [port2]);
+  });
 }
 
 // The bridge the renderer talks to over IPC. Each method forwards to an ipcMain
@@ -229,9 +290,7 @@ const api = {
   // --- Assets ---
   listAssets: (wsId: string, postId: string) =>
     ipcRenderer.invoke(CHANNELS.listAssets, wsId, postId) as Promise<AssetListing>,
-  uploadAsset: (wsId: string, postId: string, file: AssetUploadInput) =>
-    ipcRenderer.invoke(CHANNELS.uploadAsset, wsId, postId, file) as Promise<AssetUploadResult>,
-  pathForFile: (file: File) => webUtils.getPathForFile(file),
+  uploadAsset: streamAssetUpload,
   deleteAsset: (wsId: string, postId: string, filename: string) =>
     ipcRenderer.invoke(CHANNELS.deleteAsset, wsId, postId, filename) as Promise<AssetDeleteResult>,
 

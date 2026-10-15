@@ -54,7 +54,6 @@ function validSettings(overrides: Partial<Settings> = {}): Settings {
     timezone: "America/New_York",
     supportedLanguages: ["en", "ja"],
     postsPerLoad: 25,
-    maxUploadMb: 100,
     editorWatermark: "write here",
     extraFieldWatermark: "extra",
     uiFontFamily: "",
@@ -104,7 +103,6 @@ describe("settings IPC handlers", () => {
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ supportedLanguages: [1] as unknown as string[] }))).rejects.toThrow(/supportedLanguages/);
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ postsPerLoad: 0 }))).rejects.toThrow(/postsPerLoad/);
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ postsPerLoad: 2.5 }))).rejects.toThrow(/postsPerLoad/);
-    await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ maxUploadMb: 0 }))).rejects.toThrow(/maxUploadMb/);
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ editorWatermark: 5 as unknown as string }))).rejects.toThrow(/editorWatermark/);
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ extraFieldWatermark: 5 as unknown as string }))).rejects.toThrow(/extraFieldWatermark/);
     await expect(invoke(CHANNELS.saveSettings, wsId, validSettings({ uiFontFamily: 5 as unknown as string }))).rejects.toThrow(/uiFontFamily/);

@@ -562,10 +562,6 @@ function GeneralTab({
     String(settings.postsPerLoad),
     (draft) => Number(draft) === settings.postsPerLoad,
   );
-  const [maxUploadText, setMaxUploadText] = useFieldDraft(
-    String(settings.maxUploadMb),
-    (draft) => Number(draft) === settings.maxUploadMb,
-  );
 
   return (
     <div className="settings-section">
@@ -629,19 +625,6 @@ function GeneralTab({
           }}
         />
         {errors.postsPerLoad && <FieldError msg={errors.postsPerLoad} />}
-      </div>
-      <div className="form-field">
-        <label className="form-label">{t("settings.maxAssetSize")}</label>
-        <input
-          className="form-input"
-          type="number"
-          value={maxUploadText}
-          onChange={(e) => {
-            setMaxUploadText(e.target.value);
-            update({ maxUploadMb: Number.parseInt(e.target.value, 10) });
-          }}
-        />
-        {errors.maxUploadMb && <FieldError msg={errors.maxUploadMb} />}
       </div>
       <div className="form-field">
         <label className="form-label">{t("settings.editorWatermark")}</label>

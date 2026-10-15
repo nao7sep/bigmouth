@@ -67,15 +67,20 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   return true;
 }
 
-/** Whether `filePath` already holds exactly `content`; a file that cannot be read does not. */
+/**
+ * Whether `filePath` already holds exactly `content`; a file that cannot be read does not. A file
+ * of another size is not read, so a write never reads a large file it is about to replace.
+ */
 export function holdsBytes(filePath: string, content: string | Buffer): boolean {
+  const bytes = typeof content === "string" ? Buffer.from(content, "utf8") : content;
   let current: Buffer;
   try {
+    if (fs.statSync(filePath).size !== bytes.length) return false;
     current = fs.readFileSync(filePath);
   } catch {
     return false;
   }
-  return current.equals(typeof content === "string" ? Buffer.from(content, "utf8") : content);
+  return current.equals(bytes);
 }
 
 /** The permission bits of the file a write is about to replace, or undefined when there is none. */

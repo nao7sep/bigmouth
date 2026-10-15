@@ -17,6 +17,11 @@
  * dimensions and metadata warning flag. The upload time is a recorded fact: a file missing from
  * meta.json is listed with its size only, so the backup is what can bring the rest back.
  *
+ * An upload reaches the workspace as a staged file, {dataDir}/.staging/{nanoid}.part, which the main
+ * process writes from the renderer's stream, hashing it as it goes, and {@link installAsset} renames
+ * into place. The staging folder sits on the workspace's own volume, so that rename is atomic, and
+ * outside assets/, so a partial upload is never listed.
+ *
  * All public functions take a dataDir parameter (the workspace data directory).
  */
 
@@ -27,9 +32,9 @@ import {
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
-import { holdsBytes, writeFileAtomic, writeManagedText } from "../shared/atomicWrite.js";
+import { existingMode, writeManagedText } from "../shared/atomicWrite.js";
 import { createHash } from "node:crypto";
-import { record } from "./backupStore.js";
+import { recordFile } from "./backupStore.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
 import type { AssetListing } from "@shared/types";
@@ -56,8 +61,67 @@ export interface AssetSourceMetadata {
   mtime: Date;
 }
 
-interface RecordedAsset extends AssetMeta { contentHash?: string }
+/**
+ * An asset as `meta.json` records it. `contentHash` is the SHA-256 of the bytes the
+ * details describe, and `mtimeMs` the file's modified time when that hash was
+ * taken; `size` is its size then.
+ */
+interface RecordedAsset extends AssetMeta { contentHash?: string; mtimeMs?: number }
 const META_FILENAME = "meta.json";
+
+/** An upload's bytes as the main process staged them: the staged file's name, their SHA-256 and their length. */
+export interface StagedUpload {
+  name: string;
+  sha256: string;
+  size: number;
+}
+
+const STAGING_DIR = ".staging";
+// The names the main process gives staged uploads; nothing else in the folder is touched.
+const STAGED_NAME = /^[A-Za-z0-9_-]+\.part$/;
+
+/** Where uploads into this workspace are staged before they are installed. */
+export function stagingDir(dataDir: string): string {
+  return path.join(dataDir, STAGING_DIR);
+}
+
+function stagedPath(dataDir: string, name: string): string {
+  if (!STAGED_NAME.test(name)) throw new Error(`Invalid staged upload name ${JSON.stringify(name)}`);
+  return path.join(stagingDir(dataDir), name);
+}
+
+/**
+ * Removes staged uploads an earlier launch left behind, as when it ended during
+ * an upload, and returns how many it removed. Only files older than this
+ * process are taken: every staged file this launch writes is newer, since each
+ * write moves its modified time, so a live upload's file is never removed
+ * (storage-path-conventions).
+ */
+export function sweepStaging(dataDir: string): number {
+  const dir = stagingDir(dataDir);
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw err;
+  }
+  const launchedAt = Date.now() - process.uptime() * 1000;
+  let removed = 0;
+  for (const name of names) {
+    if (!STAGED_NAME.test(name)) continue;
+    const file = path.join(dir, name);
+    try {
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.mtimeMs >= launchedAt) continue;
+      fs.rmSync(file, { force: true });
+      removed += 1;
+    } catch (err) {
+      logWarn("leftover staged upload could not be removed", { path: file, error: serializeError(err) });
+    }
+  }
+  return removed;
+}
 
 // Details describe bytes, not inode or filesystem timestamps: copying a workspace
 // must preserve its upload facts. Read in bounded chunks on the storage worker.
@@ -116,14 +180,19 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
   const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId));
-  const details = assets.map(({ contentHash: _hash, ...asset }) => asset);
-  return movedAside ? { assets: details, movedAside } : { assets: details };
+  const listed = assets.map(details);
+  return movedAside ? { assets: listed, movedAside } : { assets: listed };
+}
+
+/** What the interface is told about a recorded asset: everything but the record's own bookkeeping. */
+function details({ contentHash: _hash, mtimeMs: _mtime, ...asset }: RecordedAsset): AssetMeta {
+  return asset;
 }
 
 /**
- * Installs an uploaded asset and commits its metadata, returning the metadata as
- * actually stored — `filename` may be disambiguated (see below), so callers must
- * use the returned `filename`, not the one they passed in.
+ * Installs a staged upload as an asset and commits its metadata, returning the
+ * metadata as actually stored — `filename` may be disambiguated (see below), so
+ * callers must use the returned `filename`, not the one they passed in.
  *
  * Filenames are case-insensitively unique within a post's asset dir (a set built
  * on Linux must not collide on case-insensitive macOS/Windows). A re-upload with
@@ -143,13 +212,16 @@ export function listAssets(dataDir: string, postId: string): AssetListing {
  *
  * Re-uploading the bytes an asset of the same name already holds changes nothing:
  * nothing is written, the asset keeps its place and recorded upload time, and
- * `changed` is false, so the post was not edited.
+ * `changed` is false, so the post was not edited. The staged file is then left
+ * for its owner, the upload, to remove. Whether the bytes are the same is
+ * decided by hash, from the asset's verified record, without reading the file
+ * again unless no hash was ever recorded for it.
  */
-export function saveAssetFile(
+export function installAsset(
   dataDir: string,
   postId: string,
   filename: string,
-  buffer: Buffer,
+  staged: StagedUpload,
   meta: AssetMeta,
   source?: AssetSourceMetadata,
 ): { asset: AssetMeta; changed: boolean } {
@@ -159,33 +231,56 @@ export function saveAssetFile(
     );
   }
 
+  const fromPath = stagedPath(dataDir, staged.name);
   const dir = ensureAssetDir(dataDir, postId);
   const { assets: siblings, records, refusal } = reconcileAssets(dir);
   if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
-  const finalMeta: AssetMeta = { ...meta, filename: finalName };
+  const finalMeta: AssetMeta = { ...meta, filename: finalName, size: staged.size };
   const existing = records.filter((a) => a.filename !== finalName);
   const current = siblings.find((a) => a.filename === finalName);
-  if (current && holdsBytes(destPath, buffer)) {
-    const { contentHash: _hash, ...asset } = current;
-    return { asset, changed: false };
+  if (current && current.size === staged.size && (current.contentHash ?? hashIfReadable(destPath)) === staged.sha256) {
+    return { asset: details(current), changed: false };
   }
 
-  // Install the file via temp+rename (atomic, and replaces any same-named file,
-  // keeping its permissions), then commit the metadata. If a crash lands between
-  // the two, the orphaned file is reconciled back into the list on the next read
-  // — no data is lost.
-  // recorded: an uploaded asset is a file the user added; deleting its post would otherwise lose it.
-  if (writeFileAtomic(destPath, buffer)) record(destPath, buffer);
+  // Install the file by renaming the staged copy into place (atomic, and replaces
+  // any same-named file, keeping its permissions), then commit the metadata. If a
+  // crash lands between the two, the orphaned file is reconciled back into the
+  // list on the next read — no data is lost. The stage was written private; it
+  // takes the replaced file's mode, or the ordinary one, before it is published.
+  fs.chmodSync(fromPath, existingMode(destPath) ?? (0o666 & ~process.umask()));
+  fs.renameSync(fromPath, destPath);
+  // The descriptor is taken before anything else can reach the new file, so the
+  // backup reads the bytes installed here even if the asset is replaced or
+  // deleted before the recorder gets to it.
+  const installed = openForBackup(destPath);
   if (source) keepSourceMetadata(destPath, source);
+  // The modified time is read after the source's is applied: it is the one the
+  // file keeps, and what reconcileAssets compares to trust this hash later.
+  const { mtimeMs } = installed === null ? fs.statSync(destPath) : fs.fstatSync(installed);
+  // recorded: an uploaded asset is a file the user added; deleting its post would otherwise lose it.
+  if (installed !== null) recordFile(destPath, installed, staged.sha256, staged.size);
   try {
-    writeAssetMeta(metaPath, [...existing, { ...finalMeta, contentHash: createHash("sha256").update(buffer).digest("hex") }]);
+    writeAssetMeta(metaPath, [...existing, { ...finalMeta, contentHash: staged.sha256, mtimeMs }]);
   } catch (cause) {
     throw new AssetRecordError(finalMeta, cause);
   }
   return { asset: finalMeta, changed: true };
+}
+
+function hashIfReadable(filePath: string): string | null {
+  try { return contentHash(filePath); } catch { return null; }
+}
+
+function openForBackup(filePath: string): number | null {
+  try {
+    return fs.openSync(filePath, "r");
+  } catch (err) {
+    logWarn("installed asset could not be opened for the backup; not recorded", { path: filePath, error: serializeError(err) });
+    return null;
+  }
 }
 
 function keepSourceMetadata(destPath: string, source: AssetSourceMetadata): void {
@@ -257,7 +352,7 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * cached entries whose file still exists, in their stored order, then appends a
  * projected entry for any asset file the cache doesn't know about (sorted by
  * name for determinism). The names the directory reserves for itself are
- * ignored — see isReservedAssetName, which saveAssetFile refuses to store.
+ * ignored — see isReservedAssetName, which installAsset refuses to store.
  *
  * A `meta.json` a newer version of BigMouth wrote, or one that could not be
  * read at all, is not used, and `refusal` is what every write to this folder
@@ -279,22 +374,16 @@ function reconcileAssets(dir: string): {
   const accountedFor = new Set<string>();
   for (const entry of cached) {
     if (onDisk.has(entry.filename)) {
-      // A replacement can commit before its sidecar. The old row then describes
-      // different bytes; unknown upload facts are safer than invented continuity.
-      let verified = false;
-      let verificationFailed = false;
-      if (entry.contentHash !== undefined) {
-        try { verified = entry.contentHash === contentHash(path.join(dir, entry.filename)); }
-        catch (error) {
-          verificationFailed = true;
-          logWarn("asset details could not be verified; upload facts left unknown", { path: path.join(dir, entry.filename), error: serializeError(error) });
-        }
-      }
-      const asset = verified ? entry : projectAssetFile(dir, entry.filename);
+      // A replacement can commit before its sidecar, and a file can be replaced
+      // outside the app. A row whose hash no longer matches describes different
+      // bytes; unknown upload facts are safer than invented continuity.
+      const filePath = path.join(dir, entry.filename);
+      const checked = checkRecordedHash(filePath, entry);
+      const asset = checked.kind === "verified" ? checked.record : checked.kind === "changed" ? checked.projection : projectAssetFile(dir, entry.filename);
       result.push(asset);
       // An unreadable file does not prove its bytes changed. Hide its details
       // until verification succeeds, but retain the facts through sibling writes.
-      records.push(verificationFailed ? entry : asset);
+      records.push(checked.kind === "unreadable" ? entry : asset);
       accountedFor.add(entry.filename);
     }
   }
@@ -305,6 +394,38 @@ function reconcileAssets(dir: string): {
     records.push(asset);
   }
   return { assets: result, records, refusal, movedAside };
+}
+
+/**
+ * Whether a recorded hash still describes the file. It is trusted without reading
+ * the file while the file's size and modified time are the ones recorded with it,
+ * and recomputed, reading the file in chunks, when either differs, which catches
+ * a replacement in BigMouth or an edit from Finder or git. A replacement of the
+ * same size within the filesystem's modified-time resolution is not caught; that
+ * is accepted, as by the tools that use the same check. A recomputed hash that
+ * matches gives the record the current modified time, which the next write of
+ * `meta.json` keeps, so a checkout that only moved the time is read once more
+ * at most. One that differs becomes the file's new record: its size and hash,
+ * with no upload facts.
+ */
+function checkRecordedHash(filePath: string, entry: RecordedAsset):
+  | { kind: "verified"; record: RecordedAsset }
+  | { kind: "changed"; projection: RecordedAsset }
+  | { kind: "unverifiable" }
+  | { kind: "unreadable" } {
+  if (entry.contentHash === undefined) return { kind: "unverifiable" };
+  try {
+    // Taken before hashing: a change during the read leaves a newer time than
+    // the one recorded here, so it is hashed again next time.
+    const stat = fs.statSync(filePath);
+    if (entry.mtimeMs === stat.mtimeMs && entry.size === stat.size) return { kind: "verified", record: entry };
+    const actual = contentHash(filePath);
+    if (actual === entry.contentHash) return { kind: "verified", record: { ...entry, mtimeMs: stat.mtimeMs } };
+    return { kind: "changed", projection: { filename: entry.filename, size: stat.size, contentHash: actual, mtimeMs: stat.mtimeMs } };
+  } catch (error) {
+    logWarn("asset details could not be verified; upload facts left unknown", { path: filePath, error: serializeError(error) });
+    return { kind: "unreadable" };
+  }
 }
 
 /**
@@ -367,7 +488,7 @@ function moveAsideUnreadableMeta(
 
 function isAssetMeta(value: unknown): value is RecordedAsset {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const { filename, size, width, height, hasMetadata, uploadedAt, contentHash } = value as Record<string, unknown>;
+  const { filename, size, width, height, hasMetadata, uploadedAt, contentHash, mtimeMs } = value as Record<string, unknown>;
   const isDimension = (n: unknown) => n === undefined || (typeof n === "number" && Number.isSafeInteger(n) && n > 0);
   return (
     typeof filename === "string" &&
@@ -379,7 +500,8 @@ function isAssetMeta(value: unknown): value is RecordedAsset {
     isDimension(height) &&
     (hasMetadata === undefined || typeof hasMetadata === "boolean") &&
     (uploadedAt === undefined || typeof uploadedAt === "string") &&
-    (contentHash === undefined || typeof contentHash === "string")
+    (contentHash === undefined || typeof contentHash === "string") &&
+    (mtimeMs === undefined || (typeof mtimeMs === "number" && Number.isFinite(mtimeMs)))
   );
 }
 
