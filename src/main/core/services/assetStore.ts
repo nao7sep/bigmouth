@@ -26,9 +26,11 @@
  */
 
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import {
   assetFilenameKey,
+  isImageAssetFilename,
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
@@ -49,8 +51,10 @@ export interface AssetMeta {
   size: number;           // bytes
   width?: number;         // pixels (images only)
   height?: number;        // pixels (images only)
+  animated?: boolean;     // images only: whether it has more than one frame, read at upload
   hasMetadata?: boolean;  // true if EXIF/IPTC/XMP metadata was detected at upload
   uploadedAt?: string;    // ISO 8601; absent when no upload was recorded (see projectAssetFile)
+  contentHash?: string;   // SHA-256 of the bytes these details describe; addresses its thumbnails
 }
 
 
@@ -66,7 +70,7 @@ export interface AssetSourceMetadata {
  * details describe, and `mtimeMs` the file's modified time when that hash was
  * taken; `size` is its size then.
  */
-interface RecordedAsset extends AssetMeta { contentHash?: string; mtimeMs?: number }
+interface RecordedAsset extends AssetMeta { mtimeMs?: number }
 const META_FILENAME = "meta.json";
 
 /** An upload's bytes as the main process staged them: the staged file's name, their SHA-256 and their length. */
@@ -184,8 +188,12 @@ export function listAssets(dataDir: string, postId: string): AssetListing {
   return movedAside ? { assets: listed, movedAside } : { assets: listed };
 }
 
-/** What the interface is told about a recorded asset: everything but the record's own bookkeeping. */
-function details({ contentHash: _hash, mtimeMs: _mtime, ...asset }: RecordedAsset): AssetMeta {
+/**
+ * What the interface is told about a recorded asset: everything but the record's
+ * own bookkeeping. The hash is told, because the window asks for an image's
+ * thumbnail and display image by it (see imageDerivatives).
+ */
+function details({ mtimeMs: _mtime, ...asset }: RecordedAsset): AssetMeta {
   return asset;
 }
 
@@ -238,7 +246,7 @@ export function installAsset(
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = safeResolveUnder(dir, finalName);
   const metaPath = path.join(dir, META_FILENAME);
-  const finalMeta: AssetMeta = { ...meta, filename: finalName, size: staged.size };
+  const finalMeta: AssetMeta = { ...meta, filename: finalName, size: staged.size, contentHash: staged.sha256 };
   const existing = records.filter((a) => a.filename !== finalName);
   const current = siblings.find((a) => a.filename === finalName);
   if (current && current.size === staged.size && (current.contentHash ?? hashIfReadable(destPath)) === staged.sha256) {
@@ -263,7 +271,7 @@ export function installAsset(
   // recorded: an uploaded asset is a file the user added; deleting its post would otherwise lose it.
   if (installed !== null) recordFile(destPath, installed, staged.sha256, staged.size);
   try {
-    writeAssetMeta(metaPath, [...existing, { ...finalMeta, contentHash: staged.sha256, mtimeMs }]);
+    writeAssetMeta(metaPath, [...existing, { ...finalMeta, mtimeMs }]);
   } catch (cause) {
     throw new AssetRecordError(finalMeta, cause);
   }
@@ -488,7 +496,7 @@ function moveAsideUnreadableMeta(
 
 function isAssetMeta(value: unknown): value is RecordedAsset {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const { filename, size, width, height, hasMetadata, uploadedAt, contentHash, mtimeMs } = value as Record<string, unknown>;
+  const { filename, size, width, height, animated, hasMetadata, uploadedAt, contentHash, mtimeMs } = value as Record<string, unknown>;
   const isDimension = (n: unknown) => n === undefined || (typeof n === "number" && Number.isSafeInteger(n) && n > 0);
   return (
     typeof filename === "string" &&
@@ -498,6 +506,7 @@ function isAssetMeta(value: unknown): value is RecordedAsset {
     size >= 0 &&
     isDimension(width) &&
     isDimension(height) &&
+    (animated === undefined || typeof animated === "boolean") &&
     (hasMetadata === undefined || typeof hasMetadata === "boolean") &&
     (uploadedAt === undefined || typeof uploadedAt === "string") &&
     (contentHash === undefined || typeof contentHash === "string") &&
@@ -506,14 +515,59 @@ function isAssetMeta(value: unknown): value is RecordedAsset {
 }
 
 /**
- * Minimal metadata for an asset file with no cached entry: its size. It has no
- * upload time, because none was recorded — the file's modified time is when it
- * was last written, which a copy or a git checkout resets, so it is not taken
- * for one (content-lifecycle-conventions: a missing time is not made up). The
- * next upload or delete writes this entry to `meta.json` as it is.
+ * Minimal metadata for an asset file with no cached entry: its size, and for an
+ * image its hash, which its thumbnail is asked for by. It has no upload time,
+ * because none was recorded — the file's modified time is when it was last
+ * written, which a copy or a git checkout resets, so it is not taken for one
+ * (content-lifecycle-conventions: a missing time is not made up). The next
+ * upload or delete writes this entry to `meta.json` as it is, hash included, so
+ * an image added from Finder is read whole at each listing only until then;
+ * other files are not hashed here, since nothing needs their hash. A hash that
+ * cannot be taken leaves the image without one; it then shows its file tile.
  */
-function projectAssetFile(dir: string, filename: string): AssetMeta {
-  return { filename, size: fs.statSync(path.join(dir, filename)).size };
+function projectAssetFile(dir: string, filename: string): RecordedAsset {
+  const filePath = path.join(dir, filename);
+  const stat = fs.statSync(filePath);
+  if (!isImageAssetFilename(filename)) return { filename, size: stat.size };
+  const hash = hashIfReadable(filePath);
+  return hash === null ? { filename, size: stat.size } : { filename, size: stat.size, contentHash: hash, mtimeMs: stat.mtimeMs };
+}
+
+/**
+ * Calls `visit` with every content hash the `meta.json` files of a workspace
+ * record, reading them one at a time without the storage worker: the thumbnail
+ * sweep runs in the main process and only needs to know which hashes are still
+ * named. A post whose `meta.json` is missing or not an asset list names none.
+ * Throws when the workspace folder or its assets cannot be read, since that says
+ * nothing about which hashes it names, as when its volume is not mounted.
+ */
+export async function visitRecordedHashes(dataDir: string, visit: (hash: string) => void): Promise<void> {
+  await fsp.access(dataDir);
+  let posts: string[];
+  try {
+    posts = await fsp.readdir(path.join(dataDir, "assets"));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
+  }
+  for (const postId of posts) {
+    if (!isPostId(postId)) continue;
+    let text: string;
+    try {
+      text = await fsp.readFile(path.join(dataDir, "assets", postId, META_FILENAME), "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") continue;
+      throw err;
+    }
+    let assets: unknown;
+    try { assets = (JSON.parse(text) as { assets?: unknown }).assets; } catch { continue; }
+    if (!Array.isArray(assets)) continue;
+    for (const asset of assets) {
+      const hash = (asset as { contentHash?: unknown } | null)?.contentHash;
+      if (typeof hash === "string") visit(hash);
+    }
+  }
 }
 
 /**

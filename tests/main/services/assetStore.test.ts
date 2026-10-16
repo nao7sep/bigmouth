@@ -12,6 +12,7 @@ import {
   sanitizeFilename,
   safeResolveUnder,
   assetDir,
+  visitRecordedHashes,
   type AssetMeta,
   type AssetSourceMetadata,
   type StagedUpload,
@@ -25,6 +26,9 @@ const POST = "post-1";
 function meta(filename: string, size = 3): AssetMeta {
   return { filename, size, uploadedAt: "2026-01-01T00:00:00.000Z" };
 }
+
+/** The SHA-256 a listing tells for these bytes. */
+const sha = (bytes: string) => createHash("sha256").update(bytes).digest("hex");
 
 let stagedCount = 0;
 
@@ -108,7 +112,7 @@ describe("installAsset / listAssets / deleteAsset", () => {
       expect(fs.existsSync(path.join(assetDir(dataDir, POST), "accessible.png"))).toBe(false);
       expect(fs.existsSync(blocked)).toBe(true);
     } finally { fail.mockRestore(); }
-    expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual(recorded);
+    expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ ...recorded, contentHash: sha("abc") });
   });
 
   it("keeps upload facts when identical bytes are copied to a new file identity", () => {
@@ -116,7 +120,7 @@ describe("installAsset / listAssets / deleteAsset", () => {
     const file = path.join(assetDir(dataDir, POST), "a.png");
     fs.copyFileSync(file, file + ".copy");
     fs.renameSync(file + ".copy", file);
-    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 100 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 100, contentHash: sha("abc") }]);
   });
 
   it("does not keep old upload facts after an interrupted same-name replacement", () => {
@@ -126,8 +130,8 @@ describe("installAsset / listAssets / deleteAsset", () => {
     install(dataDir, POST, "a.png", Buffer.from("new bytes"), { ...meta("a.png", 9), width: 1, height: 2 });
     // Crash between binary publication and metadata publication leaves the prior sidecar.
     fs.writeFileSync(path.join(dir, "meta.json"), oldMeta);
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 9 }]);
-    expect(install(dataDir, POST, "a.png", Buffer.from("new bytes"), meta("a.png", 9)).asset).toEqual({ filename: "a.png", size: 9 });
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 9, contentHash: sha("new bytes") }]);
+    expect(install(dataDir, POST, "a.png", Buffer.from("new bytes"), meta("a.png", 9)).asset).toEqual({ filename: "a.png", size: 9, contentHash: sha("new bytes") });
   });
 
   it("round-trips an asset and its metadata", () => {
@@ -202,7 +206,7 @@ describe("re-uploading an asset's own bytes", () => {
       uploadedAt: "2027-01-01T00:00:00.000Z",
     });
 
-    expect(again).toEqual({ asset: meta("a.png"), changed: false });
+    expect(again).toEqual({ asset: { ...meta("a.png"), contentHash: sha("abc") }, changed: false });
     expect(fs.readFileSync(metaPath, "utf8")).toBe(metaBefore);
     expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["a.png", "b.png"]);
   });
@@ -280,7 +284,7 @@ describe("an asset's recorded hash", () => {
     fs.utimesSync(file(), mtime, mtime);
     const opened = vi.spyOn(fs, "openSync");
     try {
-      expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5 }]);
+      expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5, contentHash: sha("abc") }]);
       expect(opened.mock.calls.some(([target]) => String(target) === file())).toBe(false);
     } finally { opened.mockRestore(); }
   });
@@ -289,7 +293,7 @@ describe("an asset's recorded hash", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), { ...meta("a.png"), width: 4, height: 5 });
     const moved = new Date("2022-02-02T02:02:02.000Z");
     fs.utimesSync(file(), moved, moved);
-    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5, contentHash: sha("abc") }]);
 
     // The next write records the new time, so the file is trusted again without a read.
     install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
@@ -300,7 +304,7 @@ describe("an asset's recorded hash", () => {
   it("is replaced when the file changed outside the app, dropping the upload facts it described", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), { ...meta("a.png"), width: 4, height: 5 });
     fs.writeFileSync(file(), "a longer replacement");
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 20 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 20, contentHash: sha("a longer replacement") }]);
     // The same new bytes uploaded under the name are then no change.
     expect(install(dataDir, POST, "a.png", Buffer.from("a longer replacement"), meta("a.png", 20)).changed).toBe(false);
   });
@@ -311,9 +315,44 @@ describe("an asset's recorded hash", () => {
     const stored = JSON.parse(fs.readFileSync(metaPath, "utf8"));
     delete stored.assets[0].mtimeMs;
     fs.writeFileSync(metaPath, JSON.stringify(stored));
-    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, contentHash: sha("abc") }]);
     fs.writeFileSync(file(), "xyz");
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("xyz") }]);
+  });
+});
+
+describe("hashes for thumbnails", () => {
+  it("hashes an image found without a record, so it can have a thumbnail, but no other file", () => {
+    const dir = assetDir(dataDir, POST);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "found.png"), "abc");
+    fs.writeFileSync(path.join(dir, "found.mov"), "a long video");
+    expect(listAssets(dataDir, POST).assets).toEqual([
+      { filename: "found.mov", size: 12 },
+      { filename: "found.png", size: 3, contentHash: sha("abc") },
+    ]);
+  });
+
+  it("records whether an image is animated with its other details", () => {
+    install(dataDir, POST, "moving.gif", Buffer.from("gif"), { ...meta("moving.gif"), width: 8, height: 6, animated: true });
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("moving.gif"), width: 8, height: 6, animated: true, contentHash: sha("gif") }]);
+  });
+
+  it("visits every hash a workspace's meta.json files record", async () => {
+    install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    install(dataDir, "post-2", "b.png", Buffer.from("de"), meta("b.png", 2));
+    fs.mkdirSync(path.join(dataDir, "assets", "post-3"));
+    fs.writeFileSync(path.join(dataDir, "assets", "post-3", "meta.json"), "{ not json");
+    const seen: string[] = [];
+    await visitRecordedHashes(dataDir, (hash) => seen.push(hash));
+    expect(seen.sort()).toEqual([sha("abc"), sha("de")].sort());
+  });
+
+  it("visits nothing in a workspace without assets, and throws for one it cannot reach", async () => {
+    const seen: string[] = [];
+    await visitRecordedHashes(dataDir, (hash) => seen.push(hash));
+    expect(seen).toEqual([]);
+    await expect(visitRecordedHashes(path.join(dataDir, "unmounted"), () => {})).rejects.toThrow();
   });
 });
 
@@ -474,20 +513,21 @@ describe("listAssets self-heals against the files on disk", () => {
     const dir = assetDir(dataDir, POST);
     fs.unlinkSync(path.join(dir, "meta.json"));
 
-    expect(listAssets(dataDir, POST).assets[0]).toEqual({ filename: "a.png", size: 3 });
+    expect(listAssets(dataDir, POST).assets[0]).toEqual({ filename: "a.png", size: 3, contentHash: sha("abc") });
 
-    // The next upload and the next delete write the list back to meta.json.
+    // The next upload and the next delete write the list back to meta.json,
+    // with an image's hash, so it is not read again to list it.
     install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
     const afterUpload = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")).assets as AssetMeta[];
-    expect(afterUpload.find((a) => a.filename === "a.png")).toEqual({ filename: "a.png", size: 3 });
+    expect(afterUpload.find((a) => a.filename === "a.png")).toEqual({ filename: "a.png", size: 3, contentHash: sha("abc"), mtimeMs: expect.any(Number) });
     expect(afterUpload.find((a) => a.filename === "b.png")?.uploadedAt).toBe("2026-01-01T00:00:00.000Z");
 
     fs.writeFileSync(path.join(dir, "c.png"), "xyz");
     deleteAsset(dataDir, POST, "b.png");
     const afterDelete = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")).assets as AssetMeta[];
     expect(afterDelete).toEqual([
-      { filename: "a.png", size: 3 },
-      { filename: "c.png", size: 3 },
+      { filename: "a.png", size: 3, contentHash: sha("abc"), mtimeMs: expect.any(Number) },
+      { filename: "c.png", size: 3, contentHash: sha("xyz"), mtimeMs: expect.any(Number) },
     ]);
   });
 });
@@ -509,7 +549,7 @@ describe("an unusable meta.json is moved aside", () => {
 
     const listing = listAssets(dataDir, POST);
 
-    expect(listing.assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listing.assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
     expect(invalidFiles()).toHaveLength(1);
     const [moved] = invalidFiles();
     expect(moved).toMatch(/^meta-\d{8}-\d{6}-utc\.invalid$/);
@@ -546,7 +586,7 @@ describe("asset metadata format version", () => {
     const file = path.join(assetDir(dataDir, POST), "meta.json");
     const prior = JSON.stringify({ formatVersion: 1, assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
     fs.writeFileSync(file, prior);
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
     expect(fs.readFileSync(file, "utf-8")).toBe(prior);
   });
 
@@ -558,14 +598,14 @@ describe("asset metadata format version", () => {
       formatVersion: 2,
       assets: [{ ...meta("a.png"), contentHash: createHash("sha256").update("abc").digest("hex"), mtimeMs: fs.statSync(path.join(assetDir(dataDir, POST), "a.png")).mtimeMs }],
     });
-    expect(listAssets(dataDir, POST).assets).toEqual([meta("a.png")]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);
   });
 
   it("reads a meta.json without its format version as this build's format", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const { assets } = JSON.parse(fs.readFileSync(metaFile(), "utf-8"));
     fs.writeFileSync(metaFile(), JSON.stringify({ assets: [{ ...assets[0], width: 7 }] }));
-    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 7 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 7, contentHash: sha("abc") }]);
   });
 
   it("lists from the files over a meta.json it could not read, refuses writes, and never moves it", () => {
@@ -574,7 +614,7 @@ describe("asset metadata format version", () => {
     fs.rmSync(metaFile());
     fs.mkdirSync(metaFile());
 
-    expect(listAssets(dataDir, POST)).toEqual({ assets: [{ filename: "a.png", size: 3 }] });
+    expect(listAssets(dataDir, POST)).toEqual({ assets: [{ filename: "a.png", size: 3, contentHash: sha("abc") }] });
     expect(() => install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(UnreadableStoreError);
     expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(UnreadableStoreError);
     expect(fs.statSync(metaFile()).isDirectory()).toBe(true);
@@ -586,7 +626,7 @@ describe("asset metadata format version", () => {
     const body = JSON.stringify({ formatVersion: 999, items: [] });
     fs.writeFileSync(metaFile(), body);
 
-    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3 }]);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
     expect(() => install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(NewerFormatError);
     expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(NewerFormatError);
 

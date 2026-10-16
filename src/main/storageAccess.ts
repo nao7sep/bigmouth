@@ -8,7 +8,6 @@ export const initialize = command("initialize");
 export const flush = command("flush");
 export const finish = command("finish");
 export const log = command("log");
-export const readAssetFile = command("readAssetFile");
 export const fileExists = command("fileExists");
 export const readSourceMetadata = command("readSourceMetadata");
 export const listWorkspaces = command("listWorkspaces");

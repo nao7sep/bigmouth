@@ -34,6 +34,8 @@ import {
   type PostContentSaveFailedEvent,
   type PostMetadataRefusedEvent,
   assetUrl as buildAssetUrl,
+  imageDerivativeUrl,
+  type ImageDerivativeKind,
   type AiRequestHandle,
   type MetadataGenerationResults,
   type PostListOffsets,
@@ -475,6 +477,11 @@ export function generateImaging(
 /** The URL for serving a raw asset file through the custom protocol. */
 export function assetUrl(postId: string, filename: string, workspaceId?: string): string {
   return buildAssetUrl(requireWs(workspaceId), postId, filename);
+}
+
+/** The URL of an image's thumbnail or display image, addressed by its content hash. */
+export function assetDerivativeUrl(kind: ImageDerivativeKind, contentHash: string): string {
+  return imageDerivativeUrl(kind, contentHash);
 }
 
 // --- Diagnostics ---

@@ -12,7 +12,7 @@ import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath, serializeError } from "./core/services/logger.js";
 import { stopBackups } from "./core/services/backupStore.js";
-import { getLogsDir, getRecordsDbPath, setDocumentsDirectory } from "./core/services/storagePaths.js";
+import { getLogsDir, getRecordsDbPath, getThumbnailsDir, setDocumentsDirectory } from "./core/services/storagePaths.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
 import { workspaceWriteProblem } from "./core/shared/writeProblem.js";
@@ -56,7 +56,7 @@ export const storageTasks = {
     initLogger(getRecordsDbPath(), getLogsDir());
     const state = initStateStore();
     const settings = initAppSettingsStore();
-    return { config, state, settings, recordsDbPath: getRecordsDbPath(), recordsPath: getRecordsPath() };
+    return { config, state, settings, recordsDbPath: getRecordsDbPath(), recordsPath: getRecordsPath(), thumbnailsDir: getThumbnailsDir() };
   },
   flush() {
     postStore.holdPendingFlushes();
@@ -70,7 +70,6 @@ export const storageTasks = {
   log(level: "debug" | "info" | "warn" | "error", message: string, fields?: Record<string, unknown>) {
     ({ debug, info, warn, error })[level](message, fields);
   },
-  readAssetFile(filePath: string) { return fs.readFileSync(filePath); },
   fileExists(filePath: string) { return fs.existsSync(filePath); },
   readSourceMetadata(sourcePath: unknown, size: number) {
     if (typeof sourcePath !== "string" || !path.isAbsolute(sourcePath)) return undefined;

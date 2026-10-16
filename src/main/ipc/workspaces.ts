@@ -10,6 +10,7 @@ import {
   deleteWorkspace,
 } from "../storageAccess.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
+import { imageDerivatives } from "../imageDerivatives.js";
 
 export function registerWorkspaceHandlers(): void {
   ipcMain.handle(CHANNELS.listWorkspaces, async () => {
@@ -82,6 +83,7 @@ export function registerWorkspaceHandlers(): void {
       throw new Error("Workspace not found");
     }
     info("workspace removed from registry", { workspaceId: id });
+    imageDerivatives()?.forgetWorkspace(id);
     return deleted;
   });
 }

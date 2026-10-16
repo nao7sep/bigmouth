@@ -217,6 +217,18 @@ export function assetUrl(wsId: string, postId: string, filename: string): string
   return `${ASSET_SCHEME}://asset/${encodeURIComponent(wsId)}/${encodeURIComponent(postId)}/${encodeURIComponent(filename)}`;
 }
 
+/** The two smaller renditions main makes of a still image: a grid thumbnail and a display image. */
+export type ImageDerivativeKind = "thumb" | "display";
+
+/**
+ * Builds the URL of an image's thumbnail or display image. It is addressed by
+ * the SHA-256 of the image's bytes, so its content never changes, and main
+ * serves only hashes it has seen among the assets it listed.
+ */
+export function imageDerivativeUrl(kind: ImageDerivativeKind, contentHash: string): string {
+  return `${ASSET_SCHEME}://${kind}/${encodeURIComponent(contentHash)}`;
+}
+
 // --- Method payload/result helpers ---
 
 /**

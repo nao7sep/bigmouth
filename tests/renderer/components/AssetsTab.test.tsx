@@ -14,6 +14,7 @@ vi.mock("@renderer/api", () => ({
     (postId: string, filename: string, workspaceId?: string) =>
       `asset://${workspaceId ?? "ws"}/${postId}/${filename}`
   ),
+  assetDerivativeUrl: vi.fn((kind: string, hash: string) => `asset-${kind}://${hash}`),
 }));
 
 import { AssetsTab } from "@renderer/components/AssetsTab";
@@ -125,6 +126,52 @@ describe("AssetsTab loading", () => {
     expect(getByText(/2\.9 MB/)).toBeTruthy(); // formatBytes MB branch
     expect(getByText(/800.*600/)).toBeTruthy(); // dimensions
     expect(getByText("Has metadata")).toBeTruthy();
+  });
+
+  it("shows a still image through its thumbnail, by its hash, loaded lazily", async () => {
+    const hash = "b".repeat(64);
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "photo.jpg", animated: false, contentHash: hash })] });
+    const { container } = await renderTab();
+    const img = container.querySelector(".asset-card img") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe(`asset-thumb://${hash}`);
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("decoding")).toBe("async");
+  });
+
+  it("shows the file tile when an image's picture cannot be loaded", async () => {
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "broken.png", animated: false, contentHash: "c".repeat(64) })] });
+    const { container, getByText } = await renderTab();
+    const img = container.querySelector(".asset-card img") as HTMLImageElement;
+    await act(async () => { fireEvent.error(img); });
+    expect(container.querySelector(".asset-card img")).toBeNull();
+    expect(getByText("PNG")).toBeTruthy();
+  });
+
+  it("shows an animated image as itself, streamed and loaded lazily", async () => {
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "moving.gif", animated: true, contentHash: "d".repeat(64) })] });
+    const { container } = await renderTab();
+    const img = container.querySelector(".asset-card img") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("asset://w1/p1/moving.gif");
+    expect(img.getAttribute("loading")).toBe("lazy");
+  });
+
+  it("publishes its listing for the Preview, and that it failed", async () => {
+    const { usePostAssets } = await import("@renderer/hooks/usePostAssets");
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(usePostAssets("w1", "p1"));
+      return null;
+    }
+    render(<Probe />);
+    const listed = [asset({ filename: "a.png", contentHash: "e".repeat(64) })];
+    mockListAssets.mockResolvedValue({ assets: listed });
+    await renderTab();
+    expect(seen.at(-1)).toEqual(listed);
+    cleanup();
+    render(<Probe />);
+    mockListAssets.mockRejectedValue(new Error("unreadable"));
+    await renderTab();
+    expect(seen.at(-1)).toBeNull();
   });
 
   it("renders a non-image asset with an extension icon instead of a thumbnail", async () => {

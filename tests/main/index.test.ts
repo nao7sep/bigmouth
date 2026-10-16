@@ -117,8 +117,9 @@ vi.mock("@main/storageAccess.js", async () => ({
     const store = await import("@main/core/services/workspaceStore.js");
     const paths = await import("@main/core/services/storagePaths.js");
     const config = store.initAppDir();
-    return { config, settings: { theme: "system", language: "system" }, recordsDbPath: paths.getRecordsDbPath(), recordsPath: null };
+    return { config, settings: { theme: "system", language: "system" }, recordsDbPath: paths.getRecordsDbPath(), recordsPath: null, thumbnailsDir: paths.getThumbnailsDir() };
   },
+  listWorkspaces: async () => [],
   log: async () => {},
   resumePendingFlushes: async () => flush.store!.resumePendingFlushes(),
 }));

@@ -18,6 +18,14 @@ files:
   - "!**/*.d.mts"
   - "!**/*.d.cts"
 
+# sharp (thumbnails) is a native module: its binding and libvips are loaded by
+# the OS from real files, which cannot sit inside app.asar. Electron redirects
+# their requires to app.asar.unpacked. electron-vite leaves production
+# dependencies external to the main bundle, so sharp is loaded from here.
+asarUnpack:
+  - node_modules/sharp/**
+  - node_modules/@img/**
+
 # Tahoe "Liquid Glass" icon: build/Assets.car is a prebuilt catalog tracked here.
 # macOS 26 reads CFBundleIconName below → this catalog; older macOS reads
 # CFBundleIconFile → build/icon.icns. Building does NOT need Xcode.

@@ -29,6 +29,15 @@ const transport = vi.hoisted(() => ({ afterPublication: null as null | (() => Pr
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
+// The derivative cache the handlers register images with; none unless a test sets one.
+const derivatives = vi.hoisted(() => ({
+  current: null as null | { register: ReturnType<typeof vi.fn>; prepare: ReturnType<typeof vi.fn> },
+}));
+vi.mock("@main/imageDerivatives.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@main/imageDerivatives.js")>()),
+  imageDerivatives: () => derivatives.current,
+}));
+
 vi.mock("@main/storageAccess.js", async () => {
   const workspace = await import("@main/core/services/workspaceStore.js");
   const config = await import("@main/core/services/configStore.js");
@@ -175,6 +184,7 @@ async function createDraft(): Promise<string> {
 
 beforeEach(() => {
   transport.afterPublication = null;
+  derivatives.current = null;
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
   process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
@@ -208,6 +218,46 @@ describe("listAssets", () => {
 
   it("rejects an invalid postId (path-traversal defense)", async () => {
     await expect(invoke(CHANNELS.listAssets, wsId, "../escape")).rejects.toThrow(/Invalid postId/);
+  });
+});
+
+describe("image derivatives", () => {
+  const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+
+  beforeEach(() => {
+    derivatives.current = { register: vi.fn(), prepare: vi.fn() };
+  });
+
+  it("registers each listed image by its hash, and no other file", async () => {
+    const id = await createDraft();
+    await invokeUpload(id, upload("pic.png", PNG_1x1));
+    await invokeUpload(id, upload("notes.txt", Buffer.from("text")));
+    derivatives.current!.register.mockClear();
+
+    const { assets } = await invoke<AssetListing>(CHANNELS.listAssets, wsId, id);
+    expect(assets.find((a) => a.filename === "pic.png")?.contentHash).toBe(sha(PNG_1x1));
+    expect(derivatives.current!.register.mock.calls).toEqual([
+      [sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png")],
+    ]);
+  });
+
+  it("starts making a still image's derivatives once it is added", async () => {
+    const id = await createDraft();
+    const added = await invokeUpload(id, upload("pic.png", PNG_1x1));
+    expect(added.contentHash).toBe(sha(PNG_1x1));
+    expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png"));
+    expect(derivatives.current!.prepare).toHaveBeenCalledWith(sha(PNG_1x1));
+  });
+
+  it("records an animated image as animated and makes no derivatives of it", async () => {
+    const id = await createDraft();
+    const sharp = (await import("sharp")).default;
+    const pixels = Buffer.alloc(4 * 4 * 2 * 4, 255);
+    pixels.fill(0, 0, 4 * 4 * 4);
+    const gif = await sharp(pixels, { raw: { width: 4, height: 8, channels: 4, pageHeight: 4 } }).gif().toBuffer();
+    const added = await invokeUpload(id, upload("moving.gif", gif));
+    expect(added).toMatchObject({ width: 4, height: 4, animated: true });
+    expect(derivatives.current!.prepare).not.toHaveBeenCalled();
   });
 });
 
@@ -264,13 +314,13 @@ describe("uploadAsset", () => {
 
   // Dimensions need a decoder; the renderer no longer decodes uploads, and main
   // takes nothing it sends but the name, the bytes and where the file is.
-  it("records no dimensions, whatever the renderer sends with the file", async () => {
+  it("records the image's own dimensions from its header, whatever the renderer sends with the file", async () => {
     const id = (await createDraft());
     const reply = await send(id, upload("pic.png", PNG_1x1), undefined, { wsId, postId: id, name: "pic.png", width: 640, height: 480 });
-    expect(reply).toEqual({ type: "result", result: { ok: true, asset: expect.not.objectContaining({ width: expect.anything() }) } });
+    expect(reply).toEqual({ type: "result", result: { ok: true, asset: expect.objectContaining({ width: 1, height: 1, animated: false }) } });
   });
 
-  it("stores a crafted box-format payload without parsing image dimensions in main", async () => {
+  it("stores a crafted box-format payload that is no readable image without dimensions", async () => {
     const id = (await createDraft());
     // Zero-sized `ftyp` box: the shape behind the removed image-size HEIF/JXL
     // infinite-loop advisories. The misleading .jpg name cannot make main decode it.

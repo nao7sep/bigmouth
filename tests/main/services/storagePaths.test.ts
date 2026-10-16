@@ -17,6 +17,7 @@ import {
   getBackupsDbPath,
   getLogsDir,
   getStateJsonPath,
+  getThumbnailsDir,
   getWorkspacesJsonPath,
   expandWorkspacePath,
   getDefaultWorkspacesParentDir,
@@ -298,6 +299,7 @@ describe("standard subpaths", () => {
     expect(getApiKeysPath()).toBe(path.join(home, "api-keys.json"));
     expect(getStateJsonPath()).toBe(path.join(home, "state.json"));
     expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
+    expect(getThumbnailsDir()).toBe(path.join(home, "thumbnails"));
 
     removeTestTree(home);
   });

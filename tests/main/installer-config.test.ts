@@ -7,6 +7,7 @@ const config = parse(
   readFileSync(new URL("../../electron-builder.yml", import.meta.url), "utf8"),
 ) as {
   extraResources?: Array<{ from: string; to: string }>;
+  asarUnpack?: string[];
   files?: string[];
   nsis?: Record<string, unknown> & { installerLanguages?: string[] };
   mac?: { artifactName?: string; electronLanguages?: string[]; extendInfo?: Record<string, unknown> };
@@ -25,6 +26,15 @@ describe("packaged development metadata", () => {
       "!**/*.d.mts",
       "!**/*.d.cts",
     ]));
+  });
+});
+
+describe("packaged native modules", () => {
+  // sharp's binding and libvips are loaded by the OS from real files, which
+  // cannot be inside app.asar.
+  it("unpacks sharp and its platform binaries from the archive", () => {
+    expect(packageJson.dependencies.sharp).toBeDefined();
+    expect(config.asarUnpack).toEqual(expect.arrayContaining(["node_modules/sharp/**", "node_modules/@img/**"]));
   });
 });
 

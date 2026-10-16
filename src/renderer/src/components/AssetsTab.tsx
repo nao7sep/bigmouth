@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
-import { listAssets, uploadAsset, deleteAsset, assetUrl, reportProblem } from "../api";
+import { listAssets, uploadAsset, deleteAsset, assetUrl, assetDerivativeUrl, reportProblem } from "../api";
+import { assetPicture } from "../util/assetImages";
+import { clearPostAssets, publishPostAssets } from "../hooks/usePostAssets";
 import { presentFailure } from "../util/presentFailure";
 import {
   collidingAssetFilenames,
@@ -70,6 +72,25 @@ function isImage(filename: string): boolean {
   return isImageAssetFilename(filename);
 }
 
+/**
+ * The picture on an asset's card: a still image's thumbnail, an animated image
+ * as itself, or the file-type tile for other files and for an image whose
+ * picture cannot be loaded. Pictures load only as their cards scroll into view
+ * and decode off the main thread.
+ */
+function AssetPicture({ asset, postId, workspaceId }: { asset: AssetMeta; postId: string; workspaceId: string }) {
+  const picture = assetPicture(asset);
+  const src = picture.kind === "derived"
+    ? assetDerivativeUrl("thumb", picture.contentHash)
+    : picture.kind === "original" ? assetUrl(postId, asset.filename, workspaceId) : null;
+  // Keyed by URL, so a replaced image tries its new picture.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (src === null || failedSrc === src) {
+    return <div className="asset-file-icon">{ext(asset.filename).toUpperCase()}</div>;
+  }
+  return <img src={src} alt={asset.filename} loading="lazy" decoding="async" onError={() => setFailedSrc(src)} />;
+}
+
 function formatBytes(n: number, locale: string): string {
   const [value, unit] =
     n < 1024 ? [n, "byte"] : n < 1024 * 1024 ? [n / 1024, "kilobyte"] : [n / (1024 * 1024), "megabyte"];
@@ -130,12 +151,14 @@ export function AssetsTab({
     try {
       const { assets: list, movedAside } = await listAssets(postId, workspaceId);
       assetsRef.current = list;
+      publishPostAssets(workspaceId, postId, list);
       if (current.current) {
         setAssets(list);
         if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
       } else if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
       return null;
     } catch (err) {
+      publishPostAssets(workspaceId, postId, null);
       return presentFailure(
         message("assets.loadFailed"),
         "renderer: asset list failed",
@@ -148,6 +171,7 @@ export function AssetsTab({
   useEffect(() => {
     setAssets([]);
     assetsRef.current = [];
+    clearPostAssets(workspaceId, postId);
     setUploadNotice(null);
     setRecoveryNotice(null);
     void load().then((failure) => {
@@ -354,6 +378,7 @@ export function AssetsTab({
         assetsRef.current = next;
         return next;
       });
+      publishPostAssets(workspaceId, postId, assetsRef.current.filter((a) => a.filename !== filename));
       if (unsaved?.includes("modifiedTime")) {
         showNotice({
           severity: "warning",
@@ -506,17 +531,11 @@ function AssetCard({
   locked: boolean;
 }) {
   const { t, locale } = useI18n();
-  const src = assetUrl(postId, asset.filename, workspaceId);
-  const img = isImage(asset.filename);
 
   return (
     <div className="asset-card">
       <div className="asset-thumb">
-        {img ? (
-          <img src={src} alt={asset.filename} />
-        ) : (
-          <div className="asset-file-icon">{ext(asset.filename).toUpperCase()}</div>
-        )}
+        <AssetPicture asset={asset} postId={postId} workspaceId={workspaceId} />
       </div>
       <div className="asset-info">
         {/* Beside the fixed-height thumbnail the name gets two lines, then an

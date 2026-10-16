@@ -5,6 +5,15 @@ const SAFE_URI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|bigm
 
 interface RenderSafeMarkdownOptions {
   resolveImageUrl?: (href: string) => string;
+  /** Images load only as they scroll into view and decode off the main thread. */
+  lazyImages?: boolean;
+}
+
+// Set after sanitizing, on the elements the sanitizer kept.
+function markImageLazy(node: Element): void {
+  if (node.tagName !== "IMG") return;
+  node.setAttribute("loading", "lazy");
+  node.setAttribute("decoding", "async");
 }
 
 export function renderSafeMarkdown(
@@ -20,6 +29,17 @@ export function renderSafeMarkdown(
     });
   }
   const html = marked.parse(markdown) as string;
+  // The hook is the sanitizer's, which is shared, so it is set for this one
+  // synchronous call only.
+  if (options.lazyImages) DOMPurify.addHook("afterSanitizeAttributes", markImageLazy);
+  try {
+    return sanitize(html);
+  } finally {
+    if (options.lazyImages) DOMPurify.removeHook("afterSanitizeAttributes", markImageLazy);
+  }
+}
+
+function sanitize(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_URI_REGEXP: SAFE_URI,
     USE_PROFILES: { html: true },

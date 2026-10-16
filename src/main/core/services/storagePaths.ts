@@ -278,6 +278,16 @@ export function getRecordsDbPath(): string {
 }
 
 /**
+ * The cache of attached images' thumbnails and display images. It is this
+ * computer's own, made from the workspaces' files and safe to clear: anything
+ * missing is made again when it is next shown. Kept under the root rather than
+ * the OS temp folder, which macOS purges.
+ */
+export function getThumbnailsDir(): string {
+  return path.join(getAppRoot(), "thumbnails");
+}
+
+/**
  * Absolutizes a user-supplied workspace directory while preserving literal
  * filename characters. A leading tilde is the one supported shorthand.
  */

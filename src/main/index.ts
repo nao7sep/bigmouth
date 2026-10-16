@@ -2,9 +2,12 @@ import { app, BrowserWindow, powerMonitor } from "electron";
 
 import { confirmRunningWork, confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
-import { initialize, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
+import { initialize, listWorkspaces, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
 import { storageOwner } from "./storageOwner.js";
 const QUIT_FLUSH_BOUND_MS = 2000;
+// How long after startup unused thumbnails are swept: well after the window and
+// the first workspace have opened.
+const DERIVATIVE_SWEEP_DELAY_MS = 60_000;
 // The part of the 1 s finish bound that pending backup writes may use at an ordinary quit.
 const BACKUP_DRAIN_MS = 300;
 import { cancelOpenMessageDialogs } from "./plain-message-dialog.js";
@@ -23,6 +26,7 @@ import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { anyAiRequestRunning } from "./ipc/aiRequests.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
+import { configureImageDerivatives, sweepImageDerivatives } from "./imageDerivatives.js";
 import { installApplicationMenu } from "./menu.js";
 import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
 
@@ -81,10 +85,19 @@ async function bootstrap(): Promise<void> {
     records: initialized.recordsPath,
   });
 
+  const derivatives = configureImageDerivatives(initialized.thumbnailsDir);
   handleAssetProtocol();
   registerIpcHandlers();
   installApplicationMenu();
   await openMainWindow();
+  // Unused thumbnails are cleared once a launch, after the opening work has
+  // settled, so the sweep's reads never compete with startup. Nothing waits on
+  // it, and a failure only leaves files for the next launch.
+  setTimeout(() => {
+    void listWorkspaces()
+      .then((workspaces) => sweepImageDerivatives(derivatives, workspaces))
+      .catch((error: unknown) => logError("image derivative sweep failed", { error: serializeError(error) }));
+  }, DERIVATIVE_SWEEP_DELAY_MS).unref();
 }
 
 // Opens the window and subscribes to the platform's session-end signal. Windows

@@ -5,6 +5,7 @@ import path from "node:path";
 import { ipcMain } from "electron";
 import exifr from "exifr";
 
+import type { AssetMeta } from "@shared/types";
 import {
   CHANNELS,
   type AssetDeleteResult,
@@ -27,6 +28,7 @@ import { resolveWorkspace } from "./context.js";
 import { listAssets, installAsset, deleteAsset, readSourceMetadata, fileExists } from "../storageAccess.js";
 import { isPostId } from "../core/shared/filenames.js";
 import { receiveUpload, type UploadPort } from "../assetUpload.js";
+import { imageDerivatives, readImageFacts } from "../imageDerivatives.js";
 
 // Identifier validation (defense against path traversal). postId is a nanoid;
 // filename is a single path component with no separators or `..`.
@@ -84,9 +86,6 @@ const Exifr = (exifr as unknown as { Exifr: new (options: object) => ExifrReadin
  * Whether an image carries EXIF, IPTC or XMP metadata. exifr reads the staged
  * file by path, in a few chunks, so a large image is never read whole. A PNG's
  * IHDR header is not metadata, so it is not asked for.
- *
- * Image dimensions are not read here: they need a decoder's header parse, and
- * the renderer no longer decodes uploads, so new uploads record none.
  */
 async function carriesMetadata(filePath: string): Promise<boolean> {
   const reading = new Exifr({ ihdr: false, xmp: true, iptc: true });
@@ -99,6 +98,21 @@ async function carriesMetadata(filePath: string): Promise<boolean> {
     return false;
   } finally {
     try { await reading.file?.close?.(); } catch { /* Nothing was written; the handle is let go. */ }
+  }
+}
+
+/**
+ * Lets the window ask for the thumbnail and display image of a listed or added
+ * image by its hash (see imageDerivatives). Returns the hash it registered.
+ */
+function registerImage(wsId: string, dir: string, postId: string, asset: AssetMeta): string | null {
+  const cache = imageDerivatives();
+  if (!cache || !asset.contentHash || !isImageAssetFilename(asset.filename)) return null;
+  try {
+    cache.register(asset.contentHash, wsId, safeResolveUnder(assetDir(dir, postId), asset.filename));
+    return asset.contentHash;
+  } catch {
+    return null;
   }
 }
 
@@ -133,10 +147,15 @@ async function upload(port: UploadPort, raw: unknown): Promise<AssetUploadResult
 
   const { staging, staged } = received;
   try {
-    const hasMetadata = isImageAssetFilename(filename) && (await carriesMetadata(staging.path));
+    const image = isImageAssetFilename(filename);
+    const hasMetadata = image && (await carriesMetadata(staging.path));
+    // Its dimensions and frame count come from the image's header, read by sharp
+    // without decoding the picture; a file sharp cannot read records neither.
+    const facts = image ? await readImageFacts(staging.path) : null;
     const meta = {
       filename,
       size: staged.size,
+      ...(facts && { width: facts.width, height: facts.height, animated: facts.animated }),
       ...(hasMetadata && { hasMetadata }),
       uploadedAt: formatUtcIso(utcNow()),
     };
@@ -144,6 +163,10 @@ async function upload(port: UploadPort, raw: unknown): Promise<AssetUploadResult
     const result = await installAsset(dir, postId, filename, staged, meta, await readSourceMetadata(start.sourcePath, staged.size));
     if (result.ok) {
       logInfo("asset uploaded", { workspace: wsId, postId, filename: result.asset.filename, size: staged.size, hasMetadata });
+      // Its thumbnail and display image are made now, in the background, so the
+      // card that shows it next already has one.
+      const hash = registerImage(wsId, dir, postId, result.asset);
+      if (hash && result.asset.animated !== true) imageDerivatives()?.prepare(hash);
     }
     return result;
   } finally {
@@ -188,6 +211,7 @@ export function registerAssetHandlers(): void {
       logError("assets list failed", { workspace: wsId, postId: pid, error: serializeError(err) });
       throw new Error(assetStoreErrorMessage(err));
     }
+    for (const asset of listing.assets) registerImage(wsId, dir, pid, asset);
     logInfo("assets listed", { workspace: wsId, postId: pid, count: listing.assets.length });
     return listing;
   });

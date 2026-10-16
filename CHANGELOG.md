@@ -12,7 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Adding an asset streams the file into the workspace instead of reading it whole into memory, so a file of any size can be added. A file that cannot be read to its end, or that the workspace folder cannot take because its disk is full or it cannot be written, is not added, nothing of it is left behind, and the message says what to check. An image added now records no width and height.
+- Adding an asset streams the file into the workspace instead of reading it whole into memory, so a file of any size can be added. A file that cannot be read to its end, or that the workspace folder cannot take because its disk is full or it cannot be written, is not added, nothing of it is left behind, and the message says what to check. An added image's width and height are read from its header without decoding the picture.
+- The Assets tab shows each still image through a small thumbnail and the Preview through a display image of at most 1600 pixels, instead of decoding every original at full size; images load as they scroll into view. Both are made once, one image at a time, when the image is added or first shown, and kept in a `thumbnails` folder in the storage root that is safe to clear. An animated GIF or WebP is shown as itself, and an image whose thumbnail cannot be made shows its file-type tile and is tried again at the next launch.
+- Attachments are streamed from disk, in ranges when asked, instead of being read whole through storage, so a large file no longer holds up saving or fails to show after 10 seconds.
 - An asset's details are no longer checked by reading its whole file every time the Assets tab lists it; the file is read again only when its size or modified time has changed since its details were saved.
 - A PNG is no longer marked as having metadata only because of its image header, and XMP and IPTC metadata now mark an image too.
 

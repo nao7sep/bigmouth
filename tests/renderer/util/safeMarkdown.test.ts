@@ -8,6 +8,13 @@ describe("renderSafeMarkdown", () => {
     expect(html).toContain("<strong>bold</strong>");
   });
 
+  it("marks images lazy and asynchronously decoded when asked, for that call only", () => {
+    const lazy = renderSafeMarkdown("![photo](bigmouth-asset://display/abc)", { lazyImages: true });
+    expect(lazy).toContain('loading="lazy"');
+    expect(lazy).toContain('decoding="async"');
+    expect(renderSafeMarkdown("![photo](bigmouth-asset://display/abc)")).not.toContain("loading=");
+  });
+
   it("renders links", () => {
     const html = renderSafeMarkdown("[home](https://example.com)");
     expect(html).toContain('href="https://example.com"');

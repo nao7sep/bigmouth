@@ -245,10 +245,17 @@ export interface AssetMeta {
   size: number;
   width?: number;
   height?: number;
+  // Images only: whether it has more than one frame, as read when it was
+  // added. Absent for an image added before this was recorded.
+  animated?: boolean;
   hasMetadata?: boolean;
   // When the app stored the file. Absent for a file it found in the folder
   // without a record of its upload: that time is unknown, and never guessed.
   uploadedAt?: string;
+  // SHA-256 of the file's bytes: an image's thumbnail and display image are
+  // asked for by it, so a changed file is a new address. Absent when the file
+  // could not be read to take it.
+  contentHash?: string;
 }
 
 /**

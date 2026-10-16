@@ -1,6 +1,6 @@
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
-import { afterEach, describe, it, expect, vi } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, render, cleanup } from "@testing-library/react";
 
 // PreviewTab resolves image references through assetUrl; everything else is pure
 // markdown rendering. The mock uses the real custom-protocol shape so these
@@ -11,12 +11,22 @@ vi.mock("@renderer/api", () => ({
     (postId: string, filename: string, workspaceId?: string) =>
       `bigmouth-asset://asset/${workspaceId ?? "ws"}/${postId}/${encodeURIComponent(filename)}`
   ),
+  assetDerivativeUrl: vi.fn((kind: string, hash: string) => `bigmouth-asset://${kind}/${hash}`),
 }));
 
 import { PreviewTab } from "@renderer/components/PreviewTab";
 import { assetUrl } from "@renderer/api";
+import { clearPostAssets, publishPostAssets } from "@renderer/hooks/usePostAssets";
 
 const mockAssetUrl = vi.mocked(assetUrl);
+const HASH = "a".repeat(64);
+
+// The Assets tab publishes each post's listing; these posts have none attached
+// unless a test says otherwise, so a bare filename keeps the original's address.
+beforeEach(() => {
+  publishPostAssets("w1", "p1", []);
+  publishPostAssets("ws1", "p1", []);
+});
 
 afterEach(() => {
   cleanup();
@@ -58,6 +68,49 @@ describe("PreviewTab", () => {
     expect(mockAssetUrl).not.toHaveBeenCalled();
     const img = container.querySelector("img");
     expect(img?.getAttribute("src")).toBe("/already/resolved.png");
+  });
+
+  it("loads every image lazily and decodes it off the main thread", () => {
+    const { container } = renderPreview("![a](pic.png)\n\n![b](https://example.com/b.png)");
+    const images = [...container.querySelectorAll("img")];
+    expect(images).toHaveLength(2);
+    for (const img of images) {
+      expect(img.getAttribute("loading")).toBe("lazy");
+      expect(img.getAttribute("decoding")).toBe("async");
+    }
+  });
+
+  it("shows an attached still image through its display image, by its hash", () => {
+    publishPostAssets("w1", "p1", [{ filename: "pic.png", size: 9, animated: false, contentHash: HASH }]);
+    const { container } = renderPreview("![alt](pic.png)");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(`bigmouth-asset://display/${HASH}`);
+  });
+
+  it("keeps an animated image's original, which a display image would stop", () => {
+    publishPostAssets("w1", "p1", [
+      { filename: "moving.gif", size: 9, animated: true, contentHash: HASH },
+      // Recorded before frames were: it may move, so it is shown as itself.
+      { filename: "older.webp", size: 9, contentHash: HASH },
+    ]);
+    const { container } = renderPreview("![a](moving.gif)\n\n![b](older.webp)");
+    expect([...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+      "bigmouth-asset://asset/w1/p1/moving.gif",
+      "bigmouth-asset://asset/w1/p1/older.webp",
+    ]);
+  });
+
+  it("gives an attachment no address until the post's assets are listed, then its display image", () => {
+    clearPostAssets("w1", "p1");
+    const { container } = renderPreview("![alt](pic.png)");
+    expect(container.querySelector("img")?.getAttribute("src") ?? "").toBe("");
+    act(() => publishPostAssets("w1", "p1", [{ filename: "pic.png", size: 9, animated: false, contentHash: HASH }]));
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(`bigmouth-asset://display/${HASH}`);
+  });
+
+  it("shows the original when the post's assets could not be listed", () => {
+    publishPostAssets("w1", "p1", null);
+    const { container } = renderPreview("![alt](pic.png)");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("bigmouth-asset://asset/w1/p1/pic.png");
   });
 
   it("recomputes the rendered HTML when the content prop changes", () => {
