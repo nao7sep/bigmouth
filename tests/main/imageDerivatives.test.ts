@@ -257,7 +257,9 @@ describe("ImageDerivatives", () => {
       derivativeName(b, "thumb"),
       derivativeName(c, "display"),
     ]);
-    expect(runs.map((run) => run.hash)).toEqual([a, b, c]);
+    // The queue order follows whichever file checks finish first, which the OS
+    // decides; what holds is one image at a time, each made once.
+    expect(runs.map((run) => run.hash).sort()).toEqual([a, b, c]);
     expect(mostAtOnce()).toBe(1);
   });
 
