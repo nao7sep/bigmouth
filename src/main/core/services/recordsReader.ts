@@ -7,6 +7,7 @@
 
 import { Worker } from "node:worker_threads";
 
+import { WORKER_ENTRIES } from "../../builtEntries.js";
 import type { RecordsRead, RecordsReadResults } from "./recordsQueries.js";
 import type { RecordsReaderRequest, RecordsReaderResponse } from "./recordsReaderWorker.js";
 
@@ -54,8 +55,8 @@ export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsRead
 function ensureWorker(path: string): Worker {
   if (worker !== null) return worker;
   // Tests run the source with Node's TypeScript stripping; the app runs
-  // electron-vite's records-reader-worker.js entry beside index.js.
-  const module = import.meta.url.endsWith(".ts") ? "./recordsReaderWorker.ts" : "./records-reader-worker.js";
+  // worker entry electron-vite builds beside index.js.
+  const module = import.meta.url.endsWith(".ts") ? "./recordsReaderWorker.ts" : `./${WORKER_ENTRIES.recordsReader}.js`;
   const created = new Worker(new URL(module, import.meta.url), { workerData: { databasePath: path } });
   created.unref();
   created.on("message", (response: RecordsReaderResponse) => {

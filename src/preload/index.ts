@@ -61,7 +61,7 @@ function sendAiAbort(requestId: string): void {
 /**
  * Starts an invoke-based AI request whose paid call the caller can cancel. The
  * abort may be sent at once: the main handler registers the request before it
- * first awaits, and this window's messages arrive in order (see aiRequests.ts).
+ * first awaits, and this window's messages arrive in order.
  */
 function startAiRequest<T>(channel: string, ...args: unknown[]): AiRequestHandle<T> {
   const requestId = `ai-${nextRequestId++}`;

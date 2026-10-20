@@ -39,8 +39,13 @@ function tsxFiles(dir: string): string[] {
   });
 }
 
-function hasWords(text: string): boolean {
-  return /\p{L}/u.test(text) && !LITERAL_TEXT.has(text.trim());
+// Whether text is words a person reads. A listed literal is not, and is noted in
+// `allowed` so a listed entry nothing uses any more is caught.
+function hasWords(text: string, allowed: Set<string>): boolean {
+  if (!/\p{L}/u.test(text)) return false;
+  if (!LITERAL_TEXT.has(text.trim())) return true;
+  allowed.add(text.trim());
+  return false;
 }
 
 function literalText(node: Node | undefined): string | null {
@@ -52,11 +57,17 @@ function literalText(node: Node | undefined): string | null {
   return null;
 }
 
-function findings(file: string): string[] {
-  const ast = parse(readFileSync(file, "utf8"), { sourceType: "module", plugins: ["jsx", "typescript"] });
+type Scan = { found: string[]; allowed: Set<string> };
+
+function findings(file: string): Scan {
+  return findingsIn(relative(process.cwd(), file), readFileSync(file, "utf8"));
+}
+
+function findingsIn(name: string, source: string): Scan {
+  const ast = parse(source, { sourceType: "module", plugins: ["jsx", "typescript"] });
   const found: string[] = [];
-  const report = (node: Node, text: string) =>
-    found.push(`${relative(process.cwd(), file)}:${node.loc?.start.line}: ${JSON.stringify(text.trim())}`);
+  const allowed = new Set<string>();
+  const report = (node: Node, text: string) => found.push(`${name}:${node.loc?.start.line}: ${JSON.stringify(text.trim())}`);
 
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
@@ -66,13 +77,13 @@ function findings(file: string): string[] {
     if (node === null || typeof node !== "object" || typeof (node as Node).type !== "string") return;
     const current = node as Node;
 
-    if (current.type === "JSXText" && hasWords(current.value as string)) {
+    if (current.type === "JSXText" && hasWords(current.value as string, allowed)) {
       report(current, current.value as string);
     }
     if (current.type === "JSXExpressionContainer" && current.expression) {
       const text = literalText(current.expression as Node);
       // An attribute's braces are judged with the attribute below.
-      if (text !== null && hasWords(text) && !(current as { inAttribute?: boolean }).inAttribute) {
+      if (text !== null && !(current as { inAttribute?: boolean }).inAttribute && hasWords(text, allowed)) {
         report(current, text);
       }
     }
@@ -83,7 +94,7 @@ function findings(file: string): string[] {
         (value as { inAttribute?: boolean }).inAttribute = true;
       }
       const text = value?.type === "JSXExpressionContainer" ? literalText(value.expression as Node) : literalText(value ?? undefined);
-      if (READ_ATTRIBUTES.has(name) && text !== null && hasWords(text)) {
+      if (READ_ATTRIBUTES.has(name) && text !== null && hasWords(text, allowed)) {
         report(current, text);
       }
     }
@@ -94,12 +105,43 @@ function findings(file: string): string[] {
   };
 
   visit(ast.program);
-  return found;
+  return { found, allowed };
 }
+
+const scans = tsxFiles(SOURCE).map(findings);
 
 describe("interface text", () => {
   it("comes from the catalogues, not from JSX literals", () => {
-    const all = tsxFiles(SOURCE).flatMap(findings);
-    expect(all).toEqual([]);
+    expect(scans.flatMap((scan) => scan.found)).toEqual([]);
+  });
+
+  it("lists only literals the interface still shows", () => {
+    const used = new Set(scans.flatMap((scan) => [...scan.allowed]));
+    expect([...LITERAL_TEXT].filter((entry) => !used.has(entry))).toEqual([]);
+  });
+
+  // A scan that stopped seeing JSX would pass the check above on any source.
+  it("rejects words written into JSX in each place it looks", () => {
+    const planted = [
+      "export function Planted({ count }: { count: number }) {",
+      "  return (",
+      '    <section className="planted words" aria-label="Planted region">',
+      "      Planted heading",
+      '      <img alt={"A planted photo"} src="x.png" />',
+      "      {`Planted ${count} words`}",
+      "      <span>BigMouth</span>",
+      "    </section>",
+      "  );",
+      "}",
+    ].join("\n");
+    expect(findingsIn("planted.tsx", planted)).toEqual({
+      found: [
+        'planted.tsx:3: "Planted region"',
+        'planted.tsx:3: "Planted heading"',
+        'planted.tsx:5: "A planted photo"',
+        'planted.tsx:6: "Planted   words"',
+      ],
+      allowed: new Set(["BigMouth"]),
+    });
   });
 });

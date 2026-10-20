@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { themeTokens } from "../appStylesheet";
 
 const electron = vi.hoisted(() => {
   const windows: Array<{ setBackgroundColor: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }> = [];
@@ -68,12 +68,8 @@ describe("theme", () => {
   });
 
   it("uses App.css's --bm-bg in each theme so the frame behind the page never flashes", () => {
-    const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
-    const light = css.slice(css.search(/^:root\s*\{/m));
-    const dark = css.slice(css.indexOf("@media (prefers-color-scheme: dark) {"));
-    const bg = (block: string) => block.match(/--bm-bg:\s*(#[0-9a-f]{6});/i)?.[1]?.toLowerCase();
-    expect(windowBackground(false)).toBe(bg(light));
-    expect(windowBackground(true)).toBe(bg(dark));
+    expect(windowBackground(false)).toBe(themeTokens.light.get("--bm-bg")?.toLowerCase());
+    expect(windowBackground(true)).toBe(themeTokens.dark.get("--bm-bg")?.toLowerCase());
   });
 });
 

@@ -1,10 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { CENTER_MIN, LEFT_MIN, RECORDS_DETAIL_MIN_WIDTH, RECORDS_LIST_WIDTH, RIGHT_MIN } from "@shared/layout";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  CENTER_MIN,
+  DIVIDER,
+  LEFT_MIN,
+  RECORDS_DETAIL_MIN_WIDTH,
+  RECORDS_FILTERS_HEIGHT,
+  RECORDS_LIST_WIDTH,
+  RIGHT_MIN,
+} from "@shared/layout";
+import { RecordsWindow } from "@renderer/records/RecordsWindow";
+import { appCss as css, selectorsOf, styleRules, themeTokens } from "../appStylesheet";
 
 // Load the stylesheet into jsdom and check the values the browser computes,
 // rather than matching the spelling or placement of individual CSS rules.
-const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
 // A computed-style check rather than a text match: the question is what the user
 // actually gets, and a `cursor: pointer` declared later would beat a rule that
 // merely appears in the file.
@@ -39,13 +49,14 @@ describe("App.css disabled cursors", () => {
   });
 });
 
-// App.css restates the pane minimums as literals, "kept in sync" with
-// @shared/layout by comment only — and the window minimum is derived from those
-// constants, so a CSS literal drifting upward makes the window draggable narrow
-// enough to crush a pane. Computed styles rather than a text match: a later rule
-// overriding min-width would beat one that merely appears in the file.
+// App.css restates the shared pane geometry as literals because CSS cannot
+// import it, and the window minimum is derived from the shared constants, so a
+// CSS literal drifting upward makes the window draggable narrow enough to crush
+// a pane. These compare each literal with its constant. Computed styles rather
+// than a text match: a later rule overriding min-width would beat one that
+// merely appears in the file.
 describe("App.css pane minimums match the shared layout", () => {
-  function minWidthOf(className: string): number {
+  function computedPx(className: string, property: "minWidth" | "width"): number {
     const style = document.createElement("style");
     style.textContent = css;
     document.head.appendChild(style);
@@ -54,7 +65,7 @@ describe("App.css pane minimums match the shared layout", () => {
     pane.className = className;
     document.body.appendChild(pane);
 
-    const value = getComputedStyle(pane).minWidth;
+    const value = getComputedStyle(pane)[property];
     pane.remove();
     style.remove();
     return Number.parseFloat(value);
@@ -63,11 +74,101 @@ describe("App.css pane minimums match the shared layout", () => {
   it.each([
     ["pane-left", LEFT_MIN],
     ["pane-center", CENTER_MIN],
+    // The no-post layout, center and right merged, keeps the center's minimum.
+    ["pane-empty", CENTER_MIN],
     ["pane-right", RIGHT_MIN],
     ["records-list-pane", RECORDS_LIST_WIDTH.min],
     ["records-detail-pane", RECORDS_DETAIL_MIN_WIDTH],
   ])("%s uses the shared minimum", (className, expected) => {
-    expect(minWidthOf(className)).toBe(expected);
+    expect(computedPx(className, "minWidth")).toBe(expected);
+  });
+
+  it("draws the divider at the shared width", () => {
+    expect(computedPx("pane-divider", "width")).toBe(DIVIDER);
+  });
+});
+
+// The records window's minimum height adds the filter band's height, which the
+// shared layout states as a sum because the main process sizes the window before
+// any page lays out. The band is whatever rows the records window renders into
+// it, each one control high, between the band's padding and above its bottom
+// line; jsdom lays nothing out, so this sums those parts from the stylesheet.
+describe("App.css records filter band matches the shared layout", () => {
+  // jsdom computes a var() reference as written; resolve it against the
+  // custom properties the element inherits.
+  function resolveVars(element: Element, value: string): string {
+    const computed = getComputedStyle(element);
+    return value.replace(/var\((--[\w-]+)\)/g, (_reference, name: string) => computed.getPropertyValue(name).trim());
+  }
+  const px = (value: string) => {
+    expect(value, "a length in px").toMatch(/^\d+(\.\d+)?px$/);
+    return Number.parseFloat(value);
+  };
+
+  it("adds up to RECORDS_FILTERS_HEIGHT", () => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(createElement(RecordsWindow, { initialListWidth: RECORDS_LIST_WIDTH.default }));
+    document.body.appendChild(host);
+    try {
+      const band = host.querySelector(".records-filters")!;
+      const rows = [...band.children];
+      expect(rows.length).toBeGreaterThan(0);
+      const rowHeights = rows.map((row) => {
+        const controls = row.matches("input, select") ? [row] : [...row.querySelectorAll("input, select")];
+        expect(controls.length, `${row.className} holds the controls that set its height`).toBeGreaterThan(0);
+        return Math.max(...controls.map((control) => px(resolveVars(control, getComputedStyle(control).height))));
+      });
+
+      const computed = getComputedStyle(band);
+      // `gap` is row-gap first; jsdom does not expand the shorthand.
+      const rowGap = px(computed.getPropertyValue("gap").trim().split(/\s+/)[0]!);
+      // jsdom drops a border shorthand holding a var(), so the declared line is
+      // resolved and handed back to it to read the width.
+      const declaredLine = styleRules
+        .filter((rule) => selectorsOf(rule).includes(".records-filters"))
+        .map((rule) => rule.style.getPropertyValue("border-bottom"))
+        .filter((value) => value !== "")
+        .at(-1) ?? "";
+      const probe = document.createElement("div");
+      probe.style.borderBottom = resolveVars(band, declaredLine);
+      const line = px(probe.style.borderBottomWidth);
+
+      const height = px(computed.paddingTop) + px(computed.paddingBottom)
+        + rowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0)
+        + rowGap * (rows.length - 1)
+        + line;
+      expect(height).toBe(RECORDS_FILTERS_HEIGHT);
+    } finally {
+      host.remove();
+      style.remove();
+    }
+  });
+});
+
+// The select chevron is an SVG in a data URI, which cannot read a custom
+// property, so each theme spells its stroke out; it is that theme's muted ink.
+describe("App.css select chevron", () => {
+  function chevronStroke(value: string | undefined): string | null {
+    expect(value, "--bm-select-chevron must be a url()").toMatch(/^url\(.*\)$/s);
+    let url = value!.slice("url(".length, -1).trim();
+    if (/^["']/.test(url)) url = url.slice(1, -1);
+    // Undo the CSS escapes the CSSOM serializes an unquoted url() with.
+    url = url.replace(/\\([0-9a-f]{1,6}\s?|[\s\S])/gi, (_escape, escaped: string) =>
+      /^[0-9a-f]/i.test(escaped) && escaped.trim().length > 0
+        ? String.fromCodePoint(Number.parseInt(escaped.trim(), 16))
+        : escaped);
+    const prefix = "data:image/svg+xml,";
+    expect(url.startsWith(prefix), "the chevron is a URL-encoded SVG").toBe(true);
+    const svg = new DOMParser().parseFromString(decodeURIComponent(url.slice(prefix.length)), "image/svg+xml");
+    return svg.querySelector("path")?.getAttribute("stroke") ?? null;
+  }
+
+  it.each(["light", "dark"] as const)("strokes the %s chevron in that theme's --bm-text-muted", (theme) => {
+    const tokens = themeTokens[theme];
+    expect(chevronStroke(tokens.get("--bm-select-chevron"))?.toLowerCase()).toBe(tokens.get("--bm-text-muted")?.toLowerCase());
   });
 });
 
@@ -95,7 +196,15 @@ describe("App.css button states", () => {
     "meta-field-copy", "meta-field-generate", "btn-generate-all",
     "btn-delete", "asset-btn-delete", "btn-delete-confirm", "btn-new-post-icon",
   ];
-  const namesOne = (selector: string) => FILLED.some((role) => selector.includes(`.${role}`));
+  // Whole class names, so `.btn-delete-confirm` does not also count as `.btn-delete`.
+  const classesIn = (selector: string) => [...selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map(([, name]) => name!);
+  const namesOne = (selector: string) => classesIn(selector).some((name) => FILLED.includes(name));
+
+  // The list is kept by hand, so a renamed or removed button must not linger in it.
+  it("lists only classes the stylesheet styles", () => {
+    const classes = new Set(styleRules.flatMap((rule) => classesIn(rule.selectorText)));
+    expect(FILLED.filter((role) => !classes.has(role))).toEqual([]);
+  });
 
   // A pointer that is down is also over the control, so a pressed rule only ever
   // shows if it beats the hover rule for the same button. Spelling it the same
@@ -247,13 +356,21 @@ describe("App.css selection, focus and hover", () => {
 // each listed site shows its marker and keeps a keyboard path to the whole value.
 // A new cut must be justified and added here, or the text wraps.
 describe("App.css truncation sites", () => {
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
-    selector: selector.replace(/\/\*[\s\S]*?\*\//g, "").trim(),
-    body,
+  // Every style rule, those inside @media included, as its selector list and what it declares.
+  const rules = styleRules.map((rule) => ({
+    selector: selectorsOf(rule).join(", "),
+    declares: (property: string) => rule.style.getPropertyValue(property),
   }));
+  // The overflow on one axis: its own longhand, else the `overflow` shorthand's
+  // value for it (x first, y last).
+  const overflowOn = (rule: (typeof rules)[number], axis: "x" | "y") => {
+    const shorthand = rule.declares("overflow").split(/\s+/);
+    return rule.declares(`overflow-${axis}`) || (axis === "x" ? shorthand[0]! : shorthand.at(-1)!);
+  };
+  const ellipsizes = (rule: (typeof rules)[number]) => rule.declares("text-overflow") === "ellipsis";
 
   it("cuts text only at the reviewed sites", () => {
-    const cut = rules.filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body)).map((rule) => rule.selector);
+    const cut = rules.filter(ellipsizes).map((rule) => rule.selector);
     // Each site, and where its whole value is reached:
     expect(cut).toEqual([
       // Sidebar titles: the selected post's Metadata shows the whole title (or
@@ -288,12 +405,12 @@ describe("App.css truncation sites", () => {
   // Several lines, then an ellipsis: the same inventory for -webkit-line-clamp.
   it("clamps lines only at the reviewed sites", () => {
     const clamped = rules
-      .filter((rule) => /(^|[\s;])-webkit-line-clamp:\s*\d/.test(rule.body))
+      .filter((rule) => !["", "none"].includes(rule.declares("-webkit-line-clamp")))
       .map((rule) => rule.selector);
     // An asset's name beside its thumbnail: its tooltip shows it whole.
     expect(clamped).toEqual([".asset-name"]);
     for (const rule of rules.filter((candidate) => clamped.includes(candidate.selector))) {
-      expect(rule.body, `${rule.selector} must hide what it clamps`).toMatch(/overflow:\s*hidden/);
+      expect(overflowOn(rule, "y"), `${rule.selector} must hide what it clamps`).toBe("hidden");
     }
   });
 
@@ -301,15 +418,15 @@ describe("App.css truncation sites", () => {
   // menu commands clipped with no marker.
   it("marks a cut on a box that can draw the ellipsis", () => {
     const flexCut = rules
-      .filter((rule) => /text-overflow:\s*ellipsis/.test(rule.body) && /display:\s*(inline-)?(flex|grid)/.test(rule.body))
+      .filter((rule) => ellipsizes(rule) && ["flex", "inline-flex", "grid", "inline-grid"].includes(rule.declares("display")))
       .map((rule) => rule.selector);
     expect(flexCut).toEqual([]);
   });
 
   it("never clips a single line without its marker", () => {
     const clipped = rules
-      .filter((rule) => /white-space:\s*nowrap/.test(rule.body) && /overflow(-x)?:\s*(hidden|clip)/.test(rule.body))
-      .filter((rule) => !/text-overflow:\s*ellipsis/.test(rule.body))
+      .filter((rule) => rule.declares("white-space") === "nowrap" && ["hidden", "clip"].includes(overflowOn(rule, "x")))
+      .filter((rule) => !ellipsizes(rule))
       .map((rule) => rule.selector);
     expect(clipped).toEqual([".bm-visually-hidden"]);
   });

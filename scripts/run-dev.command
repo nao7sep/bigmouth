@@ -8,9 +8,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+APP_NAME="BigMouth"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
 RUNTIME_TOKEN="run-dev-$$-$(date +%s)-$RANDOM"
-RENDERER_URL="http://127.0.0.1:26263"
+# The renderer dev server's fixed endpoint. The electron-vite config owns it;
+# a test keeps this copy equal to it.
+RENDERER_HOST="127.0.0.1"
+RENDERER_PORT="26263"
+RENDERER_URL="http://$RENDERER_HOST:$RENDERER_PORT"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -36,7 +41,7 @@ cleanup() {
   local status="$?"
   trap - EXIT
   if node "$RUNTIME_HELPER" is-owner "$RUNTIME_TOKEN" >/dev/null 2>&1; then
-    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" electron "BigMouth" "BigMouth" >/dev/null 2>&1 || true
+    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" "$APP_NAME" >/dev/null 2>&1 || true
   fi
   pause_on_failure "$status"
   exit "$status"
@@ -49,25 +54,24 @@ require_command npm
 
 cd "$REPO_DIR"
 
-log_step "Replacing any existing BigMouth runtime"
+log_step "Replacing any existing $APP_NAME runtime"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop electron "BigMouth" "BigMouth"
-node "$RUNTIME_HELPER" check-endpoint 127.0.0.1 26263
+node "$RUNTIME_HELPER" stop "$APP_NAME"
+node "$RUNTIME_HELPER" check-endpoint "$RENDERER_HOST" "$RENDERER_PORT"
 
 log_step "Installing dependencies"
-npm install
+npm install --no-audit --no-fund
 
-# npm install skips the Electron binary if the package is already at the locked version.
-log_step "Verifying Electron binary"
-if [[ ! -f node_modules/electron/path.txt ]]; then
-  echo "Electron binary missing; downloading..."
-  node node_modules/electron/install.js
-fi
+# Electron's package has no install script: it downloads its binary the first
+# time something requires it, and electron-vite only reads the path that download
+# records. Its installer returns at once when the binary is already there.
+log_step "Ensuring the Electron binary"
+node node_modules/electron/install.js
 
-log_step "Starting BigMouth in development mode"
+log_step "Starting $APP_NAME in development mode"
 npm run dev &
 DEV_PID=$!
 node "$RUNTIME_HELPER" wait-http "$RENDERER_URL" 60000
 node "$RUNTIME_HELPER" wait-process "$REPO_DIR/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" 60000
-log_step "BigMouth is ready at $RENDERER_URL"
+log_step "$APP_NAME is ready at $RENDERER_URL"
 wait "$DEV_PID"

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 
+import { PRELOAD_FILE, WORKER_ENTRIES } from "./src/main/builtEntries";
 import { withCspMeta } from "./src/shared/csp";
 
 // Single source of truth for the app version: package.json. Injected into the
@@ -31,9 +32,9 @@ export default defineConfig({
         // Worker entries stay beside index.js for their owning modules.
         input: {
           index: resolve("src/main/index.ts"),
-          "records-reader-worker": resolve("src/main/core/services/recordsReaderWorker.ts"),
-          "storage-worker": resolve("src/main/storageWorker.ts"),
-          "backup-worker": resolve("src/main/core/services/backupWorker.ts"),
+          [WORKER_ENTRIES.recordsReader]: resolve("src/main/core/services/recordsReaderWorker.ts"),
+          [WORKER_ENTRIES.storage]: resolve("src/main/storageWorker.ts"),
+          [WORKER_ENTRIES.backup]: resolve("src/main/core/services/backupWorker.ts"),
         },
         output: {
           entryFileNames: "[name].js",
@@ -53,7 +54,7 @@ export default defineConfig({
       rollupOptions: {
         output: {
           format: "cjs",
-          entryFileNames: "[name].cjs",
+          entryFileNames: PRELOAD_FILE,
         },
       },
     },

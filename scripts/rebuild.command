@@ -45,22 +45,14 @@ cd "$REPO_DIR"
 log_step "Installing dependencies"
 npm install --no-audit --no-fund
 
-# npm install skips the Electron binary if the package is already at the locked version.
-log_step "Verifying Electron binary"
-if [[ ! -f node_modules/electron/path.txt ]]; then
-  echo "Electron binary missing; downloading..."
-  node node_modules/electron/install.js
-fi
-
 # Remove stale output so a build that fails to emit a file can't be masked by a
 # leftover artifact from a previous run.
 log_step "Cleaning previous build"
 rm -rf out "$OUT_DIR"
 
 # `npm run build` is the one definition of the release build (type-check the
-# shipped sources, then bundle). Re-implementing its steps here meant a change to
-# the pipeline — which CI runs through `npm run dist` — silently left these
-# launchers running the old one.
+# shipped sources, then bundle), which CI runs through `npm run dist`; calling
+# it keeps this launcher on the same pipeline.
 log_step "Type-checking and building production sources"
 npm run build
 
@@ -79,6 +71,6 @@ fi
 
 log_step "Launching the packaged app"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop electron "BigMouth" "BigMouth"
+node "$RUNTIME_HELPER" stop "$APP_NAME"
 open -n "$APP_BUNDLE"
-node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/BigMouth" 30000
+node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 30000

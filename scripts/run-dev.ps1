@@ -47,9 +47,14 @@ function Invoke-Native {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
+$appName = "BigMouth"
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
 $runtimeToken = [guid]::NewGuid().ToString("N")
-$rendererUrl = "http://127.0.0.1:26263"
+# The renderer dev server's fixed endpoint. The electron-vite config owns it;
+# a test keeps this copy equal to it.
+$rendererHost = "127.0.0.1"
+$rendererPort = "26263"
+$rendererUrl = "http://${rendererHost}:$rendererPort"
 
 try {
     Set-Utf8Console
@@ -58,29 +63,28 @@ try {
 
     Set-Location $repoDir
 
-    Write-Step "Replacing any existing BigMouth runtime"
+    Write-Step "Replacing any existing $appName runtime"
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "electron", "BigMouth", "BigMouth")
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", "127.0.0.1", "26263")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", $appName)
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", $rendererHost, $rendererPort)
 
     Write-Step "Installing dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
+    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
-    # npm install skips the Electron binary if the package is already at the locked version.
-    Write-Step "Verifying Electron binary"
-    if (-not (Test-Path "node_modules/electron/path.txt")) {
-        Write-Host "Electron binary missing; downloading..."
-        Invoke-Native -FilePath "node" -ArgumentList @("node_modules/electron/install.js")
-    }
+    # Electron's package has no install script: it downloads its binary the first
+    # time something requires it, and electron-vite only reads the path that
+    # download records. Its installer returns at once when the binary is there.
+    Write-Step "Ensuring the Electron binary"
+    Invoke-Native -FilePath "node" -ArgumentList @("node_modules/electron/install.js")
 
-    Write-Step "Starting BigMouth in development mode"
+    Write-Step "Starting $appName in development mode"
     $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "dev") -NoNewWindow -PassThru
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $rendererUrl, "60000")
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", (Join-Path $repoDir "node_modules/electron/dist/electron.exe"), "60000")
-    Write-Step "BigMouth is ready at $rendererUrl"
+    Write-Step "$appName is ready at $rendererUrl"
     $devProcess.WaitForExit()
     if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
-        throw "BigMouth development runtime failed with exit code $($devProcess.ExitCode)."
+        throw "$appName development runtime failed with exit code $($devProcess.ExitCode)."
     }
 }
 catch {
@@ -91,7 +95,7 @@ catch {
 finally {
     & node $runtimeHelper is-owner $runtimeToken *> $null
     if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken electron "BigMouth" "BigMouth" *> $null
+        & node $runtimeHelper stop-if-owner $runtimeToken $appName *> $null
         Read-Host "Press Enter to close" | Out-Null
     }
 }

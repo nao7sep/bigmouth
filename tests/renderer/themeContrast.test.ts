@@ -1,28 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { themeTokens } from "../appStylesheet";
 
 // Every color pair the stylesheet draws keeps high contrast in both themes,
 // by this app's own floor: 4.5:1 for text, 3:1 for the boundaries that
-// alone identify a control. The light tokens live in the top-level :root block;
-// the dark tokens in the :root block inside @media (prefers-color-scheme: dark).
-const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
+// alone identify a control.
 
 type Rgb = [number, number, number];
 
-function themeBlock(theme: "light" | "dark"): string {
-  if (theme === "light") {
-    const start = css.search(/^:root\s*\{/m);
-    return css.slice(css.indexOf("{", start), css.indexOf("\n}", start));
-  }
-  const media = css.indexOf("@media (prefers-color-scheme: dark) {");
-  expect(media, "the dark theme must be a prefers-color-scheme block").toBeGreaterThanOrEqual(0);
-  const start = css.indexOf("  :root {", media);
-  return css.slice(css.indexOf("{", start), css.indexOf("\n  }", start));
-}
-
-function hexOf(block: string, token: string): Rgb {
-  const value = block.match(new RegExp(`${token.replaceAll("-", "\\-")}\\s*:\\s*(#[0-9a-f]{6})\\s*;`, "i"))?.[1];
-  expect(value, `${token} must be an opaque six-digit hex color`).toBeTruthy();
+function hexOf(tokens: ReadonlyMap<string, string>, token: string): Rgb {
+  const value = tokens.get(token);
+  expect(value, `${token} must be an opaque six-digit hex color`).toMatch(/^#[0-9a-f]{6}$/i);
   return [1, 3, 5].map((offset) => Number.parseInt(value!.slice(offset, offset + 2), 16)) as Rgb;
 }
 
@@ -41,10 +28,10 @@ function contrast(first: Rgb, second: Rgb): number {
 }
 
 const SURFACES = ["--bm-bg", "--bm-surface", "--bm-surface-muted", "--bm-surface-raised", "--bm-panel"];
-const SYNTAX = [
-  "meta", "keyword", "atom", "literal", "string", "regexp", "definition",
-  "local", "type", "class", "special", "property", "comment", "invalid",
-].map((name) => `--bm-syntax-${name}`);
+// Every syntax token the light theme declares; the dark theme must declare the same set.
+const syntaxIn = (tokens: ReadonlyMap<string, string>) =>
+  [...tokens.keys()].filter((token) => token.startsWith("--bm-syntax-")).sort();
+const SYNTAX = syntaxIn(themeTokens.light);
 
 const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ...["--bm-text", "--bm-text-soft", "--bm-text-muted", "--bm-text-faint", "--bm-accent-fg"].flatMap(
@@ -93,19 +80,24 @@ const BOUNDARY_PAIRS: ReadonlyArray<[string, string]> = [
 ];
 
 describe("theme token contrast", () => {
+  it("gives both themes the same syntax tokens", () => {
+    expect(SYNTAX.length).toBeGreaterThan(0);
+    expect(syntaxIn(themeTokens.dark)).toEqual(SYNTAX);
+  });
+
   for (const theme of ["light", "dark"] as const) {
     it(`keeps text at 4.5:1 or more in the ${theme} theme`, () => {
-      const block = themeBlock(theme);
+      const tokens = themeTokens[theme];
       for (const [foreground, background] of TEXT_PAIRS) {
-        expect(contrast(hexOf(block, foreground), hexOf(block, background)), `${foreground} on ${background}`)
+        expect(contrast(hexOf(tokens, foreground), hexOf(tokens, background)), `${foreground} on ${background}`)
           .toBeGreaterThanOrEqual(4.5);
       }
     });
 
     it(`keeps form-field outlines and focus rings at 3:1 or more in the ${theme} theme`, () => {
-      const block = themeBlock(theme);
+      const tokens = themeTokens[theme];
       for (const [foreground, background] of BOUNDARY_PAIRS) {
-        expect(contrast(hexOf(block, foreground), hexOf(block, background)), `${foreground} on ${background}`)
+        expect(contrast(hexOf(tokens, foreground), hexOf(tokens, background)), `${foreground} on ${background}`)
           .toBeGreaterThanOrEqual(3);
       }
     });

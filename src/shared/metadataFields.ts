@@ -54,6 +54,14 @@ export const GENERATED_SLUG_PATTERN = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 export const GENERATED_SLUG_MAX_LENGTH = 60;
 export const GENERATED_SLUG = new RegExp(GENERATED_SLUG_PATTERN);
 
+/**
+ * How many tags the generator asks for and accepts, and how long each may be.
+ * The JSON schema, the built-in guidance that states the rule and the check of
+ * the response all read these.
+ */
+export const GENERATED_TAG_COUNT = { min: 5, max: 8 } as const;
+export const GENERATED_TAG_MAX_LENGTH = 40;
+
 /** What an author may type. Deliberately looser than what the model is asked for. */
 export const ACCEPTED_SLUG_MAX_LENGTH = 200;
 export const ACCEPTED_SLUG = /^(?=.*[a-zA-Z0-9])[a-zA-Z0-9_-]+$/;

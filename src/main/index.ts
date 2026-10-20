@@ -28,9 +28,10 @@ import { anyAiRequestRunning } from "./ipc/aiRequests.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
 import { configureImageDerivatives, sweepImageDerivatives } from "./imageDerivatives.js";
 import { installApplicationMenu } from "./menu.js";
+import { APP_NAME } from "@shared/appName";
 import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
 
-app.setName("BigMouth");
+app.setName(APP_NAME);
 
 // The stores below deliberately keep their indexes and write-behind buffers in
 // process memory. A second process over the same workspace could therefore make

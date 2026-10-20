@@ -46,6 +46,7 @@ vi.mock("@main/storageAccess.js", () => ({
 import type { Middleware } from "@anthropic-ai/sdk";
 import { ClaudeProvider, type ClaudeRequest } from "@main/core/ai/claude.js";
 import { buildClaudeParams, MAX_TOKENS } from "@main/core/ai/claudeRequest.js";
+import { MAX_ATTEMPTS, RETRY_DELAYS_MS } from "@main/core/ai/retryPolicy.js";
 
 const CALL = { workspaceId: "ws", postId: "post", purpose: "analysis" } as const;
 
@@ -219,14 +220,14 @@ describe("retries", () => {
     ]);
   });
 
-  it("gives up after three attempts, with three rows", async () => {
+  it("gives up after its last attempt, with a row for each", async () => {
     sdk.stream.mockImplementation(() => settled({ error: refused(503) }));
     const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
     const rejection = expect(pending).rejects.toThrow("503 from the provider");
-    await vi.advanceTimersByTimeAsync(2_000 + 5_000);
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0));
     await rejection;
-    expect(sdk.stream).toHaveBeenCalledTimes(3);
-    expect(recorded.calls).toHaveLength(3);
+    expect(sdk.stream).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    expect(recorded.calls).toHaveLength(MAX_ATTEMPTS);
   });
 
   it("resends a refused connection", async () => {
@@ -237,7 +238,7 @@ describe("retries", () => {
       .mockReturnValueOnce(settled({ error: refusedConnection }))
       .mockReturnValueOnce(settled({ message: message({ parsed_output: {} }) }));
     const pending = new ClaudeProvider("k", req("m"), CALL).generateJson("s", "u", { type: "object" });
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0]);
     await expect(pending).resolves.toEqual({});
     expect(recorded.calls).toHaveLength(2);
   });
@@ -270,7 +271,7 @@ describe("retries", () => {
       .mockReturnValueOnce(settled({ error: refused(429) }))
       .mockReturnValueOnce(settled({ message: message({ text: "fine" }) }));
     const { finished } = new ClaudeProvider("k", req("m"), CALL).generateTextStream("s", "u", () => {});
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0]);
     await expect(finished).resolves.toBe("fine");
     expect(recorded.calls).toHaveLength(2);
 

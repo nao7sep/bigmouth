@@ -74,7 +74,7 @@ describe("stored-record signal", () => {
   });
 });
 
-// store-recovery-conventions: records.sqlite3's format version.
+// records.sqlite3's format version, which tells a build whether it can read the database.
 describe("records database format version", () => {
   function userVersion(file: string): number {
     const db = new DatabaseSync(file);

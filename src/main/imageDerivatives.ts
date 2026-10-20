@@ -1,11 +1,10 @@
 /**
  * Thumbnails and display images of attached pictures.
  *
- * Why they exist: the Assets tab and the Preview used to show every image at full
- * size, so a post of camera photos decoded tens of megapixels to paint 52 px
- * cards. Each still image now gets a 360 px thumbnail for the Assets tab and a
- * 1600 px display image for the Preview (longest edge, WebP quality 75, the same
- * sizes as ChaChat). An animated GIF or WebP keeps its original, streamed,
+ * Why they exist: shown at full size, a post of camera photos would decode tens
+ * of megapixels to paint 52 px cards. Each still image gets a 360 px thumbnail
+ * for the Assets tab and a 1600 px display image for the Preview (longest edge,
+ * WebP quality 75). An animated GIF or WebP keeps its original, streamed,
  * because a resize would drop its animation; other files show their file-type
  * tile. An APNG or an AVIF sequence, which sharp reads as one frame, gets a still
  * rendition of its first frame: rare in posts, and accepted.

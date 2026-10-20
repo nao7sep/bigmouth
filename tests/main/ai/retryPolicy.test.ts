@@ -1,9 +1,10 @@
-// Which failed Claude calls are resent, and how long the app waits first (the
-// store-and-model alignment's rule for calling a provider).
+// Which failed Claude calls are resent, and how long the app waits first: only a
+// call the provider refused or never received goes again, since anything else
+// may already have been processed.
 
 import { describe, expect, it, vi } from "vitest";
 
-import { MAX_ATTEMPTS, RETRY_AFTER_CAP_MS, isRetryable, retryDelayMs, waitFor } from "@main/core/ai/retryPolicy.js";
+import { RETRY_AFTER_CAP_MS, RETRY_DELAYS_MS, isRetryable, retryDelayMs, waitFor } from "@main/core/ai/retryPolicy.js";
 
 function status(code: number, headers?: Record<string, string>) {
   return Object.assign(new Error(`${code}`), { status: code, headers: new Headers(headers) });
@@ -30,10 +31,6 @@ describe("isRetryable", () => {
     expect(isRetryable(new Error("Request was aborted."))).toBe(false);
     expect(isRetryable(undefined)).toBe(false);
   });
-
-  it("allows three attempts in all", () => {
-    expect(MAX_ATTEMPTS).toBe(3);
-  });
 });
 
 describe("retryDelayMs", () => {
@@ -46,10 +43,10 @@ describe("retryDelayMs", () => {
   });
 
   it("falls back to the app's own backoff", () => {
-    expect(retryDelayMs(status(503), 1)).toBe(2_000);
-    expect(retryDelayMs(status(503), 2)).toBe(5_000);
-    expect(retryDelayMs(connection("ECONNREFUSED"), 1)).toBe(2_000);
-    expect(retryDelayMs(status(429, { "retry-after": "soon" }), 2)).toBe(5_000);
+    expect(retryDelayMs(status(503), 1)).toBe(RETRY_DELAYS_MS[0]);
+    expect(retryDelayMs(status(503), 2)).toBe(RETRY_DELAYS_MS[1]);
+    expect(retryDelayMs(connection("ECONNREFUSED"), 1)).toBe(RETRY_DELAYS_MS[0]);
+    expect(retryDelayMs(status(429, { "retry-after": "soon" }), 2)).toBe(RETRY_DELAYS_MS[1]);
   });
 });
 

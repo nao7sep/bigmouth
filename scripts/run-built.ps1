@@ -50,15 +50,15 @@ try {
 
     $builtAt = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
     & node $runtimeHelper claim $runtimeToken
-    & node $runtimeHelper stop electron "BigMouth" "BigMouth"
-    if ($LASTEXITCODE -ne 0) { throw "Could not replace the existing BigMouth runtime." }
+    & node $runtimeHelper stop $appName
+    if ($LASTEXITCODE -ne 0) { throw "Could not replace the existing $appName runtime." }
     Write-Step "Launching the existing packaged app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
     # GUI app: launch non-blocking via Start-Process.
     Start-Process -FilePath $exePath | Out-Null
     & node $runtimeHelper wait-process $exePath 30000
-    if ($LASTEXITCODE -ne 0) { throw "BigMouth did not start." }
+    if ($LASTEXITCODE -ne 0) { throw "$appName did not start." }
 }
 catch {
     Write-Host ""

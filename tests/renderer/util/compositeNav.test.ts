@@ -9,9 +9,9 @@ import {
 
 // These are the pure navigation helpers behind every composite control. The
 // DOM-facing behaviour they enable (roving focus, focus landing after a move,
-// type-ahead actually moving the cursor, the menu's focus return) is DOM-only
-// and verified by manual QA — see the README/plan. Here we test only the
-// arithmetic and string matching, which is where the bugs hide.
+// type-ahead actually moving the cursor, the menu's focus return) belongs to
+// the components that use them. Here we test only the arithmetic and string
+// matching, which is where the bugs hide.
 
 describe("nextIndex", () => {
   it("steps down and up within bounds", () => {

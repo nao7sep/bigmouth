@@ -11,6 +11,16 @@
 export type NavDirection = -1 | 1;
 
 /**
+ * One viewport's worth of rows for PageUp/PageDown. Lists scroll and their rows
+ * are of a nearly fixed height, so a constant step is the conventional
+ * approximation.
+ */
+export const PAGE_STEP = 10;
+
+/** How long a pause in typing starts a new type-ahead search. */
+export const TYPE_AHEAD_RESET_MS = 700;
+
+/**
  * Next index when moving the active cursor by `direction` (-1 up, +1 down)
  * through a list of `length` items, clamped to the ends — stop-at-ends, no
  * wrap (the conventional list/tablist default). `current` is the current index,

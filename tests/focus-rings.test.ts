@@ -8,24 +8,27 @@
 // analysis and imaging results, the export preview and the message window's body
 // all fell back to the browser's own ring that way.
 //
-// Every place this app makes something focusable is found here by its text, not
-// from memory, and each has to be one of three things: a control or item, which
-// may ring; a container the covering rule in App.css reaches; or a site listed
-// below with the reason it is neither. A new one that is none of these fails.
+// Every place this app makes something focusable is found here in its syntax
+// tree, not from memory, and each has to be one of three things: a control or
+// item, which may ring; a container the covering rule in App.css reaches; or a
+// site listed below with the reason it is neither. A new one that is none of
+// these fails. Stylesheets are read through the CSS object model, and whether a
+// rule styles a focused container is decided by matching it against one.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { parse } from "@babel/parser";
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..");
 const SOURCE_DIR = "src";
 const COVERING_STYLESHEET = "src/renderer/src/App.css";
 
-// Focus sites the text alone cannot place, and why each is not a ringing container.
-// Each entry covers only the one kind of site it explains, so anything else added
-// to the same file is still placed on its own merits.
-const EXPLAINED: Record<string, { kind: Site["kind"]; reason: string }> = {
-};
+// Focus sites the syntax alone cannot place, and why each is not a ringing
+// container. Each entry covers only the one kind of site it explains, so anything
+// else added to the same file is still placed on its own merits.
+const EXPLAINED: Explained = {};
 
 // A composite that owns its items, or a region that scrolls on their behalf.
 const CONTAINER_ROLES = [
@@ -39,128 +42,273 @@ const ITEM_ROLES = [
   "separator", "slider", "spinbutton", "textbox", "combobox",
 ];
 const CONTROL_TAGS = ["button", "a", "input", "select", "textarea", "summary"];
+const PASSIVE_SCROLL_REGION = "data-passive-scroll-region";
 
-const FOCUS_SITE =
-  /tabIndex\s*=\s*[{"']|tabindex\s*=\s*["'{]|tabIndex\s*:|\.tabIndex\s*=|setAttribute\(\s*["']tabindex/g;
-// A hidden outline, in the three places a site can say so: Tailwind's two
-// spellings (`outline-none`, and v4's `outline-hidden`, which keeps a transparent
-// one for forced-colors mode) and an inline style.
-const OUTLINE_OFF =
-  /(^|[\s"'`])(focus:|focus-visible:)?outline-(none|hidden)\b|outline\s*:\s*["']?none\b/;
-const CONTAINER_RING =
-  /(^|[\s"'`])(focus:|focus-visible:)(ring\b|ring-(?!0\b)|outline-(?!(none|hidden|0)\b))/;
+// Class names that hide or draw an outline: Tailwind's two spellings of a hidden
+// one (`outline-none`, and v4's `outline-hidden`, which keeps a transparent one
+// for forced-colors mode), and its focus ring and outline utilities.
+const OUTLINE_OFF_CLASS = /^(focus:|focus-visible:)?outline-(none|hidden)$/;
+const CONTAINER_RING_CLASS = /^(focus|focus-visible):(ring|ring-(?!0$)\S+|outline-(?!(none|hidden|0)$)\S+)$/;
 
-type Site = { file: string; line: number; kind: "attribute" | "object" | "dom"; context: string };
+// What a focus site says about the element it makes focusable.
+type Target = {
+  // An intrinsic element's tag; a component's own element is not known here.
+  tag?: string;
+  role?: string;
+  classes: string[];
+  attributes: string[];
+  inlineOutlineOff: boolean;
+};
+type Site = { file: string; line: number; kind: "attribute" | "object" | "dom"; target: Target };
+type Scan = { file: string; sites: Site[]; styles: string[] };
+type Explained = Record<string, { kind: Site["kind"]; reason: string }>;
+type Placement = "control" | "covered" | "suppressed" | "explained";
 
-function sourceFiles(dir: string): string[] {
+// ---------------------------------------------------------------- source scan
+
+type AstNode = { type: string; loc?: { start: { line: number } }; [key: string]: unknown };
+
+const NOT_CHILDREN = new Set(["loc", "start", "end", "extra", "leadingComments", "trailingComments", "innerComments"]);
+
+function isNode(value: unknown): value is AstNode {
+  return value !== null && typeof value === "object" && typeof (value as AstNode).type === "string";
+}
+
+function walk(node: unknown, visit: (node: AstNode) => void): void {
+  if (Array.isArray(node)) {
+    for (const child of node) walk(child, visit);
+    return;
+  }
+  if (!isNode(node)) return;
+  visit(node);
+  for (const [key, child] of Object.entries(node)) if (!NOT_CHILDREN.has(key)) walk(child, visit);
+}
+
+function lineOf(node: AstNode): number {
+  return node.loc?.start.line ?? 0;
+}
+
+// A literal's text as an HTML parser would receive it; a template's
+// substitutions are left out.
+function literalText(node: AstNode): string | undefined {
+  if (node.type === "StringLiteral") return node.value as string;
+  if (node.type === "TemplateLiteral") {
+    return (node.quasis as Array<{ value: { cooked: string } }>).map((quasi) => quasi.value.cooked).join("");
+  }
+  return undefined;
+}
+
+// The one value an attribute or property always has, if it is written as a literal.
+function staticString(node: unknown): string | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.type === "JSXExpressionContainer") return staticString(node.expression);
+  if (node.type === "TemplateLiteral" && (node.expressions as unknown[]).length > 0) return undefined;
+  return literalText(node);
+}
+
+// Every class name an expression can produce, a conditional's branches included.
+function classTokens(node: unknown): string[] {
+  const tokens: string[] = [];
+  walk(node, (current) => {
+    const text =
+      current.type === "StringLiteral" ? (current.value as string)
+      : current.type === "TemplateElement" ? (current.value as { cooked: string }).cooked
+      : undefined;
+    if (text) tokens.push(...text.split(/\s+/).filter(Boolean));
+  });
+  return tokens;
+}
+
+// An inline style object that switches the outline off.
+function inlineOutlineOff(node: unknown): boolean {
+  const style = isNode(node) && node.type === "JSXExpressionContainer" ? node.expression : node;
+  if (!isNode(style) || style.type !== "ObjectExpression") return false;
+  return [...properties(style)].some(
+    ([name, value]) => ["outline", "outlineStyle"].includes(name) && staticString(value)?.trim().split(/\s+/)[0] === "none",
+  );
+}
+
+function keyName(node: AstNode): string | undefined {
+  if (node.computed) return undefined;
+  const key = node.key as AstNode;
+  if (key.type === "Identifier") return key.name as string;
+  if (key.type === "StringLiteral") return key.value as string;
+  return undefined;
+}
+
+function properties(object: AstNode): Map<string, AstNode> {
+  const found = new Map<string, AstNode>();
+  for (const property of object.properties as AstNode[]) {
+    const name = property.type === "ObjectProperty" ? keyName(property) : undefined;
+    if (name !== undefined) found.set(name, property.value as AstNode);
+  }
+  return found;
+}
+
+function isTabIndex(name: string | undefined): boolean {
+  return name?.toLowerCase() === "tabindex";
+}
+
+function jsxTarget(element: AstNode): Target {
+  const name = element.name as AstNode;
+  const attributes = new Map<string, AstNode | null>();
+  for (const attribute of element.attributes as AstNode[]) {
+    const id = attribute.name as AstNode | undefined;
+    if (attribute.type === "JSXAttribute" && id?.type === "JSXIdentifier") {
+      attributes.set(id.name as string, attribute.value as AstNode | null);
+    }
+  }
+  return {
+    // JSX treats a lower-case name as the element itself, any other as a component.
+    tag: name.type === "JSXIdentifier" && /^[a-z]/.test(name.name as string) ? (name.name as string) : undefined,
+    role: staticString(attributes.get("role")),
+    classes: classTokens(attributes.get("className") ?? attributes.get("class")),
+    attributes: [...attributes.keys()],
+    inlineOutlineOff: inlineOutlineOff(attributes.get("style")),
+  };
+}
+
+function objectTarget(object: AstNode): Target {
+  const props = properties(object);
+  return {
+    role: staticString(props.get("role")),
+    classes: classTokens(props.get("className")),
+    attributes: [...props.keys()],
+    inlineOutlineOff: inlineOutlineOff(props.get("style")),
+  };
+}
+
+function htmlTarget(element: Element): Target {
+  const style = (element as HTMLElement).style;
+  return {
+    tag: element.localName,
+    role: element.getAttribute("role") ?? undefined,
+    classes: [...element.classList],
+    attributes: element.getAttributeNames(),
+    inlineOutlineOff: ["outline", "outline-style"].some(
+      (property) => style?.getPropertyValue(property).trim().split(/\s+/)[0] === "none",
+    ),
+  };
+}
+
+const htmlDocument = new JSDOM("").window.document;
+
+// A page the main process writes out as a string never loads the app's
+// stylesheet; whatever elements and <style> it carries are found by parsing it.
+function htmlIn(text: string): DocumentFragment {
+  const template = htmlDocument.createElement("template");
+  template.innerHTML = text;
+  return template.content;
+}
+
+function scanScript(file: string, text: string): Scan {
+  // A .ts file may hold `<T>value` casts, which JSX would read as tags.
+  const plugins: Array<"jsx" | "typescript"> = file.endsWith(".ts") ? ["typescript"] : ["jsx", "typescript"];
+  const ast = parse(text, { sourceType: "module", plugins });
+  const sites: Site[] = [];
+  const styles: string[] = [];
+  walk(ast.program, (node) => {
+    if (node.type === "JSXOpeningElement") {
+      for (const attribute of node.attributes as AstNode[]) {
+        const id = attribute.name as AstNode | undefined;
+        if (attribute.type === "JSXAttribute" && id?.type === "JSXIdentifier" && isTabIndex(id.name as string)) {
+          sites.push({ file, line: lineOf(attribute), kind: "attribute", target: jsxTarget(node) });
+        }
+      }
+    } else if (node.type === "ObjectExpression") {
+      for (const property of node.properties as AstNode[]) {
+        if (property.type === "ObjectProperty" && isTabIndex(keyName(property))) {
+          sites.push({ file, line: lineOf(property), kind: "object", target: objectTarget(node) });
+        }
+      }
+    } else if (node.type === "AssignmentExpression") {
+      const left = node.left as AstNode;
+      if (left.type === "MemberExpression" && !left.computed && isTabIndex((left.property as AstNode).name as string)) {
+        sites.push({ file, line: lineOf(node), kind: "dom", target: { classes: [], attributes: [], inlineOutlineOff: false } });
+      }
+    } else if (node.type === "CallExpression") {
+      const callee = node.callee as AstNode;
+      const [name] = node.arguments as AstNode[];
+      if (
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        (callee.property as AstNode).name === "setAttribute" &&
+        name &&
+        isTabIndex(staticString(name))
+      ) {
+        sites.push({ file, line: lineOf(node), kind: "dom", target: { classes: [], attributes: [], inlineOutlineOff: false } });
+      }
+    } else {
+      const text = literalText(node);
+      if (text === undefined) return;
+      const page = htmlIn(text);
+      for (const element of page.querySelectorAll("[tabindex]")) {
+        sites.push({ file, line: lineOf(node), kind: "attribute", target: htmlTarget(element) });
+      }
+      for (const style of page.querySelectorAll("style")) styles.push(style.textContent ?? "");
+    }
+  });
+  return { file, sites: sites.sort((a, b) => a.line - b.line), styles };
+}
+
+function scanHtml(file: string, text: string): Scan {
+  const dom = new JSDOM(text, { includeNodeLocations: true });
+  const { document } = dom.window;
+  return {
+    file,
+    sites: [...document.querySelectorAll("[tabindex]")].map((element) => ({
+      file,
+      line: dom.nodeLocation(element)?.startLine ?? 0,
+      kind: "attribute" as const,
+      target: htmlTarget(element),
+    })),
+    styles: [...document.querySelectorAll("style")].map((style) => style.textContent ?? ""),
+  };
+}
+
+function scanFile(file: string, text: string): Scan {
+  return file.endsWith(".html") ? scanHtml(file, text) : scanScript(file, text);
+}
+
+function filesUnder(dir: string, wanted: (name: string) => boolean): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) return sourceFiles(path);
-    return /\.(tsx?|jsx?|html)$/.test(name) && !/\.(test|spec)\./.test(name) ? [path] : [];
+    if (statSync(path).isDirectory()) return filesUnder(path, wanted);
+    return wanted(name) ? [path] : [];
   });
 }
 
-// From a match inside a JSX or HTML opening tag, the whole tag; from an object key,
-// the whole object. Braces are counted so an arrow function's `=>` or a nested
-// object does not end either one early.
-function enclosing(text: string, at: number, open: string, close: string): string {
-  let depth = 0;
-  let start = at;
-  for (; start > 0; start--) {
-    const c = text.charAt(start);
-    if (c === "}") depth++;
-    else if (c === "{") {
-      if (depth === 0 && open === "{") break;
-      depth--;
-    } else if (open === "<" && depth === 0 && c === "<" && /[A-Za-z]/.test(text.charAt(start + 1))) break;
-  }
-  depth = 0;
-  let end = at;
-  for (; end < text.length; end++) {
-    const c = text.charAt(end);
-    if (c === "{") depth++;
-    else if (c === "}") {
-      if (depth === 0 && close === "}") break;
-      depth--;
-    } else if (close === ">" && depth === 0 && c === ">" && text.charAt(end - 1) !== "=") break;
-  }
-  return text.slice(start, end + 1);
+// ---------------------------------------------------------------- stylesheets
+
+type Rule = { selector: string; style: CSSStyleDeclaration; layered: boolean };
+
+const cssWindow = new JSDOM("").window;
+
+function cssRules(css: string): Rule[] {
+  const element = cssWindow.document.createElement("style");
+  element.textContent = css;
+  cssWindow.document.head.append(element);
+  const rules = flatten(element.sheet!.cssRules, false);
+  element.remove();
+  return rules;
 }
 
-// Comments are blanked, newlines kept, so prose that mentions `tabIndex={-1}` is
-// not a site and every real one keeps its line number. Only where a comment can
-// only be a comment: a whole-line `//`, blanked first, then a block that opens at
-// the start of a line or as JSX's `{/*`. A `/*` anywhere else — inside a `//`
-// line's prose, or a string — would otherwise open a comment that swallows real
-// code up to the next `*/`, and every site in it with it.
-function withoutComments(text: string): string {
-  const blank = (s: string) => s.replace(/[^\n]/g, " ");
-  return text
-    .replace(/^[ \t]*\/\/.*$/gm, blank)
-    .replace(/(^[ \t]*|\{)(\/\*[\s\S]*?\*\/)/gm, (_all, lead: string, body: string) => lead + blank(body));
-}
-
-function focusSites(): Site[] {
-  return sourceFiles(join(ROOT, SOURCE_DIR)).flatMap((path) => {
-    const text = withoutComments(readFileSync(path, "utf8"));
-    const file = relative(ROOT, path);
-    return [...text.matchAll(FOCUS_SITE)].map((match) => {
-      const at = match.index ?? 0;
-      const token = match[0];
-      const line = text.slice(0, at).split("\n").length;
-      if (token.startsWith(".") || token.startsWith("setAttribute")) {
-        return { file, line, kind: "dom" as const, context: "" };
-      }
-      if (token.startsWith("tabIndex") && token.includes(":")) {
-        return { file, line, kind: "object" as const, context: enclosing(text, at, "{", "}") };
-      }
-      return { file, line, kind: "attribute" as const, context: enclosing(text, at, "<", ">") };
-    });
+function flatten(list: CSSRuleList, layered: boolean): Rule[] {
+  return [...list].flatMap((rule): Rule[] => {
+    if (rule instanceof cssWindow.CSSStyleRule) return [{ selector: rule.selectorText, style: rule.style, layered }];
+    if (rule instanceof cssWindow.CSSGroupingRule) {
+      return flatten((rule as CSSGroupingRule).cssRules, layered || rule instanceof cssWindow.CSSLayerBlockRule);
+    }
+    return [];
   });
-}
-
-function roleOf(context: string): string | undefined {
-  return context.match(/role\s*[=:]\s*\{?\s*["']([\w-]+)["']/)?.[1];
-}
-
-// The container's own class names, so a stylesheet rule that rings it by class —
-// not by role — is caught as well.
-function classesOf(context: string): string[] {
-  const value =
-    context.match(/className\s*=\s*\{?\s*[`"']([^`"']*)/)?.[1] ??
-    context.match(/class\s*=\s*"([^"]*)"/)?.[1] ??
-    "";
-  return value.split(/\s+/).filter((name) => /^[A-Za-z_][\w-]*$/.test(name));
-}
-
-function placement(site: Site): "control" | "covered" | "suppressed" | "explained" | undefined {
-  if (site.kind !== "dom") {
-    const tag = site.context.match(/^<([A-Za-z][\w.]*)/)?.[1];
-    const role = roleOf(site.context);
-    if (tag && CONTROL_TAGS.includes(tag)) return "control";
-    if (role && ITEM_ROLES.includes(role)) return "control";
-    if (role && CONTAINER_ROLES.includes(role)) return "covered";
-    if (site.context.includes("data-passive-scroll-region")) return "covered";
-    if (OUTLINE_OFF.test(site.context)) return "suppressed";
-    if (suppressedByClass(site.context)) return "suppressed";
-  }
-  return EXPLAINED[site.file]?.kind === site.kind ? "explained" : undefined;
-}
-
-type Rule = { selector: string; body: string };
-
-function rules(css: string): Rule[] {
-  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  return [...bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-    selector: (m[1] ?? "").trim().replace(/\s+/g, " "),
-    body: m[2] ?? "",
-  }));
 }
 
 // The element each selector in a list actually styles: its last compound, after
 // any combinator. Focus on a container may still paint its active row —
 // `[role="listbox"]:focus-visible .row` styles the row — so only a selector whose
-// subject is itself a focused container counts against it.
+// subject is itself the focused container counts against it. The CSS object
+// model gives a rule's selector only as text, so the list and its combinators are
+// split here, outside any brackets or parentheses.
 function subjects(selector: string): string[] {
   const list: string[] = [];
   let depth = 0;
@@ -188,140 +336,241 @@ function subjects(selector: string): string[] {
   });
 }
 
+const probeDocument = new JSDOM("<!doctype html><body></body>").window.document;
+
+// The target as an element on a page, for a selector engine to match.
+function probe(target: Target, withClasses: boolean): HTMLElement {
+  const element = probeDocument.createElement(target.tag ?? "div");
+  for (const name of target.attributes) if (name.startsWith("data-")) element.setAttribute(name, "");
+  if (target.role) element.setAttribute("role", target.role);
+  if (withClasses && target.classes.length) element.className = target.classes.join(" ");
+  element.tabIndex = 0;
+  return element;
+}
+
+// Whether the rule styles the target itself because it has focus: a subject
+// that matches the element once it is focused and not before.
+function focusRuleOn(rule: Rule, target: Target, withClasses = true): boolean {
+  const element = probe(target, withClasses);
+  probeDocument.body.append(element);
+  const parts = subjects(rule.selector);
+  const before = parts.map((part) => element.matches(part));
+  element.focus();
+  const after = parts.map((part) => element.matches(part));
+  element.remove();
+  return after.some((matched, index) => matched && !before[index]);
+}
+
+function firstValue(style: CSSStyleDeclaration, property: string): string {
+  return style.getPropertyValue(property).trim().toLowerCase().split(/\s+/)[0] ?? "";
+}
+
+function turnsOutlineOff(style: CSSStyleDeclaration): boolean {
+  return firstValue(style, "outline") === "none" || firstValue(style, "outline-style") === "none";
+}
+
 // Whether a declaration block paints something around its element: an outline
 // that is not switched off, or a box shadow, which is how ring utilities draw.
-function draws(body: string): boolean {
-  return body.split(";").some((declaration) => {
-    const [property, ...rest] = declaration.split(":");
-    const name = property?.trim().toLowerCase() ?? "";
-    const value = rest.join(":").trim().toLowerCase();
-    if (!value) return false;
-    if (name === "outline" || name === "outline-style") return !/^(none|0)\b/.test(value);
-    if (name === "outline-width") return !/^0(px)?$/.test(value);
-    if (name === "box-shadow") return value !== "none";
-    return false;
-  });
+function draws(style: CSSStyleDeclaration): boolean {
+  const outline = firstValue(style, "outline");
+  const outlineStyle = firstValue(style, "outline-style");
+  const outlineWidth = firstValue(style, "outline-width");
+  const shadow = firstValue(style, "box-shadow");
+  return (
+    (outline !== "" && outline !== "none" && outline !== "0") ||
+    (outlineStyle !== "" && outlineStyle !== "none") ||
+    (outlineWidth !== "" && !/^0(px)?$/.test(outlineWidth)) ||
+    (shadow !== "" && shadow !== "none")
+  );
 }
 
-// A page written out as a string — a startup or message window the main process
-// builds — never loads the app's stylesheet. Its own <style>, if it has one, is
-// what reaches its containers.
-function ownStyle(file: string): string | undefined {
-  const text = readFileSync(join(ROOT, file), "utf8");
-  const blocks = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1] ?? "");
-  return blocks.length ? blocks.join("\n") : undefined;
+// ---------------------------------------------------------------- the checks
+
+// A plain-CSS app turns an outline off by class, in a stylesheet, rather than
+// with a utility on the element: a focus rule that switches the outline off and
+// reaches the site only through its own classes.
+function suppressedByClass(target: Target, rules: Rule[]): boolean {
+  return (
+    target.classes.length > 0 &&
+    rules.some((rule) => turnsOutlineOff(rule.style) && focusRuleOn(rule, target) && !focusRuleOn(rule, target, false))
+  );
 }
 
-function stylesheetFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return stylesheetFiles(path);
-    return name.endsWith(".css") ? [path] : [];
-  });
+function placementOnMerits(site: Site, rules: Rule[]): Placement | undefined {
+  if (site.kind === "dom") return undefined;
+  const { tag, role, classes, attributes } = site.target;
+  if (tag && CONTROL_TAGS.includes(tag)) return "control";
+  if (role && ITEM_ROLES.includes(role)) return "control";
+  if (role && CONTAINER_ROLES.includes(role)) return "covered";
+  if (attributes.includes(PASSIVE_SCROLL_REGION)) return "covered";
+  if (site.target.inlineOutlineOff || classes.some((name) => OUTLINE_OFF_CLASS.test(name))) return "suppressed";
+  if (suppressedByClass(site.target, rules)) return "suppressed";
+  return undefined;
 }
 
-const stylesheet = readFileSync(join(ROOT, COVERING_STYLESHEET), "utf8");
-const sites = focusSites();
+function placement(site: Site, rules: Rule[], explained: Explained): Placement | undefined {
+  return placementOnMerits(site, rules) ?? (explained[site.file]?.kind === site.kind ? "explained" : undefined);
+}
+
+const where = (site: Site) => `${site.file}:${site.line}`;
+
+function unplaced(sites: Site[], rules: Rule[], explained: Explained): string[] {
+  return sites.filter((site) => placement(site, rules, explained) === undefined).map(where);
+}
+
+// An explanation that no longer matches a site it is needed for.
+function staleExplanations(sites: Site[], rules: Rule[], explained: Explained): string[] {
+  return Object.entries(explained)
+    .filter(([file, { kind }]) => !sites.some((site) => site.file === file && site.kind === kind && placementOnMerits(site, rules) === undefined))
+    .map(([file, { kind }]) => `${file} (${kind})`);
+}
+
+function containers(sites: Site[], rules: Rule[]): Site[] {
+  return sites.filter((site) => ["covered", "suppressed"].includes(placementOnMerits(site, rules) ?? ""));
+}
+
+function ringed(sites: Site[], rules: Rule[]): string[] {
+  return containers(sites, rules)
+    .filter((site) => site.target.classes.some((name) => CONTAINER_RING_CLASS.test(name)))
+    .map(where);
+}
+
+const roleContainers: Target[] = [
+  ...CONTAINER_ROLES.map((role) => ({ role, classes: [], attributes: [], inlineOutlineOff: false })),
+  { classes: [], attributes: [PASSIVE_SCROLL_REGION], inlineOutlineOff: false },
+];
+
+// The rule in the app's stylesheet that switches the outline off on every
+// container while it has focus, outside any cascade layer so no layered rule
+// can outrank it.
+function coveringRule(rules: Rule[]): Rule | undefined {
+  return rules.find(
+    (rule) =>
+      !rule.layered &&
+      turnsOutlineOff(rule.style) &&
+      roleContainers.every((target) => focusRuleOn(rule, target)),
+  );
+}
+
+// Containers in a page that carries its own stylesheet, which its own sheet
+// leaves with an outline on focus.
+function uncoveredOwnPages(sites: Site[], ownStyles: Map<string, string>): string[] {
+  return sites
+    .filter((site) => ownStyles.has(site.file))
+    .filter((site) => placementOnMerits(site, []) === "covered")
+    .filter((site) => !cssRules(ownStyles.get(site.file)!).some((rule) => turnsOutlineOff(rule.style) && focusRuleOn(rule, site.target)))
+    .map(where);
+}
+
+// Focus rules that draw on a container, reaching it by role, attribute or class.
+function drawingOnContainers(sites: Site[], rules: Rule[]): string[] {
+  const targets = [...roleContainers, ...containers(sites, rules).map((site) => site.target)];
+  return rules
+    .filter((rule) => draws(rule.style))
+    .filter((rule) => targets.some((target) => focusRuleOn(rule, target)))
+    .map((rule) => rule.selector);
+}
+
+// ---------------------------------------------------------------- the app
+
+const scans = filesUnder(join(ROOT, SOURCE_DIR), (name) => /\.(tsx?|jsx?|html)$/.test(name) && !/\.(test|spec)\./.test(name)).map(
+  (path) => scanFile(relative(ROOT, path), readFileSync(path, "utf8")),
+);
+const sites = scans.flatMap((scan) => scan.sites);
+const ownStyles = new Map(scans.filter((scan) => scan.styles.length > 0).map((scan) => [scan.file, scan.styles.join("\n")]));
 
 // Every stylesheet the app has, and every page that carries its own: a ring can
 // come from any of them, and so can the rule that turns one off.
 const everyRule = [
-  ...stylesheetFiles(join(ROOT, SOURCE_DIR)).map((path) => readFileSync(path, "utf8")),
-  ...new Set(sites.map((site) => ownStyle(site.file)).filter((css) => css !== undefined)),
-].flatMap((css) => rules(css));
-
-// A plain-CSS app turns an outline off by class, in a stylesheet, rather than
-// with a utility on the element: a focus rule whose subject is one of the site's
-// own classes and whose outline is none.
-function suppressedByClass(context: string): boolean {
-  const classes = classesOf(context);
-  return everyRule.some(
-    (rule) =>
-      /outline:\s*none/.test(rule.body) &&
-      subjects(rule.selector).some(
-        (subject) =>
-          /:focus(-visible)?(?![\w-])/.test(subject) &&
-          classes.some((name) => new RegExp(`\\.${name}(?![\\w-])`).test(subject)),
-      ),
-  );
-}
+  ...filesUnder(join(ROOT, SOURCE_DIR), (name) => name.endsWith(".css")).map((path) => readFileSync(path, "utf8")),
+  ...ownStyles.values(),
+].flatMap(cssRules);
 
 describe("focus rings belong to what the key acts on", () => {
   it("finds this app's focus sites at all", () => {
-    // A pattern that silently stopped matching would pass every check below.
+    // A scan that silently stopped finding sites would pass every check below.
     expect(sites.length).toBeGreaterThan(3);
+    expect(ownStyles.size).toBeGreaterThan(0);
   });
 
   it("places every focus site as a control, a covered container, or an explained exception", () => {
-    const unplaced = sites
-      .filter((site) => placement(site) === undefined)
-      .map((site) => `${site.file}:${site.line} ${site.context.slice(0, 120)}`);
-    expect(unplaced).toEqual([]);
+    expect(unplaced(sites, everyRule, EXPLAINED)).toEqual([]);
+  });
+
+  it("explains only sites that still need it", () => {
+    expect(staleExplanations(sites, everyRule, EXPLAINED)).toEqual([]);
   });
 
   it("gives no container a ring utility of its own", () => {
-    const ringed = sites
-      .filter((site) => ["covered", "suppressed"].includes(placement(site) ?? ""))
-      .filter((site) => CONTAINER_RING.test(site.context))
-      .map((site) => `${site.file}:${site.line}`);
-    expect(ringed).toEqual([]);
+    expect(ringed(sites, everyRule)).toEqual([]);
   });
 
   it("covers the containers of a page that carries its own stylesheet, in that stylesheet", () => {
-    const uncovered = sites
-      .filter((site) => placement(site) === "covered")
-      .filter((site) => ownStyle(site.file) !== undefined)
-      .filter((site) => {
-        const role = roleOf(site.context);
-        const key = role ? `[role="${role}"]` : "[data-passive-scroll-region]";
-        return !rules(ownStyle(site.file)!).some(
-          (rule) =>
-            rule.selector.includes(key) &&
-            rule.selector.includes(":focus-visible") &&
-            /outline:\s*none/.test(rule.body),
-        );
-      })
-      .map((site) => `${site.file}:${site.line}`);
-    expect(uncovered).toEqual([]);
+    expect(uncoveredOwnPages(sites, ownStyles)).toEqual([]);
   });
 
   it("turns the outline off for every container role in one unlayered rule", () => {
-    const covering = rules(stylesheet).find(
-      (rule) =>
-        rule.selector.startsWith(":is(") &&
-        rule.selector.endsWith(":focus-visible") &&
-        /outline:\s*none/.test(rule.body),
-    );
-    expect(covering, "the covering rule is missing").toBeDefined();
-    for (const role of CONTAINER_ROLES) {
-      expect(covering!.selector).toContain(`[role="${role}"]`);
-    }
-    expect(covering!.selector).toContain("[data-passive-scroll-region]");
+    const rules = cssRules(readFileSync(join(ROOT, COVERING_STYLESHEET), "utf8"));
+    expect(coveringRule(rules), "the covering rule is missing").toBeDefined();
   });
 
   it("lets no other focus rule draw on a container, by role or by class", () => {
-    const containerClasses = [
-      ...new Set(
-        sites
-          .filter((site) => ["covered", "suppressed"].includes(placement(site) ?? ""))
-          .flatMap((site) => classesOf(site.context)),
-      ),
-    ];
-    const byClass = containerClasses.length
-      ? `|\\.(${containerClasses.join("|")})(?![\\w-])`
-      : "";
-    const containerSelector = new RegExp(
-      `\\[role="(${CONTAINER_ROLES.join("|")})"\\]|\\[data-passive-scroll-region\\]${byClass}`,
+    expect(drawingOnContainers(sites, everyRule)).toEqual([]);
+  });
+
+  // Each check above, handed a source that breaks it, has to say so.
+  it("rejects planted violations of every kind", () => {
+    const planted = scanFile(
+      "planted.tsx",
+      [
+        "export function Planted({ el }: { el: HTMLElement }) {",
+        "  el.tabIndex = 0;",
+        '  const props = { role: "presentation", tabIndex: 0 };',
+        "  return (",
+        "    <div {...props}>",
+        '      <div className="planted-scroller" tabIndex={0} />',
+        '      <div role="region" className="focus-visible:ring-2" tabIndex={0} />',
+        '      <div role="listbox" className="planted-list" tabIndex={0} />',
+        '      <button type="button" tabIndex={-1} />',
+        "    </div>",
+        "  );",
+        "}",
+      ].join("\n"),
     );
-    const drawing = everyRule
-      .filter((rule) => draws(rule.body))
-      .filter((rule) =>
-        subjects(rule.selector).some(
-          (subject) =>
-            /:focus(-visible)?(?![\w-])/.test(subject) && containerSelector.test(subject),
-        ),
-      )
-      .map((rule) => rule.selector);
-    expect(drawing).toEqual([]);
+    const css = cssRules('.planted-list:focus-visible { outline: 2px solid red; } .planted-list:focus-visible .row { outline: 2px solid red; }');
+
+    expect(planted.sites.map((site) => [site.line, site.kind])).toEqual([
+      [2, "dom"],
+      [3, "object"],
+      [6, "attribute"],
+      [7, "attribute"],
+      [8, "attribute"],
+      [9, "attribute"],
+    ]);
+    expect(unplaced(planted.sites, css, {})).toEqual(["planted.tsx:2", "planted.tsx:3", "planted.tsx:6"]);
+    expect(ringed(planted.sites, css)).toEqual(["planted.tsx:7"]);
+    expect(drawingOnContainers(planted.sites, css)).toEqual([".planted-list:focus-visible"]);
+
+    // An explanation stands only while its site does.
+    expect(staleExplanations(planted.sites, css, { "planted.tsx": { kind: "dom", reason: "planted" } })).toEqual([]);
+    expect(staleExplanations(planted.sites, css, { "gone.tsx": { kind: "dom", reason: "planted" } })).toEqual(["gone.tsx (dom)"]);
+
+    // A container is suppressed by its own class's focus rule, and only by that.
+    const scroller = cssRules(".planted-scroller:focus { outline: none; }");
+    expect(unplaced(planted.sites, scroller, {})).toEqual(["planted.tsx:2", "planted.tsx:3"]);
+
+    // A page written as a string is read for its own stylesheet.
+    const page = (css: string) =>
+      scanFile("planted-page.ts", `export const page = \`<style>${css}</style><section role="region" tabindex="0">\${body}</section>\`;`);
+    const bare = page("body { margin: 0 }");
+    expect(uncoveredOwnPages(bare.sites, new Map([[bare.file, bare.styles.join("\n")]]))).toEqual(["planted-page.ts:1"]);
+    const covered = page('[role="region"]:focus-visible { outline: none }');
+    expect(uncoveredOwnPages(covered.sites, new Map([[covered.file, covered.styles.join("\n")]]))).toEqual([]);
+
+    // A covering rule that leaves out a role, or sits in a layer, does not cover.
+    const every = `:is(${CONTAINER_ROLES.map((role) => `[role="${role}"]`).join(", ")}, [${PASSIVE_SCROLL_REGION}]):focus-visible { outline: none; }`;
+    expect(coveringRule(cssRules(every))).toBeDefined();
+    expect(coveringRule(cssRules(':is([role="listbox"], [role="region"]):focus-visible { outline: none; }'))).toBeUndefined();
+    expect(coveringRule(cssRules(`@layer base { ${every} }`))).toBeUndefined();
   });
 });

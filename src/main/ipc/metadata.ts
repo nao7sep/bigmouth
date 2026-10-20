@@ -29,7 +29,7 @@ export function registerMetadataHandlers(): void {
     CHANNELS.generateMetadata,
     async (event, requestId: string, wsId: string, postId: string, fields: string[], content: string) => {
       // Registered before the first await, so an abort sent right after the
-      // request can never arrive ahead of it (see aiRequests.ts).
+      // request can never arrive ahead of it.
       const cancel = new AbortController();
       const release = trackAiRequest(event.sender, requestId, () => cancel.abort());
       try {

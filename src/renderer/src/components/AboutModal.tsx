@@ -4,6 +4,7 @@ import { ModalShell } from "./ModalShell";
 import { ExternalLinkIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
 import { useI18n } from "../i18n/I18nContext";
+import { APP_NAME } from "@shared/appName";
 import type { MessageKey } from "@shared/i18n/catalogues";
 
 interface AboutModalProps {
@@ -44,7 +45,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
     <ModalShell title={t("about.title")} titleHidden onClose={onClose} width={370} autoFocusClose>
       <div className="modal-body">
         <div className="about-identity">
-          <p className="about-name">BigMouth</p>
+          <p className="about-name">{APP_NAME}</p>
           <p className="about-version">{t("about.version", { version: __APP_VERSION__ })}</p>
         </div>
         <p style={{ marginTop: 8, fontSize: 13, color: "var(--bm-text-soft)", lineHeight: 1.6 }}>

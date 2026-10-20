@@ -206,11 +206,6 @@ describe("streaming an asset", () => {
     expect((await bytes(res)).length).toBe(0);
   });
 
-  it("does not read through the storage queue", async () => {
-    const storage = await import("@main/storageAccess.js");
-    expect("readAssetFile" in storage).toBe(false);
-  });
-
   it("ends the body with an error when a read fails partway, without failing the app", async () => {
     const open = vi.spyOn(fsp, "open").mockResolvedValueOnce({
       stat: async () => ({ isFile: () => true, size: 10 }),

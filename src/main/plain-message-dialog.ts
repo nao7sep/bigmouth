@@ -2,6 +2,7 @@ import { BrowserWindow, nativeTheme } from "electron";
 
 import type { Translator } from "@shared/i18n/translate";
 import { mainTranslator } from "./i18n.js";
+import { windowBackground } from "./theme.js";
 
 export interface PlainMessageDialogOptions {
   title: string;
@@ -50,7 +51,9 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
     title: options.title,
     // The page below follows prefers-color-scheme, which follows
     // nativeTheme.themeSource — the saved theme, or the OS before it is known.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1c1917" : "#f7f4ef",
+    // It paints the app's own window background in each scheme, the colour a
+    // theme change repaints every window with, so frame and page stay one.
+    backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
 
@@ -113,7 +116,7 @@ export function renderPlainMessageDialogHtml(
     return `<button id="choice-${index}" class="button${kind}" type="button" onclick="location.href='${CHOICE_ORIGIN}${index}'">${escapeHtml(label)}</button>`;
   }).join("");
   return `<!doctype html><html lang="${escapeHtml(translator.language)}"><head><meta charset="utf-8"><style>
-    :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#f7f4ef;color:#292524}
+    :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:${windowBackground(false)};color:#292524}
     *{box-sizing:border-box;scrollbar-width:auto;scrollbar-color:#78716c transparent}*::-webkit-scrollbar{width:16px;height:16px}*::-webkit-scrollbar-thumb{background:#78716c;background-clip:padding-box;border:3px solid transparent;border-radius:999px}
     body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
     .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}[role="region"]:focus-visible{outline:none}
@@ -122,7 +125,7 @@ export function renderPlainMessageDialogHtml(
     .button{color:#292524;border:1px solid #a8a29e;border-radius:6px;padding:7px 14px;background:#fafaf9;font:inherit}
     .button:hover,.button:focus{outline:2px solid #78716c;outline-offset:2px}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#e7e5e4}
     .primary{color:white;background:#2563eb;border-color:#1d4ed8}.primary:hover,.primary:focus{background:#1d4ed8}.destructive{color:white;background:#b91c1c;border-color:#991b1b}.destructive:hover,.destructive:focus{background:#991b1b}
-    @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:#1c1917;color:#e7e5e4}*{scrollbar-color:#a8a29e transparent}*::-webkit-scrollbar-thumb{background:#a8a29e;background-clip:padding-box}.detail{color:#a8a29e}.button{color:#e7e5e4;border-color:#78716c;background:#292524}.button:hover,.button:focus{outline-color:#a8a29e}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#44403c}}
+    @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:${windowBackground(true)};color:#e7e5e4}*{scrollbar-color:#a8a29e transparent}*::-webkit-scrollbar-thumb{background:#a8a29e;background-clip:padding-box}.detail{color:#a8a29e}.button{color:#e7e5e4;border-color:#78716c;background:#292524}.button:hover,.button:focus{outline-color:#a8a29e}.button:not(.primary):not(.destructive):hover,.button:not(.primary):not(.destructive):focus{background:#44403c}}
   </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body" role="region" aria-label="${escapeHtml(translator.t("dialog.messageDetails"))}" tabindex="0"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ""}</section><footer class="actions" id="dialog-footer">${actions}</footer></main></body></html>`;
 }
 

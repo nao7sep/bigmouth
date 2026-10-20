@@ -14,6 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHANNELS, type PostContentSavedEvent, type PostUpdate } from "@shared/ipc";
+import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import type { Post, PostListResponse, PostMutationResult, PostStatus, Target } from "@shared/types";
 
 const publication = vi.hoisted(() => ({ summaryUnavailable: false, afterMutation: null as null | (() => void) }));
@@ -584,7 +585,7 @@ describe("queuePostMetadata (the metadata stream)", () => {
     const second = (await createDraft());
     expect((await invoke(CHANNELS.queuePostMetadata, wsId, first, { slug: "shared" }))).toBeNull();
 
-    expect((await invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "has space" }))).toEqual({ key: "metadata.refusedInvalidSlug", values: { max: 200 } });
+    expect((await invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "has space" }))).toEqual({ key: "metadata.refusedInvalidSlug", values: { max: ACCEPTED_SLUG_MAX_LENGTH } });
     expect((await invoke(CHANNELS.queuePostMetadata, wsId, second, { slug: "Shared" }))).toEqual({ key: "metadata.refusedSlugTaken", values: { slug: "Shared" } });
     expect((await invoke(CHANNELS.queuePostMetadata, wsId, second, { target: "other" }))).toEqual({ key: "metadata.refusedInvalid" });
   });

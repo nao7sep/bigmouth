@@ -600,7 +600,7 @@ describe("deleteWorkspace", () => {
   });
 });
 
-// store-recovery-conventions: the registry's format version.
+// The registry's format version, which tells a build whether it can read the file.
 describe("workspace registry format version", () => {
   const registry = () => path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
 

@@ -14,7 +14,9 @@ import {
   currentCompositeIndex,
   indexOfId,
   nextIndex,
+  PAGE_STEP,
   removalFocusTargetId,
+  TYPE_AHEAD_RESET_MS,
   typeAheadMatch,
   type NavDirection,
 } from "../util/compositeNav";
@@ -51,8 +53,6 @@ import { hasMod } from "../util/shortcuts";
 //
 // "Load more" remains outside the row sequence, loading automatically as the
 // cursor reaches the end of a loaded archive.
-
-const TYPE_AHEAD_RESET_MS = 700;
 
 export interface PostListRow {
   id: string;
@@ -94,7 +94,7 @@ export interface UsePostListboxResult {
  * Drives the post listbox over the flat `rows` (group-flattened, in display
  * order). `selectedId` is the committed selection from the session; `onActivate`
  * commits a new selection (manual activation). `pageSize` is the PageUp/PageDown
- * step. `composingRef` guards type-ahead and activation against IME composition.
+ * step, one viewport's worth by default. `composingRef` guards type-ahead and activation against IME composition.
  */
 export function usePostListbox({
   rows,
@@ -102,7 +102,7 @@ export function usePostListbox({
   onActivate,
   onToggleRow,
   onRowAction,
-  pageSize,
+  pageSize = PAGE_STEP,
   composingRef,
   autoActivateFirst = false,
   followFocus = false,
@@ -112,7 +112,7 @@ export function usePostListbox({
   onActivate: (id: string) => void;
   /** Toggles a summary row. Required if any row carries `expanded`. */
   onToggleRow?: (id: string) => void;
-  pageSize: number;
+  pageSize?: number;
   composingRef: RefObject<boolean>;
   /**
    * When nothing is active or selected, make the first row the resting cursor

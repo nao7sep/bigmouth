@@ -5,6 +5,8 @@
  * configurable field-specific style/content instructions.
  */
 
+import { GENERATED_SLUG_MAX_LENGTH, GENERATED_TAG_COUNT } from "@shared/metadataFields";
+
 export { GENERATION_PROMPT_KEYS } from "@shared/metadataFields";
 
 export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
@@ -25,15 +27,15 @@ export const DEFAULT_GENERATION_PROMPTS: Record<string, string> = {
     `- Derive it from the English title or central angle when available.\n` +
     `- Prefer a natural phrase over a keyword list.\n` +
     `- Use only lowercase letters, numbers, and hyphens, with no leading, trailing, or doubled hyphen.\n` +
-    `- Keep it specific, memorable, and under 60 characters.`,
+    `- Keep it specific, memorable, and under ${GENERATED_SLUG_MAX_LENGTH} characters.`,
   tags:
-    `Write 5 to 8 tags in the same language as the draft.\n` +
+    `Write ${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max} tags in the same language as the draft.\n` +
     `- Cover the main concrete topics and useful searchable concepts.\n` +
     `- Use short topic labels, not explanatory phrases.\n` +
     `- Keep each tag to one concept.\n` +
     `- Prefer the shortest natural form that still makes sense.`,
   tagsEn:
-    `Write 5 to 8 English tags.\n` +
+    `Write ${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max} English tags.\n` +
     `- Cover the same core concepts as the native tags when they exist or are also requested.\n` +
     `- Use short searchable topic labels, not explanatory phrases.\n` +
     `- Keep each tag to one concept.\n` +

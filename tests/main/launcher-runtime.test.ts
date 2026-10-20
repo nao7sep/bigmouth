@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ownsProcess, parsePosixProcesses, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
-  const identity = { kind: "electron", label: "BigMouth", executable: "BigMouth" };
+  const appName = "BigMouth";
 
   it("owns only this repository's Electron runtime", () => {
     expect(ownsProcess({
@@ -19,28 +19,28 @@ describe("launcher process identity", () => {
       parentPid: 1,
       executablePath: `${REPO_ROOT}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`,
       commandLine: "",
-    }, identity)).toBe(true);
+    }, appName)).toBe(true);
     expect(ownsProcess({
       pid: 11,
       parentPid: 1,
       executablePath: `${REPO_ROOT}/dist/mac-arm64/BigMouth.app/Contents/MacOS/BigMouth`,
       commandLine: "",
-    }, identity)).toBe(true);
+    }, appName)).toBe(true);
     expect(ownsProcess({
       pid: 12,
       parentPid: 1,
       executablePath: `${REPO_ROOT}\\dist\\win-unpacked\\BigMouth.exe`,
       commandLine: "",
-    }, identity)).toBe(true);
+    }, appName)).toBe(true);
     expect(ownsProcess({
       pid: 13,
       parentPid: 1,
       executablePath: "/another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
       commandLine: "",
-    }, identity)).toBe(false);
+    }, appName)).toBe(false);
   });
 
-  // macOS and Linux read processes from `ps -axo pid=,ppid=,command=`: right-
+  // macOS reads processes from `ps -axo pid=,ppid=,command=`: right-
   // aligned numbers and the whole command line, spaces included, with no
   // executable path of its own.
   it("reads ps output into processes and owns only this repository's Electron among them", () => {
@@ -62,7 +62,7 @@ describe("launcher process identity", () => {
       { pid: 813, parentPid: 812, executablePath: "", commandLine: expect.stringContaining("Electron Helper (Renderer).app") },
       { pid: 900, parentPid: 1, executablePath: "", commandLine: "/another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /another/repo" },
     ]);
-    expect(processes.filter((item: { pid: number; parentPid: number; executablePath: string; commandLine: string }) => ownsProcess(item, identity)).map((item: { pid: number }) => item.pid))
+    expect(processes.filter((item: { pid: number; parentPid: number; executablePath: string; commandLine: string }) => ownsProcess(item, appName)).map((item: { pid: number }) => item.pid))
       .toEqual([812, 813]);
   });
 
@@ -106,10 +106,10 @@ describe("launcher process identity", () => {
 });
 
 // The Windows paths list processes through PowerShell's Win32_Process and stop
-// them with taskkill /T. Elsewhere the launcher takes its ps and signal paths,
+// them with taskkill /T. On macOS the launcher takes its ps and signal paths,
 // so these run on the Windows PC.
 describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
-  const identity = { kind: "electron", label: "BigMouth", executable: "BigMouth" };
+  const appName = "BigMouth";
   const helper = path.join(REPO_ROOT, "scripts", "launcher-runtime.mjs");
   const run = promisify(execFile);
 
@@ -127,7 +127,7 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
         executablePath: row.ExecutablePath ?? "",
         commandLine: row.CommandLine ?? "",
       }))
-      .filter((item) => ownsProcess(item, identity));
+      .filter((item) => ownsProcess(item, appName));
   }
 
   function alive(pid: number): boolean {
@@ -195,7 +195,7 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
 
       // A windowless process ignores the plain taskkill /T, so this also takes
       // the forced /T /F path after the launcher's five-second wait.
-      const { stdout } = await run(process.execPath, [helper, "stop", "electron", "BigMouth", "BigMouth"], {
+      const { stdout } = await run(process.execPath, [helper, "stop", "BigMouth"], {
         encoding: "utf8",
         timeout: 60_000,
       });
@@ -218,13 +218,13 @@ describe.runIf(process.platform === "win32")("launcher stop on Windows", () => {
   }, 90_000);
 });
 
-// Elsewhere the launcher lists processes with ps and stops them with SIGTERM,
+// On macOS the launcher lists processes with ps and stops them with SIGTERM,
 // then SIGKILL for whatever is left after its five-second wait. Signals are what
 // differ from Windows, so this runs everywhere but there. The helper is copied
 // into a disposable folder, which becomes its repository root: only processes
 // started under that folder are its own, so a BigMouth the developer is running
 // from this checkout is never stopped.
-describe.runIf(process.platform !== "win32")("launcher stop on macOS and Linux", () => {
+describe.runIf(process.platform !== "win32")("launcher stop on macOS", () => {
   const run = promisify(execFile);
 
   function alive(pid: number): boolean {
@@ -287,7 +287,7 @@ describe.runIf(process.platform !== "win32")("launcher stop on macOS and Linux",
       const own = await processTree(script, ownMarker, ownTerms, cleanupPids);
       const foreign = await processTree(script, foreignMarker, foreignTerms, cleanupPids);
 
-      const { stdout } = await run(process.execPath, [helper, "stop", "electron", "BigMouth", "BigMouth"], {
+      const { stdout } = await run(process.execPath, [helper, "stop", "BigMouth"], {
         encoding: "utf8",
         timeout: 30_000,
         env: { ...process.env, TMPDIR: root },

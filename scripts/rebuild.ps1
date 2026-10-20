@@ -62,20 +62,13 @@ try {
     Set-Location $repoDir
 
     Write-Step "Installing dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
-
-    # npm install skips the Electron binary if the package is already at the locked version.
-    Write-Step "Verifying Electron binary"
-    if (-not (Test-Path "node_modules/electron/path.txt")) {
-        Write-Host "Electron binary missing; downloading..."
-        Invoke-Native -FilePath "node" -ArgumentList @("node_modules/electron/install.js")
-    }
+    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
     # Windows locks the packaged executable while it runs, so replacement must
     # happen before cleaning the package directory.
-    Write-Step "Replacing any existing BigMouth runtime"
+    Write-Step "Replacing any existing $appName runtime"
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "electron", "BigMouth", "BigMouth")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", $appName)
 
     # Remove stale output so a build that fails to emit a file can't be masked by
     # a leftover artifact from a previous run.
@@ -84,9 +77,8 @@ try {
     if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
 
     # `npm run build` is the one definition of the release build (type-check the
-    # shipped sources, then bundle). Re-implementing its steps here meant a change
-    # to the pipeline - which CI runs through `npm run dist` - silently left these
-    # launchers running the old one.
+    # shipped sources, then bundle), which CI runs through `npm run dist`; calling
+    # it keeps this launcher on the same pipeline.
     Write-Step "Type-checking and building production sources"
     Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "build")
 

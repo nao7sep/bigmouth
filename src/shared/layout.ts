@@ -34,7 +34,8 @@ export function windowMinimumForZoom(zoomFactor: number): { width: number; heigh
 
 // The records window: a user-adjustable list pane (filters above the record
 // list) beside the detail pane, which takes the rest, with the shared divider
-// between them. Mirrors `.records-*` in src/renderer/src/App.css.
+// between them. The stylesheet restates these values, which CSS cannot import;
+// a test compares them.
 export const RECORDS_LIST_WIDTH = { min: 320, default: 380, max: 640 } as const;
 export const RECORDS_DETAIL_MIN_WIDTH = 420;
 // The filter band: 12px padding above and below a search field and two rows of

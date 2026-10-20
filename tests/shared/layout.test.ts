@@ -40,10 +40,15 @@ describe("window minimums", () => {
       width: WINDOW_MIN_WIDTH,
       height: WINDOW_MIN_HEIGHT,
     });
-    expect(windowMinimumForZoom(1.5)).toEqual({
-      width: Math.ceil(WINDOW_MIN_WIDTH * 1.5),
-      height: Math.ceil(WINDOW_MIN_HEIGHT * 1.5),
-    });
+    // Whole device pixels, never less than the zoomed CSS floor needs.
+    for (const zoom of [0.8, 1.2, 1.5, 1.728]) {
+      const { width, height } = windowMinimumForZoom(zoom);
+      for (const [value, floor] of [[width, WINDOW_MIN_WIDTH * zoom], [height, WINDOW_MIN_HEIGHT * zoom]] as const) {
+        expect(Number.isInteger(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(floor);
+        expect(value).toBeLessThan(floor + 1);
+      }
+    }
   });
 });
 

@@ -2,39 +2,21 @@ import { describe, it, expect } from "vitest";
 import {
   CENTER_MIN,
   DIVIDER,
+  LEFT_MAX,
   LEFT_MIN,
+  RIGHT_MAX,
   RIGHT_MIN,
   ROW_MIN,
-  clampPaneWidth,
+  displayedLeftWidth,
+  displayedRightWidth,
+  restoredLeftIntent,
 } from "@renderer/paneConstants";
 
-const LEFT_MAX = 720;
-const RIGHT_MAX = 960;
-
-// Mirror App.tsx's display derivation: the DISPLAYED width is the pane's intent
-// clamped against the live container, with siblingMins = the OTHER resizable
-// pane's intent + the center minimum + the two dividers between the three panes.
+// The DISPLAYED width is the pane's intent clamped against the live container.
 // A splitter drag records the raw intent (clamped only to per-pane bounds); the
-// display derives from it via these helpers.
-function displayLeft(intent: number, rightIntent: number, container: number) {
-  return clampPaneWidth(
-    intent,
-    LEFT_MIN,
-    LEFT_MAX,
-    container,
-    rightIntent + CENTER_MIN + 2 * DIVIDER
-  );
-}
-
-function displayRight(intent: number, leftIntent: number, container: number) {
-  return clampPaneWidth(
-    intent,
-    RIGHT_MIN,
-    RIGHT_MAX,
-    container,
-    leftIntent + CENTER_MIN + 2 * DIVIDER
-  );
-}
+// display derives from it.
+const displayLeft = displayedLeftWidth;
+const displayRight = displayedRightWidth;
 
 // Aliases kept for the drag-clamp assertions: a drag's displayed result is the
 // same clamp applied to the dragged-to intent.
@@ -94,23 +76,13 @@ describe("clampPaneWidth splitter clamp", () => {
   });
 });
 
-// Mirror App.tsx's readStoredIntent: the stored intent is clamped ONLY to the
-// pane's own configured bounds on read — never against the container — so a
-// narrow viewport at load time can't shrink the persisted intent.
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
-}
-function readStoredIntent(stored: number, min: number, max: number) {
-  return clamp(stored, min, max);
-}
-
 describe("intent persistence vs. display clamp", () => {
   it("keeps the stored intent on restore even when the viewport is narrow", () => {
     // The window shrank since the width was saved: a stored 700px left intent
     // must survive restore unchanged — only the DISPLAY is clamped, not the
     // persisted intent.
     const storedLeft = 700;
-    const intent = readStoredIntent(storedLeft, LEFT_MIN, LEFT_MAX);
+    const intent = restoredLeftIntent(storedLeft);
     expect(intent).toBe(storedLeft);
 
     // The display derived from that intent in a now-narrow container clamps down
@@ -148,7 +120,7 @@ describe("intent persistence vs. display clamp", () => {
     const right = RIGHT_MIN;
 
     // Persisted intent read back at load with a narrow viewport stays the intent.
-    const restored = readStoredIntent(intent, LEFT_MIN, LEFT_MAX);
+    const restored = restoredLeftIntent(intent);
     expect(restored).toBe(700);
 
     // Narrow viewport: display is clamped down (and below ROW_MIN the row
@@ -164,7 +136,7 @@ describe("intent persistence vs. display clamp", () => {
   it("leaves a stored intent that already fits shown unchanged", () => {
     const container = 1600;
     const storedLeft = 360;
-    const intent = readStoredIntent(storedLeft, LEFT_MIN, LEFT_MAX);
+    const intent = restoredLeftIntent(storedLeft);
     const displayed = displayLeft(intent, RIGHT_MIN, container);
     expect(displayed).toBe(storedLeft);
   });

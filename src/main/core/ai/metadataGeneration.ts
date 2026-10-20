@@ -5,6 +5,8 @@ import {
   GENERATED_SLUG,
   GENERATED_SLUG_MAX_LENGTH,
   GENERATED_SLUG_PATTERN,
+  GENERATED_TAG_COUNT,
+  GENERATED_TAG_MAX_LENGTH,
   GENERATION_PROMPT_KEYS,
   isMetadataField,
   type MetadataField,
@@ -25,17 +27,28 @@ const FIELD_LABELS: Record<MetadataField, string> = {
   metaDescriptionEn: "English meta description",
 };
 
-const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
-  title: {
+const TITLE_SCHEMA = { type: "string", minLength: 1, maxLength: 140 } as const;
+const TAGS_SCHEMA = {
+  type: "array",
+  minItems: GENERATED_TAG_COUNT.min,
+  maxItems: GENERATED_TAG_COUNT.max,
+  uniqueItems: true,
+  items: {
     type: "string",
     minLength: 1,
-    maxLength: 140,
+    maxLength: GENERATED_TAG_MAX_LENGTH,
+  },
+} as const;
+const TAG_COUNT = `${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max}`;
+const META_DESCRIPTION_SCHEMA = { type: "string", minLength: 40, maxLength: 220 } as const;
+
+const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
+  title: {
+    ...TITLE_SCHEMA,
     description: "A concise title in the same language as the draft.",
   },
   titleEn: {
-    type: "string",
-    minLength: 1,
-    maxLength: 140,
+    ...TITLE_SCHEMA,
     description: "A concise English title for the draft.",
   },
   slug: {
@@ -46,39 +59,19 @@ const FIELD_SCHEMAS: Record<MetadataField, Record<string, unknown>> = {
     description: "A short readable English slug using lowercase letters, numbers, and hyphens only.",
   },
   tags: {
-    type: "array",
-    minItems: 5,
-    maxItems: 8,
-    uniqueItems: true,
-    items: {
-      type: "string",
-      minLength: 1,
-      maxLength: 40,
-    },
-    description: "Five to eight short searchable topic tags in the same language as the draft.",
+    ...TAGS_SCHEMA,
+    description: `${TAG_COUNT} short searchable topic tags in the same language as the draft.`,
   },
   tagsEn: {
-    type: "array",
-    minItems: 5,
-    maxItems: 8,
-    uniqueItems: true,
-    items: {
-      type: "string",
-      minLength: 1,
-      maxLength: 40,
-    },
-    description: "Five to eight short searchable English topic tags.",
+    ...TAGS_SCHEMA,
+    description: `${TAG_COUNT} short searchable English topic tags.`,
   },
   metaDescription: {
-    type: "string",
-    minLength: 40,
-    maxLength: 220,
+    ...META_DESCRIPTION_SCHEMA,
     description: "A meta description in the same language as the draft, ideally 120-160 characters.",
   },
   metaDescriptionEn: {
-    type: "string",
-    minLength: 40,
-    maxLength: 220,
+    ...META_DESCRIPTION_SCHEMA,
     description: "An English meta description for the draft, ideally 120-160 characters.",
   },
 };
@@ -324,8 +317,8 @@ function normalizeTags(field: MetadataField, value: unknown): string[] {
       .filter(Boolean)
   )];
 
-  if (tags.length < 5 || tags.length > 8) {
-    throw new Error(`Structured metadata field ${field} did not contain 5 to 8 tags`);
+  if (tags.length < GENERATED_TAG_COUNT.min || tags.length > GENERATED_TAG_COUNT.max) {
+    throw new Error(`Structured metadata field ${field} did not contain ${TAG_COUNT} tags`);
   }
 
   return tags;

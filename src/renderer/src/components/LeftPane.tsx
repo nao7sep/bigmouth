@@ -12,14 +12,10 @@ import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
 import { Menu, MenuItem } from "./Menu";
 import { useI18n } from "../i18n/I18nContext";
 
-// One viewport's worth of rows for PageUp/PageDown. The list scrolls but rows
-// are a fixed-ish height; a constant step is the conventional approximation.
 /** Row id for a section's summary row, namespaced away from post ids. */
 function sectionRowId(key: string): string {
   return `section:${key}`;
 }
-
-const PAGE_SIZE = 10;
 
 /** Each section's heading and empty-state text. */
 const SECTION_TEXT: Readonly<Record<PostStatus, { label: MessageKey; empty: MessageKey }>> = {
@@ -139,7 +135,6 @@ export function LeftPane({
       const status = statusByRowId.get(id);
       if (status) toggleSection(status);
     },
-    pageSize: PAGE_SIZE,
     composingRef,
   });
 

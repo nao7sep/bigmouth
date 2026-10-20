@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  PAGED_POST_STATUSES,
   POST_STATUSES,
   holdsPublicationTime,
   isPagedPostStatus,
@@ -22,7 +21,6 @@ describe("the post status vocabulary", () => {
 describe("the paged sections", () => {
   // Discarded behaves like Retired: a section that can grow without bound.
   it("pages discarded, published and retired, and loads draft and verified whole", () => {
-    expect(PAGED_POST_STATUSES).toEqual(["discarded", "published", "retired"]);
     expect(POST_STATUSES.filter(isPagedPostStatus)).toEqual(["discarded", "published", "retired"]);
   });
 });

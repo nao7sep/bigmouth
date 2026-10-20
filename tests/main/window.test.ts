@@ -1,6 +1,4 @@
-// Unit tests for the two pure helpers window.ts exports. Their comments have
-// always said they are "exported so ... a unit test" covers them; no such test
-// existed, and the claim is load-bearing — it is why nobody wrote one.
+// Unit tests for the pure helpers the main window module exports.
 //
 // Electron is mocked because these helpers need no real window; the parts that
 // genuinely require one (the navigation handlers, the load path) are not
@@ -70,7 +68,7 @@ vi.mock("electron", () => {
   };
 });
 
-import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, windowMinimumForZoom } from "@shared/layout";
 import {
   boundWindowMinimum,
   buildWindowOptions,
@@ -157,8 +155,9 @@ describe("buildWindowOptions", () => {
 
     expect(zoomFactor).toBeCloseTo(1.44);
     expect(options.webPreferences?.zoomFactor).toBe(zoomFactor);
-    expect(options.minWidth).toBe(Math.ceil(WINDOW_MIN_WIDTH * zoomFactor));
-    expect(options.minHeight).toBe(Math.ceil(WINDOW_MIN_HEIGHT * zoomFactor));
+    const floor = windowMinimumForZoom(zoomFactor);
+    expect(options.minWidth).toBe(floor.width);
+    expect(options.minHeight).toBe(floor.height);
   });
 
   it("caps only the native floor when scaled content is larger than the work area", () => {

@@ -18,7 +18,7 @@ interface ShortcutsModalProps {
  * Key tokens stay English on every platform (keyboard-shortcut-conventions);
  * only the descriptions and headings are translated.
  */
-function buildGroups(mod: string): Array<{
+export function buildGroups(mod: string): Array<{
   title: MessageKey;
   note: MessageKey | null;
   shortcuts: Array<{ key: string; description: MessageKey }>;

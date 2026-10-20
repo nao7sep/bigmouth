@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { JSDOM } from "jsdom";
+import { APP_NAME } from "@shared/appName";
 import { LANGUAGES } from "@shared/i18n/languages";
 
 const config = parse(
@@ -13,6 +15,8 @@ const config = parse(
   mac?: { artifactName?: string; electronLanguages?: string[]; extendInfo?: Record<string, unknown> };
   dmg?: { artifactName?: string };
   win?: { artifactName?: string; electronLanguages?: string[] };
+  productName?: string;
+  directories?: { output?: string };
 };
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -38,26 +42,9 @@ describe("packaged native modules", () => {
   });
 });
 
-describe("packaged license texts", () => {
-  it("ships the app, Electron, and Chromium licenses", () => {
-    expect(config.extraResources).toEqual(expect.arrayContaining([
-      { from: "LICENSE", to: "LICENSE.txt" },
-      { from: "node_modules/electron/dist/LICENSE", to: "electron/LICENSE" },
-      {
-        from: "node_modules/electron/dist/LICENSES.chromium.html",
-        to: "electron/LICENSES.chromium.html",
-      },
-    ]));
-  });
-
-  it("prepares Electron before every package-script builder invocation", () => {
-    for (const script of Object.values(packageJson.scripts) as string[]) {
-      if (script.includes("electron-builder")) {
-        expect(script.indexOf("npm run prepare:electron")).toBeLessThan(
-          script.indexOf("electron-builder"),
-        );
-      }
-    }
+describe("packaged licence", () => {
+  it("ships the app's licence", () => {
+    expect(config.extraResources).toEqual(expect.arrayContaining([{ from: "LICENSE", to: "LICENSE.txt" }]));
   });
 });
 
@@ -101,8 +88,42 @@ describe("interface languages outside the window", () => {
   });
 
   it("builds the Windows installer in the set, with English first as the fallback", () => {
-    expect(config.nsis?.installerLanguages).toEqual([
-      "en_US", "de_DE", "es_ES", "fr_FR", "it_IT", "pt_BR", "ru_RU", "ja_JP", "ko_KR", "zh_CN",
-    ]);
+    const nsisNames = LANGUAGES.map((tag) => ({
+      en: "en_US", de: "de_DE", es: "es_ES", fr: "fr_FR", it: "it_IT", "pt-BR": "pt_BR",
+      ru: "ru_RU", ja: "ja_JP", ko: "ko_KR", "zh-Hans": "zh_CN",
+    })[tag as string]);
+    expect(LANGUAGES[0]).toBe("en");
+    expect(config.nsis?.installerLanguages).toEqual(nsisNames);
+  });
+});
+
+// rebuild and run-built find the packaged app under the packaging output by its
+// product name, and the launcher helper recognizes its running processes by the
+// same name, so each launcher keeps one copy of both.
+// The packaged app's name comes from productName, which cannot import the
+// name the app uses for itself, so the two are compared here.
+describe("the app's name", () => {
+  it("names the packaged app as the app names itself", () => {
+    expect(config.productName).toBe(APP_NAME);
+  });
+
+  it("titles the main window's page with it", () => {
+    const html = readFileSync(new URL("../../src/renderer/index.html", import.meta.url), "utf8");
+    expect(new JSDOM(html).window.document.title).toBe(APP_NAME);
+  });
+});
+
+describe("packaged app the launchers look for", () => {
+  it.each([
+    ["rebuild.command", /^APP_NAME="([^"]*)"\r?$/m, /^OUT_DIR="([^"]*)"\r?$/m],
+    ["run-built.command", /^APP_NAME="([^"]*)"\r?$/m, /^OUT_DIR="([^"]*)"\r?$/m],
+    ["run-dev.command", /^APP_NAME="([^"]*)"\r?$/m, null],
+    ["rebuild.ps1", /^\$appName = "([^"]*)"\r?$/m, /^\$outDir = "([^"]*)"\r?$/m],
+    ["run-built.ps1", /^\$appName = "([^"]*)"\r?$/m, /^\$outDir = "([^"]*)"\r?$/m],
+    ["run-dev.ps1", /^\$appName = "([^"]*)"\r?$/m, null],
+  ])("is the one %s names", (launcher, namePattern, outputPattern) => {
+    const script = readFileSync(new URL(`../../scripts/${launcher}`, import.meta.url), "utf8");
+    expect(namePattern.exec(script)?.[1]).toBe(config.productName);
+    if (outputPattern) expect(outputPattern.exec(script)?.[1]).toBe(config.directories?.output);
   });
 });

@@ -1,6 +1,6 @@
 // Which models BigMouth supports and how it splits its AI work, per the
-// ai-model-routing-conventions. Each row has its branch in the request builder
-// (src/main/core/ai/claudeRequest.ts); any other id gets the plain request.
+// ai-model-routing-conventions. Each row has its branch in the request builder;
+// any other id gets the plain request.
 
 export type AiProvider = "anthropic";
 export type ModelKind = "text-frontier" | "text-smart" | "text-balanced" | "text-fast";

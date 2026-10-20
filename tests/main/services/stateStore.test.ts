@@ -142,7 +142,7 @@ describe("stateStore — records list width", () => {
   });
 });
 
-// store-recovery-conventions: state.json's format version.
+// state.json's format version, which tells a build whether it can read the file.
 describe("stateStore — format version", () => {
   it("writes this build's format version and reads the state back", () => {
     initStateStore();

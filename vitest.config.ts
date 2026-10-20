@@ -45,7 +45,7 @@ export default defineConfig({
         "src/renderer/src/main.tsx", // React DOM mount
         "src/renderer/src/records.tsx", // React DOM mount of the records window
         "src/main/core/services/recordsReaderWorker.ts", // worker-thread wiring
-        "src/main/core/services/quitFlushWorker.ts", // worker-thread wiring
+        "src/main/storageWorker.ts", // worker-thread wiring
         "src/renderer/src/vite-env.d.ts",
         "**/*.d.ts",
       ],
@@ -67,7 +67,7 @@ export default defineConfig({
           include: ["tests/**/*.test.{ts,tsx}"],
           exclude: [...configDefaults.exclude, "tests/renderer/**", "tests/live/**"],
           // Reset the data-backup store singleton after every test so each throwaway BIGMOUTH_DATA_DIR root
-          // re-opens its own backups.sqlite3 instead of leaking a prior test's handle (see the file).
+          // re-opens its own backups.sqlite3 instead of leaking a prior test's handle.
           setupFiles: [mainSetup],
           // Electron's npm package downloads its ~100 MB binary the first time
           // anything imports it while the binary is missing, as after a fresh

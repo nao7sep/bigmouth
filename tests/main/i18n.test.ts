@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CHANNELS } from "@shared/ipc";
+
 const electron = vi.hoisted(() => ({
   preferred: ["ko-KR", "en-US"],
   systemLocale: "ko-KR",
@@ -168,7 +170,7 @@ describe("main-process interface language", () => {
 
     expect(await i18n.changeLanguagePreference("de", redraw)).toBe(true);
     expect(redraw).toHaveBeenCalledTimes(1);
-    expect(electron.sent).toEqual([["i18n:changed", { language: "de", locale: "de" }]]);
+    expect(electron.sent).toEqual([[CHANNELS.interfaceLanguageChanged, { language: "de", locale: "de" }]]);
   });
 
   it("speaks English on a computer whose languages are all outside the set", async () => {

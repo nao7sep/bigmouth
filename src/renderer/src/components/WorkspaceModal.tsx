@@ -46,8 +46,6 @@ import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
 
-const WORKSPACE_PAGE_SIZE = 10;
-
 interface WorkspaceModalProps {
   dismissable: boolean;
   onClose: () => void;
@@ -418,7 +416,6 @@ export function WorkspaceModal({
       if (action === "rename") startRename(ws);
       else handleDelete(ws);
     },
-    pageSize: WORKSPACE_PAGE_SIZE,
     composingRef: listComposing.composingRef,
   });
   const onListKeyDown = (e: ReactKeyboardEvent) => {

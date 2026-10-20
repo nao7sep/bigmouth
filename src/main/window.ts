@@ -9,6 +9,7 @@ import { error as logError, serializeError, warn } from "./core/services/logger.
 import { isAllowedExternalUrl, openExternalUrl } from "./ipc/external.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
 import { windowBackground } from "./theme.js";
+import { PRELOAD_FILE } from "./builtEntries.js";
 import { mainTranslator } from "./i18n.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
@@ -43,7 +44,7 @@ export function configureWindowActivity(window: BrowserWindow): void {
 
 // The BrowserWindow construction options. Exported as a pure helper so the
 // hardening flags and the derived minimums are verified without driving a real
-// window — see tests/main/window.test.ts. Window geometry comes from
+// window. Window geometry comes from
 // @shared/layout; window-conventions own its sizing policy.
 export function zoomFactorForLevel(zoomLevel: number): number {
   return 1.2 ** zoomLevel;
@@ -83,7 +84,7 @@ export function buildWindowOptions(
     titleBarStyle: "default",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
+      preload: join(__dirname, "../preload", PRELOAD_FILE),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -240,7 +241,7 @@ export async function loadRendererPage(window: BrowserWindow, page: "index.html"
     await window.loadURL(new URL(page, `${process.env.ELECTRON_RENDERER_URL}/`).toString());
   } else {
     // The Content-Security-Policy travels in the HTML, not a response header:
-    // this is a file:// load, which a header CSP cannot reach. See src/shared/csp.ts.
+    // this is a file:// load, which a header CSP cannot reach.
     await window.loadFile(join(__dirname, "../renderer", page));
   }
 }

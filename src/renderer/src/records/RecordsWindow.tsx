@@ -29,6 +29,7 @@ import {
 } from "../api";
 import { useComposing } from "../hooks/useComposing";
 import { usePostListbox, type PostListRow } from "../hooks/usePostListbox";
+import { PAGE_STEP } from "../util/compositeNav";
 import { useI18n } from "../i18n/I18nContext";
 import { clamp, clampPaneWidth } from "../paneConstants";
 import {
@@ -51,7 +52,6 @@ const NO_FILTERS: Filters = { session: null, kind: null, level: null, search: ""
 const SEARCH_DELAY_MS = 300;
 // New records are read at most this often while they keep arriving.
 const LIVE_INTERVAL_MS = 1000;
-const PAGE_STEP = 10;
 // Everything beside the list pane on its row: the divider and the detail pane's minimum.
 const LIST_SIBLING_MIN = DIVIDER + RECORDS_DETAIL_MIN_WIDTH;
 // How far one arrow press moves the divider.
@@ -321,7 +321,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     rows,
     selectedId: selectedKey,
     onActivate,
-    pageSize: PAGE_STEP,
     composingRef,
     followFocus: true,
   });

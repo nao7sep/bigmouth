@@ -2,11 +2,7 @@
  * The core's view of the app's data shapes.
  *
  * Most of them ARE the shared shapes and are re-exported from `@shared/types`
- * rather than restated here. The file used to declare its own copy of every one,
- * on the stated premise that "the two type worlds can't import each other" —
- * which was never true: `tsconfig.node.json` includes `src/shared/**`, the alias
- * is configured for main, and files in this very directory already import from
- * it. The copies had begun to drift, and nothing could catch them.
+ * rather than restated here, so the two cannot drift.
  *
  * What remains below is what genuinely differs, and the difference is the point:
  * the core deals in what a `.md` file holds and where it lives, while the shared

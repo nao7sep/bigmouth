@@ -8,9 +8,7 @@ import {
 } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
-import { typeAheadMatch } from "../util/compositeNav";
-
-const TYPE_AHEAD_RESET_MS = 700;
+import { TYPE_AHEAD_RESET_MS, typeAheadMatch } from "../util/compositeNav";
 
 // The app's in-app menu layer: a trigger plus a popup list of commands that
 // behaves like a real menu, realizing the composite-control contract for a menu:
@@ -29,8 +27,8 @@ const TYPE_AHEAD_RESET_MS = 700;
 //
 // This is a popup, NOT a modal: it is not registered with the modal stack. It is
 // hand-rolled on the app's own composing helper so every dropdown behaves the
-// same. (Mirrors tapebox's Menu.tsx; intentionally a separate per-app copy — the
-// composite-control conventions forbid a cross-app shared primitive.)
+// same. (A per-app copy by design: the composite-control conventions forbid a
+// cross-app shared primitive.)
 
 interface MenuContextValue {
   close: () => void;

@@ -12,12 +12,15 @@ import {
   type WorkspaceDeleteResult,
 } from "@shared/types";
 import {
-  CENTER_MIN,
-  DIVIDER,
+  LEFT_MAX,
   LEFT_MIN,
+  RIGHT_MAX,
   RIGHT_MIN,
   clamp,
-  clampPaneWidth,
+  displayedLeftWidth,
+  displayedRightWidth,
+  restoredLeftIntent,
+  restoredRightIntent,
 } from "./paneConstants";
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from "@shared/layout";
 import { presentFailure } from "./util/presentFailure";
@@ -26,13 +29,6 @@ import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { StoragePendingNotice, StoragePendingResults, useStorageResultReporter } from "./StoragePending";
 import "./App.css";
-
-// Per-pane configured bounds. The lower bound is the pane's own minimum; the
-// upper bound is the widest the pane can grow at all. The live splitter clamp
-// (clampPaneWidth) tightens the upper bound further against the container so a
-// widened pane never crushes the center pane.
-const LEFT_MAX = 720;
-const RIGHT_MAX = 960;
 
 // Each side pane stores an INTENT width in pixels: the width the user dragged
 // the pane to, independent of the current viewport. Intent is clamped only to
@@ -100,26 +96,8 @@ export function App() {
   // paint) the intent is shown as-is; the observer corrects it immediately
   // after, and below the summed minimum the row scrolls (overflow-x: auto).
   // Display-only — these are never persisted.
-  const leftWidth =
-    containerWidth === null
-      ? leftIntent
-      : clampPaneWidth(
-          leftIntent,
-          LEFT_MIN,
-          LEFT_MAX,
-          containerWidth,
-          rightIntent + CENTER_MIN + 2 * DIVIDER
-        );
-  const rightWidth =
-    containerWidth === null
-      ? rightIntent
-      : clampPaneWidth(
-          rightIntent,
-          RIGHT_MIN,
-          RIGHT_MAX,
-          containerWidth,
-          leftIntent + CENTER_MIN + 2 * DIVIDER
-        );
+  const leftWidth = containerWidth === null ? leftIntent : displayedLeftWidth(leftIntent, rightIntent, containerWidth);
+  const rightWidth = containerWidth === null ? rightIntent : displayedRightWidth(rightIntent, leftIntent, containerWidth);
 
   // Measure the pane row and keep the measurement live. A viewport resize fires
   // the observer, which only updates containerWidth — the intents are untouched,
@@ -165,8 +143,8 @@ export function App() {
       try {
         const state: UiState = await getUiState();
         if (cancelled) return;
-        setLeftIntent(clamp(state.paneLeftWidth, LEFT_MIN, LEFT_MAX));
-        setRightIntent(clamp(state.paneRightWidth, RIGHT_MIN, RIGHT_MAX));
+        setLeftIntent(restoredLeftIntent(state.paneLeftWidth));
+        setRightIntent(restoredRightIntent(state.paneRightWidth));
         storedId = state.activeWorkspaceId;
       } catch (err) {
         // A failed state read is non-fatal: fall back to defaults and no

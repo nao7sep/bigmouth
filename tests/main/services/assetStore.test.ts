@@ -54,7 +54,7 @@ afterEach(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-// --- Path traversal (the security boundary the README promises) -------------
+// --- Path traversal: a name never resolves outside the folder it is under ---
 
 describe("safeResolveUnder", () => {
   it("rejects paths that escape the root", () => {
@@ -579,7 +579,7 @@ describe("an unusable meta.json is moved aside", () => {
   });
 });
 
-// store-recovery-conventions: meta.json's format version.
+// meta.json's format version, which tells a build whether it can read the file.
 describe("asset metadata format version", () => {
   it("does not certify hashless disposable prior-format upload facts as current", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));

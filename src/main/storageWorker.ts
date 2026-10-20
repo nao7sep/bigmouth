@@ -4,12 +4,13 @@ import { setContentSaveListener } from "./core/services/postStore.js";
 import { onRecordStored } from "./core/services/recordsStore.js";
 import { useBackupRecorderModule } from "./core/services/backupStore.js";
 import { serializeError } from "./core/services/logger.js";
+import { WORKER_ENTRIES } from "./builtEntries.js";
 import type { StorageRequest, StorageReply, StorageFlushRequest, StorageFinishRequest } from "./storageOwner.js";
 
 const port = parentPort!;
-// electron-vite builds the backup recorder as backup-worker.js beside this entry.
+// electron-vite builds the backup recorder as its own entry beside this one.
 const here = import.meta.url;
-if (here && !here.endsWith(".ts")) useBackupRecorderModule(new URL("./backup-worker.js", here));
+if (here && !here.endsWith(".ts")) useBackupRecorderModule(new URL(`./${WORKER_ENTRIES.backup}.js`, here));
 function apply(request: StorageRequest) {
   const value = (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
   port.postMessage({ id: request.id, ok: true, value } satisfies StorageReply);

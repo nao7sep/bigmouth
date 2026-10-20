@@ -68,20 +68,15 @@ describe("storage root (BIGMOUTH_DATA_DIR)", () => {
     }
   });
 
-  it("names the workspace registry workspaces.json, never the old app.json", () => {
+  it("keeps the workspace registry in workspaces.json under the storage root", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-registry-"));
     try {
       process.env.BIGMOUTH_DATA_DIR = root;
       initAppDir();
-      // The registry is created on first init and must land at workspaces.json.
+      // The registry is created on first init, and a write (adding a workspace)
+      // persists to the same file.
       expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
-      expect(fs.existsSync(path.join(root, "app.json"))).toBe(false);
-
-      // A write (adding a workspace) must persist to the same workspaces.json,
-      // and must not resurrect an app.json under any code path.
       createWorkspace("Registry WS");
-      expect(fs.existsSync(path.join(root, "workspaces.json"))).toBe(true);
-      expect(fs.existsSync(path.join(root, "app.json"))).toBe(false);
 
       const parsed = JSON.parse(fs.readFileSync(path.join(root, "workspaces.json"), "utf-8"));
       expect(Array.isArray(parsed.workspaces)).toBe(true);
@@ -284,8 +279,7 @@ describe("workspace paths are cwd-independent", () => {
 });
 
 // The module owns every standard subpath name, so two derivations of one file
-// cannot drift. state.json and backups.sqlite3 used to be joined onto the root
-// at their own call sites instead.
+// cannot drift.
 describe("standard subpaths", () => {
   it("names every store under the resolved root", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));

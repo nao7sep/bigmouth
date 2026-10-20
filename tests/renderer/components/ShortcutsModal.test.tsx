@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 
-import { ShortcutsModal } from "@renderer/components/ShortcutsModal";
+import { ShortcutsModal, buildGroups } from "@renderer/components/ShortcutsModal";
 
 afterEach(cleanup);
 
@@ -14,8 +14,8 @@ describe("ShortcutsModal", () => {
 
   it("lists every shortcut row with its key and description", () => {
     const { container, getByText } = render(<ShortcutsModal onClose={vi.fn()} />);
-    // One <tr> per shortcut entry (12 of them).
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(12);
+    // One <tr> per shortcut entry.
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(buildGroups("Cmd").flatMap((group) => group.shortcuts).length);
     // Broadest first, in the app menu's order.
     expect(Array.from(container.querySelectorAll(".shortcuts-group-title")).map((h) => h.textContent)).toEqual([
       "Workspaces",

@@ -1,5 +1,5 @@
 import { DEFAULT_GENERATION_PROMPTS } from "@main/core/ai/generationPrompts.js";
-import { GENERATED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
+import { GENERATED_SLUG_MAX_LENGTH, GENERATED_TAG_COUNT } from "@shared/metadataFields";
 import { describe, it, expect } from "vitest";
 import {
   isMetadataField,
@@ -151,8 +151,9 @@ describe("the built-in field guidance", () => {
   it("states the rules the answer is held to and leaves the format to the schema", () => {
     expect(DEFAULT_GENERATION_PROMPTS.slug).toContain("lowercase letters, numbers, and hyphens, with no leading, trailing, or doubled hyphen");
     expect(DEFAULT_GENERATION_PROMPTS.slug).toContain(`under ${GENERATED_SLUG_MAX_LENGTH} characters`);
-    expect(DEFAULT_GENERATION_PROMPTS.tags).toContain("5 to 8 tags");
-    expect(DEFAULT_GENERATION_PROMPTS.tagsEn).toContain("5 to 8 English tags");
+    const count = `${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max}`;
+    expect(DEFAULT_GENERATION_PROMPTS.tags).toContain(`${count} tags`);
+    expect(DEFAULT_GENERATION_PROMPTS.tagsEn).toContain(`${count} English tags`);
     for (const [field, prompt] of Object.entries(DEFAULT_GENERATION_PROMPTS)) {
       expect(prompt, field).not.toMatch(/json|output only|reply with/i);
     }
@@ -206,13 +207,13 @@ describe("normalizeGeneratedMetadata", () => {
     ).toThrow(/url-safe/i);
   });
 
-  it("rejects a tag list outside the 5-8 range", () => {
+  it("rejects a tag list outside the accepted count", () => {
     expect(() =>
       normalizeGeneratedMetadata(
         { title: "t", slug: "s", tags: ["a", "b"] },
         fields
       )
-    ).toThrow(/5 to 8/);
+    ).toThrow(`${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max} tags`);
   });
 
   it("de-duplicates tags before counting", () => {
@@ -222,7 +223,7 @@ describe("normalizeGeneratedMetadata", () => {
         { title: "t", slug: "s", tags: ["a", "a", "b", "b", "c", "d"] },
         fields
       )
-    ).toThrow(/5 to 8/);
+    ).toThrow(`${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max} tags`);
   });
 
   // Until this check existed, only the slug's URL-safe pattern held any field to

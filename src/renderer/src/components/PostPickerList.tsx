@@ -7,8 +7,6 @@ import { OperationalResult } from "./OperationalResult";
 import { POST_STATUS_LABELS } from "@shared/postStatus";
 import { useI18n } from "../i18n/I18nContext";
 
-const PAGE_SIZE = 10;
-
 interface PostPickerListProps extends PostPickerState {
   onSelect: (id: string, title: string) => void;
   selectedId?: string | null;
@@ -53,7 +51,6 @@ export function PostPickerList({
     rows,
     selectedId,
     onActivate,
-    pageSize: PAGE_SIZE,
     composingRef,
     autoActivateFirst: true,
   });

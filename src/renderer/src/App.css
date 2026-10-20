@@ -100,7 +100,7 @@
   /* The recessed track a segmented control's segments sit in. */
   --bm-track: #ebe0d3;
   /* A select's drawn chevron; its stroke is --bm-text-muted, spelled out
-     because a data URI cannot read a custom property. */
+     because a data URI cannot read a custom property; a test compares them. */
   --bm-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23695d52' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* Editor syntax colors (editorHighlight.ts). The light values are
      CodeMirror's defaults, three of them deepened to 4.5:1 on the surface. */
@@ -368,8 +368,8 @@ body {
 .pane-center {
   flex: 1;
   /* Real minimum (smallest useful editor width), not 0: the primary/center pane
-     must never be squeezed to invisibility by widened siblings. Keep in sync
-     with CENTER_MIN in paneConstants.ts. */
+     must never be squeezed to invisibility by widened siblings. CSS cannot
+     import the shared layout minimum, so this restates it; a test compares them. */
   min-width: 360px;
   display: flex;
   flex-direction: column;
@@ -2581,7 +2581,8 @@ select:is(.form-select, .prompt-select) {
    The list pane (filters above the record list) at its user-chosen width,
    the shared divider, and the detail pane taking the rest, laid out like the
    main window's panes. --records-list-width is set inline from the displayed
-   width. The minimums mirror RECORDS_* in src/shared/layout.ts. */
+   width. The minimums and the filter band's height restate the shared records
+   layout, which CSS cannot import; a test compares them. */
 .records-shell {
   display: flex;
   height: 100%;

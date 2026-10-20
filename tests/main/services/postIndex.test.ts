@@ -584,7 +584,7 @@ describe("reconcile", () => {
   });
 });
 
-// store-recovery-conventions: each store's format version.
+// A post file's format version, which tells a build whether it can read the file.
 describe("post file format version", () => {
   it("writes this build's format version first in a new post's front matter", () => {
     const post = createPost(dataDir, "blogger", "en");

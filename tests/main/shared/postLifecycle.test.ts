@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyStatusTransition, isPostStatus, POST_STATUSES } from "@main/core/shared/postLifecycle.js";
+import { applyStatusTransition, POST_STATUSES } from "@main/core/shared/postLifecycle.js";
 import type { PostFrontMatter, PostStatus } from "@main/core/shared/types.js";
 
 const NOW = new Date("2026-04-05T14:30:22Z");
@@ -76,16 +76,6 @@ it.each(["discarded", "verified", "published", "retired"] as const)("clamps new 
   const fm = postIn("draft");
   applyStatusTransition(fm, status, new Date("2025-01-01T00:00:00.000Z"));
   for (const key of HELD[status]) expect(fm[key]).toBe(fm.createdAtUtc);
-});
-
-describe("POST_STATUSES", () => {
-  it("is the five statuses in the conventions' order, and recognizes nothing else", () => {
-    expect(POST_STATUSES).toEqual(["draft", "discarded", "verified", "published", "retired"]);
-    expect(isPostStatus("retired")).toBe(true);
-    // A hand-edited front matter can carry anything at all.
-    expect(isPostStatus("Draft")).toBe(false);
-    expect(isPostStatus(undefined)).toBe(false);
-  });
 });
 
 describe("applyStatusTransition", () => {

@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { editorHighlightStyle } from "@renderer/components/editorHighlight";
+import { themeTokens } from "../../appStylesheet";
 
 // Every syntax color reads a palette token that both themes define, so the
-// editor never shows a fixed color that only one theme can carry. The token
-// contrast itself is checked in themeContrast.test.ts.
-const css = readFileSync(`${process.cwd()}/src/renderer/src/App.css`, "utf8");
-const darkBlock = css.slice(css.indexOf("@media (prefers-color-scheme: dark) {"));
-const lightBlock = css.slice(css.search(/^:root\s*\{/m), css.indexOf("@media (prefers-color-scheme: dark) {"));
+// editor never shows a fixed color that only one theme can carry. Each token's
+// contrast against the editor surface is checked with the rest of the palette.
 
 describe("editorHighlightStyle", () => {
   const colors = editorHighlightStyle.specs
@@ -22,8 +19,8 @@ describe("editorHighlightStyle", () => {
   it("uses only tokens defined in both themes", () => {
     for (const color of colors) {
       const token = color.slice(4, -1);
-      expect(lightBlock, `${token} in light`).toContain(`${token}:`);
-      expect(darkBlock, `${token} in dark`).toContain(`${token}:`);
+      expect(themeTokens.light.has(token), `${token} in light`).toBe(true);
+      expect(themeTokens.dark.has(token), `${token} in dark`).toBe(true);
     }
   });
 });

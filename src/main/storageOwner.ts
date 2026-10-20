@@ -2,6 +2,7 @@ import { Worker, MessageChannel, receiveMessageOnPort, type MessagePort } from "
 import type { ContentSaveEvent } from "./core/services/postStore.js";
 import type { StorageTasks } from "./storageTasks.js";
 import { DEBUG_LOG_FLAG } from "./core/services/logger.js";
+import { WORKER_ENTRIES } from "./builtEntries.js";
 
 export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
@@ -92,7 +93,7 @@ export class StorageOwner {
   private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
 
   constructor(private readonly createWorker = () => {
-    const module = import.meta.url.endsWith(".ts") ? "./storageWorker.ts" : "./storage-worker.js";
+    const module = import.meta.url.endsWith(".ts") ? "./storageWorker.ts" : `./${WORKER_ENTRIES.storage}.js`;
     // The records are written on the worker, so it reads the debug switch there:
     // a worker sees only the arguments it is given, never the app's own.
     return new Worker(new URL(module, import.meta.url), { argv: process.argv.filter((arg) => arg === DEBUG_LOG_FLAG) });

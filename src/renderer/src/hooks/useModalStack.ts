@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { isComposingEvent } from "./useComposing";
 
 // A single source of truth for which app modals/dialogs are open, in stacking
 // order. Every ModalShell registers a layer here on mount and removes it on
@@ -33,10 +34,9 @@ function notify() {
 function handleDocumentKeyDown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
   // While an IME composition is in progress, Escape cancels the candidate and
-  // belongs to the IME, not the modal stack. (Mirrors isComposingKeyboardEvent;
-  // no composition ref exists at the document level, so the native isComposing
-  // flag plus the legacy keyCode === 229 fallback are the signal.)
-  if (event.isComposing || event.keyCode === 229) return;
+  // belongs to the IME, not the modal stack. No composition ref exists at the
+  // document level, so the event's own signals decide.
+  if (isComposingEvent(event)) return;
   const topmost = layers[layers.length - 1];
   if (!topmost) return;
   event.preventDefault();

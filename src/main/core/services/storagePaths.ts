@@ -1,20 +1,15 @@
 /**
  * The single storage root, and every standard path derived from it.
  *
- * Split out of the workspace registry, which owned two jobs with different
- * reasons to change: where the app keeps its data, and which workspaces exist.
- * They were touched by disjoint sets of methods and consumed by disjoint sets of
- * modules — the log path, the secrets path and the backup store want the root
- * and nothing else; the asset protocol and the IPC context want the registry and
- * nothing else. A test file for this module already existed before the module
- * did (tests/main/services/storagePaths.test.ts).
+ * Separate from the workspace registry, because the two have different reasons
+ * to change: where the app keeps its data, and which workspaces exist. The log
+ * path, the secrets path and the backup store want the root and nothing else;
+ * the asset protocol and the IPC context want the registry and nothing else.
  *
- * Splitting it also broke a three-module import cycle: core/shared/atomicWrite
- * reached into core/services/backupStore, which reached into the registry for
- * the root, which reached back into atomicWrite. The cycle survived only
- * because ESM hoists function declarations — anything that turned the backup
- * recorder into a module-init-time value would have deadlocked at import. This
- * module imports nothing but node built-ins.
+ * Keeping it apart also keeps an import cycle out: atomicWrite reaches into the
+ * backup store, which needs the root, and the registry reaches back into
+ * atomicWrite. So this module imports only node built-ins and constants that
+ * import nothing.
  *
  * The convention this serves: ONE resolver owns the home-directory call, the
  * `BIGMOUTH_DATA_DIR` check, and the names of all standard subpaths — so two
@@ -24,6 +19,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+
+import { APP_NAME as PRODUCT_NAME } from "@shared/appName";
 
 const APP_NAME = "bigmouth";
 const DATA_DIR_ENV_VAR = "BIGMOUTH_DATA_DIR";
@@ -87,7 +84,7 @@ function expandAndResolve(input: string, base: string, label: string): string {
 /**
  * Whether two paths name the same folder.
  *
- * String equality is not enough, and the registry used to rely on it: macOS
+ * String equality is not enough: macOS
  * hands back NFD from a file dialog where the user typed NFC, its default volume
  * is case-insensitive, and either can be reached through a symlink. Each of
  * those slipped past the "already registered as workspace X" guard and
@@ -253,7 +250,7 @@ export function setDocumentsDirectory(directory: string | null): void {
  * is not under the root and BIGMOUTH_DATA_DIR does not move it.
  */
 export function getDefaultWorkspacesParentDir(): string {
-  return path.join(documentsDirectory ?? path.join(os.homedir(), "Documents"), "BigMouth");
+  return path.join(documentsDirectory ?? path.join(os.homedir(), "Documents"), PRODUCT_NAME);
 }
 
 /** The app-wide settings store — the storage root's config.json, distinct from

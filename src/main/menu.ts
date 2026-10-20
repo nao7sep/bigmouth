@@ -1,9 +1,8 @@
 import { Menu, type MenuItemConstructorOptions } from "electron";
 
+import { APP_NAME as APP } from "@shared/appName";
 import type { Translator } from "@shared/i18n/translate";
 import { mainTranslator } from "./i18n.js";
-
-const APP = "BigMouth";
 
 // A deliberate native application menu (app-chrome-conventions: not the toolkit
 // default). BigMouth's own actions live in the in-window UI; this menu carries

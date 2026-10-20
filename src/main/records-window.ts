@@ -7,6 +7,7 @@ import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from "@shared/lay
 import { serializeError, warn } from "./core/services/logger.js";
 import { mainTranslator } from "./i18n.js";
 import { windowBackground } from "./theme.js";
+import { PRELOAD_FILE } from "./builtEntries.js";
 import { boundWindowMinimum, configureWindowActivity, loadRendererPage } from "./window.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
 
@@ -38,7 +39,7 @@ export function buildRecordsWindowOptions(
     backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
+      preload: join(__dirname, "../preload", PRELOAD_FILE),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

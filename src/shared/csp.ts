@@ -3,11 +3,9 @@
  *
  * It has to travel in the HTML. The packaged app loads the renderer over
  * `file://`, and a CSP delivered as an HTTP response header cannot apply to a
- * file: load — which is what the app used to do, so the shipped build ran with
- * no policy in force at all while the code read as though it had one. The
- * `<meta>` tag is injected at build time (see electron.vite.config.ts) rather
- * than written into src/renderer/index.html, because the dev server needs the
- * relaxed policy Vite's HMR client and React Fast Refresh require.
+ * file: load. The `<meta>` tag is injected at build time rather than written
+ * into the page's HTML, because the dev server needs the relaxed policy Vite's
+ * HMR client and React Fast Refresh require.
  *
  * Environment-neutral by construction: a string and two pure functions, so it
  * type-checks under both the node and web configs and the build config can
