@@ -246,7 +246,8 @@ export interface AssetMeta {
   width?: number;
   height?: number;
   // Images only: whether it has more than one frame, as read when it was
-  // added. Absent for an image added before this was recorded.
+  // added. Absent when its record does not say (its frames were not read),
+  // which readers treat as possibly animated by its file type.
   animated?: boolean;
   hasMetadata?: boolean;
   // When the app stored the file. Absent for a file it found in the folder

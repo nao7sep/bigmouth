@@ -17,12 +17,7 @@ import { info as logInfo } from "../core/services/logger.js";
 import { maskCredentials } from "../core/ai/maskCredentials.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
-
-// A generous outer cap, not the bound that matters: the call is bounded by
-// inactivity in the provider, so a thinking-enabled config that is still
-// producing output is never cut off after its tokens are billed, and the user
-// can stop it at any time.
-const METADATA_GENERATION_MAX_MS = 10 * 60_000;
+import { GENERATION_MAX_MS } from "../core/ai/provider.js";
 
 export function registerMetadataHandlers(): void {
   ipcMain.handle(
@@ -104,7 +99,7 @@ async function generateMetadata(
     }, [roleCall.apiKey]));
     signal.throwIfAborted();
     const raw = await provider.generateJson(request.systemPrompt, request.userContent, request.schema, {
-      maxDurationMs: METADATA_GENERATION_MAX_MS,
+      maxDurationMs: GENERATION_MAX_MS,
       signal,
     });
     const generated = normalizeGeneratedMetadata(raw, validFields);
@@ -137,7 +132,7 @@ async function generateMetadata(
         extra: {
           fields: validFields,
           mode: "structured",
-          maxDurationMs: METADATA_GENERATION_MAX_MS,
+          maxDurationMs: GENERATION_MAX_MS,
           contentSource,
           contentLength: postContent.length,
           language: post.frontMatter.language,

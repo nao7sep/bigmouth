@@ -124,7 +124,7 @@ export function nextSummariesForStatus(
 /**
  * Orders two summaries within a section, by the same rules the main process
  * uses — the comparators live in `@shared/postOrder` because both sides sort
- * the same list and used to disagree on every tie-breaker.
+ * the same list, and two copies would drift apart on the tie-breakers.
  */
 export function compareSummaries(status: PostStatus, a: PostSummary, b: PostSummary): number {
   // A summary's front matter carries id, createdAtUtc and the status times,

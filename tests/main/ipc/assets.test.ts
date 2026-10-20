@@ -312,7 +312,7 @@ describe("uploadAsset", () => {
     expect(staged()).toEqual([]);
   });
 
-  // Dimensions need a decoder; the renderer no longer decodes uploads, and main
+  // Dimensions need a decoder; the renderer does not decode uploads, and main
   // takes nothing it sends but the name, the bytes and where the file is.
   it("records the image's own dimensions from its header, whatever the renderer sends with the file", async () => {
     const id = (await createDraft());
@@ -471,8 +471,8 @@ describe("uploadAsset", () => {
   );
 
   it("keeps two non-ASCII names apart instead of collapsing them onto one file", async () => {
-    // Both names used to sanitize to "_.png", which the collision check then read
-    // as a re-upload of the same asset - so the second silently replaced the
+    // Sanitized to "_.png", both names would read to the collision check as a
+    // re-upload of the same asset, so the second would silently replace the
     // first. This app ships `ja` as a first-class post language.
     const id = (await createDraft());
     await uploadResult(id, upload("桜.png", PNG_1x1));

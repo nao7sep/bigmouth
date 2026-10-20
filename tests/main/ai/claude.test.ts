@@ -703,10 +703,10 @@ describe("generateTextStream", () => {
 });
 
 // The guard is an allowlist of the two reasons that mean "finished", not a
-// denylist of the ones known to be bad. It used to enumerate max_tokens and
-// refusal only, so model_context_window_exceeded fell through and a truncated
-// answer was returned as a complete one - the exact class it exists for, missed
-// because the SDK's union grew.
+// denylist of the ones known to be bad. A denylist of max_tokens and refusal
+// would let model_context_window_exceeded fall through and return a truncated
+// answer as a complete one - the exact class it exists for, missed whenever the
+// SDK's union grows.
 describe("incomplete completions", () => {
   function runStream(msg: unknown) {
     const f = fakeStream();

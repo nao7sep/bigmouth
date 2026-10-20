@@ -21,7 +21,7 @@ import {
   type NavDirection,
 } from "../util/compositeNav";
 import { isComposingKeyboardEvent } from "./useComposing";
-import { hasMod } from "../util/shortcuts";
+import { matchesShortcut, SHORTCUTS } from "../util/shortcuts";
 
 // The app's listbox layer: one shared hook behind the post list. It realizes
 // the composite-control contract for a grouped, single-select listbox:
@@ -128,13 +128,12 @@ export function usePostListbox({
    */
   followFocus?: boolean;
   /**
-   * Per-row actions driven from the active row, by key.
-   *
-   * The composite-control conventions keep a row's action buttons out of the tab
-   * order — which the workspace list did, with `tabIndex={-1}` — and then require
-   * the actions to be reachable some other way: "drive them from within, by keys
-   * on the active row". Nothing did, so a keyboard-only user could arrow through
-   * the workspace list and open one, and nothing else at all.
+   * Per-row actions driven from the active row, by the shortcut table's rename
+   * and remove chords. The composite-control conventions keep a row's action
+   * buttons out of the tab order (the workspace list's carry `tabIndex={-1}`)
+   * and require the actions to be reachable by keys on the active row instead;
+   * without them a keyboard-only user could open a workspace and do nothing
+   * else with it.
    */
   onRowAction?: (id: string, action: "rename" | "delete") => void;
 }): UsePostListboxResult {
@@ -222,6 +221,20 @@ export function usePostListbox({
         moveTo(nextIndex(direction, activeIndex, ids.length));
       };
 
+      // Row actions, from the shared shortcut table.
+      if (onRowAction && resolvedActiveId != null) {
+        if (matchesShortcut(SHORTCUTS.renameWorkspace, e)) {
+          e.preventDefault();
+          onRowAction(resolvedActiveId, "rename");
+          return;
+        }
+        if (matchesShortcut(SHORTCUTS.removeWorkspace, e)) {
+          e.preventDefault();
+          onRowAction(resolvedActiveId, "delete");
+          return;
+        }
+      }
+
       switch (e.key) {
         case "ArrowDown":
           move(1);
@@ -269,30 +282,6 @@ export function usePostListbox({
           if (resolvedActiveId == null) return;
           if (expandedById.has(resolvedActiveId)) onToggleRow?.(resolvedActiveId);
           else onActivate(resolvedActiveId);
-          return;
-        case "F2":
-          if (resolvedActiveId == null || !onRowAction) return;
-          e.preventDefault();
-          onRowAction(resolvedActiveId, "rename");
-          return;
-        case "r":
-        case "R":
-          // Cmd+R alias for rename (keyboard-shortcut-conventions: the command
-          // modifier, Alt excluded, Shift not part of the decision). Finder's own
-          // rename key is Enter, but this listbox already binds Enter to manual
-          // activation (opening the row), so Enter cannot double as rename here —
-          // Cmd+R is the fallback the conventions call for when the natural key is
-          // taken. A bare "r" (no modifier) falls through to type-ahead below.
-          if (!hasMod(e) || e.shiftKey) break;
-          if (resolvedActiveId == null || !onRowAction) return;
-          e.preventDefault();
-          onRowAction(resolvedActiveId, "rename");
-          return;
-        case "Delete":
-        case "Backspace":
-          if (resolvedActiveId == null || !onRowAction) return;
-          e.preventDefault();
-          onRowAction(resolvedActiveId, "delete");
           return;
         default:
           break;

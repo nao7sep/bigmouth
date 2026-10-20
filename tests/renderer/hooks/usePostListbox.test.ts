@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { usePostListbox, type PostListRow } from "@renderer/hooks/usePostListbox";
+import { matchesShortcut, SHORTCUTS } from "@renderer/util/shortcuts";
 
 afterEach(cleanup);
 
@@ -276,5 +277,43 @@ describe("usePostListbox — cursor recovery", () => {
     // activeId is still null (never navigated); removing rows must not set it.
     act(() => rerender({ rows: rows(["a", "Apple"]), selectedId: "a" }));
     expect(result.current.activeId).toBe("a"); // resolved from selection, not recovery state
+  });
+});
+
+describe("usePostListbox — row actions", () => {
+  // The workspace list's group of the shortcut table; every other group
+  // belongs to the window-level handler.
+  it("acts on exactly the shortcut table's rename and remove chords", () => {
+    const onRowAction = vi.fn<(id: string, action: "rename" | "delete") => void>();
+    const { result } = renderHook(() =>
+      usePostListbox({ rows: THREE, selectedId: "a", onActivate: vi.fn(), composingRef, onRowAction }),
+    );
+    const tableKeys = [SHORTCUTS.renameWorkspace, SHORTCUTS.removeWorkspace].flatMap((shortcut) =>
+      shortcut.chords.flat().map((chord) => chord.key),
+    );
+    const keys = [...new Set([...tableKeys, ...tableKeys.map((k) => k.toUpperCase()), "n", "e", "Enter", "F3", "Escape"])];
+    const holds = [
+      {},
+      { metaKey: true },
+      { ctrlKey: true },
+      { shiftKey: true },
+      { metaKey: true, shiftKey: true },
+      { metaKey: true, altKey: true },
+      { ctrlKey: true, altKey: true },
+      { altKey: true },
+    ];
+    for (const key of keys) {
+      for (const held of holds) {
+        const event = { key, ...held };
+        onRowAction.mockClear();
+        act(() => result.current.listboxProps.onKeyDown(keyEvent(event).event));
+        const expected = matchesShortcut(SHORTCUTS.renameWorkspace, event)
+          ? [["a", "rename"]]
+          : matchesShortcut(SHORTCUTS.removeWorkspace, event)
+            ? [["a", "delete"]]
+            : [];
+        expect(onRowAction.mock.calls, JSON.stringify(event)).toEqual(expected);
+      }
+    }
   });
 });

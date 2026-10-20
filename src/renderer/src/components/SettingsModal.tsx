@@ -618,9 +618,9 @@ function GeneralTab({
           onChange={(e) => {
             setPerLoadText(e.target.value);
             // An emptied field is NaN, which the validator calls out and the
-            // Save gate refuses. It used to become 50 — a magic number the user
-            // never chose, applied under the caret — and a typed 0 became 50 too,
-            // because `parseInt(...) || 50` cannot tell zero from nothing.
+            // Save gate refuses, rather than a fallback number the user never
+            // chose appearing under the caret; and a typed 0 stays 0 for the
+            // validator, which `parseInt(...) || fallback` could not tell from nothing.
             update({ postsPerLoad: Number.parseInt(e.target.value, 10) });
           }}
         />

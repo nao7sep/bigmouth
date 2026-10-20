@@ -117,9 +117,8 @@ describe("buildMetadataGenerationRequest", () => {
     expect(req.userContent).not.toContain('"language": "ja"');
   });
 
-  // Regenerating a field used to hand the model that field's own last answer as
-  // the thing to stay consistent with, so a value that came back in the wrong
-  // language reproduced itself on every retry.
+  // Handed its own last answer as the thing to stay consistent with, a field
+  // that came back in the wrong language would reproduce itself on every retry.
   it("withholds a regenerated field's own previous value from the existing metadata", () => {
     const req = buildMetadataGenerationRequest({
       fields: ["titleEn"],
@@ -226,9 +225,9 @@ describe("normalizeGeneratedMetadata", () => {
     ).toThrow(`${GENERATED_TAG_COUNT.min} to ${GENERATED_TAG_COUNT.max} tags`);
   });
 
-  // Until this check existed, only the slug's URL-safe pattern held any field to
-  // a script, so an English field returned in the draft's language was written
-  // into the post's front matter and the author was the only detector.
+  // Apart from this check, only the slug's URL-safe pattern holds any field to
+  // a script, so without it an English field returned in the draft's language
+  // would be written into the post's front matter with the author the only detector.
   it("rejects an English field returned in the draft's language", () => {
     expect(() =>
       normalizeGeneratedMetadata({ titleEn: "日本語のタイトルです" }, ["titleEn"])

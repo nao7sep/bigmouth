@@ -313,9 +313,9 @@ export function flushPostEdits(dataDir: string, id: string): boolean {
       return false;
     }
     // The message is for the user; the error itself travels alongside it so the
-    // IPC layer can log a stack. It used to be flattened to a string here, which
-    // left the app's most debugging-critical failure - a post's text not
-    // reaching disk - recording no error type and no stack anywhere.
+    // IPC layer can log a stack. Flattened to a string here, the app's most
+    // debugging-critical failure - a post's text not reaching disk - would
+    // record no error type and no stack anywhere.
     const message = err instanceof Error ? err.message : String(err);
     scheduleFlush(dataDir, id, PENDING_RETRY_DELAY_MS);
     contentSaveListener?.({ kind: "save-failed", dataDir, id, message, error: err });

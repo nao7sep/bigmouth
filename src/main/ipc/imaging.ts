@@ -22,12 +22,7 @@ import { info as logInfo } from "../core/services/logger.js";
 import { maskCredentials } from "../core/ai/maskCredentials.js";
 import { resolveWorkspace } from "./context.js";
 import { trackAiRequest } from "./aiRequests.js";
-
-// A generous outer cap, not the bound that matters: the call is bounded by
-// inactivity in the provider, so a thinking-enabled config that is still
-// producing output is never cut off after its tokens are billed, and the user
-// can stop it at any time.
-const IMAGING_GENERATION_MAX_MS = 10 * 60_000;
+import { GENERATION_MAX_MS } from "../core/ai/provider.js";
 
 export function registerImagingHandlers(): void {
   ipcMain.handle(
@@ -107,7 +102,7 @@ async function generateImaging(
   try {
     signal.throwIfAborted();
     const raw = await provider.generateJson(systemPrompt, userContent, buildImagingSchema(options.count), {
-      maxDurationMs: IMAGING_GENERATION_MAX_MS,
+      maxDurationMs: GENERATION_MAX_MS,
       signal,
     });
     const items = normalizeImagingOutput(raw, options.count);
@@ -134,7 +129,7 @@ async function generateImaging(
         extra: {
           ...options,
           mode: "structured",
-          maxDurationMs: IMAGING_GENERATION_MAX_MS,
+          maxDurationMs: GENERATION_MAX_MS,
           contentLength: postContent.length,
           model: roleCall.model,
         },

@@ -9,9 +9,17 @@ import { Worker } from "node:worker_threads";
 
 import { WORKER_ENTRIES } from "../../builtEntries.js";
 import type { RecordsRead, RecordsReadResults } from "./recordsQueries.js";
-import type { RecordsReaderRequest, RecordsReaderResponse } from "./recordsReaderWorker.js";
+import type { RecordsReaderData, RecordsReaderRequest, RecordsReaderResponse } from "./recordsReaderWorker.js";
 
 export const RECORDS_READ_TIMEOUT_MS = 10_000;
+
+/**
+ * How long the reader's connection waits on a lock the writer holds. Well
+ * inside the read timeout, so a lock that outlasts it fails the read with
+ * SQLite's own busy error on a thread that stays usable, instead of the read
+ * timing out and the thread being abandoned.
+ */
+export const RECORDS_BUSY_TIMEOUT_MS = RECORDS_READ_TIMEOUT_MS / 5;
 
 type Pending = {
   resolve: (value: never) => void;
@@ -57,7 +65,9 @@ function ensureWorker(path: string): Worker {
   // Tests run the source with Node's TypeScript stripping; the app runs
   // worker entry electron-vite builds beside index.js.
   const module = import.meta.url.endsWith(".ts") ? "./recordsReaderWorker.ts" : `./${WORKER_ENTRIES.recordsReader}.js`;
-  const created = new Worker(new URL(module, import.meta.url), { workerData: { databasePath: path } });
+  const created = new Worker(new URL(module, import.meta.url), {
+    workerData: { databasePath: path, busyTimeoutMs: RECORDS_BUSY_TIMEOUT_MS } satisfies RecordsReaderData,
+  });
   created.unref();
   created.on("message", (response: RecordsReaderResponse) => {
     const read = pending.get(response.id);

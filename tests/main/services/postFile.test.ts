@@ -32,11 +32,11 @@ function roundTrip(body: string): string {
 }
 
 describe("a body is data, never a document to re-parse", () => {
-  // The body used to be handed to gray-matter as a bare string, which re-parses
-  // it as a document. A post opening with `---` therefore had its text read as
-  // YAML: the body was erased from disk and its characters written back out as
-  // numbered front-matter keys, with the write-behind buffer cleared afterwards
-  // so nothing could restore it. Total loss of the user's work, on autosave.
+  // Handed to gray-matter as a bare string, the body would be re-parsed as a
+  // document. A post opening with `---` would have its text read as YAML: the
+  // body erased from disk and its characters written back out as numbered
+  // front-matter keys, with the write-behind buffer cleared afterwards so
+  // nothing could restore it. Total loss of the user's work, on autosave.
   it("keeps a body that opens with a thematic break", () => {
     const body = "---\n\nMy whole draft lives here and it is important.";
     expect(roundTrip(body)).toBe(body);
@@ -50,7 +50,7 @@ describe("a body is data, never a document to re-parse", () => {
     const post = readPost(file);
     expect(post.content).toBe(body);
     expect(post.frontMatter).not.toHaveProperty("foo");
-    // The character-indexed keys the old shape produced.
+    // The character-indexed keys a re-parsed body would produce.
     expect(post.frontMatter).not.toHaveProperty("0");
   });
 

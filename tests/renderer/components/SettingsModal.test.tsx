@@ -604,10 +604,9 @@ describe("SettingsModal — General tab validation", () => {
   });
 
   it("does not treat a duplicate language as an error, because the store folds it away", () => {
-    // The modal used to call duplicates invalid and block Save on them, while
-    // the IPC boundary accepted them and the store de-duplicated and sorted on
-    // save. Commit-time cleanup is the app's answer here, so there is nothing
-    // for the user to fix.
+    // The IPC boundary accepts duplicates and the store de-duplicates and sorts
+    // them on save. Commit-time cleanup is the app's answer here, so there is
+    // nothing for the user to fix and nothing to block Save on.
     expect(
       settingsFieldErrors({ ...settings(), supportedLanguages: ["en", "en"] }).supportedLanguages,
     ).toBeUndefined();
@@ -634,7 +633,7 @@ describe("SettingsModal — General tab validation", () => {
     const perLoad = numbers[0] as HTMLInputElement;
 
     fireEvent.change(perLoad, { target: { value: "" } });
-    // It used to snap to 50 — a value the user never chose, applied under the caret.
+    // It stays empty rather than snapping to a value the user never chose.
     expect(perLoad.value).toBe("");
 
     fireEvent.change(perLoad, { target: { value: "0" } });

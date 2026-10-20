@@ -121,9 +121,9 @@ describe("PreviewTab", () => {
   });
 });
 
-// The rewrite used to exclude only a leading `/` and run to the closing paren,
-// so it swallowed the whole rest of the reference: a hosted image, a data: URI
-// and an image with a title all became broken asset URLs — in the tab whose
+// A rewrite that excluded only a leading `/` and ran to the closing paren would
+// swallow the whole rest of the reference: a hosted image, a data: URI and an
+// image with a title would all become broken asset URLs — in the tab whose
 // entire job is showing what the post will look like.
 describe("PreviewTab — image destinations it must not touch", () => {
   function renderWith(content: string) {
@@ -152,7 +152,7 @@ describe("PreviewTab — image destinations it must not touch", () => {
     const img = container.querySelector("img");
 
     expect(img?.getAttribute("src")).toBe("bigmouth-asset://asset/ws1/p1/photo.png");
-    // The title used to be encoded into the filename.
+    // The title stays out of the filename.
     expect(img?.getAttribute("src")).not.toContain("caption");
     expect(img?.getAttribute("title")).toBe("A caption");
   });

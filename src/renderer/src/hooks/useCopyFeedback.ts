@@ -9,8 +9,8 @@ export function useCopyFeedback(duration = 1500) {
 
   const copy = useCallback(
     async (text: string, key = "default") => {
-      // "Copied" was shown before the write resolved and the rejection was
-      // swallowed, so a failed copy still reported success and the user pasted
+      // "Copied" waits for the write to resolve and a rejection is reported, so
+      // a failed copy never reports success and leaves the user pasting
       // whatever was on the clipboard before.
       try {
         await navigator.clipboard.writeText(text);

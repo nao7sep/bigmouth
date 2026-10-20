@@ -383,14 +383,11 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
 /**
  * Renames a workspace. Only the name — a workspace's folder is where it is.
  *
- * This used to take a `dataDirectory` too, and it re-pointed the registry entry
- * without moving a single file: a relocation that existed in the data model and
- * across IPC but was unreachable from the UI, whose only caller passed a name.
- * It even permitted an EMPTY target, so surfacing it as written would have left
- * every post behind and presented the user an empty workspace. The
- * storage-path conventions call that shape a trap. It is gone rather than
- * finished, because moving a workspace tree is its own feature with its own
- * failure modes, not a field on a rename.
+ * It takes no `dataDirectory`: re-pointing the registry entry without moving
+ * the files would leave every post behind and present the user an empty
+ * workspace, the shape the storage-path conventions call a trap. Moving a
+ * workspace tree is its own feature with its own failure modes, not a field on
+ * a rename.
  */
 export function updateWorkspace(id: string, updates: { name: string }): Workspace | null {
   const config = ensureLoaded();

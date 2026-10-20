@@ -65,8 +65,8 @@ afterEach(() => {
 // posts/index.json, and two separate API-key sets for one folder.
 // A halt only makes sense when the user can act on it, and BIGMOUTH_DATA_DIR can put
 // the registry anywhere — so every rejection names the file's full path and says
-// it was left in place. A bare JSON.parse used to throw a SyntaxError that
-// reached the user as "Unexpected end of JSON input".
+// it was left in place, rather than a bare JSON.parse SyntaxError reaching the
+// user as "Unexpected end of JSON input".
 describe("an unreadable registry names itself", () => {
   function withRegistry(contents: string): () => void {
     const home = tempDir("halt");
@@ -499,9 +499,8 @@ describe("the default workspace location", () => {
 
 describe("updateWorkspace renames, and only renames", () => {
   it("leaves the folder where it is", () => {
-    // It used to take a dataDirectory and re-point the registry entry without
-    // moving a file — a relocation unreachable from the UI that even permitted
-    // an empty target, so surfacing it would have left every post behind.
+    // Re-pointing the registry entry without moving a file would leave every
+    // post behind, so a rename takes no folder.
     const wsDir = tempDir("ws");
     const ws = createWorkspace("Original", wsDir);
 

@@ -16,8 +16,8 @@ function directives(policy: string): Map<string, string[]> {
 
 describe("the renderer's Content-Security-Policy", () => {
   // The packaged app loads the renderer over file://, where a CSP delivered as an
-  // HTTP response header does not apply — which is what the app used to do, so the
-  // shipped build ran with no policy at all while the code read as though it had one.
+  // HTTP response header does not apply, so a header-only policy would leave the
+  // shipped build with none at all while the code read as though it had one.
   it("is inserted as the first thing inside <head>", () => {
     const html = "<!DOCTYPE html>\n<html>\n  <head>\n    <title>x</title>\n  </head>\n</html>";
 

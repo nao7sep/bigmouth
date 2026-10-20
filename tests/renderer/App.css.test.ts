@@ -11,7 +11,7 @@ import {
   RIGHT_MIN,
 } from "@shared/layout";
 import { RecordsWindow } from "@renderer/records/RecordsWindow";
-import { appCss as css, selectorsOf, styleRules, themeTokens } from "../appStylesheet";
+import { appCss as css, computedStyleAfter, selectorsOf, styleRules, themeTokens } from "../appStylesheet";
 
 // Load the stylesheet into jsdom and check the values the browser computes,
 // rather than matching the spelling or placement of individual CSS rules.
@@ -35,8 +35,8 @@ describe("App.css disabled cursors", () => {
     return cursor;
   }
 
-  // Every one of these kept the hand while dead, because the reset was written
-  // per button class in six places and these were not among them.
+  // Each of these must lose the hand while dead, which a reset written per
+  // button class would miss for any class it did not list.
   it.each(["btn-toolbar", "btn-action", "asset-btn", "meta-field-copy", "btn-primary", "action-button"])(
     "%s shows the arrow when disabled",
     (className) => {
@@ -209,8 +209,8 @@ describe("App.css button states", () => {
   // A pointer that is down is also over the control, so a pressed rule only ever
   // shows if it beats the hover rule for the same button. Spelling it the same
   // way, one pseudo-class apart, is what guarantees that: same specificity, and
-  // later in the file. `.btn-delete-confirm` had no pressed rule at all, so the
-  // button that commits a deletion looked the same pressed as hovered.
+  // later in the file. Without one, a button such as `.btn-delete-confirm`, which
+  // commits a deletion, looks the same pressed as hovered.
   it("gives every filled button a pressed rule that beats its own hover rule", () => {
     const hovers = sheet.filter((rule) => rule.selector.includes(":hover") && namesOne(rule.selector));
     expect(hovers.length).toBeGreaterThan(0);
@@ -225,8 +225,9 @@ describe("App.css button states", () => {
 
   // Off, a button is its resting self faded: same fill, outline, ink and
   // footprint, so it stays the control it will be again and the roles stay told
-  // apart while they are off. The accent button used to swap its fill for a pale
-  // tan instead, which left its near-white label at 1.87:1 in the light theme.
+  // apart while they are off. A swapped fill, such as a pale tan behind the
+  // accent button's near-white label, would leave that label at 1.87:1 in the
+  // light theme.
   it("lets a disabled button keep its own fill, outline and ink", () => {
     const fades = ["opacity", "box-shadow", "cursor"];
     for (const rule of sheet) {
@@ -242,7 +243,7 @@ describe("App.css button states", () => {
 });
 
 // The keyboard ring on a selected segment sits on the accent fill, and in the
-// light theme the ordinary ring colour equals that fill, so it vanished.
+// light theme the ordinary ring colour equals that fill, so it would vanish.
 describe("App.css focus ring on a selected segment", () => {
   function ruleFor(selector: string): string {
     const style = document.createElement("style");
@@ -265,85 +266,72 @@ describe("App.css focus ring on a selected segment", () => {
   );
 });
 
-// Independent hover, keyboard target and committed selection. jsdom cannot
-// drive pointer hover or Chromium's keyboard modality: map those pseudo-classes
-// to equal-specificity attributes and let its CSS engine compute combined states.
+// Independent hover, keyboard target and committed selection, each put on the
+// real stylesheet through jsdom's own :hover, :focus and :focus-visible matching.
 describe("App.css selection, focus and hover", () => {
-  function rules(): CSSStyleRule[] {
-    const style = document.createElement("style");
-    style.textContent = css;
-    document.head.appendChild(style);
-    try {
-      return Array.from(style.sheet!.cssRules) as CSSStyleRule[];
-    } finally {
-      style.remove();
-    }
-  }
-  const selectors = (rule: CSSStyleRule) => rule.selectorText?.split(",").map((part) => part.trim()) ?? [];
-  const ruleFor = (selector: string) => rules().find((rule) => selectors(rule).includes(selector));
-
-  function stateStyle(className: string, { selected = false, hover = false, keyboard = false, parent = "" } = {}) {
-    const style = document.createElement("style");
-    style.textContent = css.replace(/:(hover|focus-visible|focus)(?![\w-])/g, (_match, state: string) => `[data-test-${state}]`);
-    const host = document.createElement("div");
-    host.className = parent;
-    if (keyboard) host.setAttribute("data-test-focus-visible", "");
-    const item = document.createElement("button");
-    item.className = `${className}${selected ? " active selected" : ""}`;
-    item.setAttribute("aria-selected", String(selected));
-    if (hover) item.setAttribute("data-test-hover", "");
-    if (keyboard) {
-      item.setAttribute("data-test-focus-visible", "");
-      item.setAttribute("data-test-focus", "");
-    }
-    host.appendChild(item);
-    document.head.appendChild(style);
-    document.body.appendChild(host);
-    try {
-      const computed = getComputedStyle(item);
-      return { background: computed.background, color: computed.color, outline: computed.outline };
-    } finally {
-      host.remove();
-      style.remove();
-    }
-  }
+  const ruleFor = (selector: string) => styleRules.find((rule) => selectorsOf(rule).includes(selector));
+  const order = (selector: string) => styleRules.findIndex((rule) => selectorsOf(rule).includes(selector));
 
   it.each(["right-tab", "settings-tab"])("%s keeps open-panel ink and underline while keyboard fill beats hover without a ring", (className) => {
-    const hover = stateStyle(className, { hover: true });
-    const keyboard = stateStyle(className, { keyboard: true });
+    const tab = (selected: boolean) =>
+      `<div role="tablist"><button role="tab" class="${className}${selected ? " active" : ""}" aria-selected="${selected}">Tab</button></div>`;
+    const target = `.${className}`;
+    const hover = computedStyleAfter(tab(false), target, { hover: target });
+    const keyboard = computedStyleAfter(tab(false), target, { focus: target, keyboard: true });
     expect(hover.background).toBe("var(--bm-control-hover)");
     expect(keyboard.background).toBe("var(--bm-control-pressed)");
     expect(keyboard.outline).toBe("none");
-    for (const over of [false, true]) {
-      const selected = stateStyle(className, { selected: true, hover: over });
-      expect(selected.color).toBe("var(--bm-accent-fg)");
-      const both = stateStyle(className, { selected: true, hover: over, keyboard: true });
-      expect(both.color).toBe(selected.color);
-      expect(both.background).toBe(keyboard.background);
-      expect(both.outline).toBe("none");
-    }
+
+    const selected = computedStyleAfter(tab(true), target);
+    expect(selected.color).toBe("var(--bm-accent-fg)");
+    expect(computedStyleAfter(tab(true), target, { hover: target }).color).toBe(selected.color);
+    const both = computedStyleAfter(tab(true), target, { focus: target, keyboard: true });
+    expect(both.color).toBe(selected.color);
+    expect(both.background).toBe(keyboard.background);
+    expect(both.outline).toBe("none");
+    // A keyboard focus under the pointer is a state jsdom cannot hold, so the
+    // keyboard fill's win over hover is read from the cascade: the same
+    // specificity, later in the file.
+    expect(order(`.${className}:focus-visible`)).toBeGreaterThan(order(`.${className}:hover`));
+
     expect(ruleFor(`.${className}.active::after`)?.style.getPropertyValue("background")).toBe("var(--bm-accent-fg)");
   });
 
   it("keeps a pointer-opened menu quiet and its keyboard fill distinct from independent hover", () => {
-    const quiet = stateStyle("menu-item", { keyboard: true, parent: "menu-popup" });
-    const hover = stateStyle("menu-item", { hover: true, parent: "menu-popup" });
-    const keyboard = stateStyle("menu-item", { keyboard: true, parent: "menu-popup keyboard-navigation" });
+    const menu = (keyboardNavigation: boolean) =>
+      `<div role="menu" class="menu-popup${keyboardNavigation ? " keyboard-navigation" : ""}"><button role="menuitem" class="menu-item">Item</button></div>`;
+    const quiet = computedStyleAfter(menu(false), ".menu-item", { focus: ".menu-item" });
+    const hover = computedStyleAfter(menu(false), ".menu-item", { hover: ".menu-item" });
+    const keyboard = computedStyleAfter(menu(true), ".menu-item", { focus: ".menu-item", keyboard: true });
     expect(quiet.background).not.toBe(keyboard.background);
     expect(quiet.outline).toBe("none");
     expect(hover.background).toBe("var(--bm-control-hover)");
     expect(keyboard.background).toBe("var(--bm-control-pressed)");
-    expect(stateStyle("menu-item", { hover: true, keyboard: true, parent: "menu-popup keyboard-navigation" }).background).toBe(keyboard.background);
+    // The keyboard state is :focus, which a later hover leaves in place.
+    expect(computedStyleAfter(menu(true), ".menu-item", { focus: ".menu-item", keyboard: true, hover: ".menu-item" }).background)
+      .toBe(keyboard.background);
   });
 
-  it.each(["post-picker-item", "workspace-item", "post-item"])("%s preserves its selected appearance under hover and retains a separate keyboard indicator", (className) => {
-    const parent = className === "post-picker-item" ? "post-picker-list" : className === "workspace-item" ? "workspace-list" : "left-sections";
-    const selected = stateStyle(className, { selected: true, parent });
-    const hovered = stateStyle(className, { selected: true, hover: true, parent });
-    const focused = stateStyle(className, { selected: true, hover: true, keyboard: true, parent });
+  it.each([
+    ["post-picker-item", "post-picker-list"],
+    ["workspace-item", "workspace-list"],
+    ["post-item", "left-sections"],
+  ])("%s preserves its selected appearance under hover and retains a separate keyboard indicator", (className, list) => {
+    // The list holds focus and points at its active row, as the app's listboxes do.
+    const listOf = (selected: boolean) =>
+      `<div role="listbox" tabindex="0" class="${list}"><div role="option" class="${className} active${selected ? " selected" : ""}" aria-selected="${selected}">Row</div></div>`;
+    const html = listOf(true);
+    const row = `.${className}`;
+    // Hover does show on a row that is not selected.
+    expect(computedStyleAfter(listOf(false), row, { hover: row }).background)
+      .not.toBe(computedStyleAfter(listOf(false), row).background);
+    const selected = computedStyleAfter(html, row);
+    const hovered = computedStyleAfter(html, row, { hover: row });
+    const focused = computedStyleAfter(html, row, { focus: `.${list}`, keyboard: true });
     expect(hovered.background).toBe(selected.background);
     expect(focused.background).toBe(selected.background);
     expect(focused.outline).toBe("2px solid var(--bm-accent-fg)");
+    expect(selected.outline).not.toBe(focused.outline);
   });
 
   it("keeps workspace hover quieter than the open workspace", () => {
@@ -414,7 +402,7 @@ describe("App.css truncation sites", () => {
     }
   });
 
-  // A flex or grid container cuts its text but draws no "…", which once left
+  // A flex or grid container cuts its text but draws no "…", which would leave
   // menu commands clipped with no marker.
   it("marks a cut on a box that can draw the ellipsis", () => {
     const flexCut = rules
@@ -433,8 +421,8 @@ describe("App.css truncation sites", () => {
 });
 
 // A right-pane panel root that sets its own display (.assets-tab is a flex
-// column, declared later in the file) once outranked .tab-hidden, leaving the
-// Assets toolbar showing beneath every other tab.
+// column, declared later in the file) can outrank .tab-hidden, which would leave
+// the Assets toolbar showing beneath every other tab.
 describe("App.css hidden right-pane panels", () => {
   it("hides a panel whose root sets its own display", () => {
     const style = document.createElement("style");

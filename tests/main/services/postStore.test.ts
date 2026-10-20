@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 function publishableDraft(): string {
-  // A slug is no longer required to advance status, so a bare draft is enough.
+  // Advancing status requires no slug, so a bare draft is enough.
   const created = createPost(dataDir, "blogger", "en");
   return created.frontMatter.id;
 }

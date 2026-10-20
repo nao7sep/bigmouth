@@ -482,7 +482,7 @@ describe("listReferrers", () => {
 // The content stream, end to end through the handler: the renderer's keystrokes
 // go in one side and either land on disk or come back as a failure event. The
 // store's own tests stop at its API; these assert what actually reaches a window
-// — the seam where a save that never happened used to look like a save.
+// — the seam where a save that never happened could look like a save.
 describe("queuePostContent (the content stream)", () => {
   function postFilePath(id: string): string {
     const dir = path.join(dataDir, "posts");

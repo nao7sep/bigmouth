@@ -1,7 +1,9 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 
-import { ShortcutsModal, buildGroups } from "@renderer/components/ShortcutsModal";
+import { ShortcutsModal } from "@renderer/components/ShortcutsModal";
+import { SHORTCUT_GROUPS, shortcutKeys } from "@renderer/util/shortcuts";
+import { ENGLISH, type MessageKey } from "@shared/i18n/catalogues";
 
 afterEach(cleanup);
 
@@ -12,29 +14,50 @@ describe("ShortcutsModal", () => {
     expect(document.getElementById(labelId!)?.textContent).toBe("Keyboard Shortcuts");
   });
 
-  it("lists every shortcut row with its key and description", () => {
-    const { container, getByText } = render(<ShortcutsModal onClose={vi.fn()} />);
-    // One <tr> per shortcut entry.
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(buildGroups("Cmd").flatMap((group) => group.shortcuts).length);
-    // Broadest first, in the app menu's order.
+  it("lists exactly the shortcut table's rows, in its groups and order", () => {
+    const { container } = render(<ShortcutsModal onClose={vi.fn()} />);
+    const shown = Array.from(container.querySelectorAll(".shortcuts-group")).map((section) => ({
+      title: section.querySelector(".shortcuts-group-title")?.textContent,
+      note: section.querySelector(".shortcuts-group-note")?.textContent ?? null,
+      rows: Array.from(section.querySelectorAll("tbody tr")).map((row) => [
+        row.querySelector(".shortcut-desc")?.textContent,
+        row.querySelector("kbd")?.textContent,
+      ]),
+    }));
+    const text = (key: MessageKey) => ENGLISH[key] as string;
+    expect(shown).toEqual(
+      SHORTCUT_GROUPS.map((group) => ({
+        title: text(group.title),
+        note: group.note && text(group.note),
+        rows: group.shortcuts.map((shortcut) => [text(shortcut.description), shortcutKeys(shortcut, "Cmd")]),
+      })),
+    );
+  });
+
+  it("shows each chord in the display convention's words", () => {
+    const { container } = render(<ShortcutsModal onClose={vi.fn()} />);
     expect(Array.from(container.querySelectorAll(".shortcuts-group-title")).map((h) => h.textContent)).toEqual([
       "Workspaces",
       "App",
       "Post",
       "Tabs",
     ]);
-    // Spot-check a representative binding and its label.
-    expect(getByText("New post")).toBeTruthy();
-    const kbds = Array.from(container.querySelectorAll("kbd")).map((k) => k.textContent);
-    // Mac-first default (no platform stubbed) shows the single "Cmd" word, with
-    // punctuation spelled out per the keyboard-shortcut convention — never a glyph
-    // or raw symbol, and never the combined "Cmd/Ctrl" form.
-    expect(kbds).toContain("Cmd+N");
-    expect(kbds).toContain("Cmd+Slash");
-    // The workspace-list rename alternatives: F2 (kept) and the Cmd+R fallback,
-    // since Enter is already bound there to opening the active row.
-    expect(kbds).toContain("F2 / Cmd+R");
-    expect(kbds).toContain("Delete");
+    // Mac-first default (no platform stubbed): the single "Cmd" word, punctuation
+    // spelled out, never a glyph, a raw symbol or the combined "Cmd/Ctrl" form.
+    expect(Array.from(container.querySelectorAll("kbd")).map((k) => k.textContent)).toEqual([
+      "F2 / Cmd+R",
+      "Delete/Backspace",
+      "Cmd+N",
+      "Cmd+Comma",
+      "Cmd+Slash",
+      "Cmd+Enter",
+      "Cmd+E",
+      "Cmd+1",
+      "Cmd+2",
+      "Cmd+3",
+      "Cmd+4",
+      "Cmd+5",
+    ]);
   });
 
   it("names Ctrl off macOS", () => {

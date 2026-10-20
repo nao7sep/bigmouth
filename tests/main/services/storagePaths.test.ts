@@ -180,8 +180,7 @@ describe("storage root (BIGMOUTH_DATA_DIR)", () => {
   });
 
   it("does not create anything under the bare home directory when BIGMOUTH_DATA_DIR collapses to empty", () => {
-    // Guards the exact regression: before the fix, this combination resolved
-    // to os.homedir() itself rather than throwing.
+    // This combination must throw rather than resolve to os.homedir() itself.
     process.env.BIGMOUTH_TEST_BASE = "";
     process.env.BIGMOUTH_DATA_DIR = "$BIGMOUTH_TEST_BASE";
     const before = fs.existsSync(path.join(os.homedir(), "workspaces.json"));
@@ -329,11 +328,11 @@ describe("standard subpaths", () => {
   );
 
   it("resolves without the workspace registry, which is what broke the import cycle", () => {
-    // core/shared/atomicWrite reaches into backupStore, which used to reach into
-    // the REGISTRY for the root, which reached back into atomicWrite. The cycle
-    // survived only because ESM hoists function declarations. initStorageRoot
-    // standing alone — no initAppDir, no workspaces.json — is that cycle's
-    // absence, stated as a behaviour.
+    // core/shared/atomicWrite reaches into backupStore; were backupStore to reach
+    // into the REGISTRY for the root, the registry would reach back into
+    // atomicWrite, a cycle that survives only because ESM hoists function
+    // declarations. initStorageRoot standing alone — no initAppDir, no
+    // workspaces.json — is that cycle's absence, stated as a behaviour.
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
     process.env.BIGMOUTH_DATA_DIR = home;
 

@@ -37,11 +37,10 @@ describe("compareInstants", () => {
   });
 });
 
-// The two processes used to sort the same list with different tie-breakers:
-// main on id descending, the renderer on slug descending, and the renderer's
-// draft comparator with none at all. The renderer re-inserts a mutated
-// post on every metadata save and every background content save, so two posts
-// sharing a timestamp sat in one order until the next listPosts and a different
+// Both processes sort the same list, so they share one tie-breaker. The
+// renderer re-inserts a mutated post on every metadata save and every
+// background content save; with different tie-breakers, two posts sharing a
+// timestamp would sit in one order until the next listPosts and a different
 // one after it - the list reshuffling under the user with no edit.
 describe("post ordering", () => {
   it("breaks a timestamp tie by id, in every section", () => {

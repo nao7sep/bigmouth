@@ -2,8 +2,8 @@
  * Generation prompt field order and labels used by the Settings UI.
  *
  * Prompt text defaults come from the main process, and the key list from
- * @shared/metadataFields — the renderer carries neither. It used to carry a
- * byte-identical copy of the keys, which is the half that could actually drift.
+ * @shared/metadataFields — the renderer carries neither, since a copy of the
+ * keys here is the half that could drift.
  */
 
 import type { MessageKey } from "@shared/i18n/catalogues";

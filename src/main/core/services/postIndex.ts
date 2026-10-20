@@ -136,11 +136,11 @@ export interface RebuildResult {
  * Rebuilds the entire index from the `.md` files on disk and persists it.
  * Deterministic: the same set of files always yields a byte-identical file.
  *
- * Returns what it skipped as well as what it indexed. It used to return only a
- * count, so a post whose front matter had been hand-edited into something
- * unreadable simply vanished from every list while the rebuild reported success
- * — and the rebuild is offered to the user precisely because the app invites
- * editing those files outside it.
+ * Returns what it skipped as well as what it indexed. With only a count, a post
+ * whose front matter was hand-edited into something unreadable would vanish
+ * from every list while the rebuild reported success — and the rebuild is
+ * offered to the user precisely because the app invites editing those files
+ * outside it.
  */
 export function rebuild(dataDir: string): RebuildResult {
   sources.delete(dataDir);

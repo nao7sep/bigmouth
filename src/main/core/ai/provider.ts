@@ -19,6 +19,15 @@ export type ProviderCallContext = {
   purpose: "analysis" | "metadata" | "imaging";
 };
 
+/**
+ * The outer cap every structured generation passes as `maxDurationMs`. A
+ * generous one, not the bound that matters: the call is bounded by inactivity
+ * in the provider, so a thinking-enabled config that is still producing output
+ * is never cut off after its tokens are billed, and the user can stop it at any
+ * time.
+ */
+export const GENERATION_MAX_MS = 10 * 60_000;
+
 export interface AiProvider {
   generateJson(
     systemPrompt: string,

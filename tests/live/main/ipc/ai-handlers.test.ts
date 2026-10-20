@@ -40,9 +40,9 @@ Water deeply once or twice a week rather than a little every day, so roots grow 
 staying near the surface. A thin layer of mulch keeps the moisture in and the weeds down.`;
 
 // A Japanese draft, with Japanese metadata already saved against it. Both halves
-// matter: the English supplements used to come back in Japanese, and the reason
-// was partly that the saved Japanese values arrived as metadata to stay
-// consistent with. A draft alone would not reproduce the condition.
+// matter: the English supplements can come back in Japanese, partly when the
+// saved Japanese values arrive as metadata to stay consistent with. A draft
+// alone would not reproduce the condition.
 const JA_DRAFT = `三ヶ月前から、朝に三十分だけ歩くようにしている。
 
 始めた理由は単純で、一日中机に向かっていると夕方には頭が働かなくなるからだった。運動不足を

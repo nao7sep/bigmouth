@@ -415,8 +415,8 @@ export function CenterPane({
         <span className="toolbar-sep" aria-hidden="true" />
         {fm.sourceId ? (
           <>
-            {/* A real button: it was a <span> with an onClick and a pointer
-                cursor, which no keyboard could reach at all. */}
+            {/* A real button, so the keyboard can reach it; a <span> with an
+                onClick and a pointer cursor would be mouse-only. */}
             <button
               type="button"
               className="toolbar-source"

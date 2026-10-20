@@ -128,7 +128,7 @@ export function frontMatterShapeProblem(frontMatter: Record<string, unknown>): s
  * retains every intermediate version of every post it has touched for the life
  * of the process. Passing an options object opts out of the cache — which also
  * makes `parsed.data` freshly built per call, so callers own it outright and
- * the defensive deep-clone this used to need is gone with it.
+ * need no defensive deep-clone.
  */
 export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; content: string } {
   const parsed = matter(raw, {});

@@ -64,10 +64,10 @@ export function isComposingEvent(e: React.KeyboardEvent | KeyboardEvent): boolea
   const nativeEvent = "nativeEvent" in e ? e.nativeEvent : e;
   if (nativeEvent.isComposing) return true;
 
-  // Legacy fallback for older IME implementations, mandated by the
-  // text-input-ime-conventions alongside the layer above. It looks removable and
-  // is not: the conventions say so explicitly, and dropping it let IME Enter
-  // through in the fleet's earlier implementations.
+  // Fallback for IME implementations that report composition only through
+  // keyCode 229, mandated by the text-input-ime-conventions alongside the layer
+  // above. It looks removable and is not: without it, such an IME's confirming
+  // Enter reaches the app as a plain Enter.
   //
   // keyCode is deprecated and may eventually be removed from TypeScript's DOM
   // types; the cast below lets the build keep working in that case. At runtime

@@ -9,6 +9,8 @@ import { DatabaseSync } from "node:sqlite";
 import { readRecords, type RecordsRead } from "./recordsQueries.ts";
 import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
+export type RecordsReaderData = { databasePath: string; busyTimeoutMs: number };
+
 export type RecordsReaderRequest = { id: number; read: RecordsRead };
 
 export type RecordsReaderResponse =
@@ -20,16 +22,16 @@ if (parentPort === null) {
 }
 
 const port = parentPort;
-const { databasePath } = workerData as { databasePath: string };
+const { databasePath, busyTimeoutMs } = workerData as RecordsReaderData;
 let db: DatabaseSync | null = null;
 
-// A lock the writer holds is waited on for a bounded time, well inside the
-// reader's own timeout. A database a newer build wrote is not read
+// A lock the writer holds is waited on for the bounded time the reader passes,
+// well inside its own read timeout. A database a newer build wrote is not read
 // (store-recovery-conventions); one without its version is this build's format.
 function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true });
   try {
-    opened.exec("PRAGMA busy_timeout = 2000");
+    opened.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
     const { user_version: version } = opened.prepare("PRAGMA user_version").get() as { user_version: number };
     if (version > FORMAT_VERSIONS.records) {
       throw new Error(`${databasePath} is in format ${version}, which this build cannot read; it was left unchanged.`);

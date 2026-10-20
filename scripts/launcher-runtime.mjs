@@ -1,3 +1,9 @@
+// launcher-runtime: the helper the run-dev, run-built and rebuild launchers call
+// as `node launcher-runtime.mjs <command> [args]`. It records which app run a
+// launcher owns (claim, is-owner, release-if-owner), stops this checkout's app
+// (stop, stop-if-owner), and waits for a dev server or the built app to come up
+// (check-endpoint, wait-http, wait-process). An unknown command lists them all.
+
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, unlink, writeFile } from "node:fs/promises";

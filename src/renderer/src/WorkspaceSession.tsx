@@ -47,7 +47,7 @@ import type {
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import { useAnyModalOpen } from "./hooks/useModalStack";
 import { isComposingEvent } from "./hooks/useComposing";
-import { hasMod, isEditableTarget, shadowsMacTextBinding } from "./util/shortcuts";
+import { isEditableTarget, matchesShortcut, shadowsMacTextBinding, SHORTCUTS, type Shortcut } from "./util/shortcuts";
 import { pickAdjacentPostId } from "./util/selection";
 import {
   applyPostMutationToLists,
@@ -71,6 +71,15 @@ const MORE_FAILED: Readonly<Record<PagedPostStatus, MessageKey>> = {
   published: "session.morePublishedFailed",
   retired: "session.moreRetiredFailed",
 };
+
+// The right pane tab each tab shortcut opens.
+const TAB_SHORTCUTS: ReadonlyArray<readonly [Shortcut, RightTab]> = [
+  [SHORTCUTS.tabAnalysis, "Analysis"],
+  [SHORTCUTS.tabImaging, "Imaging"],
+  [SHORTCUTS.tabAssets, "Assets"],
+  [SHORTCUTS.tabPreview, "Preview"],
+  [SHORTCUTS.tabMetadata, "Metadata"],
+];
 
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
@@ -156,11 +165,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      *     append or an optimistic list update reads before React re-renders):
      *     assigned by commitLists, eagerly.
      *
-     * Every one of them used to carry BOTH — a post-render effect that copied
-     * state into the ref, plus a hand assignment at each mutation site because
-     * that copy lands too late. Two mechanisms maintaining one mirror, so a new
-     * mutation site that forgot the hand assignment read stale for a render and
-     * the effect hid it.
+     * Each ref has exactly one of these, never also a post-render effect
+     * copying state into it: that copy lands too late for a same-tick read, and
+     * with two mechanisms maintaining one mirror, a mutation site that forgot
+     * its hand assignment would read stale for a render while the effect hid it.
      */
     const mounted = useRef(true);
     const selectionRequest = useRef(0);
@@ -410,20 +418,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       // just the top-level session modals.
       if (anyModalOpen) return;
 
-      const TAB_KEYS: Record<string, RightTab> = {
-        "1": "Analysis",
-        "2": "Imaging",
-        "3": "Assets",
-        "4": "Preview",
-        "5": "Metadata",
-      };
-
       const handler = (e: KeyboardEvent) => {
         // A control deeper in the tree may have already consumed this event; the
         // convention is that chrome shortcuts stand down when it did.
         if (e.defaultPrevented) return;
-
-        if (!hasMod(e)) return;
 
         // While an IME candidate is pending, the chord belongs to the composition — even Cmd+N,
         // which otherwise fires inside an input, stands down until it commits (text-input-ime).
@@ -431,15 +429,14 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
         if (isEditableTarget(e.target) && shadowsMacTextBinding(e)) return;
 
-        // App-level dialogs use their conventional chords and open from anywhere,
-        // like menu accelerators (Cmd/Ctrl+, for Settings, Cmd/Ctrl+/ or ? for the
-        // shortcuts reference), so they sit ahead of the input-focus guards below.
-        if (e.key === ",") {
+        // App-level dialogs open from anywhere, like menu accelerators, so they
+        // sit ahead of the SELECT guard below.
+        if (matchesShortcut(SHORTCUTS.settings, e)) {
           e.preventDefault();
           setSettingsOpen(true);
           return;
         }
-        if (e.key === "/" || e.key === "?") {
+        if (matchesShortcut(SHORTCUTS.showShortcuts, e)) {
           e.preventDefault();
           setShortcutsOpen(true);
           return;
@@ -448,40 +445,36 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         // A SELECT owns its own type-ahead, so a bare letter belongs to it.
         if ((e.target as HTMLElement).tagName === "SELECT") return;
 
-        // No blanket stand-down inside a text field. There used to be one, and
-        // it made every chord below dead exactly where the user is: the
-        // CodeMirror editor's event target is a DIV inside its contenteditable,
-        // so reaching for "Run analysis" or a tab while writing did nothing, with
-        // no indication why — while the shortcuts modal documented them all
-        // unconditionally. None of these chords shadows a text-field binding a
-        // web view actually implements; the one rule that does bite, macOS's
-        // Ctrl half belonging to the text system, is applied above.
+        // These chords fire inside text fields too, the markdown editor
+        // included, because that is where the user is while writing. None of
+        // them shadows a text-field binding a web view implements; the one rule
+        // that does bite, macOS's Ctrl half belonging to the text system, is
+        // applied above.
 
-        if (e.key === "n") {
+        if (matchesShortcut(SHORTCUTS.newPost, e)) {
           e.preventDefault();
           setNewPostOpen(true);
           return;
         }
-        if (e.key === "e" && selectedPostIdRef.current) {
+        if (!selectedPostIdRef.current) return;
+        if (matchesShortcut(SHORTCUTS.exportPost, e)) {
           e.preventDefault();
           setExportOpen(true);
           return;
         }
-        if (e.key === "Enter" && selectedPostIdRef.current) {
+        if (matchesShortcut(SHORTCUTS.runAnalysis, e)) {
           e.preventDefault();
           setRightTab("Analysis");
           setAnalysisTrigger((n) => n + 1);
           return;
         }
-        const tab = TAB_KEYS[e.key];
-        if (tab && selectedPostIdRef.current) {
-          // Metadata is only a tab when the post's target asks for it. Without
-          // this the chord fell through to the pane, which quietly redirected to
-          // Analysis — a documented shortcut landing somewhere else entirely.
-          if (tab === "Metadata" && !metadataTabRef.current) return;
-          e.preventDefault();
-          setRightTab(tab);
-        }
+        const tab = TAB_SHORTCUTS.find(([shortcut]) => matchesShortcut(shortcut, e))?.[1];
+        if (!tab) return;
+        // Metadata is a tab only when the post's target asks for it; otherwise
+        // the chord would reach the pane, which shows Analysis instead.
+        if (tab === "Metadata" && !metadataTabRef.current) return;
+        e.preventDefault();
+        setRightTab(tab);
       };
 
       window.addEventListener("keydown", handler);

@@ -10,6 +10,7 @@ import type {
   Workspace,
 } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
+import { matchesShortcut, SHORTCUT_GROUPS } from "@renderer/util/shortcuts";
 
 // WorkspaceSession is the session orchestrator. It reaches the main process only
 // through these five api calls; everything else it owns is state, routing, and
@@ -1043,6 +1044,44 @@ describe("WorkspaceSession keyboard shortcuts", () => {
     fireEvent.keyDown(target, { key, metaKey: true });
   }
 
+  // The window-level handler owns every group but the workspace list's, whose
+  // chords the list's own handler matches.
+  it("acts on exactly the shortcut table's chords", async () => {
+    const { getByTestId } = await mountLoaded();
+    await act(async () => {
+      fireEvent.click(getByTestId("left-select-a"));
+      await Promise.resolve();
+    });
+    // The loaded post's target asks for Metadata, so every tab chord can act.
+    act(() => fireEvent.click(getByTestId("center-loaded")));
+    const handled = SHORTCUT_GROUPS.filter((group) => group.title !== "shortcuts.groupWorkspaces").flatMap(
+      (group) => group.shortcuts,
+    );
+    const tableKeys = handled.flatMap((shortcut) =>
+      shortcut.chords.flat().flatMap((c) => (c.shiftedKey ? [c.key, c.shiftedKey] : [c.key])),
+    );
+    const keys = [...new Set([...tableKeys, ...tableKeys.map((k) => k.toUpperCase()), "6", "r", "w", "F2", "Delete", "Escape"])];
+    const holds = [
+      {},
+      { metaKey: true },
+      { ctrlKey: true },
+      { metaKey: true, shiftKey: true },
+      { metaKey: true, altKey: true },
+      { ctrlKey: true, altKey: true },
+      { shiftKey: true },
+    ];
+    for (const key of keys) {
+      for (const held of holds) {
+        const event = { key, ...held };
+        let acted = false;
+        act(() => {
+          acted = !fireEvent.keyDown(document.body, event);
+        });
+        expect(acted, JSON.stringify(event)).toBe(handled.some((shortcut) => matchesShortcut(shortcut, event)));
+      }
+    }
+  });
+
   it("Cmd+, opens settings and Cmd+/ opens shortcuts", async () => {
     const { getByTestId } = await mountLoaded();
     act(() => chord(","));
@@ -1120,10 +1159,10 @@ describe("WorkspaceSession keyboard shortcuts", () => {
     expect(queryByTestId("newpost-modal")).toBeNull();
   });
 
-  // A blanket stand-down inside text fields used to make every one of these dead
-  // exactly where the user is - the editor's event target is a DIV inside its
-  // contenteditable - while the shortcuts modal documented them unconditionally.
-  // None of them shadows a text-field binding a web view actually implements.
+  // These chords act inside text fields, where the user is while writing - the
+  // editor's event target is a DIV inside its contenteditable - and the
+  // shortcuts dialog lists them unconditionally. None of them shadows a
+  // text-field binding a web view actually implements.
   it.each([
     ["a TEXTAREA", () => document.createElement("textarea")],
     ["an INPUT", () => document.createElement("input")],
@@ -1151,8 +1190,8 @@ describe("WorkspaceSession keyboard shortcuts", () => {
 
   // The one rule that genuinely bites: on macOS Ctrl inside a text field
   // belongs to the text system whatever the key is. jsdom reports no platform,
-  // so each case supplies its own; the check once read the running one and
-  // took the non-Mac branch everywhere.
+  // so each case supplies its own; reading the running one would take the
+  // non-Mac branch everywhere.
   it.each([
     ["macOS", "MacIntel", false],
     ["Windows", "Win32", true],
@@ -1193,11 +1232,11 @@ describe("WorkspaceSession keyboard shortcuts", () => {
   });
 });
 
-// The session used to carry a sessionAliveRef, checked at 13 async paths before
-// every setState. It guarded nothing: App mounts this component with
+// The session's async paths call setState without checking that it is still
+// mounted. That needs no guard: App mounts this component with
 // key={workspace.id}, so a switch is a full remount with fresh state and fresh
-// refs, and React 18+ made a setState after unmount a silent no-op rather than a
-// warning. Deleting it is only safe if that is actually true, so this asserts it.
+// refs, and since React 18 a setState after unmount is a silent no-op rather
+// than a warning. This asserts it.
 describe("a load that outlives the session", () => {
   it("settles after unmount without throwing or warning", async () => {
     let resolveList: (value: PostListResponse) => void = () => {};

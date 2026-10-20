@@ -1,3 +1,7 @@
+// check-release-tag: fails unless RELEASE_TAG is "v" plus package.json's
+// version. Run by the release workflow as `npm run check:release-tag`, so a tag
+// can only release the version the source says it is.
+
 import { readFile } from "node:fs/promises";
 
 const packageJson = JSON.parse(

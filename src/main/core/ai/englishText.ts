@@ -2,12 +2,11 @@
  * The check that an English-only field actually came back in English.
  *
  * Several generated values are English whatever language the draft is written
- * in — the `*En` metadata fields, and every image prompt — and nothing used to
- * hold them to it. Only `slug` was checked, by its URL-safe pattern, so a
- * `titleEn` returned in Japanese passed every guard and was written into the
- * post's front matter, and a Japanese image prompt was handed to the author to
- * paste into an image model. The author was the only detector, and had to be
- * looking.
+ * in — the `*En` metadata fields, and every image prompt. `slug` is held to it
+ * by its URL-safe pattern; without this check, a `titleEn` returned in Japanese
+ * would pass every other guard into the post's front matter, and a Japanese
+ * image prompt would reach the author to paste into an image model, with the
+ * author the only detector.
  *
  * Shared rather than duplicated because the two generators reach the same
  * conclusion from the same evidence; a second copy would be a second threshold

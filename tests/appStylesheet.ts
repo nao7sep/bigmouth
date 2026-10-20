@@ -106,3 +106,44 @@ export const lightTokens = customProperties(onlyRootRule(topLevel, "at the top l
 export const darkTokens = customProperties(onlyRootRule(darkThemeRules(), "in the dark theme block"));
 
 export const themeTokens = { light: lightTokens, dark: darkTokens } as const;
+
+/** An interaction to put a document in before reading a computed style. */
+export interface Interaction {
+  /** Moves focus to the element this selector names. */
+  focus?: string;
+  /** With `focus`: the focus arrives from the keyboard, a Tab press, so `:focus-visible` matches. */
+  keyboard?: boolean;
+  /** Puts the pointer over the element this selector names, after any focus. */
+  hover?: string;
+}
+
+/**
+ * The computed style of the element `target` names, in a fresh document holding
+ * the app stylesheet and `html`, after `interaction`. The states are real: jsdom's
+ * own selector engine matches `:hover`, `:focus` and `:focus-visible` from the
+ * events dispatched here, so the cascade decides what wins exactly as written.
+ * A fresh document per call keeps one call's events from colouring the next.
+ *
+ * jsdom reads `:hover` and `:focus-visible` from the most recent pointer or key
+ * event, so a hover after a keyboard focus ends `:focus-visible` (`:focus`
+ * stays): a state needing both at once is not one this can produce.
+ */
+export function computedStyleAfter(html: string, target: string, interaction: Interaction = {}): CSSStyleDeclaration {
+  const dom = new JSDOM(`<!doctype html><style>${appCss}</style><body>${html}</body>`);
+  const { document } = dom.window;
+  const find = (selector: string) => {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element === null) throw new Error(`nothing matches ${selector}`);
+    return element;
+  };
+  if (interaction.focus !== undefined) {
+    if (interaction.keyboard) {
+      document.body.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    }
+    find(interaction.focus).focus();
+  }
+  if (interaction.hover !== undefined) {
+    find(interaction.hover).dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true }));
+  }
+  return dom.window.getComputedStyle(find(target));
+}

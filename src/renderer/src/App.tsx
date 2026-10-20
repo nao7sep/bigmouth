@@ -40,8 +40,9 @@ import "./App.css";
 // so widening the window restores the pane to its intended width.
 //
 // Intents live in the main process's state.json (view state), hydrated once on
-// mount via getUiState and persisted on drag-end via updateUiState — no longer in
-// renderer localStorage (persisted-store-separation-conventions).
+// mount via getUiState and persisted on drag-end via updateUiState, not in
+// renderer localStorage: view state has one owner, the main process
+// (persisted-store-separation-conventions).
 
 export function App() {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);

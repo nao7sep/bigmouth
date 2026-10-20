@@ -236,12 +236,12 @@ function joinFieldNames(names: readonly string[]): string {
 /**
  * The already-saved metadata, minus the fields this request is regenerating.
  *
- * A field used to be shown its own previous answer: every key went in, including
- * the ones being asked for. Paired with "keep it consistent with the existing
- * metadata", that made a wrong value self-sustaining — regenerating a titleEn
- * that had come back in Japanese handed the model that Japanese string as the
- * thing to stay consistent with, so pressing the button again reproduced it.
- * What a field is being replaced by cannot also be context for replacing it.
+ * A field is never shown its own previous answer. Paired with "keep it
+ * consistent with the existing metadata", that would make a wrong value
+ * self-sustaining — regenerating a titleEn that came back in Japanese would hand
+ * the model that Japanese string as the thing to stay consistent with, so
+ * pressing the button again would reproduce it. What a field is being replaced
+ * by cannot also be context for replacing it.
  */
 function compactExistingMetadata(
   frontMatter: PostFrontMatter,

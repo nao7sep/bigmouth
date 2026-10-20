@@ -109,9 +109,9 @@ describe("useCopyFeedback", () => {
   });
 
   it("does not report a copy that failed", async () => {
-    // "Copied" used to be set before the write resolved, with the rejection
-    // swallowed — so a denied clipboard flashed success and the user pasted
-    // whatever was there before. The feedback now follows the write.
+    // The feedback follows the write: "Copied" set before the write resolved
+    // would flash success for a denied clipboard, and the user would paste
+    // whatever was there before.
     writeText.mockRejectedValueOnce(new Error("denied"));
     const { result } = renderHook(() => useCopyFeedback());
 

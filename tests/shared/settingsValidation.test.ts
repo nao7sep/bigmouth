@@ -40,8 +40,8 @@ describe("settings value rules", () => {
   });
 
   it("accepts duplicate languages, because the store folds them away on save", () => {
-    // Commit-time cleanup, not a mistake to refuse — and the modal used to block
-    // Save on it while the store quietly de-duplicated.
+    // Commit-time cleanup, not a mistake to refuse: the store de-duplicates on
+    // save, so blocking Save on it would ask the user to fix nothing.
     expect(settingsFieldErrors(settings({ supportedLanguages: ["en", "en"] }))).toEqual({});
   });
 
