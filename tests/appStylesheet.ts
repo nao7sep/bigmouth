@@ -127,6 +127,13 @@ export interface Interaction {
  * jsdom reads `:hover` and `:focus-visible` from the most recent pointer or key
  * event, so a hover after a keyboard focus ends `:focus-visible` (`:focus`
  * stays): a state needing both at once is not one this can produce.
+ *
+ * jsdom substitutes no custom properties, so these checks read the declared
+ * `var(--bm-...)` a winning `background` names. package.json holds jsdom at
+ * 30.1.2 because 30.1.3 began expanding the `background` shorthand at computed
+ * time and returns its initial transparent value whenever the declaration holds
+ * a `var()`, so every fill compares equal. Move past it once jsdom either
+ * resolves the variable or keeps the declared value again.
  */
 export function computedStyleAfter(html: string, target: string, interaction: Interaction = {}): CSSStyleDeclaration {
   const dom = new JSDOM(`<!doctype html><style>${appCss}</style><body>${html}</body>`);

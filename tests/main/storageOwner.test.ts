@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { build } from "esbuild";
+import { build } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WORKER_ENTRIES } from "@main/builtEntries.js";
 import { EditPendingError, StorageOwner, type StorageRequest, type StorageFlushRequest, storageOwner } from "@main/storageOwner.js";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
@@ -379,8 +380,29 @@ it.each(["async", "session-end"] as const)("runs real store writes and %s quit f
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-storage-owner-"));
   let owner: StorageOwner | undefined;
   try {
-    const entry = path.join(root, "worker.cjs");
-    await build({ entryPoints: [path.resolve("src/main/storageWorker.ts")], outfile: entry, bundle: true, platform: "node", format: "cjs", alias: { "@shared": path.resolve("src/shared") } });
+    const outDir = path.join(root, "worker");
+    const entry = path.join(outDir, `${WORKER_ENTRIES.storage}.js`);
+    // Standalone bundles, dependencies included, with the backup recorder beside
+    // the storage worker as in out/main, so the worker runs from the temporary
+    // folder the way the built app runs it.
+    await build({
+      configFile: false,
+      logLevel: "silent",
+      resolve: { alias: { "@shared": path.resolve("src/shared") } },
+      ssr: { noExternal: true },
+      build: {
+        ssr: true,
+        outDir,
+        minify: false,
+        rolldownOptions: {
+          input: {
+            [WORKER_ENTRIES.storage]: path.resolve("src/main/storageWorker.ts"),
+            [WORKER_ENTRIES.backup]: path.resolve("src/main/core/services/backupWorker.ts"),
+          },
+          output: { format: "cjs", entryFileNames: "[name].js" },
+        },
+      },
+    });
     owner = new StorageOwner(() => new Worker(entry, { env: { ...process.env, BIGMOUTH_DATA_DIR: root } }));
     await owner.run("initialize", []);
     const workspace = await owner.run("createWorkspace", ["Test"]);

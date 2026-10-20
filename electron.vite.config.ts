@@ -28,7 +28,7 @@ export default defineConfig({
     },
     build: {
       outDir: "out/main",
-      rollupOptions: {
+      rolldownOptions: {
         // Worker entries stay beside index.js for their owning modules.
         input: {
           index: resolve("src/main/index.ts"),
@@ -51,7 +51,7 @@ export default defineConfig({
   preload: {
     build: {
       outDir: "out/preload",
-      rollupOptions: {
+      rolldownOptions: {
         output: {
           format: "cjs",
           entryFileNames: PRELOAD_FILE,
@@ -74,7 +74,7 @@ export default defineConfig({
     build: {
       outDir: resolve("out/renderer"),
       emptyOutDir: true,
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve("src/renderer/index.html"),
           records: resolve("src/renderer/records.html"),
