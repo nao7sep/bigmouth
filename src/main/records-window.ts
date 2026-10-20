@@ -1,6 +1,5 @@
 import { BrowserWindow, nativeTheme, screen } from "electron";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { CHANNELS } from "@shared/ipc";
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from "@shared/layout";
@@ -10,8 +9,6 @@ import { windowBackground } from "./theme.js";
 import { PRELOAD_FILE } from "./builtEntries.js";
 import { boundWindowMinimum, configureWindowActivity, loadRendererPage } from "./window.js";
 import { createWindowWithUsablePersistedBounds } from "./window-state-recovery.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // The records window shows records.sqlite3. It is a durable secondary window
 // with its own placement (window-conventions, Placement), and there is only
@@ -39,7 +36,7 @@ export function buildRecordsWindowOptions(
     backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload", PRELOAD_FILE),
+      preload: join(import.meta.dirname, "../preload", PRELOAD_FILE),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

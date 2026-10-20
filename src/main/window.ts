@@ -1,6 +1,5 @@
 import { BrowserWindow, Menu, nativeTheme, screen } from "electron";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { windowMinimumForZoom } from "@shared/layout";
 import { CHANNELS } from "@shared/ipc";
@@ -14,7 +13,6 @@ import { mainTranslator } from "./i18n.js";
 
 export { isAllowedExternalUrl } from "./ipc/external.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 function openExternalIfAllowed(rawUrl: string): void {
   if (isAllowedExternalUrl(rawUrl)) {
     void openExternalUrl(rawUrl).catch((error: unknown) => {
@@ -84,7 +82,7 @@ export function buildWindowOptions(
     titleBarStyle: "default",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "../preload", PRELOAD_FILE),
+      preload: join(import.meta.dirname, "../preload", PRELOAD_FILE),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -242,6 +240,6 @@ export async function loadRendererPage(window: BrowserWindow, page: "index.html"
   } else {
     // The Content-Security-Policy travels in the HTML, not a response header:
     // this is a file:// load, which a header CSP cannot reach.
-    await window.loadFile(join(__dirname, "../renderer", page));
+    await window.loadFile(join(import.meta.dirname, "../renderer", page));
   }
 }
