@@ -45,8 +45,8 @@ export function registerWorkspaceHandlers(): void {
   });
 
   // A read-only default proposal; selected destinations bypass suggestion.
-  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown) =>
-    suggestWorkspaceLocation(typeof name === "string" ? name.trim() : undefined),
+  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async () =>
+    suggestWorkspaceLocation(),
   );
 
   ipcMain.handle(CHANNELS.updateWorkspace, async (_event, id: string, updates: { name?: string }) => {

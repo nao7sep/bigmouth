@@ -106,7 +106,7 @@
   "workspaces.name": "이름",
   "workspaces.location": "위치",
   "workspaces.locationHint": "BigMouth가 이 폴더를 작업 공간용으로 만듭니다. 이미 있는 폴더라면 자체 게시물, 에셋, config.json이 없어야 합니다.",
-  "workspaces.locationFailed": "작업 공간 위치를 제안할 수 없습니다. 변경을 눌러 폴더를 선택하거나 이름을 수정하여 다시 시도하십시오.",
+  "workspaces.locationFailed": "작업 공간 위치를 제안할 수 없습니다. 변경을 눌러 폴더를 선택하십시오.",
   "workspaces.opening": "여는 중…",
   "setup.title": "BigMouth 설정하기",
   "setup.skip": "건너뛰기",

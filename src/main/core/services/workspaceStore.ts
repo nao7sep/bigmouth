@@ -18,14 +18,13 @@ import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { serializeError, warn } from "./logger.js";
-import { sanitizeFilenameSegment } from "@shared/assetNames";
 import { carryingText } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
 import {
   containsDirectory,
   expandWorkspacePath,
   getApiKeysPath,
-  getDefaultWorkspacesParentDir,
+  getDefaultWorkspaceDirectory,
   getWorkspacesJsonPath,
   initStorageRoot,
   sameDirectory,
@@ -238,19 +237,6 @@ function findWorkspaceByDirectory(dir: string): Workspace | undefined {
   );
 }
 
-function nextWorkspaceName(): string {
-  const names = new Set(
-    ensureLoaded().workspaces.map((workspace) => workspace.name.trim().toLowerCase())
-  );
-  if (!names.has("workspace")) return "Workspace";
-
-  let index = 2;
-  while (names.has(`workspace ${index}`)) {
-    index += 1;
-  }
-  return `Workspace ${index}`;
-}
-
 /**
  * Throws the reason a new workspace cannot be created at `dir` as it stands, or
  * returns when nothing stops it. One gate for a chosen location and the default
@@ -275,52 +261,20 @@ function assertCanCreateAt(dir: string): void {
   assertNoWorkspaceOverlap(dir);
 }
 
-function canCreateAt(dir: string): boolean {
-  try {
-    assertCanCreateAt(dir);
-    return true;
-  } catch {
-    // Any refusal, a damaged config.json in the folder included, makes the
-    // folder unusable as a default; the next name is tried instead.
-    return false;
-  }
-}
-
 /**
- * Where a new workspace goes: `<parent>/<folder named after the workspace>`, or
- * `<name> (2)`, `(3)`… when that folder exists and cannot take a new
- * workspace. The default parent is `<Documents>/BigMouth`.
- * The UI shows this proposal before creating and submits that exact destination.
- *
- * A workspace is the user's own document, so it never defaults into the storage
- * root (storage-path conventions, "Ownership decides location").
+ * A workspace is the user's own document, so the default is Documents/BigMouth,
+ * outside the app storage root. The name never determines its destination.
+ * Occupied destinations are refused at creation; choosing another is explicit.
  */
-export function suggestWorkspaceLocation(name?: string): string {
-  const parent = getDefaultWorkspacesParentDir();
-  const base = sanitizeFilenameSegment(name?.trim() || nextWorkspaceName()) || "Workspace";
-  const first = path.join(parent, base);
-
-  // A registered workspace at or above the parent holds every candidate, so no
-  // suffix can help; the first name lets creation say which workspace is in the
-  // way. Otherwise each refused candidate exists on disk or holds a registered
-  // workspace, and there are finitely many of those, so the search ends.
-  const parentTaken = ensureLoaded().workspaces.some(
-    (workspace) =>
-      sameDirectory(workspace.dataDirectory, parent) || containsDirectory(workspace.dataDirectory, parent),
-  );
-  if (parentTaken || canCreateAt(first)) return first;
-
-  for (let index = 2; ; index += 1) {
-    const candidate = path.join(parent, `${base} (${index})`);
-    if (canCreateAt(candidate)) return candidate;
-  }
+export function suggestWorkspaceLocation(): string {
+  return getDefaultWorkspaceDirectory();
 }
 
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
   name = name.trim();
   if (!name) throw new Error("Workspace name is required");
   const config = ensureLoaded();
-  const dir = dataDirectory ? expandWorkspacePath(dataDirectory) : suggestWorkspaceLocation(name);
+  const dir = dataDirectory ? expandWorkspacePath(dataDirectory) : suggestWorkspaceLocation();
   assertCanCreateAt(dir);
 
   const workspace: Workspace = { id: nanoid(), name, dataDirectory: dir };

@@ -23,6 +23,9 @@ import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { carryingText } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
+import { loadCatalogue } from "@shared/i18n/catalogues";
+import { I18nProvider, createTranslator } from "@renderer/i18n/I18nContext";
+import type { Language } from "@shared/i18n/languages";
 import {
   listWorkspaces,
   createWorkspace,
@@ -44,7 +47,7 @@ const mockWriteRendererLog = vi.fn();
 
 const WORKSPACE: Workspace = { id: "ws1", name: "Alpha", dataDirectory: "/data/alpha" };
 const OTHER: Workspace = { id: "ws2", name: "Bravo", dataDirectory: "/data/bravo" };
-const CREATED: Workspace = { id: "ws3", name: "Beta", dataDirectory: "/home/me/Documents/BigMouth/Beta" };
+const CREATED: Workspace = { id: "ws3", name: "Beta", dataDirectory: "/home/me/Documents/BigMouth" };
 
 // jsdom has no layout: the workspace listbox scrolls the active row into view,
 // so stub scrollIntoView so arrowing/loading never throws.
@@ -54,10 +57,9 @@ beforeEach(() => {
     configurable: true,
     value: { writeRendererLog: mockWriteRendererLog },
   });
-  // Main proposes a destination under the default workspace parent.
+  // Main proposes the destination independently of the workspace name.
   mockSuggestLocation.mockReset();
-  mockSuggestLocation.mockImplementation(async (name?: string) =>
-    `/home/me/Documents/BigMouth/${name ?? "Workspace"}`);
+  mockSuggestLocation.mockResolvedValue("/home/me/Documents/BigMouth");
   if (!("scrollIntoView" in HTMLElement.prototype)) {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
@@ -88,6 +90,7 @@ async function renderModal() {
 
 // A flexible variant that lets each test vary the callbacks under assertion.
 interface ModalOverrides {
+  language?: Language;
   dismissable?: boolean;
   onClose?: () => void;
   onSelect?: (ws: Workspace) => void | Promise<void>;
@@ -106,6 +109,7 @@ async function renderWith(over: ModalOverrides = {}) {
   const onWorkspaceDeleted = over.onWorkspaceDeleted ?? vi.fn().mockResolvedValue(true);
   const onWorkspaceUpdated = over.onWorkspaceUpdated ?? vi.fn();
   const element = (pending = false, shown = true) => (
+    <I18nProvider language={over.language ?? "en"} locale={over.language ?? "en"}>
     <StoragePendingProvider>
     <StoragePendingContext.Provider value={pending}>
     <ConfirmProvider>
@@ -125,6 +129,7 @@ async function renderWith(over: ModalOverrides = {}) {
     </StoragePendingContext.Provider>
     <StoragePendingResults />
     </StoragePendingProvider>
+    </I18nProvider>
   );
   const utils = render(element());
   await act(async () => {
@@ -373,8 +378,8 @@ describe("WorkspaceModal — first run", () => {
     expect(screen.getByRole("dialog", { name: "Set Up BigMouth" })).toBeTruthy();
     const name = screen.getByLabelText("Name") as HTMLInputElement;
     expect(name.value).toBe("My Blog");
-    expect(screen.getByText("/home/me/Documents/BigMouth/My Blog")).toBeTruthy();
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("My Blog");
+    expect(screen.getByText("/home/me/Documents/BigMouth")).toBeTruthy();
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(screen.queryByText(/No workspaces yet/)).toBeNull();
     // A root launch gate: no Cancel, no ✕, and Escape and the backdrop do nothing.
@@ -388,6 +393,25 @@ describe("WorkspaceModal — first run", () => {
     expect(screen.getByRole("button", { name: "Add Existing Folder" })).toBeTruthy();
   });
 
+  it("keeps the independent default with the initial Japanese name and edits before Browse", async () => {
+    await loadCatalogue("ja");
+    const t = createTranslator("ja").t;
+    mockListWorkspaces.mockResolvedValueOnce([]).mockResolvedValue([CREATED]);
+    mockCreate.mockResolvedValue(CREATED);
+    const { container } = await renderWith({ language: "ja", dismissable: false, activeWorkspaceId: null });
+    await flush();
+    const name = screen.getByDisplayValue("マイブログ");
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
+    for (const value of ["旅行記", "", "  Notes  "]) {
+      fireEvent.change(name, { target: { value } });
+      await flush();
+      expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
+    }
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
+    await act(async () => { fireEvent.click(footerButton(container, t("workspaces.create"))); });
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Notes", "/home/me/Documents/BigMouth");
+  });
+
   it("reports the created workspace as the first run", async () => {
     mockListWorkspaces.mockResolvedValueOnce([]).mockResolvedValue([CREATED]);
     mockCreate.mockResolvedValue(CREATED);
@@ -397,14 +421,14 @@ describe("WorkspaceModal — first run", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
 
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/home/me/Documents/BigMouth/My Blog");
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/home/me/Documents/BigMouth");
     expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, true);
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
 
 describe("WorkspaceModal — New Workspace", () => {
-  it("shows the folder the typed name would be created in", async () => {
+  it("keeps the independent default across name edits before Browse", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     const { container } = await renderWith();
     await openNewForm();
@@ -417,8 +441,8 @@ describe("WorkspaceModal — New Workspace", () => {
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Beta  " } });
     await flush();
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
-    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
+    expect(screen.getByText("/home/me/Documents/BigMouth")).toBeTruthy();
     expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -431,7 +455,7 @@ describe("WorkspaceModal — New Workspace", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
 
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Beta", "/home/me/Documents/BigMouth/Beta");
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Beta", "/home/me/Documents/BigMouth");
     expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, false);
     expect(onSelect).not.toHaveBeenCalled();
     // The list is reloaded and the form closed.
@@ -458,7 +482,7 @@ describe("WorkspaceModal — New Workspace", () => {
     await openNewForm("Beta");
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
-    expect(mockPickDirectory).toHaveBeenNthCalledWith(1, "create", "/home/me/Documents/BigMouth/Beta");
+    expect(mockPickDirectory).toHaveBeenNthCalledWith(1, "create", "/home/me/Documents/BigMouth");
     expect(container.querySelector(".workspace-location")!.textContent).toBe("/Volumes/ Data ");
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Gamma" } });
@@ -470,6 +494,35 @@ describe("WorkspaceModal — New Workspace", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
     expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Gamma", "/Volumes/ Data ");
+  });
+
+  it("accepts an asynchronous default after name edits without restarting its lookup", async () => {
+    mockListWorkspaces.mockResolvedValueOnce([]).mockResolvedValue([CREATED]);
+    let suggest!: (path: string) => void;
+    mockSuggestLocation.mockReturnValue(new Promise((resolve) => { suggest = resolve; }));
+    mockCreate.mockResolvedValue(CREATED);
+    const { container } = await renderWith({ dismissable: false, activeWorkspaceId: null });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Before Browse" } });
+    await flush();
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { suggest("/home/me/Documents/BigMouth"); });
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Before Browse", "/home/me/Documents/BigMouth");
+  });
+
+  it("ignores a default that finishes after its form was cancelled and reopened", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    let oldDefault!: (path: string) => void;
+    mockSuggestLocation.mockReturnValueOnce(new Promise((resolve) => { oldDefault = resolve; }));
+    const { container } = await renderWith();
+    await openNewForm();
+    fireEvent.click(footerButton(container, "Cancel"));
+    await openNewForm("New form");
+    await act(async () => { oldDefault("/old/default"); });
+    expect(mockSuggestLocation).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
   });
 
   it("uses a picked destination while the initial suggestion is still pending", async () => {
@@ -499,8 +552,8 @@ describe("WorkspaceModal — New Workspace", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
     await flush();
 
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
-    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
+    expect(screen.getByText("/home/me/Documents/BigMouth")).toBeTruthy();
   });
 
   it("retains an authored form result when the Change picker rejects", async () => {
@@ -514,7 +567,7 @@ describe("WorkspaceModal — New Workspace", () => {
     const result = screen.getByRole("alert");
     expect(result.textContent).toContain("location is unchanged");
     expect(result.textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
-    expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
+    expect(screen.getByText("/home/me/Documents/BigMouth")).toBeTruthy();
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
       message: "renderer: workspace destination picker failed",
     }));
@@ -530,6 +583,26 @@ describe("WorkspaceModal — New Workspace", () => {
     expect(screen.getByRole("alert").textContent).toContain("location could not be suggested");
     expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH_LOCATION_SENTINEL");
     expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps a refused default visible until Change explicitly selects another destination", async () => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
+    mockCreate.mockRejectedValueOnce(new Error('That folder is already registered as workspace "Alpha".'))
+      .mockResolvedValueOnce(CREATED);
+    mockPickDirectory.mockResolvedValue("/chosen/second");
+    const { container } = await renderWith();
+    await openNewForm("Second");
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+    expect(screen.getByRole("alert").textContent).toContain("The workspace could not be created.");
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed second" } });
+    await flush();
+    expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+    expect(mockCreate).toHaveBeenNthCalledWith(1, "Second", "/home/me/Documents/BigMouth");
+    expect(mockCreate).toHaveBeenNthCalledWith(2, "Renamed second", "/chosen/second");
   });
 
   it("surfaces a creation failure in place and keeps the form open", async () => {

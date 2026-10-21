@@ -169,11 +169,11 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.deleteWorkspace).toHaveBeenCalledWith("w1");
     });
 
-    it("suggestWorkspaceLocation forwards the proposed name", () => {
+    it("suggestWorkspaceLocation requests the independent default", () => {
       const b = bridge();
       installBridge(b);
-      void suggestWorkspaceLocation("Blog");
-      expect(b.suggestWorkspaceLocation).toHaveBeenCalledWith("Blog");
+      void suggestWorkspaceLocation();
+      expect(b.suggestWorkspaceLocation).toHaveBeenCalledWith();
     });
 
     it.each(["workspace", "create"] as const)("pickWorkspaceDirectory forwards the %s purpose to the bridge's pickDirectory", (purpose) => {

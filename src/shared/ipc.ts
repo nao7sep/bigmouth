@@ -374,12 +374,12 @@ export interface BigMouthApi {
 
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
-  /** Creates a workspace at the exact destination, or suggests a default when absent. */
+  /** Creates a workspace at the exact destination, or uses the independent default when absent. */
   createWorkspace(name: string, dataDirectory?: string): Promise<Workspace>;
   /** Registers a folder that already holds a BigMouth workspace; one already listed is returned as is. */
   addExistingWorkspace(dataDirectory: string): Promise<Workspace>;
-  /** A default destination proposal for a new workspace named `name`. */
-  suggestWorkspaceLocation(name?: string): Promise<string>;
+  /** The default workspace destination, independent of its name. */
+  suggestWorkspaceLocation(): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<WorkspaceDeleteResult>;

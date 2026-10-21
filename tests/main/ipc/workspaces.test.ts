@@ -90,7 +90,7 @@ describe("workspace IPC handlers", () => {
     const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "My WS"));
     expect(ws.name).toBe("My WS");
     expect(ws.id).toBeTruthy();
-    expect(ws.dataDirectory).toBe(path.join(os.homedir(), "Documents", "BigMouth", "My WS"));
+    expect(ws.dataDirectory).toBe(path.join(os.homedir(), "Documents", "BigMouth"));
     expect(fs.existsSync(path.join(ws.dataDirectory, "config.json"))).toBe(false);
 
     const list = (await invoke<Workspace[]>(CHANNELS.listWorkspaces));
@@ -98,18 +98,16 @@ describe("workspace IPC handlers", () => {
     expect(list[0].id).toBe(ws.id);
   });
 
-  it("suggests the folder creation would use, trimming the name and creating nothing", async () => {
-    const parent = path.join(os.homedir(), "Documents", "BigMouth");
-    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "  Blog  ")).toBe(path.join(parent, "Blog"));
-    // A blank or non-text name asks for the default name's folder.
-    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "")).toBe(path.join(parent, "Workspace"));
-    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, 42)).toBe(path.join(parent, "Workspace"));
-    expect(fs.existsSync(parent)).toBe(false);
+  it("proposes an independent destination without creating or changing it when occupied", async () => {
+    const destination = path.join(os.homedir(), "Documents", "BigMouth");
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation)).toBe(destination);
+    expect(fs.existsSync(destination)).toBe(false);
     expect(listWorkspaces()).toHaveLength(0);
 
-    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "Blog");
-    expect(ws.dataDirectory).toBe(path.join(parent, "Blog"));
-    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Blog")).toBe(path.join(parent, "Blog (2)"));
+    const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "マイブログ");
+    expect(ws.dataDirectory).toBe(destination);
+    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation)).toBe(destination);
+    await expect(invoke(CHANNELS.createWorkspace, "Other")).rejects.toThrow(/already registered/);
   });
 
   it("creates at the exact chosen destination", async () => {

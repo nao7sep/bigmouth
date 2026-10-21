@@ -20,7 +20,7 @@ import {
   getThumbnailsDir,
   getWorkspacesJsonPath,
   expandWorkspacePath,
-  getDefaultWorkspacesParentDir,
+  getDefaultWorkspaceDirectory,
   initStorageRoot,
   setDocumentsDirectory,
 } from "@main/core/services/storagePaths.js";
@@ -197,9 +197,9 @@ describe("the default workspace folder", () => {
     try {
       process.env.BIGMOUTH_DATA_DIR = root;
       initAppDir();
-      expect(getDefaultWorkspacesParentDir()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
+      expect(getDefaultWorkspaceDirectory()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
       const workspace = createWorkspace("Default WS");
-      expect(workspace.dataDirectory).toBe(path.join(fakeHome, "Documents", "BigMouth", "Default WS"));
+      expect(workspace.dataDirectory).toBe(path.join(fakeHome, "Documents", "BigMouth"));
       expect(fs.readdirSync(root)).not.toContain("workspaces");
     } finally {
       removeTestTree(root);
@@ -212,11 +212,11 @@ describe("the default workspace folder", () => {
     const moved = path.join(os.tmpdir(), "OneDrive", "Documents");
     setDocumentsDirectory(moved);
     try {
-      expect(getDefaultWorkspacesParentDir()).toBe(path.join(moved, "BigMouth"));
+      expect(getDefaultWorkspaceDirectory()).toBe(path.join(moved, "BigMouth"));
     } finally {
       setDocumentsDirectory(null);
     }
-    expect(getDefaultWorkspacesParentDir()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
+    expect(getDefaultWorkspaceDirectory()).toBe(path.join(fakeHome, "Documents", "BigMouth"));
   });
 });
 

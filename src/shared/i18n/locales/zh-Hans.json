@@ -106,7 +106,7 @@
   "workspaces.name": "名称",
   "workspaces.location": "位置",
   "workspaces.locationHint": "BigMouth 会为工作区创建此文件夹。如果它已存在，则不得含有自己的文章、素材或 config.json。",
-  "workspaces.locationFailed": "无法建议工作区位置。请通过“更改”选择文件夹，或修改名称后重试。",
+  "workspaces.locationFailed": "无法建议工作区位置。请通过“更改”选择文件夹。",
   "workspaces.opening": "正在打开…",
   "setup.title": "设置 BigMouth",
   "setup.skip": "跳过",

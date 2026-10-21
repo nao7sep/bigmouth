@@ -106,7 +106,7 @@
   "workspaces.name": "Nome",
   "workspaces.location": "Local",
   "workspaces.locationHint": "O BigMouth cria esta pasta para o espaço de trabalho. Se ela já existir, não pode ter publicações, recursos nem config.json próprios.",
-  "workspaces.locationFailed": "Não foi possível sugerir o local do espaço de trabalho. Escolha uma pasta com Alterar ou edite o nome para tentar novamente.",
+  "workspaces.locationFailed": "Não foi possível sugerir o local do espaço de trabalho. Escolha uma pasta com Alterar.",
   "workspaces.opening": "Abrindo…",
   "setup.title": "Configurar o BigMouth",
   "setup.skip": "Pular",

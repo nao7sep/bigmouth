@@ -402,98 +402,60 @@ function documentsBigMouth(): string {
   return path.join(os.homedir(), "Documents", "BigMouth");
 }
 
-// A workspace is the user's own document, so one created without a location
-// goes to <home>/Documents/BigMouth/<name> — never into the storage root, which
-// is the app's (storage-path conventions, "Ownership decides location").
 describe("the default workspace location", () => {
   it("runs against a throwaway home, never the developer's", () => {
     expect(os.homedir()).toBe(process.env[process.platform === "win32" ? "USERPROFILE" : "HOME"]);
     expect(path.basename(os.homedir())).toMatch(/^bigmouth-test-home-/);
   });
 
-  it("creates the workspace in a folder named after it under Documents/BigMouth", () => {
-    const ws = createWorkspace("My Blog");
-
-    expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), "My Blog"));
-    expect(fs.statSync(path.join(ws.dataDirectory, "posts")).isDirectory()).toBe(true);
-    expect(fs.statSync(path.join(ws.dataDirectory, "assets")).isDirectory()).toBe(true);
-    // Nothing of it lands in the storage root.
-    expect(fs.existsSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces"))).toBe(false);
-  });
-
-  it("names the folder with the asset-name sanitizer, falling back to Workspace", () => {
-    expect(createWorkspace("Drafts/Notes: 2026?").dataDirectory).toBe(
-      path.join(documentsBigMouth(), "Drafts_Notes_ 2026_"),
-    );
-    expect(createWorkspace("...").dataDirectory).toBe(path.join(documentsBigMouth(), "Workspace"));
-  });
-
-  // Elsewhere any name makes a folder, so this proves something only on the Windows PC.
-  it.runIf(process.platform === "win32")("makes a usable folder on Windows from a name Windows reserves", () => {
-    for (const [name, folder] of [["CON", "_CON"], ["nul.notes", "_nul.notes"], ["Blog.", "Blog"]]) {
+  it.each(["My Blog", "マイブログ", "Drafts/Notes: 2026?", "...", "CON", "nul.notes"])(
+    "creates %s directly at Documents/BigMouth independently of the name", (name) => {
       const ws = createWorkspace(name);
-      expect(ws.dataDirectory).toBe(path.join(documentsBigMouth(), folder));
-      expect(fs.readdirSync(documentsBigMouth())).toContain(folder);
+      expect(ws.name).toBe(name);
+      expect(ws.dataDirectory).toBe(documentsBigMouth());
       expect(fs.statSync(path.join(ws.dataDirectory, "posts")).isDirectory()).toBe(true);
+      expect(fs.statSync(path.join(ws.dataDirectory, "assets")).isDirectory()).toBe(true);
       expect(openWorkspace(ws.dataDirectory).id).toBe(ws.id);
-    }
-  });
+      expect(fs.existsSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces"))).toBe(false);
+    },
+  );
 
-  it("numbers the folder when one of that name is already a workspace", () => {
-    const first = createWorkspace("Blog");
-    const second = createWorkspace("Blog");
-    const third = createWorkspace("blog");
-
-    expect(first.dataDirectory).toBe(path.join(documentsBigMouth(), "Blog"));
-    expect(second.dataDirectory).toBe(path.join(documentsBigMouth(), "Blog (2)"));
-    // On a case-insensitive volume "blog" is the same folder as "Blog".
-    const caseFolds = fs.existsSync(path.join(documentsBigMouth(), "BLOG"));
-    expect(third.dataDirectory).toBe(path.join(documentsBigMouth(), caseFolds ? "blog (3)" : "blog"));
-  });
-
-  it("numbers past a folder holding content a new workspace would take over", () => {
-    const taken = path.join(documentsBigMouth(), "Blog");
-    fs.mkdirSync(taken, { recursive: true });
-    const foreign = JSON.stringify({ title: "Someone else's site" });
-    fs.writeFileSync(path.join(taken, "config.json"), foreign);
-    // An unregistered workspace folder is taken too: creating there would adopt it.
-    initializeWorkspaceData(path.join(documentsBigMouth(), "Blog (2)"));
-
-    expect(createWorkspace("Blog").dataDirectory).toBe(path.join(documentsBigMouth(), "Blog (3)"));
-    expect(fs.readFileSync(path.join(taken, "config.json"), "utf-8")).toBe(foreign);
-  });
-
-  it("uses an existing folder a new workspace can take, rather than numbering past it", () => {
-    const existing = path.join(documentsBigMouth(), "Blog");
-    fs.mkdirSync(existing, { recursive: true });
-    fs.writeFileSync(path.join(existing, ".DS_Store"), "finder");
-
-    expect(createWorkspace("Blog").dataDirectory).toBe(existing);
-  });
-
-  it("suggests exactly the folder creation then uses", () => {
-    fs.mkdirSync(path.join(documentsBigMouth(), "Blog", "posts"), { recursive: true });
-    fs.writeFileSync(path.join(documentsBigMouth(), "Blog", "posts", "a.md"), "# taken");
-
-    const suggested = suggestWorkspaceLocation("Blog");
-    expect(suggested).toBe(path.join(documentsBigMouth(), "Blog (2)"));
-    // Asking writes nothing.
-    expect(fs.existsSync(suggested)).toBe(false);
-    expect(listWorkspaces()).toHaveLength(0);
-    expect(createWorkspace("Blog").dataDirectory).toBe(suggested);
-  });
-
-  it("suggests the next default name's folder for a blank name", () => {
+  it("returns the exact default without creating anything or considering registered names", () => {
     createWorkspace("Workspace", tempDir("elsewhere"));
-    expect(suggestWorkspaceLocation(undefined)).toBe(path.join(documentsBigMouth(), "Workspace 2"));
+    expect(suggestWorkspaceLocation()).toBe(documentsBigMouth());
+    expect(fs.existsSync(documentsBigMouth())).toBe(false);
+    expect(createWorkspace("Blog").dataDirectory).toBe(documentsBigMouth());
   });
 
-  it("stops at the first name when a workspace holds the whole default folder, and creation says why", () => {
-    createWorkspace("Everything", documentsBigMouth());
-
-    expect(suggestWorkspaceLocation("Blog")).toBe(path.join(documentsBigMouth(), "Blog"));
-    expect(() => createWorkspace("Blog")).toThrow(/inside workspace "Everything"/);
+  it("refuses an occupied default until another destination is explicitly chosen", () => {
+    createWorkspace("First");
+    expect(suggestWorkspaceLocation()).toBe(documentsBigMouth());
+    expect(() => createWorkspace("Second")).toThrow(/already registered as workspace "First"/);
     expect(listWorkspaces()).toHaveLength(1);
+    const chosen = tempDir("chosen");
+    expect(createWorkspace("Second", chosen).dataDirectory).toBe(chosen);
+  });
+
+  it("refuses an unregistered workspace at the default instead of adopting it", () => {
+    initializeWorkspaceData(documentsBigMouth());
+    expect(suggestWorkspaceLocation()).toBe(documentsBigMouth());
+    expect(() => createWorkspace("Blog")).toThrow(/already contains a workspace/);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("refuses conflicting content at the default without creating another folder", () => {
+    fs.mkdirSync(documentsBigMouth(), { recursive: true });
+    const foreign = JSON.stringify({ title: "Someone else's site" });
+    fs.writeFileSync(path.join(documentsBigMouth(), "config.json"), foreign);
+    expect(() => createWorkspace("Blog")).toThrow(/already has its own/);
+    expect(fs.readFileSync(path.join(documentsBigMouth(), "config.json"), "utf-8")).toBe(foreign);
+    expect(fs.readdirSync(documentsBigMouth())).toEqual(["config.json"]);
+  });
+
+  it("uses an existing available default directory", () => {
+    fs.mkdirSync(documentsBigMouth(), { recursive: true });
+    fs.writeFileSync(path.join(documentsBigMouth(), ".DS_Store"), "finder");
+    expect(createWorkspace("Blog").dataDirectory).toBe(documentsBigMouth());
   });
 });
 

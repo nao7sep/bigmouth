@@ -106,7 +106,7 @@
   "workspaces.name": "名前",
   "workspaces.location": "場所",
   "workspaces.locationHint": "BigMouth はこのフォルダをワークスペース用に作成します。すでにある場合は、独自の投稿・アセット・config.json を含まないフォルダである必要があります。",
-  "workspaces.locationFailed": "ワークスペースの場所を提案できませんでした。「変更」でフォルダーを選ぶか、名前を編集してもう一度お試しください。",
+  "workspaces.locationFailed": "ワークスペースの場所を提案できませんでした。「変更」でフォルダーを選んでください。",
   "workspaces.opening": "開いています…",
   "setup.title": "BigMouth のセットアップ",
   "setup.skip": "スキップ",

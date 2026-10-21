@@ -106,7 +106,7 @@
   "workspaces.name": "Nom",
   "workspaces.location": "Emplacement",
   "workspaces.locationHint": "BigMouth crée ce dossier pour l’espace de travail. S’il existe déjà, il ne doit contenir ni publications, ni ressources, ni config.json qui lui soient propres.",
-  "workspaces.locationFailed": "Impossible de proposer un emplacement pour l’espace de travail. Choisissez un dossier avec Changer ou modifiez le nom pour réessayer.",
+  "workspaces.locationFailed": "Impossible de proposer un emplacement pour l’espace de travail. Choisissez un dossier avec Changer.",
   "workspaces.opening": "Ouverture…",
   "setup.title": "Configurer BigMouth",
   "setup.skip": "Ignorer",

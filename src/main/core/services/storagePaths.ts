@@ -237,7 +237,7 @@ export function getApiKeysPath(): string {
 // on Windows; <home>/Documents stands in only where nothing was handed in.
 let documentsDirectory: string | null = null;
 
-/** Sets the Documents folder the default workspace parent sits in; null returns to <home>/Documents. */
+/** Sets the Documents folder the default workspace sits in; null returns to <home>/Documents. */
 export function setDocumentsDirectory(directory: string | null): void {
   documentsDirectory = directory;
 }
@@ -249,7 +249,7 @@ export function setDocumentsDirectory(directory: string | null): void {
  * location"). Resolved on each call rather than at initStorageRoot, because it
  * is not under the root and BIGMOUTH_DATA_DIR does not move it.
  */
-export function getDefaultWorkspacesParentDir(): string {
+export function getDefaultWorkspaceDirectory(): string {
   return path.join(documentsDirectory ?? path.join(os.homedir(), "Documents"), PRODUCT_NAME);
 }
 

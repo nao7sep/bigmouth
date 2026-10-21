@@ -106,7 +106,7 @@
   "workspaces.name": "Nome",
   "workspaces.location": "Posizione",
   "workspaces.locationHint": "BigMouth crea questa cartella per lo spazio di lavoro. Se esiste già, non deve contenere post, risorse né un config.json propri.",
-  "workspaces.locationFailed": "Non è stato possibile suggerire la posizione dello spazio di lavoro. Scegli una cartella con Cambia o cambia il nome per riprovare.",
+  "workspaces.locationFailed": "Non è stato possibile suggerire la posizione dello spazio di lavoro. Scegli una cartella con Cambia.",
   "workspaces.opening": "Apertura…",
   "setup.title": "Configura BigMouth",
   "setup.skip": "Salta",

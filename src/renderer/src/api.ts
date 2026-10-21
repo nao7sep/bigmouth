@@ -77,9 +77,9 @@ export function addExistingWorkspace(dataDirectory: string): Promise<Workspace> 
   return bridge().addExistingWorkspace(dataDirectory);
 }
 
-/** Proposes a default destination for a workspace named `name`, without creating it. */
-export function suggestWorkspaceLocation(name?: string): Promise<string> {
-  return bridge().suggestWorkspaceLocation(name);
+/** Proposes the default workspace destination independently of its name, without creating it. */
+export function suggestWorkspaceLocation(): Promise<string> {
+  return bridge().suggestWorkspaceLocation();
 }
 
 export function updateWorkspace(id: string, updates: { name: string }): Promise<Workspace> {

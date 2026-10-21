@@ -106,7 +106,7 @@
   "workspaces.name": "Name",
   "workspaces.location": "Speicherort",
   "workspaces.locationHint": "BigMouth erstellt diesen Ordner für den Arbeitsbereich. Falls er bereits existiert, darf er keine eigenen Beiträge, Assets oder config.json enthalten.",
-  "workspaces.locationFailed": "Es konnte kein Speicherort für den Arbeitsbereich vorgeschlagen werden. Wählen Sie mit Ändern einen Ordner oder bearbeiten Sie den Namen, um es erneut zu versuchen.",
+  "workspaces.locationFailed": "Es konnte kein Speicherort für den Arbeitsbereich vorgeschlagen werden. Wählen Sie mit Ändern einen Ordner.",
   "workspaces.opening": "Wird geöffnet\u00a0…",
   "setup.title": "BigMouth einrichten",
   "setup.skip": "Überspringen",

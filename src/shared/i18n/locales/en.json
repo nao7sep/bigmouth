@@ -106,7 +106,7 @@
   "workspaces.name": "Name",
   "workspaces.location": "Location",
   "workspaces.locationHint": "BigMouth creates this folder for the workspace. If it already exists, it must not hold posts, assets or a config.json of its own.",
-  "workspaces.locationFailed": "The workspace location could not be suggested. Choose a folder with Change, or edit the name to try again.",
+  "workspaces.locationFailed": "The workspace location could not be suggested. Choose a folder with Change.",
   "workspaces.opening": "Opening…",
   "setup.title": "Set Up BigMouth",
   "setup.skip": "Skip",

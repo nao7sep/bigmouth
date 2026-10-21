@@ -176,7 +176,7 @@ export function WorkspaceModal({
   useEffect(() => {
     if (!creatingForm || chosenLocation !== null) return;
     let current = true;
-    suggestWorkspaceLocation(createName.trim() || undefined)
+    suggestWorkspaceLocation()
       .then((path) => {
         if (current) setSuggestedLocation(path);
       })
@@ -191,7 +191,7 @@ export function WorkspaceModal({
     return () => {
       current = false;
     };
-  }, [createName, chosenLocation, creatingForm]);
+  }, [chosenLocation, creatingForm]);
 
   const handleRequestClose = () => {
     if (submittingRef.current || renamingRef.current) {
