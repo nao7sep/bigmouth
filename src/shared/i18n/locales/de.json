@@ -112,7 +112,7 @@
   "setup.skip": "Überspringen",
   "setup.finish": "Fertigstellen",
   "setup.workspaceIntro": "Ein Arbeitsbereich bewahrt Ihre Beiträge, deren Bilder und Ihre Einstellungen in einem Ordner Ihrer Wahl auf.",
-  "setup.workspaceNameDefault": "Mein Blog",
+  "setup.workspaceNameDefault": "Neuer Blog",
   "setup.targetHeading": "Ihr erstes Ziel",
   "setup.targetIntro": "Ein Ziel ist ein Ort, an dem Sie Beiträge veröffentlichen, etwa ein Blog oder ein soziales Netzwerk. Neue Beiträge dafür beginnen in seiner Sprache, und für ein Ziel, das Metadaten verlangt, bereiten Sie zu jedem Beitrag Titel, Slug und Tags vor.",
   "setup.targetNameDefault": "Blog",

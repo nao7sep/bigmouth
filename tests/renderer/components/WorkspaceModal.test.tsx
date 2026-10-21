@@ -346,6 +346,17 @@ describe("WorkspaceModal — the list", () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(OTHER);
   });
 
+  it.each(["My Blog", "マイブログ", "New blog"])("opens a saved name unchanged: %s", async (name) => {
+    const saved = { ...WORKSPACE, name };
+    mockListWorkspaces.mockResolvedValue([saved]);
+    const { onSelect, container } = await renderWith();
+    expect(option(name)).toBeTruthy();
+    fireEvent.click(footerButton(container, "Open"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(saved);
+    expect(mockUpdateWorkspace).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("renames the selected row from Rename", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
     mockUpdateWorkspace.mockResolvedValue({ ...OTHER, name: "Bravo 2" });
@@ -377,7 +388,7 @@ describe("WorkspaceModal — first run", () => {
 
     expect(screen.getByRole("dialog", { name: "Set Up BigMouth" })).toBeTruthy();
     const name = screen.getByLabelText("Name") as HTMLInputElement;
-    expect(name.value).toBe("My Blog");
+    expect(name.value).toBe("New blog");
     expect(screen.getByText("/home/me/Documents/BigMouth")).toBeTruthy();
     expect(mockSuggestLocation).toHaveBeenCalledExactlyOnceWith();
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -400,7 +411,7 @@ describe("WorkspaceModal — first run", () => {
     mockCreate.mockResolvedValue(CREATED);
     const { container } = await renderWith({ language: "ja", dismissable: false, activeWorkspaceId: null });
     await flush();
-    const name = screen.getByDisplayValue("マイブログ");
+    const name = screen.getByDisplayValue("新しいブログ");
     expect(container.querySelector(".workspace-location")!.textContent).toBe("/home/me/Documents/BigMouth");
     for (const value of ["旅行記", "", "  Notes  "]) {
       fireEvent.change(name, { target: { value } });
@@ -421,7 +432,7 @@ describe("WorkspaceModal — first run", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
 
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/home/me/Documents/BigMouth");
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("New blog", "/home/me/Documents/BigMouth");
     expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, true);
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -540,7 +551,7 @@ describe("WorkspaceModal — New Workspace", () => {
     await act(async () => { suggest("/late/default"); });
     expect(container.querySelector(".workspace-location")!.textContent).toBe("/chosen/exact");
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/chosen/exact");
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("New blog", "/chosen/exact");
   });
 
   it("keeps the destination when the Change picker is cancelled", async () => {
@@ -1029,7 +1040,7 @@ describe("WorkspaceModal — delete", () => {
     expect(queryByRole("option")).toBeNull();
     expect(queryByRole("alertdialog")).toBeNull();
     // With nothing left, the window turns to creating one.
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("My Blog");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("New blog");
     fireEvent.click(screen.getByRole("button", { name: "Close result" }));
     expect(screen.queryByRole("status")).toBeNull();
   });

@@ -112,7 +112,7 @@
   "setup.skip": "スキップ",
   "setup.finish": "完了",
   "setup.workspaceIntro": "ワークスペースは、投稿とその画像、設定を、選んだフォルダにまとめて保管します。",
-  "setup.workspaceNameDefault": "マイブログ",
+  "setup.workspaceNameDefault": "新しいブログ",
   "setup.targetHeading": "最初の投稿先",
   "setup.targetIntro": "投稿先とは、ブログや SNS など、投稿を公開する場所です。新しい投稿はその投稿先の言語で作成され、メタデータが必要な投稿先では、投稿ごとにタイトル・スラッグ・タグを用意します。",
   "setup.targetNameDefault": "ブログ",

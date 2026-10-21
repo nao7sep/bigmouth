@@ -112,7 +112,7 @@
   "setup.skip": "Skip",
   "setup.finish": "Finish",
   "setup.workspaceIntro": "A workspace keeps your posts, their images and your settings in a folder you choose.",
-  "setup.workspaceNameDefault": "My Blog",
+  "setup.workspaceNameDefault": "New blog",
   "setup.targetHeading": "Your first target",
   "setup.targetIntro": "A target is a place you post to, such as a blog or a social network. New posts for it start in its language, and for a target that requires metadata, you prepare a title, slug and tags for each post.",
   "setup.targetNameDefault": "Blog",

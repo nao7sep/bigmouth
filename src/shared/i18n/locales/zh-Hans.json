@@ -112,7 +112,7 @@
   "setup.skip": "跳过",
   "setup.finish": "完成",
   "setup.workspaceIntro": "工作区把你的文章、文章的图片以及你的设置保存在你选择的文件夹中。",
-  "setup.workspaceNameDefault": "我的博客",
+  "setup.workspaceNameDefault": "新博客",
   "setup.targetHeading": "你的第一个发布目标",
   "setup.targetIntro": "发布目标是你发布内容的地方，例如博客或社交网络。为它新建的文章默认使用它的语言；对于需要元数据的发布目标，你需要为每篇文章准备标题、别名和标签。",
   "setup.targetNameDefault": "博客",

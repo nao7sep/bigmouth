@@ -112,7 +112,7 @@
   "setup.skip": "건너뛰기",
   "setup.finish": "완료",
   "setup.workspaceIntro": "작업 공간은 게시물과 그 이미지, 설정을 선택한 폴더에 보관합니다.",
-  "setup.workspaceNameDefault": "내 블로그",
+  "setup.workspaceNameDefault": "새 블로그",
   "setup.targetHeading": "첫 번째 대상",
   "setup.targetIntro": "대상은 블로그나 소셜 네트워크처럼 게시물을 올리는 곳입니다. 대상의 새 게시물은 그 대상의 언어로 시작하며, 메타데이터가 필요한 대상에서는 게시물마다 제목, 슬러그, 태그를 준비합니다.",
   "setup.targetNameDefault": "블로그",

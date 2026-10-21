@@ -112,7 +112,7 @@
   "setup.skip": "Pular",
   "setup.finish": "Concluir",
   "setup.workspaceIntro": "Um espaço de trabalho guarda suas publicações, as imagens delas e suas configurações na pasta que você escolher.",
-  "setup.workspaceNameDefault": "Meu blog",
+  "setup.workspaceNameDefault": "Novo blog",
   "setup.targetHeading": "Seu primeiro destino",
   "setup.targetIntro": "Um destino é um lugar onde você publica, como um blog ou uma rede social. As novas publicações para ele começam no idioma dele, e, para um destino que exige metadados, você prepara um título, um slug e tags para cada publicação.",
   "setup.targetNameDefault": "Blog",

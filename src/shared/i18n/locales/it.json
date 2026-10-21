@@ -112,7 +112,7 @@
   "setup.skip": "Salta",
   "setup.finish": "Fine",
   "setup.workspaceIntro": "Uno spazio di lavoro conserva i tuoi post, le loro immagini e le tue impostazioni in una cartella a tua scelta.",
-  "setup.workspaceNameDefault": "Il mio blog",
+  "setup.workspaceNameDefault": "Nuovo blog",
   "setup.targetHeading": "La tua prima destinazione",
   "setup.targetIntro": "Una destinazione è un luogo in cui pubblichi, come un blog o un social network. I nuovi post per una destinazione iniziano nella sua lingua, e per una destinazione che richiede metadati prepari un titolo, uno slug e dei tag per ogni post.",
   "setup.targetNameDefault": "Blog",
