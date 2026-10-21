@@ -3,7 +3,7 @@ import { render, act, cleanup, fireEvent, screen, within } from "@testing-librar
 import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
 
 // WorkspaceModal talks to the main process through these api calls:
-// pickWorkspaceDirectory backs both "Change" (a parent for a new workspace)
+// pickWorkspaceDirectory backs both "Change" (the exact new destination)
 // and "Add Existing Folder" (a folder that already holds one).
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
@@ -54,11 +54,10 @@ beforeEach(() => {
     configurable: true,
     value: { writeRendererLog: mockWriteRendererLog },
   });
-  // What main answers: a folder named after the workspace, inside the chosen
-  // parent or the default one.
+  // Main proposes a destination under the default workspace parent.
   mockSuggestLocation.mockReset();
-  mockSuggestLocation.mockImplementation(async (name?: string, parent?: string) =>
-    `${parent ?? "/home/me/Documents/BigMouth"}/${name ?? "Workspace"}`);
+  mockSuggestLocation.mockImplementation(async (name?: string) =>
+    `/home/me/Documents/BigMouth/${name ?? "Workspace"}`);
   if (!("scrollIntoView" in HTMLElement.prototype)) {
     (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView = () => {};
   }
@@ -375,7 +374,7 @@ describe("WorkspaceModal — first run", () => {
     const name = screen.getByLabelText("Name") as HTMLInputElement;
     expect(name.value).toBe("My Blog");
     expect(screen.getByText("/home/me/Documents/BigMouth/My Blog")).toBeTruthy();
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("My Blog", undefined);
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("My Blog");
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(screen.queryByText(/No workspaces yet/)).toBeNull();
     // A root launch gate: no Cancel, no ✕, and Escape and the backdrop do nothing.
@@ -398,7 +397,7 @@ describe("WorkspaceModal — first run", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
 
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", undefined);
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/home/me/Documents/BigMouth/My Blog");
     expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, true);
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -418,7 +417,7 @@ describe("WorkspaceModal — New Workspace", () => {
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Beta  " } });
     await flush();
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", undefined);
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
     expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
     expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -432,7 +431,7 @@ describe("WorkspaceModal — New Workspace", () => {
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
 
-    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Beta", undefined);
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Beta", "/home/me/Documents/BigMouth/Beta");
     expect(onCreated).toHaveBeenCalledExactlyOnceWith(CREATED, false);
     expect(onSelect).not.toHaveBeenCalled();
     // The list is reloaded and the form closed.
@@ -451,31 +450,47 @@ describe("WorkspaceModal — New Workspace", () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(CREATED);
   });
 
-  it("re-suggests inside the parent chosen with Change and creates there", async () => {
+  it("keeps the exact picked destination across name changes and repeated Browse", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockCreate.mockResolvedValue(CREATED);
-    // A picked path is used as given, spaces and all.
-    mockPickDirectory.mockResolvedValue("/Volumes/ Data ");
+    mockPickDirectory.mockResolvedValueOnce("/Volumes/ Data ").mockResolvedValueOnce(null);
     const { container } = await renderWith({ onCreated: vi.fn() });
     await openNewForm("Beta");
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
-    await flush();
+    expect(mockPickDirectory).toHaveBeenNthCalledWith(1, "create", "/home/me/Documents/BigMouth/Beta");
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/Volumes/ Data ");
 
-    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("parent");
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", "/Volumes/ Data ");
-    expect(screen.getByText("/Volumes/ Data /Beta")).toBeTruthy();
-
-    // The name still moves the folder within the chosen parent.
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Gamma" } });
     await flush();
-    expect(screen.getByText("/Volumes/ Data /Gamma")).toBeTruthy();
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/Volumes/ Data ");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
+    expect(mockPickDirectory).toHaveBeenNthCalledWith(2, "create", "/Volumes/ Data ");
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/Volumes/ Data ");
 
     await act(async () => { fireEvent.click(footerButton(container, "Create")); });
     expect(mockCreate).toHaveBeenCalledExactlyOnceWith("Gamma", "/Volumes/ Data ");
   });
 
-  it("keeps the parent when the Change picker is cancelled", async () => {
+  it("uses a picked destination while the initial suggestion is still pending", async () => {
+    mockListWorkspaces.mockResolvedValueOnce([]).mockResolvedValue([CREATED]);
+    let suggest!: (path: string) => void;
+    mockSuggestLocation.mockReturnValue(new Promise((resolve) => { suggest = resolve; }));
+    mockPickDirectory.mockResolvedValue("/chosen/exact");
+    mockCreate.mockResolvedValue(CREATED);
+    const { container } = await renderWith({ dismissable: false, activeWorkspaceId: null });
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { fireEvent.keyDown(screen.getByLabelText("Name"), { key: "Enter" }); });
+    expect(mockCreate).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
+    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("create", undefined);
+    await act(async () => { suggest("/late/default"); });
+    expect(container.querySelector(".workspace-location")!.textContent).toBe("/chosen/exact");
+    await act(async () => { fireEvent.click(footerButton(container, "Create")); });
+    expect(mockCreate).toHaveBeenCalledExactlyOnceWith("My Blog", "/chosen/exact");
+  });
+
+  it("keeps the destination when the Change picker is cancelled", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue(null);
     await renderWith();
@@ -484,7 +499,7 @@ describe("WorkspaceModal — New Workspace", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Change" })); });
     await flush();
 
-    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta", undefined);
+    expect(mockSuggestLocation).toHaveBeenLastCalledWith("Beta");
     expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
   });
 
@@ -501,19 +516,20 @@ describe("WorkspaceModal — New Workspace", () => {
     expect(result.textContent).not.toContain("BIGMOUTH-PICKER-SENTINEL");
     expect(screen.getByText("/home/me/Documents/BigMouth/Beta")).toBeTruthy();
     expect(mockWriteRendererLog).toHaveBeenCalledWith(expect.objectContaining({
-      message: "renderer: workspace parent picker failed",
+      message: "renderer: workspace destination picker failed",
     }));
   });
 
-  it("keeps the form usable with no preview when the suggestion fails", async () => {
+  it("requires a known destination when the suggestion fails", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    mockSuggestLocation.mockRejectedValue(new Error("storage busy"));
+    mockSuggestLocation.mockRejectedValue(new Error("EACCES /private/tmp/BIGMOUTH_LOCATION_SENTINEL"));
     const { container } = await renderWith();
     await openNewForm("Beta");
 
     expect(container.querySelector(".workspace-location")!.textContent).toBe("");
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("alert").textContent).toContain("location could not be suggested");
+    expect(screen.getByRole("alert").textContent).not.toContain("BIGMOUTH_LOCATION_SENTINEL");
+    expect((footerButton(container, "Create") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("surfaces a creation failure in place and keeps the form open", async () => {
@@ -546,7 +562,7 @@ describe("WorkspaceModal — Add Existing Folder", () => {
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Existing Folder" })); });
 
-    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("workspace");
+    expect(mockPickDirectory).toHaveBeenCalledExactlyOnceWith("workspace", WORKSPACE.dataDirectory);
     // A picked path is used as given, spaces and all.
     expect(mockAddExisting).toHaveBeenCalledExactlyOnceWith("/picked/ Notes ");
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(added);
@@ -1080,7 +1096,7 @@ describe("WorkspaceModal — closing the new-workspace form", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("treats a chosen parent as a change worth asking about", async () => {
+  it("treats a chosen destination as a change worth asking about", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue("/Volumes/Data");
     const { findByText } = await renderWith();

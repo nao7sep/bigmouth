@@ -112,13 +112,23 @@ describe("workspace IPC handlers", () => {
     expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Blog")).toBe(path.join(parent, "Blog (2)"));
   });
 
-  it("creates inside a chosen parent, in a folder named after the workspace", async () => {
+  it("creates at the exact chosen destination", async () => {
     const parent = tempDir("parent");
-    expect(await invoke<string>(CHANNELS.suggestWorkspaceLocation, "Notes", parent)).toBe(path.join(parent, "Notes"));
     const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "  Notes  ", parent);
     expect(ws.name).toBe("Notes");
-    expect(ws.dataDirectory).toBe(path.join(parent, "Notes"));
+    expect(ws.dataDirectory).toBe(parent);
+    expect(fs.existsSync(path.join(parent, "Notes"))).toBe(false);
     expect(fs.existsSync(path.join(os.homedir(), "Documents", "BigMouth"))).toBe(false);
+  });
+
+  it("refuses a conflicting exact destination instead of silently creating elsewhere", async () => {
+    const destination = tempDir("conflict");
+    const original = "{\"belongsTo\":\"another app\"}";
+    fs.writeFileSync(path.join(destination, "config.json"), original);
+    await expect(invoke(CHANNELS.createWorkspace, "Notes", destination)).rejects.toThrow(/already has its own/);
+    expect(fs.readFileSync(path.join(destination, "config.json"), "utf8")).toBe(original);
+    expect(fs.existsSync(path.join(destination, "Notes"))).toBe(false);
+    expect(listWorkspaces()).toEqual([]);
   });
 
   it("refuses to create a workspace without a name", async () => {
@@ -132,21 +142,21 @@ describe("workspace IPC handlers", () => {
     await invoke(CHANNELS.deleteWorkspace, ws.id);
 
     const added = await invoke<Workspace>(CHANNELS.addExistingWorkspace, ws.dataDirectory);
-    expect(added.name).toBe("Shared");
+    expect(added.name).toBe(path.basename(ws.dataDirectory));
     expect(added.dataDirectory).toBe(ws.dataDirectory);
     // Adding a listed folder again returns its entry, not a duplicate.
     expect((await invoke<Workspace>(CHANNELS.addExistingWorkspace, ws.dataDirectory)).id).toBe(added.id);
     expect(listWorkspaces()).toHaveLength(1);
   });
 
-  it.skipIf(process.platform === "win32")("preserves a native-picked parent with leading and trailing spaces", async () => {
+  it.skipIf(process.platform === "win32")("preserves a native-picked destination with leading and trailing spaces", async () => {
     const root = tempDir("literal-spaces");
     const parent = path.join(root, " Parent ");
     fs.mkdirSync(parent);
 
     const ws = (await invoke<Workspace>(CHANNELS.createWorkspace, "Literal", parent));
 
-    expect(ws.dataDirectory).toBe(path.join(parent, "Literal"));
+    expect(ws.dataDirectory).toBe(parent);
     expect(fs.existsSync(path.join(root, "Parent"))).toBe(false);
   });
 

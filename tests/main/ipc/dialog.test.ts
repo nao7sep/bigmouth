@@ -4,8 +4,14 @@
 // cancelled dialog, an empty selection, and that the parent window resolved from
 // the event is passed through to dialog.showOpenDialog.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { CHANNELS } from "@shared/ipc";
+
+const suggestedLocation = vi.hoisted(() => vi.fn());
+vi.mock("@main/storageAccess.js", () => ({ suggestWorkspaceLocation: suggestedLocation }));
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
@@ -38,11 +44,12 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { registerDialogHandlers } from "@main/ipc/dialog.js";
 
-function invoke<T>(channel: string, event: unknown, purpose: "workspace" | "parent" = "workspace"): Promise<T> {
-  return handlers.get(channel)!(event, purpose) as Promise<T>;
+function invoke<T>(channel: string, event: unknown, purpose: "workspace" | "create" = "workspace", initialDirectory?: string): Promise<T> {
+  return handlers.get(channel)!(event, purpose, initialDirectory) as Promise<T>;
 }
 
 beforeEach(() => {
+  suggestedLocation.mockResolvedValue(path.join(os.tmpdir(), "bigmouth-picker-proposed", "Workspace"));
   handlers.clear();
   showOpenDialog.mockReset();
   fromWebContents.mockReset();
@@ -52,6 +59,10 @@ beforeEach(() => {
   showOpenDialog.mockImplementation(() => Promise.resolve(dialogState.result));
   registerDialogHandlers();
 });
+
+let fixture: string;
+beforeEach(() => { fixture = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-picker-")); });
+afterEach(() => { fs.rmSync(fixture, { recursive: true, force: true }); });
 
 describe("dialog IPC handler", () => {
   it("returns the chosen directory path when the user picks one", async () => {
@@ -84,7 +95,7 @@ describe("dialog IPC handler", () => {
     dialogState.window = win;
     dialogState.result = { canceled: false, filePaths: ["/with/window"] };
 
-    const picked = await invoke<string | null>(CHANNELS.pickDirectory, { sender: { fake: true } }, "parent");
+    const picked = await invoke<string | null>(CHANNELS.pickDirectory, { sender: { fake: true } }, "create");
 
     expect(picked).toBe("/with/window");
     // With a parent window the modal overload is used: (win, options).
@@ -106,14 +117,60 @@ describe("dialog IPC handler", () => {
     expect(firstArg).toMatchObject({ properties: ["openDirectory"] });
   });
 
-  it("titles the picker by purpose, and offers a new folder only when choosing a parent", async () => {
+  it("titles the picker by purpose, and offers a new folder only when choosing a destination", async () => {
     dialogState.result = { canceled: false, filePaths: ["/x"] };
     await invoke(CHANNELS.pickDirectory, { sender: {} }, "workspace");
-    await invoke(CHANNELS.pickDirectory, { sender: {} }, "parent");
-    const [[addOptions], [parentOptions]] = showOpenDialog.mock.calls as [[Electron.OpenDialogOptions], [Electron.OpenDialogOptions]];
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "create");
+    const [[addOptions], [createOptions]] = showOpenDialog.mock.calls as [[Electron.OpenDialogOptions], [Electron.OpenDialogOptions]];
     expect(addOptions.title).toBe("Choose a workspace folder");
     expect(addOptions.properties).toEqual(["openDirectory"]);
-    expect(parentOptions.title).toBe("Choose where to create the workspace");
-    expect(parentOptions.properties).toEqual(["openDirectory", "createDirectory"]);
+    expect(createOptions.title).toBe("Choose where to create the workspace");
+    expect(createOptions.properties).toEqual(["openDirectory", "createDirectory"]);
   });
+  it("starts creation in the displayed destination and preserves literal characters", async () => {
+    const destination = path.join(fixture, " $DRAFTS% ");
+    fs.mkdirSync(destination);
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "create", destination);
+    expect(showOpenDialog.mock.calls[0][0].defaultPath).toBe(destination);
+  });
+
+  it("starts at an existing ancestor without creating the proposed destination", async () => {
+    const missing = path.join(fixture, "unavailable", "Workspace");
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "create", missing);
+    expect(showOpenDialog.mock.calls[0][0].defaultPath).toBe(fixture);
+    expect(fs.existsSync(path.join(fixture, "unavailable"))).toBe(false);
+  });
+
+  it("uses the useful first-run default even before the form proposal arrives", async () => {
+    const missing = path.join(fixture, "BigMouth", "My Blog");
+    suggestedLocation.mockResolvedValue(missing);
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "create");
+    expect(showOpenDialog.mock.calls[0][0].defaultPath).toBe(fixture);
+    expect(fs.existsSync(path.join(fixture, "BigMouth"))).toBe(false);
+  });
+
+  it("uses the active workspace's parent when adding another, without inventing a context", async () => {
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "workspace", path.join(fixture, "Active"));
+    expect(showOpenDialog.mock.calls[0][0].defaultPath).toBe(fixture);
+    await invoke(CHANNELS.pickDirectory, { sender: {} }, "workspace");
+    expect(showOpenDialog.mock.calls[1][0]).not.toHaveProperty("defaultPath");
+  });
+
+  it("still permits choosing a destination when its default proposal is unavailable", async () => {
+    suggestedLocation.mockRejectedValueOnce(new Error("storage unavailable"));
+    dialogState.result = { canceled: false, filePaths: [fixture] };
+    expect(await invoke(CHANNELS.pickDirectory, { sender: {} }, "create")).toBe(fixture);
+    expect(showOpenDialog.mock.calls[0][0]).not.toHaveProperty("defaultPath");
+  });
+
+  it("walks past a file in a proposed path and preserves native picker failures", async () => {
+    const file = path.join(fixture, "file");
+    fs.writeFileSync(file, "keep");
+    showOpenDialog.mockRejectedValueOnce(new Error("native failure"));
+    await expect(invoke(CHANNELS.pickDirectory, { sender: {} }, "create", path.join(file, "child")))
+      .rejects.toThrow("native failure");
+    expect(showOpenDialog.mock.calls[0][0].defaultPath).toBe(fixture);
+    expect(fs.readFileSync(file, "utf8")).toBe("keep");
+  });
+
 });

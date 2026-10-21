@@ -138,7 +138,7 @@ describe("api wrappers — call-through and argument shape", () => {
   }
 
   describe("workspace management (no workspace context)", () => {
-    it("createWorkspace forwards the name and the chosen parent folder", () => {
+    it("createWorkspace forwards the name and the exact destination", () => {
       const b = bridge();
       installBridge(b);
       void createWorkspace("Name", "/parent");
@@ -169,20 +169,18 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.deleteWorkspace).toHaveBeenCalledWith("w1");
     });
 
-    it("suggestWorkspaceLocation forwards the name and the chosen parent folder", () => {
+    it("suggestWorkspaceLocation forwards the proposed name", () => {
       const b = bridge();
       installBridge(b);
       void suggestWorkspaceLocation("Blog");
-      expect(b.suggestWorkspaceLocation).toHaveBeenCalledWith("Blog", undefined);
-      void suggestWorkspaceLocation("Blog", "/parent");
-      expect(b.suggestWorkspaceLocation).toHaveBeenLastCalledWith("Blog", "/parent");
+      expect(b.suggestWorkspaceLocation).toHaveBeenCalledWith("Blog");
     });
 
-    it.each(["workspace", "parent"] as const)("pickWorkspaceDirectory forwards the %s purpose to the bridge's pickDirectory", (purpose) => {
+    it.each(["workspace", "create"] as const)("pickWorkspaceDirectory forwards the %s purpose to the bridge's pickDirectory", (purpose) => {
       const b = bridge();
       installBridge(b);
-      void pickWorkspaceDirectory(purpose);
-      expect(b.pickDirectory).toHaveBeenCalledWith(purpose);
+      void pickWorkspaceDirectory(purpose, "/current");
+      expect(b.pickDirectory).toHaveBeenCalledWith(purpose, "/current");
     });
   });
 

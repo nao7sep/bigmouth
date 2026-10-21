@@ -19,11 +19,11 @@ export function registerWorkspaceHandlers(): void {
     return workspaces;
   });
 
-  ipcMain.handle(CHANNELS.createWorkspace, async (_event, name: unknown, parentDirectory?: unknown) => {
+  ipcMain.handle(CHANNELS.createWorkspace, async (_event, name: unknown, dataDirectory?: unknown) => {
     const trimmed = typeof name === "string" ? name.trim() : "";
     if (!trimmed) throw new Error("Workspace name is required");
     try {
-      const ws = await createWorkspace(trimmed, typeof parentDirectory === "string" && parentDirectory ? parentDirectory : undefined);
+      const ws = await createWorkspace(trimmed, typeof dataDirectory === "string" && dataDirectory ? dataDirectory : undefined);
       info("workspace created", { workspaceId: ws.id, workspaceName: ws.name, dataDirectory: ws.dataDirectory });
       return ws;
     } catch (err) {
@@ -44,13 +44,9 @@ export function registerWorkspaceHandlers(): void {
     }
   });
 
-  // Read-only: the folder creation would use for this name and parent, so the
-  // window shows the real path. Nothing is created or logged.
-  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown, parentDirectory?: unknown) =>
-    suggestWorkspaceLocation(
-      typeof name === "string" ? name.trim() : undefined,
-      typeof parentDirectory === "string" && parentDirectory ? parentDirectory : undefined,
-    ),
+  // A read-only default proposal; selected destinations bypass suggestion.
+  ipcMain.handle(CHANNELS.suggestWorkspaceLocation, async (_event, name?: unknown) =>
+    suggestWorkspaceLocation(typeof name === "string" ? name.trim() : undefined),
   );
 
   ipcMain.handle(CHANNELS.updateWorkspace, async (_event, id: string, updates: { name?: string }) => {

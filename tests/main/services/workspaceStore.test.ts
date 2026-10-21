@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, createWorkspace, createWorkspaceIn, openWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, openWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
@@ -480,7 +480,7 @@ describe("the default workspace location", () => {
     // Asking writes nothing.
     expect(fs.existsSync(suggested)).toBe(false);
     expect(listWorkspaces()).toHaveLength(0);
-    expect(createWorkspaceIn("Blog").dataDirectory).toBe(suggested);
+    expect(createWorkspace("Blog").dataDirectory).toBe(suggested);
   });
 
   it("suggests the next default name's folder for a blank name", () => {
@@ -518,41 +518,45 @@ describe("updateWorkspace renames, and only renames", () => {
   });
 });
 
-describe("creating inside a parent, and adding an existing folder", () => {
-  it("creates in its own folder, named after the workspace, inside a chosen parent", () => {
-    const parent = tempDir("parent");
-    const ws = createWorkspaceIn("  Fresh  ", parent);
+describe("creating at an exact destination, and adding an existing folder", () => {
+  it("creates directly in the chosen destination, independently of its name", () => {
+    const destination = tempDir("chosen");
+    const ws = createWorkspace("  Fresh  ", destination);
     expect(ws.name).toBe("Fresh");
-    expect(ws.dataDirectory).toBe(path.join(parent, "Fresh"));
+    expect(ws.dataDirectory).toBe(destination);
+    expect(fs.existsSync(path.join(destination, "Fresh"))).toBe(false);
+    expect(fs.statSync(path.join(destination, "posts")).isDirectory()).toBe(true);
     expect(fs.existsSync(documentsBigMouth())).toBe(false);
   });
 
-  it("uses a folder of that name holding only files it would not take over", () => {
-    const parent = tempDir("parent");
-    fs.mkdirSync(path.join(parent, "X"));
-    fs.writeFileSync(path.join(parent, "X", "junk.txt"), "x");
-    expect(createWorkspaceIn("X", parent).dataDirectory).toBe(path.join(parent, "X"));
+  it("preserves unrelated files in the chosen destination", () => {
+    const destination = tempDir("chosen");
+    fs.writeFileSync(path.join(destination, "junk.txt"), "x");
+    expect(createWorkspace("X", destination).dataDirectory).toBe(destination);
+    expect(fs.readFileSync(path.join(destination, "junk.txt"), "utf8")).toBe("x");
   });
 
-  it("numbers past a folder holding content it would take over, leaving that folder alone", () => {
-    const parent = tempDir("parent");
-    fs.mkdirSync(path.join(parent, "X"));
+  it("refuses a conflicting chosen destination without substituting a suffix", () => {
+    const destination = tempDir("chosen");
     const foreign = JSON.stringify({ title: "My Blog" });
-    fs.writeFileSync(path.join(parent, "X", "config.json"), foreign);
-    expect(createWorkspaceIn("X", parent).dataDirectory).toBe(path.join(parent, "X (2)"));
-    expect(fs.readFileSync(path.join(parent, "X", "config.json"), "utf-8")).toBe(foreign);
-  });
-
-  it("refuses a blank name", () => {
-    expect(() => createWorkspaceIn("   ", tempDir("parent"))).toThrow(/name is required/i);
+    fs.writeFileSync(path.join(destination, "config.json"), foreign);
+    expect(() => createWorkspace("X", destination)).toThrow(/already has its own/);
+    expect(fs.readFileSync(path.join(destination, "config.json"), "utf8")).toBe(foreign);
+    expect(fs.existsSync(`${destination} (2)`)).toBe(false);
+    expect(fs.existsSync(path.join(destination, "X"))).toBe(false);
     expect(listWorkspaces()).toHaveLength(0);
   });
 
-  it("refuses a parent that is a file", () => {
+  it("refuses a blank name", () => {
+    expect(() => createWorkspace("   ", tempDir("chosen"))).toThrow(/name is required/i);
+    expect(listWorkspaces()).toHaveLength(0);
+  });
+
+  it("refuses a destination that is a file", () => {
     const filePath = path.join(tempDir("hostdir"), "afile");
     fs.writeFileSync(filePath, "x");
-    // A file in the way is not a permission refusal.
-    expect(() => createWorkspaceIn("X", filePath)).toThrow(/could not be created/i);
+    expect(() => createWorkspace("X", filePath)).toThrow();
+    expect(fs.readFileSync(filePath, "utf8")).toBe("x");
     expect(listWorkspaces()).toHaveLength(0);
   });
 

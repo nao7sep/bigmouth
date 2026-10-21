@@ -374,19 +374,19 @@ export interface BigMouthApi {
 
   // Workspace management
   listWorkspaces(): Promise<Workspace[]>;
-  /** Creates a workspace in its own folder inside `parentDirectory`, or the default parent. */
-  createWorkspace(name: string, parentDirectory?: string): Promise<Workspace>;
+  /** Creates a workspace at the exact destination, or suggests a default when absent. */
+  createWorkspace(name: string, dataDirectory?: string): Promise<Workspace>;
   /** Registers a folder that already holds a BigMouth workspace; one already listed is returned as is. */
   addExistingWorkspace(dataDirectory: string): Promise<Workspace>;
-  /** The absolute folder createWorkspace would use for `name` inside `parentDirectory`. */
-  suggestWorkspaceLocation(name?: string, parentDirectory?: string): Promise<string>;
+  /** A default destination proposal for a new workspace named `name`. */
+  suggestWorkspaceLocation(name?: string): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<WorkspaceDeleteResult>;
   /** Opens an allowed web or mail URL in the OS handler. */
   openExternal(url: string): Promise<void>;
-  /** Native folder picker: a workspace folder to add, or the parent to create one in; null if cancelled. */
-  pickDirectory(purpose: "workspace" | "parent"): Promise<string | null>;
+  /** Native folder picker: a workspace folder to add, or the exact destination to create one at; null if cancelled. */
+  pickDirectory(purpose: "workspace" | "create", initialDirectory?: string): Promise<string | null>;
 
   // The records window. Opening it again brings it forward.
   openRecordsWindow(): Promise<void>;

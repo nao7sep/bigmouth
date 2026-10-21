@@ -17,7 +17,7 @@
  * the list. The commands that add a workspace sit in a toolbar band above the
  * list, so the footer holds only the dismiss and the commit (Cancel and Open,
  * or Cancel and Create). A workspace's folder is never typed. "New Workspace" creates one
- * in its own folder, named after it, inside a parent the user may change;
+ * at the displayed destination, which the user may change;
  * "Add Existing Folder" registers a folder that already holds a workspace.
  * With nothing registered, the new-workspace form is shown straight away.
  */
@@ -95,7 +95,7 @@ export function WorkspaceModal({
   const [creatingForm, setCreatingForm] = useState(false);
   const [createFrom, setCreateFrom] = useState("");
   const [createName, setCreateName] = useState("");
-  const [parentDir, setParentDir] = useState<string | null>(null);
+  const [chosenLocation, setChosenLocation] = useState<string | null>(null);
   const [suggestedLocation, setSuggestedLocation] = useState("");
   const [createError, setCreateError] = useState<Message | null>(null);
   const [creating, setCreating] = useState(false);
@@ -127,13 +127,14 @@ export function WorkspaceModal({
   const locationId = useId();
 
   const mutationBusy = creating || adding || renamingId !== null;
-  const formDirty = creatingForm && (createName.trim() !== createFrom.trim() || parentDir !== null);
+  const formDirty = creatingForm && (createName.trim() !== createFrom.trim() || chosenLocation !== null);
 
   const openCreateForm = (initialName: string) => {
     setCreateError(null);
     setCreateFrom(initialName);
     setCreateName(initialName);
-    setParentDir(null);
+    setChosenLocation(null);
+    setSuggestedLocation("");
     setCreatingForm(true);
   };
 
@@ -141,7 +142,8 @@ export function WorkspaceModal({
     setCreateError(null);
     setCreatingForm(false);
     setCreateName("");
-    setParentDir(null);
+    setChosenLocation(null);
+    setSuggestedLocation("");
   };
 
   const load = () => {
@@ -172,21 +174,24 @@ export function WorkspaceModal({
   }, [reloadVersion]);
 
   useEffect(() => {
-    if (!creatingForm) return;
+    if (!creatingForm || chosenLocation !== null) return;
     let current = true;
-    suggestWorkspaceLocation(createName.trim() || undefined, parentDir ?? undefined)
+    suggestWorkspaceLocation(createName.trim() || undefined)
       .then((path) => {
         if (current) setSuggestedLocation(path);
       })
       .catch((err: unknown) => {
-        // Only the preview is lost: creation resolves the folder itself.
-        if (current) setSuggestedLocation("");
+        // Keep creation disabled until a destination is known or selected.
+        if (current) {
+          setSuggestedLocation("");
+          setCreateError(message("workspaces.locationFailed"));
+        }
         reportProblem("renderer: workspace location suggestion failed", err);
       });
     return () => {
       current = false;
     };
-  }, [createName, parentDir, creatingForm]);
+  }, [createName, chosenLocation, creatingForm]);
 
   const handleRequestClose = () => {
     if (submittingRef.current || renamingRef.current) {
@@ -218,29 +223,30 @@ export function WorkspaceModal({
     close();
   };
 
-  const handleChangeParent = async () => {
+  const handleChangeLocation = async () => {
     try {
-      const dir = await pickWorkspaceDirectory("parent");
+      const dir = await pickWorkspaceDirectory("create", chosenLocation ?? (suggestedLocation || undefined));
       if (dir && current.current) {
         setCreateError(null);
-        setParentDir(dir);
+        setChosenLocation(dir);
       }
     } catch (err) {
-      const failure = presentFailure(message("workspaces.pickerFailed"), "renderer: workspace parent picker failed", err);
+      const failure = presentFailure(message("workspaces.pickerFailed"), "renderer: workspace destination picker failed", err);
       if (current.current) setCreateError(failure);
     }
   };
 
   const handleCreate = async () => {
     const name = createName.trim();
-    if (!name || submittingRef.current || renamingRef.current || storagePending) return;
+    const location = chosenLocation ?? suggestedLocation;
+    if (!name || !location || submittingRef.current || renamingRef.current || storagePending) return;
     submittingRef.current = true;
     const intent = ++selectionIntent.current;
     const firstRun = workspaces.length === 0;
     setCreating(true);
     setCreateError(null);
     try {
-      const workspace = await createWorkspace(name, parentDir ?? undefined);
+      const workspace = await createWorkspace(name, location);
       if (!current.current || selectionIntent.current !== intent) return;
       closeCreateForm();
       load();
@@ -262,7 +268,7 @@ export function WorkspaceModal({
     setCreateError(null);
     let dir: string | null;
     try {
-      dir = await pickWorkspaceDirectory("workspace");
+      dir = await pickWorkspaceDirectory("workspace", workspaces.find((ws) => ws.id === activeWorkspaceId)?.dataDirectory);
     } catch (err) {
       const failure = presentFailure(message("workspaces.pickerFailed"), "renderer: workspace folder picker failed", err);
       if (current.current) setAddError(failure);
@@ -460,8 +466,8 @@ export function WorkspaceModal({
       <div className="form-field">
         <span className="form-label" id={locationId}>{t("workspaces.location")}</span>
         <div className="workspace-location-row">
-          <code className="workspace-location" aria-labelledby={locationId}>{suggestedLocation}</code>
-          <button className="btn-action" type="button" disabled={creating} onClick={() => void handleChangeParent()}>
+          <code className="workspace-location" aria-labelledby={locationId}>{chosenLocation ?? suggestedLocation}</code>
+          <button className="btn-action" type="button" disabled={creating} onClick={() => void handleChangeLocation()}>
             {t("center.change")}
           </button>
         </div>
@@ -629,7 +635,7 @@ export function WorkspaceModal({
             <button
               className="btn-primary"
               onClick={() => void handleCreate()}
-              disabled={!createName.trim() || mutationBusy || storagePending}
+              disabled={!createName.trim() || !(chosenLocation ?? suggestedLocation) || mutationBusy || storagePending}
             >
               {creating ? t("workspaces.creating") : t("workspaces.create")}
             </button>

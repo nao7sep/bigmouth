@@ -69,17 +69,17 @@ export function listWorkspaces(): Promise<Workspace[]> {
   return bridge().listWorkspaces();
 }
 
-export function createWorkspace(name: string, parentDirectory?: string): Promise<Workspace> {
-  return bridge().createWorkspace(name, parentDirectory);
+export function createWorkspace(name: string, dataDirectory?: string): Promise<Workspace> {
+  return bridge().createWorkspace(name, dataDirectory);
 }
 
 export function addExistingWorkspace(dataDirectory: string): Promise<Workspace> {
   return bridge().addExistingWorkspace(dataDirectory);
 }
 
-/** The folder a workspace named `name` would be created in inside `parentDirectory` (or the default parent). */
-export function suggestWorkspaceLocation(name?: string, parentDirectory?: string): Promise<string> {
-  return bridge().suggestWorkspaceLocation(name, parentDirectory);
+/** Proposes a default destination for a workspace named `name`, without creating it. */
+export function suggestWorkspaceLocation(name?: string): Promise<string> {
+  return bridge().suggestWorkspaceLocation(name);
 }
 
 export function updateWorkspace(id: string, updates: { name: string }): Promise<Workspace> {
@@ -116,8 +116,8 @@ export function openExternal(url: string): Promise<void> {
   return bridge().openExternal(url);
 }
 
-export function pickWorkspaceDirectory(purpose: "workspace" | "parent"): Promise<string | null> {
-  return bridge().pickDirectory(purpose);
+export function pickWorkspaceDirectory(purpose: "workspace" | "create", initialDirectory?: string): Promise<string | null> {
+  return bridge().pickDirectory(purpose, initialDirectory);
 }
 
 /** A started user mutation exceeded its normal wait and still owns its result. */

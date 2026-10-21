@@ -289,15 +289,14 @@ function canCreateAt(dir: string): boolean {
 /**
  * Where a new workspace goes: `<parent>/<folder named after the workspace>`, or
  * `<name> (2)`, `(3)`… when that folder exists and cannot take a new
- * workspace. The parent is the one the user chose, or `<home>/Documents/BigMouth`.
- * The UI shows this before creating, so the folder it names is the one creation
- * uses.
+ * workspace. The default parent is `<Documents>/BigMouth`.
+ * The UI shows this proposal before creating and submits that exact destination.
  *
  * A workspace is the user's own document, so it never defaults into the storage
  * root (storage-path conventions, "Ownership decides location").
  */
-export function suggestWorkspaceLocation(name?: string, parentDirectory?: string): string {
-  const parent = parentDirectory ? expandWorkspacePath(parentDirectory) : getDefaultWorkspacesParentDir();
+export function suggestWorkspaceLocation(name?: string): string {
+  const parent = getDefaultWorkspacesParentDir();
   const base = sanitizeFilenameSegment(name?.trim() || nextWorkspaceName()) || "Workspace";
   const first = path.join(parent, base);
 
@@ -318,6 +317,8 @@ export function suggestWorkspaceLocation(name?: string, parentDirectory?: string
 }
 
 export function createWorkspace(name: string, dataDirectory?: string): Workspace {
+  name = name.trim();
+  if (!name) throw new Error("Workspace name is required");
   const config = ensureLoaded();
   const dir = dataDirectory ? expandWorkspacePath(dataDirectory) : suggestWorkspaceLocation(name);
   assertCanCreateAt(dir);
@@ -345,17 +346,6 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
   writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
 
   return workspace;
-}
-
-/**
- * Creates a workspace named `name` in its own folder inside `parentDirectory`
- * (the default parent when none is chosen). The folder is never typed: it is
- * the one suggestWorkspaceLocation shows for the same name and parent.
- */
-export function createWorkspaceIn(name: string, parentDirectory?: string): Workspace {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Workspace name is required");
-  return createWorkspace(trimmed, suggestWorkspaceLocation(trimmed, parentDirectory));
 }
 
 export function openWorkspace(dataDirectory: string, name?: string): Workspace {
