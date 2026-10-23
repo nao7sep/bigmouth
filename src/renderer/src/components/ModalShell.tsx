@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useModalLayer } from "../hooks/useModalStack";
 import { XIcon } from "./Icon";
@@ -52,13 +52,21 @@ export function ModalShell({
 }: ModalShellProps) {
   useModalLayer(onClose);
   const modalRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openerCapturedRef = useRef(false);
+  const captureOpener = useCallback((heading: HTMLHeadingElement | null) => {
+    // This heading commits before the controls that may claim autofocus.
+    if (!heading || openerCapturedRef.current) return;
+    openerCapturedRef.current = true;
+    openerRef.current = document.activeElement as HTMLElement | null;
+  }, []);
   const titleId = useId();
   const { t } = useI18n();
 
   // Move focus into the dialog on open (unless a child already claimed it via
   // `autoFocus`), and restore it to the trigger on close.
   useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previouslyFocused = openerRef.current;
     const surface = modalRef.current;
     if (surface && !surface.contains(document.activeElement)) {
       const first = surface.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
@@ -114,7 +122,7 @@ export function ModalShell({
         tabIndex={-1}
       >
         <div className="modal-header">
-          <h2 id={titleId} className={titleHidden ? "bm-visually-hidden" : undefined}>{title}</h2>
+          <h2 ref={captureOpener} id={titleId} className={titleHidden ? "bm-visually-hidden" : undefined}>{title}</h2>
           {showClose && (
             <button
               className="modal-close"

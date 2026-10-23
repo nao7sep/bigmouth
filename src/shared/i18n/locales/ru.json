@@ -315,6 +315,7 @@
   "analysis.noPrompts": "Промпты не настроены. Добавьте их в разделе {location}.",
   "analysis.promptsLocation": "«Настройки → Анализ»",
   "analysis.analyze": "Анализировать",
+  "analysis.prompt": "Промпт",
   "analysis.reasoning": "Рассуждения",
   "analysis.result": "Результат анализа",
   "imaging.relation.direct": "Прямая",

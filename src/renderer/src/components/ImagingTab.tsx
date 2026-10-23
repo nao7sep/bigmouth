@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   generateImaging,
   type ImagingLiteralness,
@@ -63,6 +63,7 @@ interface ImagingTabProps {
 
 export function ImagingTab({ postId, content }: ImagingTabProps) {
   const { t, text, number } = useI18n();
+  const fieldIds = useId();
   const [options, setOptions] = useState<ImagingOptions>(DEFAULT_OPTIONS);
   const [items, setItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -157,8 +158,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
 
       <div className="imaging-controls">
         <div className="imaging-field">
-          <label>{t("imaging.count")}</label>
+          <label htmlFor={`${fieldIds}-count`}>{t("imaging.count")}</label>
           <select
+            id={`${fieldIds}-count`}
             className="prompt-select"
             value={options.count}
             onChange={(e) => update("count", parseInt(e.target.value, 10) as ImagingOptions["count"])}
@@ -172,8 +174,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           </select>
         </div>
         <div className="imaging-field">
-          <label>{t("imaging.relation")}</label>
+          <label htmlFor={`${fieldIds}-relation`}>{t("imaging.relation")}</label>
           <select
+            id={`${fieldIds}-relation`}
             className="prompt-select"
             value={options.relation}
             onChange={(e) => update("relation", e.target.value as ImagingRelation)}
@@ -187,8 +190,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           </select>
         </div>
         <div className="imaging-field">
-          <label>{t("imaging.mood")}</label>
+          <label htmlFor={`${fieldIds}-mood`}>{t("imaging.mood")}</label>
           <select
+            id={`${fieldIds}-mood`}
             className="prompt-select"
             value={options.emotionalLens}
             onChange={(e) => update("emotionalLens", e.target.value as ImagingMood)}
@@ -202,8 +206,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           </select>
         </div>
         <div className="imaging-field">
-          <label>{t("imaging.literalness")}</label>
+          <label htmlFor={`${fieldIds}-literalness`}>{t("imaging.literalness")}</label>
           <select
+            id={`${fieldIds}-literalness`}
             className="prompt-select"
             value={options.literalness}
             onChange={(e) => update("literalness", e.target.value as ImagingLiteralness)}
@@ -217,8 +222,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           </select>
         </div>
         <div className="imaging-field">
-          <label>{t("imaging.people")}</label>
+          <label htmlFor={`${fieldIds}-people`}>{t("imaging.people")}</label>
           <select
+            id={`${fieldIds}-people`}
             className="prompt-select"
             value={options.people}
             onChange={(e) => update("people", e.target.value as ImagingPeople)}
@@ -232,8 +238,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
           </select>
         </div>
         <div className="imaging-field">
-          <label>{t("imaging.style")}</label>
+          <label htmlFor={`${fieldIds}-style`}>{t("imaging.style")}</label>
           <select
+            id={`${fieldIds}-style`}
             className="prompt-select"
             value={options.style}
             onChange={(e) => update("style", e.target.value as ImagingStyle)}

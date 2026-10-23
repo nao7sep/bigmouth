@@ -297,6 +297,7 @@
   "analysis.noPrompts": "尚未配置提示词。请在{location}中添加提示词。",
   "analysis.promptsLocation": "“设置 → 分析”",
   "analysis.analyze": "分析",
+  "analysis.prompt": "提示词",
   "analysis.reasoning": "思考过程",
   "analysis.result": "分析结果",
   "imaging.relation.direct": "直接",

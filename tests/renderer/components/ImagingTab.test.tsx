@@ -283,3 +283,10 @@ describe("ImagingTab copy", () => {
     );
   });
 });
+
+it("names each imaging choice with its visible label", () => {
+  const view = renderTab();
+  for (const name of ["Count", "Relation", "Mood", "Literalness", "People", "Style"]) {
+    expect(view.getByRole("combobox", { name })).toBe(view.getByLabelText(name));
+  }
+});

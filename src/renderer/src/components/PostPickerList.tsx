@@ -13,8 +13,8 @@ interface PostPickerListProps extends PostPickerState {
   autoFocus?: boolean;
 }
 
-// A filterable post chooser. The filter input and the results are two tab stops:
-// the input (a synchronous local field), then the results as one listbox per the
+// A filterable post chooser. The filter input and results each have a tab stop;
+// Load More, when present, follows them. The results form one listbox per the
 // composite-control conventions — arrow keys move the cursor, type-ahead jumps
 // by title, Enter/click commits, and ArrowDown from the filter drops into the
 // list. The current source, when eligible, initializes the cursor; otherwise
@@ -22,6 +22,7 @@ interface PostPickerListProps extends PostPickerState {
 export function PostPickerList({
   posts,
   hasMore,
+  loading,
   loadingMore,
   loadMore,
   query,
@@ -78,7 +79,9 @@ export function PostPickerList({
         }}
       />
       <div className="post-picker-list" aria-label={t("left.posts")} {...listboxProps}>
-        {posts.length === 0 && !error ? (
+        {loading ? (
+          <p className="post-picker-empty" role="status">{t("common.loading")}</p>
+        ) : posts.length === 0 && !error ? (
           <p className="post-picker-empty">{t("picker.empty")}</p>
         ) : (
           posts.map((p) => {
@@ -113,12 +116,10 @@ export function PostPickerList({
         )}
         {hasMore && (
           <button
-            // Pointer-only: not a tab stop, so it never breaks the listbox's
-            // single tab stop.
-            tabIndex={-1}
             className="btn-toolbar"
             style={{ width: "100%", marginTop: 4 }}
             onClick={loadMore}
+            onKeyDown={(e) => e.stopPropagation()}
             disabled={loadingMore}
           >
             {loadingMore ? t("common.loading") : t("picker.loadMore")}

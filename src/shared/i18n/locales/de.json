@@ -303,6 +303,7 @@
   "analysis.noPrompts": "Keine Prompts eingerichtet. Fügen Sie Prompts unter {location} hinzu.",
   "analysis.promptsLocation": "Einstellungen → Analyse",
   "analysis.analyze": "Analysieren",
+  "analysis.prompt": "Prompt",
   "analysis.reasoning": "Überlegungen",
   "analysis.result": "Analyseergebnis",
   "imaging.relation.direct": "Direkt",

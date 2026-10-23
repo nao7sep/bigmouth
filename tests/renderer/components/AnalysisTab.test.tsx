@@ -263,3 +263,9 @@ describe("AnalysisTab analysisTrigger", () => {
     expect(mockRunStream).not.toHaveBeenCalled();
   });
 });
+
+it("names the analysis prompt choice", async () => {
+  mockListPrompts.mockResolvedValue(PROMPTS);
+  const view = await renderTab();
+  expect((view.getByRole("combobox", { name: "Prompt" }) as HTMLSelectElement).value).toBe("Summary");
+});

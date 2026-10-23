@@ -36,6 +36,7 @@ function state(over: Partial<PostPickerState> = {}): PostPickerState {
   return {
     posts: [],
     hasMore: false,
+    loading: false,
     loadingMore: false,
     loadMore: vi.fn(),
     query: "",
@@ -202,14 +203,17 @@ describe("PostPickerList — selection", () => {
 });
 
 describe("PostPickerList — load more", () => {
-  it("shows a non-tabbable Load More button when hasMore, and invokes loadMore on click", () => {
+  it("shows a tabbable Load More button when hasMore, and invokes loadMore on click", () => {
     const loadMore = vi.fn();
     const posts = [summary({ id: "p1", title: "Alpha" })];
     const { getByText } = render(
       <PostPickerList {...state({ posts, hasMore: true, loadMore })} onSelect={vi.fn()} />,
     );
     const btn = getByText("Load More") as HTMLButtonElement;
-    expect(btn.tabIndex).toBe(-1);
+    expect(btn.tabIndex).toBe(0);
+    btn.focus();
+    expect(fireEvent.keyDown(btn, { key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(btn, { key: " " })).toBe(true);
     fireEvent.click(btn);
     expect(loadMore).toHaveBeenCalledTimes(1);
   });
@@ -264,4 +268,26 @@ describe("PostPickerList — active highlight", () => {
     expect(row("Beta").className).toContain("active");
     expect(row("Alpha").className).not.toContain("active");
   });
+});
+
+it("shows pending status until an empty initial read settles", () => {
+  const view = render(<PostPickerList {...state({ loading: true })} onSelect={vi.fn()} />);
+  expect(view.getByRole("status").textContent).toBe("Loading…");
+  expect(view.queryByText("No posts found")).toBeNull();
+  view.rerender(<PostPickerList {...state()} onSelect={vi.fn()} />);
+  expect(view.queryByRole("status")).toBeNull();
+  expect(view.getByText("No posts found")).toBeTruthy();
+});
+
+it("keeps Load More keyboard reachable when the loaded filter has no matches", () => {
+  const loadMore = vi.fn();
+  const onSelect = vi.fn();
+  const view = render(<PostPickerList {...state({ query: "older", hasMore: true, loadMore })} onSelect={onSelect} />);
+  const button = view.getByRole("button", { name: "Load More" });
+  expect(button.tabIndex).toBe(0);
+  button.focus();
+  expect(fireEvent.keyDown(button, { key: "Enter" })).toBe(true);
+  fireEvent.click(button);
+  expect(loadMore).toHaveBeenCalledOnce();
+  expect(onSelect).not.toHaveBeenCalled();
 });

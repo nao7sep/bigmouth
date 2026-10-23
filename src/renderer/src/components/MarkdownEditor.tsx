@@ -142,6 +142,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const readOnlyCompartmentRef = useRef(new Compartment());
   const editableCompartmentRef = useRef(new Compartment());
   const themeCompartmentRef = useRef(new Compartment());
+  const placeholderCompartmentRef = useRef(new Compartment());
+  const appliedWatermarkRef = useRef(watermark);
   const phrasesCompartmentRef = useRef(new Compartment());
   const translator = useI18n();
   const translatorRef = useRef(translator);
@@ -187,7 +189,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         markdown({ codeLanguages: languages }),
         // Theme-token syntax colors; displaces the setup's fixed-color fallback.
         editorHighlighting,
-        placeholder(watermark),
+        placeholderCompartmentRef.current.of(placeholder(watermark)),
         updateListener,
         readOnlyCompartmentRef.current.of(EditorState.readOnly.of(readOnly)),
         editableCompartmentRef.current.of(EditorView.editable.of(!readOnly)),
@@ -227,6 +229,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       ],
     });
   }, [readOnly]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || appliedWatermarkRef.current === watermark) return;
+    appliedWatermarkRef.current = watermark;
+    view.dispatch({ effects: placeholderCompartmentRef.current.reconfigure(placeholder(watermark)) });
+  }, [watermark]);
 
   // Follow a language change without rebuilding the editor.
   useEffect(() => {

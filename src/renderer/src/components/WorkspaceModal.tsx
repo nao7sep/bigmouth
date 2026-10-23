@@ -86,6 +86,7 @@ export function WorkspaceModal({
   const [listError, setListError] = useState<Message | null>(initialLoadError);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const restoreRenameFocusRef = useRef<string | null>(null);
   const [editName, setEditName] = useState("");
   const [renameError, setRenameError] = useState<{ id: string; message: Message } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -202,7 +203,7 @@ export function WorkspaceModal({
     // A nested edit — an inline rename or the new-workspace form over a list —
     // unwinds first, keeping "cancel this edit" distinct from "leave the window".
     if (editingId !== null && !renamingRef.current) {
-      setEditingId(null);
+      finishRename(editingId);
       return;
     }
     if (creatingForm && workspaces.length > 0) {
@@ -300,6 +301,13 @@ export function WorkspaceModal({
     setRenameError(null);
   };
 
+  const finishRename = (id: string) => {
+    restoreRenameFocusRef.current = id;
+    setChosenId(id);
+    setRenameError(null);
+    setEditingId(null);
+  };
+
   const handleRename = async (id: string) => {
     if (!editName.trim() || renamingRef.current || submittingRef.current || storagePending) return;
     renamingRef.current = true;
@@ -309,7 +317,7 @@ export function WorkspaceModal({
       const updated = await updateWorkspace(id, { name: editName.trim() });
       if (updated && updated.id === activeWorkspaceId) onWorkspaceUpdated(updated);
       if (!current.current) return;
-      setEditingId(null);
+      finishRename(id);
       load();
     } catch (err) {
       const failure = presentFailure(
@@ -424,6 +432,12 @@ export function WorkspaceModal({
     },
     composingRef: listComposing.composingRef,
   });
+  useEffect(() => {
+    if (editingId !== null || loading || !restoreRenameFocusRef.current) return;
+    restoreRenameFocusRef.current = null;
+    listboxProps.ref.current?.focus();
+  }, [editingId, loading, listboxProps.ref]);
+
   const onListKeyDown = (e: ReactKeyboardEvent) => {
     if (e.key === "Enter" && !isComposingKeyboardEvent(listComposing.composingRef, e)) {
       e.preventDefault();
@@ -520,7 +534,14 @@ export function WorkspaceModal({
                 onDoubleClick={editing ? undefined : () => handleOpen(ws.id)}
               >
                 {editing ? (
-                  <div className="workspace-edit-stack" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="workspace-edit-stack"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Escape" && !renamingRef.current && !isComposingKeyboardEvent(renameComposing.composingRef, e)) finishRename(ws.id);
+                    }}
+                  >
                     <div className="workspace-edit-row">
                       <input
                         className="form-input"
@@ -534,12 +555,12 @@ export function WorkspaceModal({
                           e.stopPropagation();
                           if (isComposingKeyboardEvent(renameComposing.composingRef, e)) return;
                           if (e.key === "Enter") void handleRename(ws.id);
-                          if (e.key === "Escape") { setRenameError(null); setEditingId(null); }
+                          if (e.key === "Escape") finishRename(ws.id);
                         }}
                         autoFocus
                         disabled={renamingId === ws.id}
                       />
-                      <button className="btn-action" disabled={renamingId === ws.id} onClick={() => { setRenameError(null); setEditingId(null); }}>
+                      <button className="btn-action" disabled={renamingId === ws.id} onClick={() => finishRename(ws.id)}>
                         {t("common.cancel")}
                       </button>
                       <button

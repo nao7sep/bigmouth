@@ -297,6 +297,7 @@
   "analysis.noPrompts": "설정된 프롬프트가 없습니다. {location}에서 프롬프트를 추가하십시오.",
   "analysis.promptsLocation": "설정 → 분석",
   "analysis.analyze": "분석",
+  "analysis.prompt": "프롬프트",
   "analysis.reasoning": "사고 과정",
   "analysis.result": "분석 결과",
   "imaging.relation.direct": "직접적",

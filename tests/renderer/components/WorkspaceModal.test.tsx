@@ -1311,3 +1311,61 @@ describe("WorkspaceModal — row actions from the keyboard", () => {
     expect(queryByDisplayValue("Alpha")).toBeNull();
   });
 });
+
+describe("WorkspaceModal rename keyboard ownership and return focus", () => {
+  it.each(["Escape", "Cancel", "button Escape"])("returns to the edited row after %s", async (exit) => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const view = await renderWith();
+    const list = screen.getByRole("listbox");
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    const active = list.getAttribute("aria-activedescendant");
+    fireEvent.keyDown(list, { key: "F2" });
+    const input = screen.getByDisplayValue("Bravo");
+    if (exit === "Escape") fireEvent.keyDown(input, { key: "Escape" });
+    else if (exit === "button Escape") fireEvent.keyDown(within(input.closest(".workspace-edit-stack") as HTMLElement).getByText("Save"), { key: "Escape" });
+    else fireEvent.click(within(input.closest(".workspace-edit-stack") as HTMLElement).getByText("Cancel"));
+    expect(document.activeElement).toBe(list);
+    expect(list.getAttribute("aria-activedescendant")).toBe(active);
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(option("Alpha").className).toContain("active");
+    expect(view.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("returns to the same row after a successful save reorders the list", async () => {
+    mockListWorkspaces.mockResolvedValueOnce([WORKSPACE, OTHER]);
+    const renamed = { ...OTHER, name: "Aardvark" };
+    mockListWorkspaces.mockResolvedValue([renamed, WORKSPACE]);
+    mockUpdateWorkspace.mockResolvedValue(renamed);
+    const view = await renderWith();
+    const list = screen.getByRole("listbox");
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    const active = list.getAttribute("aria-activedescendant");
+    fireEvent.keyDown(list, { key: "F2" });
+    fireEvent.change(screen.getByDisplayValue("Bravo"), { target: { value: "Aardvark" } });
+    fireEvent.keyDown(screen.getByDisplayValue("Aardvark"), { key: "Enter" });
+    await flush();
+    const restored = screen.getByRole("listbox");
+    expect(document.activeElement).toBe(restored);
+    expect(restored.getAttribute("aria-activedescendant")).toBe(active);
+    expect(option("Aardvark").className).toContain("active");
+    expect(view.onSelect).not.toHaveBeenCalled();
+  });
+
+  it.each(["Save", "Cancel"])("leaves native Enter/Space on %s and keeps its navigation keys out of the list", async (label) => {
+    mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
+    const view = await renderWith();
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const stack = screen.getByDisplayValue("Alpha").closest(".workspace-edit-stack") as HTMLElement;
+    const button = within(stack).getByRole("button", { name: label });
+    const list = screen.getByRole("listbox");
+    const active = list.getAttribute("aria-activedescendant");
+    button.focus();
+    for (const key of ["Enter", " ", "ArrowDown", "End", "b"]) {
+      expect(fireEvent.keyDown(button, { key })).toBe(true);
+      expect(list.getAttribute("aria-activedescendant")).toBe(active);
+    }
+    expect(view.onSelect).not.toHaveBeenCalled();
+    expect(mockUpdateWorkspace).not.toHaveBeenCalled();
+  });
+});

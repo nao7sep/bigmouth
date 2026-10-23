@@ -297,6 +297,7 @@
   "analysis.noPrompts": "プロンプトが設定されていません。{location} で追加してください。",
   "analysis.promptsLocation": "設定 → 分析",
   "analysis.analyze": "分析",
+  "analysis.prompt": "プロンプト",
   "analysis.reasoning": "思考",
   "analysis.result": "分析結果",
   "imaging.relation.direct": "直接的",

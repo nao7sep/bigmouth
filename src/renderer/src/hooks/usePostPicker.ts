@@ -8,6 +8,7 @@ import { message, type Message } from "@shared/i18n/translate";
 export interface PostPickerState {
   posts: PostSummary[];
   hasMore: boolean;
+  loading: boolean;
   loadingMore: boolean;
   loadMore: () => void;
   query: string;
@@ -24,6 +25,7 @@ export function usePostPicker(
   const [offsets, setOffsets] = useState<PagedCounts>(FIRST_PAGES);
   const [totals, setTotals] = useState<PagedCounts>(FIRST_PAGES);
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Message | null>(null);
   const loadingMoreRef = useRef(false);
@@ -35,6 +37,7 @@ export function usePostPicker(
   useEffect(() => {
     const generation = ++generationRef.current;
     loadingMoreRef.current = true;
+    setLoading(true);
     setLoadingMore(false);
     setError(null);
     setOffsets(FIRST_PAGES);
@@ -54,6 +57,7 @@ export function usePostPicker(
       .finally(() => {
         if (generation !== generationRef.current) return;
         loadingMoreRef.current = false;
+        setLoading(false);
       });
     return () => { generationRef.current += 1; };
   }, [batchSize, excludeId]);
@@ -110,7 +114,7 @@ export function usePostPicker(
   // Filtering the loaded page cannot establish absence in the remaining pages.
   const hasMore = canLoadMore;
 
-  return { posts, hasMore, loadingMore, loadMore, query, setQuery, error };
+  return { posts, hasMore, loading, loadingMore, loadMore, query, setQuery, error };
 }
 
 type PagedCounts = Readonly<Record<PagedPostStatus, number>>;

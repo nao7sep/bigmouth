@@ -147,6 +147,7 @@ export function AnalysisTab({
       <div className="analysis-toolbar">
         <select
           className="prompt-select"
+          aria-label={t("analysis.prompt")}
           value={selectedPrompt}
           onChange={(e) => setSelectedPrompt(e.target.value)}
           disabled={loading}

@@ -183,6 +183,7 @@ describe("usePostPicker", () => {
 
     await settled();
     expect(result.current.error).toEqual({ key: "picker.loadFailed" });
+    expect(result.current.loading).toBe(false);
     expect(result.current.posts).toHaveLength(0);
   });
 
@@ -197,9 +198,25 @@ describe("usePostPicker", () => {
 
     mockListPosts.mockRejectedValueOnce(new Error("load more failed"));
     act(() => result.current.loadMore());
+    expect(result.current.loading).toBe(false);
+    expect(result.current.loadingMore).toBe(true);
 
     await settled();
+    expect(result.current.loadingMore).toBe(false);
     expect(result.current.error).toEqual({ key: "picker.moreFailed" });
     expect(result.current.posts.map((p) => p.frontMatter.id)).toEqual(["p1"]);
   });
+});
+
+it("keeps initial loading distinct from pagination and successful empty results", async () => {
+  let resolve!: (value: ReturnType<typeof page>) => void;
+  mockListPosts.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+  const { result } = renderHook(() => usePostPicker(1));
+  expect(result.current.loading).toBe(true);
+  expect(result.current.loadingMore).toBe(false);
+  act(() => result.current.loadMore());
+  expect(mockListPosts).toHaveBeenCalledTimes(1);
+  await act(async () => resolve(page({})));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.posts).toEqual([]);
 });

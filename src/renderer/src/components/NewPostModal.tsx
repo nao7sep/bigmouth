@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { PostPickerList } from "./PostPickerList";
 import { usePostPicker } from "../hooks/usePostPicker";
 import { useConfirm } from "./ConfirmHost";
@@ -35,6 +35,7 @@ export function NewPostModal({
   onCreate,
 }: NewPostModalProps) {
   const { t, text } = useI18n();
+  const fieldIds = useId();
   const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
@@ -125,9 +126,11 @@ export function NewPostModal({
         <StoragePendingNotice />
         <fieldset disabled={creating} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="form-field">
-          <label className="form-label">{t("newPost.target")}</label>
+          {hasTargets ? <label className="form-label" htmlFor={`${fieldIds}-target`}>{t("newPost.target")}</label>
+            : <div className="form-label">{t("newPost.target")}</div>}
           {hasTargets ? (
             <select
+              id={`${fieldIds}-target`}
               className="form-select"
               value={selectedTarget}
               onChange={(e) => handleTargetChange(e.target.value)}
@@ -148,9 +151,11 @@ export function NewPostModal({
         </div>
 
         <div className="form-field">
-          <label className="form-label">{t("newPost.language")}</label>
+          {hasLanguages ? <label className="form-label" htmlFor={`${fieldIds}-language`}>{t("newPost.language")}</label>
+            : <div className="form-label">{t("newPost.language")}</div>}
           {hasLanguages ? (
             <select
+              id={`${fieldIds}-language`}
               className="form-select"
               value={selectedLanguage}
               onChange={(e) => {
@@ -171,8 +176,8 @@ export function NewPostModal({
           )}
         </div>
 
-        <div className="form-field">
-          <label className="form-label">{t("newPost.source")}</label>
+        <div className="form-field" role="group" aria-labelledby={`${fieldIds}-source`}>
+          <div className="form-label" id={`${fieldIds}-source`}>{t("newPost.source")}</div>
           {sourceId ? (
             <div className="source-selected">
               {/* One line, cut at the end, so the box keeps a field's height.

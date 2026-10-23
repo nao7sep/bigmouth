@@ -309,6 +309,7 @@
   "analysis.noPrompts": "Aucun prompt configuré. Ajoutez des prompts dans {location}.",
   "analysis.promptsLocation": "Réglages → Analyse",
   "analysis.analyze": "Analyser",
+  "analysis.prompt": "Prompt",
   "analysis.reasoning": "Raisonnement",
   "analysis.result": "Résultat de l’analyse",
   "imaging.relation.direct": "Direct",

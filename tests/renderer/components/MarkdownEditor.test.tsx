@@ -1,5 +1,6 @@
+import { EditorView } from "@codemirror/view";
 import { afterEach, beforeAll, describe, it, expect, vi } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { render, cleanup, act, fireEvent } from "@testing-library/react";
 import { createRef } from "react";
 import {
   MarkdownEditor,
@@ -141,4 +142,44 @@ describe("MarkdownEditor read-only reconfiguration", () => {
     expect(container.querySelector(".cm-content")?.textContent).toContain("Zdoc");
     expect(onContentChange).toHaveBeenCalledWith("Zdoc");
   });
+});
+
+describe("MarkdownEditor watermark changes", () => {
+  it("updates the empty placeholder in the same editor", () => {
+    const view = renderEditor({ watermark: "Write here" });
+    const editor = view.container.querySelector(".cm-editor");
+    view.rerender(<MarkdownEditor initialContent="" watermark="ここに書く" onContentChange={view.onContentChange} contentFont={DEFAULT_CONTENT_FONT} />);
+    expect(view.container.querySelector(".cm-editor")).toBe(editor);
+    expect(view.container.textContent).toContain("ここに書く");
+    expect(view.container.textContent).not.toContain("Write here");
+    expect(view.onContentChange).not.toHaveBeenCalled();
+  });
+
+  it("preserves edited text and cursor when the watermark changes", () => {
+    const view = renderEditor({ initialContent: "AB" });
+    act(() => view.ref.current!.insertAtCursor("日"));
+    const editor = view.container.querySelector(".cm-editor");
+    const content = view.container.querySelector(".cm-content");
+    view.rerender(<MarkdownEditor ref={view.ref} initialContent="AB" watermark="新しいヒント" onContentChange={view.onContentChange} contentFont={DEFAULT_CONTENT_FONT} />);
+    expect(view.container.querySelector(".cm-editor")).toBe(editor);
+    expect(view.container.querySelector(".cm-content")).toBe(content);
+    act(() => view.ref.current!.insertAtCursor("本"));
+    expect(view.onContentChange).toHaveBeenLastCalledWith("日本AB");
+  });
+});
+
+it("preserves a started composition while updating the watermark", () => {
+  const view = renderEditor({ initialContent: "日本" });
+  const content = view.container.querySelector(".cm-content") as HTMLElement;
+  const editor = EditorView.findFromDOM(content)!;
+  const line = content.firstElementChild;
+  act(() => { editor.focus(); fireEvent.compositionStart(content); });
+  expect(editor.compositionStarted).toBe(true);
+  view.rerender(<MarkdownEditor ref={view.ref} initialContent="日本" watermark="新しいヒント" onContentChange={view.onContentChange} contentFont={DEFAULT_CONTENT_FONT} />);
+  expect(EditorView.findFromDOM(content)).toBe(editor);
+  expect(editor.compositionStarted).toBe(true);
+  expect(content.firstElementChild).toBe(line);
+  expect(editor.state.doc.toString()).toBe("日本");
+  expect(view.onContentChange).not.toHaveBeenCalled();
+  act(() => { fireEvent.compositionEnd(content); });
 });

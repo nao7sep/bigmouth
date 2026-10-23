@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 import { ModalShell } from "@renderer/components/ModalShell";
@@ -161,5 +162,45 @@ describe("ModalShell unmount", () => {
     // The layer is gone, so the stack's document listener was detached; Escape
     // must not throw or reach a stale handler.
     expect(() => fireEvent.keyDown(document, { key: "Escape" })).not.toThrow();
+  });
+});
+
+describe("ModalShell autofocus restoration", () => {
+  it.each([false, true])("restores the opener after autofocus (StrictMode=%s)", (strict) => {
+    const content = (open: boolean) => <>
+      <button data-testid="opener">Open</button>
+      {open && <ModalShell title="Autofocus" onClose={() => {}} autoFocusClose>
+        <input autoFocus aria-label="Field" />
+      </ModalShell>}
+    </>;
+    const wrap = (open: boolean) => strict ? <StrictMode>{content(open)}</StrictMode> : content(open);
+    const view = render(wrap(false));
+    const opener = view.getByTestId("opener");
+    opener.focus();
+    view.rerender(wrap(true));
+    expect(view.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    view.rerender(wrap(false));
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("restores each stacked dialog's own opener", () => {
+    const content = (first: boolean, second: boolean) => <>
+      <button data-testid="outer-opener">Open</button>
+      {first && <ModalShell title="First" onClose={() => {}}>
+        <button data-testid="inner-opener" autoFocus>Confirm</button>
+      </ModalShell>}
+      {second && <ModalShell title="Second" onClose={() => {}} autoFocusClose>Confirm body</ModalShell>}
+    </>;
+    const view = render(content(false, false));
+    const outer = view.getByTestId("outer-opener");
+    outer.focus();
+    view.rerender(content(true, false));
+    const inner = view.getByTestId("inner-opener");
+    expect(document.activeElement).toBe(inner);
+    view.rerender(content(true, true));
+    view.rerender(content(true, false));
+    expect(document.activeElement).toBe(inner);
+    view.rerender(content(false, false));
+    expect(document.activeElement).toBe(outer);
   });
 });

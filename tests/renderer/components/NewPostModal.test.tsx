@@ -284,3 +284,12 @@ it("retires the submitted modal owner on pending departure before creation settl
   await act(async () => { finish(); });
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+it("names the target and language fields and the source group", async () => {
+  const view = await renderModal();
+  for (const name of ["Target", "Language"]) {
+    expect(view.getByRole("combobox", { name })).toBe(view.getByLabelText(name));
+  }
+  const group = view.getByRole("group", { name: "Source post (optional)" });
+  expect(within(group).getByRole("listbox")).toBeTruthy();
+});
