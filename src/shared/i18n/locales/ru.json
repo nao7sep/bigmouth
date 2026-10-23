@@ -374,7 +374,7 @@
   "metadata.stopGeneratingTitle": "Остановить создание",
   "metadata.generateTitle": "Создать с помощью ИИ",
   "metadata.copyTitle": "Скопировать в буфер обмена",
-  "metadata.tagsPlaceholder": "метка1, метка2, метка3",
+  "metadata.tagsPlaceholder": "Одна метка на строку",
   "metadata.refusedNotFound": "Эта публикация не найдена. Откройте её снова, чтобы редактировать метаданные.",
   "metadata.refusedSlugTaken": "Ярлык «{slug}» уже используется другой публикацией",
   "metadata.refusedLocked": "Эта публикация заблокирована. Чтобы редактировать её, снимите блокировку.",

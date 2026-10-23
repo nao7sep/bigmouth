@@ -170,13 +170,13 @@ describe("metadata generation IPC handler", () => {
     expect(ai.lastCall?.userContent).toContain("A draft about gardening in spring.");
   });
 
-  it("joins array fields (tags) into a comma-separated client string", async () => {
-    ai.generateJsonImpl = () => ({
-      tags: ["spring", "garden", "soil", "planting", "seeds"],
-    });
+  it.each(["tags", "tagsEn"])("returns %s as an array preserving punctuation inside each tag", async (field) => {
+    updatePost(dataDir, postId, { frontMatter: { language: "ja" } });
+    const tags = ["spring, garden", "soil、planting", "seeds", "watering", "growth"];
+    ai.generateJsonImpl = () => ({ [field]: tags });
 
-    const results = await invoke(CHANNELS.generateMetadata, wsId, postId, ["tags"], "");
-    expect(results.tags).toEqual({ value: "spring, garden, soil, planting, seeds" });
+    const results = await invoke(CHANNELS.generateMetadata, wsId, postId, [field], "");
+    expect(results[field]).toEqual({ value: tags });
   });
 
   it("prefers request content over stored content when supplied", async () => {

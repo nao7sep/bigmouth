@@ -424,7 +424,7 @@ export async function generateMetadataField(
   field: string,
   content: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<string | string[]> {
   const results = await generateMetadataFields(postId, [field], content, signal);
   const result = results[field];
   if (!result || !("value" in result)) {

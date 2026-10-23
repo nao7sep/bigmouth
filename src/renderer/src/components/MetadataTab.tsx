@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -145,8 +146,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // split, single-line collapse) applies to what is stored; the textarea keeps
     // what was typed.
     const queueField = useCallback(
-      (key: string, raw: string): Promise<void> => {
-        const edits = { [key]: parseFieldValue(key, raw) } as EditablePostMetadata;
+      (key: string, raw: string, generated?: string | string[]): Promise<void> => {
+        const edits = { [key]: generated ?? parseFieldValue(key, raw) } as EditablePostMetadata;
         const round = queuePostMetadata(postId, edits, workspaceId).then(
           (refusal) => {
             if (refusal === null) {
@@ -272,11 +273,12 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     // Shows generated values and queues them like typed ones, then reports a
     // value the store refused (a generated slug another post already uses).
-    const applyGenerated = async (values: Record<string, string>) => {
+    const applyGenerated = async (values: Record<string, string | string[]>) => {
       const keys = Object.keys(values);
       if (keys.length === 0) return;
-      setFieldValues(values);
-      await Promise.all(keys.map((key) => queueField(key, values[key])));
+      const display = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, Array.isArray(value) ? value.join("\n") : value]));
+      setFieldValues(display);
+      await Promise.all(keys.map((key) => queueField(key, display[key], values[key])));
       showFirstRefusal(keys);
     };
 
@@ -336,7 +338,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       setGeneratingAll(true);
       try {
         const results = await generateMetadataFields(postId, allFieldKeys, content, controller.signal);
-        const allGenerated: Record<string, string> = {};
+        const allGenerated: Record<string, string | string[]> = {};
         const failed: string[] = [];
         for (const key of allFieldKeys) {
           const result = results[key];
@@ -572,10 +574,11 @@ function MetaField({
   isActive?: boolean;
 }) {
   const { t, text } = useI18n();
+  const inputId = useId();
   return (
     <div className="meta-field">
       <div className="meta-field-header">
-        <label className="meta-field-label">{label}</label>
+        <label className="meta-field-label" htmlFor={inputId}>{label}</label>
         <div className="meta-field-actions">
           {onGenerate && (
             <button
@@ -609,6 +612,7 @@ function MetaField({
         </OperationalResult>
       )}
       <AutoGrowTextarea
+        id={inputId}
         value={value}
         onChange={onChange}
         onBlur={onBlur}
@@ -621,6 +625,7 @@ function MetaField({
 }
 
 function AutoGrowTextarea({
+  id,
   value,
   onChange,
   onBlur,
@@ -628,6 +633,7 @@ function AutoGrowTextarea({
   readOnly,
   isActive,
 }: {
+  id: string;
   value: string;
   onChange: (value: string) => void;
   onBlur: () => void;
@@ -651,6 +657,7 @@ function AutoGrowTextarea({
 
   return (
     <textarea
+      id={id}
       ref={ref}
       className="meta-field-input meta-field-textarea"
       value={value}

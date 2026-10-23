@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { render, act, cleanup, fireEvent, within } from "@testing-library/react";
 import { createRef } from "react";
 
 // MetadataTab only talks to the main process through these api calls.
@@ -141,10 +141,10 @@ describe("MetadataTab edits stream to the store", () => {
     const { container } = renderTab();
     const tagsInput = container.querySelectorAll("textarea")[2] as HTMLTextAreaElement;
     await act(async () => {
-      fireEvent.change(tagsInput, { target: { value: "a, b ,, c" } });
+      fireEvent.change(tagsInput, { target: { value: "a,b\n c、d \n\nlast" } });
     });
-    expect(mockQueue).toHaveBeenCalledWith("p1", { tags: ["a", "b", "c"] }, "w1");
-    expect(tagsInput.value).toBe("a, b ,, c");
+    expect(mockQueue).toHaveBeenCalledWith("p1", { tags: ["a,b", "c、d", "last"] }, "w1");
+    expect(tagsInput.value).toBe("a,b\n c、d \n\nlast");
   });
 
   it("autosaves an edit to the Title (English) companion field", async () => {
@@ -419,7 +419,7 @@ describe("MetadataTab Generate All", () => {
     mockGenerateMetadataFields.mockResolvedValue({
       title: { value: "T" },
       slug: { value: "taken" },
-      tags: { value: "x, y" },
+      tags: { value: ["x", "y"] },
       metaDescription: { value: "D" },
     });
     mockQueue.mockImplementation(async (_id, edits) =>
@@ -445,7 +445,7 @@ describe("MetadataTab Generate All", () => {
 
 describe("MetadataTab generation keeps what the user typed", () => {
   it("Generate All fills only the fields left untouched while it ran", async () => {
-    let release!: (value: Record<string, { value: string }>) => void;
+    let release!: (value: Record<string, { value: string | string[] }>) => void;
     mockGenerateMetadataFields.mockImplementation(
       () => new Promise((resolve) => (release = resolve))
     );
@@ -459,7 +459,7 @@ describe("MetadataTab generation keeps what the user typed", () => {
       release({
         title: { value: "GenTitle" },
         slug: { value: "gen-slug" },
-        tags: { value: "a, b" },
+        tags: { value: ["a", "b"] },
         metaDescription: { value: "GenDesc" },
       });
     });
@@ -566,5 +566,68 @@ describe("MetadataTab copy and error dismiss", () => {
     expect(container.querySelector(".metadata-error")).toBeTruthy();
     fireEvent.click(container.querySelector(".metadata-error-dismiss") as HTMLButtonElement);
     expect(container.querySelector(".metadata-error")).toBeNull();
+  });
+});
+
+it("names each metadata textbox with its visible label", () => {
+  const { container } = renderTab({ frontMatter: { ...frontMatter(), language: "ja" } });
+  for (const name of ["Title", "Title (English)", "Slug", "Tags", "Tags (English)", "Description", "Description (English)", "Extra"]) {
+    expect(within(container).getByRole("textbox", { name })).toBe(within(container).getByLabelText(name, { exact: true }));
+  }
+});
+
+
+describe("MetadataTab tag arrays", () => {
+  const generatedTags = ["spring, garden", "soil、planting", "seeds"];
+
+  it("shows generated tags on separate lines and queues the original array", async () => {
+    mockGenerateMetadataField.mockResolvedValue(generatedTags);
+    const { container, onMetadataEdited } = renderTab();
+    const tags = within(container).getByRole("textbox", { name: "Tags" }) as HTMLTextAreaElement;
+    const field = tags.closest(".meta-field")!;
+    await act(async () => {
+      fireEvent.click(field.querySelector(".meta-field-generate")!);
+    });
+    expect(tags.value).toBe(generatedTags.join("\n"));
+    expect(mockQueue).toHaveBeenCalledWith("p1", { tags: generatedTags }, "w1");
+    expect((mockQueue.mock.calls[0][1] as { tags: string[] }).tags).toBe(generatedTags);
+    expect(onMetadataEdited).toHaveBeenCalledWith("p1", { tags: generatedTags });
+  });
+
+  it("queues the original generated tag array in Generate All", async () => {
+    mockGenerateMetadataFields.mockResolvedValue({
+      title: { value: "T" }, slug: { value: "slug" },
+      tags: { value: generatedTags }, metaDescription: { value: "D" },
+    });
+    const { container } = renderTab();
+    await act(async () => { fireEvent.click(container.querySelector(".btn-generate-all")!); });
+    const tags = within(container).getByRole("textbox", { name: "Tags" }) as HTMLTextAreaElement;
+    expect(tags.value).toBe(generatedTags.join("\n"));
+    const edit = queuedEdits().find((value) => "tags" in value)!;
+    expect(edit.tags).toBe(generatedTags);
+  });
+
+  it.each(["single", "all"])("keeps typed tags when %s generation finishes", async (mode) => {
+    let release!: () => void;
+    if (mode === "single") {
+      mockGenerateMetadataField.mockImplementation(() => new Promise((resolve) => {
+        release = () => resolve(generatedTags);
+      }));
+    } else {
+      mockGenerateMetadataFields.mockImplementation(() => new Promise((resolve) => {
+        release = () => resolve({ tags: { value: generatedTags } });
+      }));
+    }
+    const { container } = renderTab();
+    const tags = within(container).getByRole("textbox", { name: "Tags" }) as HTMLTextAreaElement;
+    const button = mode === "single"
+      ? tags.closest(".meta-field")!.querySelector(".meta-field-generate")!
+      : container.querySelector(".btn-generate-all")!;
+    await act(async () => { fireEvent.click(button); });
+    await act(async () => { fireEvent.change(tags, { target: { value: "my, tag\nmy、other tag" } }); });
+    await act(async () => { release(); });
+    expect(tags.value).toBe("my, tag\nmy、other tag");
+    expect(queuedEdits()).toContainEqual({ tags: ["my, tag", "my、other tag"] });
+    expect(queuedEdits()).not.toContainEqual({ tags: generatedTags });
   });
 });

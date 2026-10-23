@@ -360,7 +360,7 @@
   "metadata.stopGeneratingTitle": "Stop generating",
   "metadata.generateTitle": "Generate with AI",
   "metadata.copyTitle": "Copy to clipboard",
-  "metadata.tagsPlaceholder": "tag1, tag2, tag3",
+  "metadata.tagsPlaceholder": "One tag per line",
   "metadata.refusedNotFound": "This post was not found. Reopen it to edit its metadata.",
   "metadata.refusedSlugTaken": "Another post already uses the slug \"{slug}\"",
   "metadata.refusedLocked": "This post is locked. Unlock it to edit it.",

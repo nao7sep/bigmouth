@@ -15,9 +15,9 @@ function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
 }
 
 describe("parseFieldValue", () => {
-  it("splits tags on ASCII and ideographic commas, trimming and dropping empties", () => {
-    expect(parseFieldValue("tags", "a, b、 c ,,")).toEqual(["a", "b", "c"]);
-    expect(parseFieldValue("tagsEn", "x、y")).toEqual(["x", "y"]);
+  it("splits tags only on line breaks, trimming and dropping empty lines", () => {
+    expect(parseFieldValue("tags", " a,b \n \n c、d \r\n")).toEqual(["a,b", "c、d"]);
+    expect(parseFieldValue("tagsEn", "x、y\ny,z")).toEqual(["x、y", "y,z"]);
     expect(parseFieldValue("tags", "   ")).toEqual([]);
   });
 
@@ -34,10 +34,11 @@ describe("parseFieldValue", () => {
 });
 
 describe("extractFields", () => {
-  it("joins array values with ', ' and defaults missing fields to ''", () => {
-    const fields = extractFields(fm({ title: "T", tags: ["a", "b"] }));
+  it("joins array values with newlines and defaults missing fields to ''", () => {
+    const fields = extractFields(fm({ title: "T", tags: ["a,b", "c、d"] }));
     expect(fields.title).toBe("T");
-    expect(fields.tags).toBe("a, b");
+    expect(fields.tags).toBe("a,b\nc、d");
+    expect(parseFieldValue("tags", fields.tags)).toEqual(["a,b", "c、d"]);
     expect(fields.slug).toBe("");
     expect(fields.metaDescription).toBe("");
   });
@@ -45,7 +46,7 @@ describe("extractFields", () => {
   it("includes the English companion fields only for non-English posts", () => {
     const ja = extractFields(fm({ language: "ja", titleEn: "EN", tagsEn: ["x", "y"] }));
     expect(ja.titleEn).toBe("EN");
-    expect(ja.tagsEn).toBe("x, y");
+    expect(ja.tagsEn).toBe("x\ny");
 
     const en = extractFields(fm({ language: "en", titleEn: "EN" }));
     expect("titleEn" in en).toBe(false);
@@ -67,7 +68,7 @@ describe("a value with nothing visible in it", () => {
   });
 
   it("drops a zero-width-only tag instead of storing an invisible one", () => {
-    expect(parseFieldValue("tags", `alpha, ${ZWSP}, beta`)).toEqual(["alpha", "beta"]);
+    expect(parseFieldValue("tags", `alpha\n${ZWSP}\nbeta`)).toEqual(["alpha", "beta"]);
     expect(parseFieldValue("tags", ZWSP)).toEqual([]);
   });
 
@@ -84,9 +85,9 @@ describe("untouchedGeneratedFields", () => {
   it("applies a generated value only where the field is unchanged since generation started", () => {
     const atStart = { title: "", slug: "old", tags: "" };
     const current = { title: "typed meanwhile", slug: "old", tags: "" };
-    const generated = { title: "Gen", slug: "gen-slug", tags: "a, b" };
+    const generated = { title: "Gen", slug: "gen-slug", tags: ["a,b", "c、d"] };
 
-    expect(untouchedGeneratedFields(atStart, current, generated)).toEqual({ slug: "gen-slug", tags: "a, b" });
+    expect(untouchedGeneratedFields(atStart, current, generated)).toEqual({ slug: "gen-slug", tags: ["a,b", "c、d"] });
   });
 
   it("treats a missing value as empty on either side", () => {

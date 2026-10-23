@@ -353,7 +353,7 @@
   "metadata.stopGeneratingTitle": "生成を停止",
   "metadata.generateTitle": "AI で生成",
   "metadata.copyTitle": "クリップボードにコピー",
-  "metadata.tagsPlaceholder": "タグ1, タグ2, タグ3",
+  "metadata.tagsPlaceholder": "1 行に 1 つのタグ",
   "metadata.refusedNotFound": "この投稿が見つかりません。メタデータを編集するには、開き直してください。",
   "metadata.refusedSlugTaken": "スラッグ「{slug}」はほかの投稿がすでに使っています",
   "metadata.refusedLocked": "この投稿はロックされています。編集するには、ロックを解除してください。",

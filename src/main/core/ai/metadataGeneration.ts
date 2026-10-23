@@ -205,10 +205,6 @@ export function normalizeGeneratedMetadata(
   return normalized;
 }
 
-export function metadataValueToClientString(value: GeneratedMetadataValue): string {
-  return Array.isArray(value) ? value.join(", ") : value;
-}
-
 function cleanFieldGuidance(prompt: string): string {
   const lines = prompt
     .split(/\r?\n/)

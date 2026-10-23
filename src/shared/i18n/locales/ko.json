@@ -353,7 +353,7 @@
   "metadata.stopGeneratingTitle": "생성 중지",
   "metadata.generateTitle": "AI로 생성",
   "metadata.copyTitle": "클립보드에 복사",
-  "metadata.tagsPlaceholder": "태그1, 태그2, 태그3",
+  "metadata.tagsPlaceholder": "한 줄에 태그 하나",
   "metadata.refusedNotFound": "이 게시물을 찾을 수 없습니다. 메타데이터를 편집하려면 다시 여십시오.",
   "metadata.refusedSlugTaken": "슬러그 “{slug}”은(는) 다른 게시물이 이미 사용하고 있습니다",
   "metadata.refusedLocked": "이 게시물은 잠겨 있습니다. 편집하려면 잠금을 해제하십시오.",

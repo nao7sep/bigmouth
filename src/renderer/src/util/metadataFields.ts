@@ -8,13 +8,13 @@ import { singleLine } from "./textCleanup";
 
 /**
  * Front matter -> the flat string fields shown in the editor. Array values
- * (tags) join with ", "; missing values become "". The English-companion fields
+ * (tags) join with newlines; missing values become "". The English-companion fields
  * appear only for non-English posts.
  */
 export function extractFields(fm: PostFrontMatter): Record<string, string> {
   const get = (key: string): string => {
     const val = (fm as Record<string, unknown>)[key];
-    if (Array.isArray(val)) return val.join(", ");
+    if (Array.isArray(val)) return val.join("\n");
     return (val as string) ?? "";
   };
 
@@ -60,8 +60,7 @@ function isVisuallyEmpty(value: string): boolean {
 
 /**
  * A raw textarea value -> the form persisted in front matter, applying commit-time
- * cleanup (so it runs on save, not while the user types). Tags split on a comma
- * or an ideographic comma (、, U+3001), trim, and drop empties into an array;
+ * cleanup (so it runs on save, not while the user types). Tags split on line breaks, trim, and drop empties into an array;
  * single-line fields collapse to one line; everything else passes through.
  *
  * A value with nothing visible in it commits as empty — see isVisuallyEmpty. The
@@ -71,7 +70,7 @@ function isVisuallyEmpty(value: string): boolean {
 export function parseFieldValue(key: string, value: string): string | string[] {
   if (key === "tags" || key === "tagsEn") {
     return value
-      .split(/[,、]/)
+      .split(/\r?\n/)
       .map((t) => t.trim())
       .filter((tag) => !isVisuallyEmpty(tag));
   }
@@ -88,12 +87,12 @@ export function parseFieldValue(key: string, value: string): string | string[] {
  * generation started was typed into meanwhile, and the typed value wins — the
  * user's own text is never replaced by a result they did not wait for.
  */
-export function untouchedGeneratedFields(
+export function untouchedGeneratedFields<T extends string | string[]>(
   atStart: Record<string, string>,
   current: Record<string, string>,
-  generated: Record<string, string>,
-): Record<string, string> {
-  const apply: Record<string, string> = {};
+  generated: Record<string, T>,
+): Record<string, T> {
+  const apply: Record<string, T> = {};
   for (const [key, value] of Object.entries(generated)) {
     if ((current[key] ?? "") === (atStart[key] ?? "")) apply[key] = value;
   }

@@ -367,7 +367,7 @@
   "metadata.stopGeneratingTitle": "Arrêter la génération",
   "metadata.generateTitle": "Générer avec l’IA",
   "metadata.copyTitle": "Copier dans le presse-papiers",
-  "metadata.tagsPlaceholder": "étiquette1, étiquette2, étiquette3",
+  "metadata.tagsPlaceholder": "Une étiquette par ligne",
   "metadata.refusedNotFound": "Cette publication est introuvable. Rouvrez-la pour modifier ses métadonnées.",
   "metadata.refusedSlugTaken": "Une autre publication utilise déjà le slug «\u00a0{slug}\u00a0»",
   "metadata.refusedLocked": "Cette publication est verrouillée. Déverrouillez-la pour la modifier.",

@@ -7,7 +7,6 @@ import {
   buildMetadataSchema,
   buildMetadataGenerationRequest,
   normalizeGeneratedMetadata,
-  metadataValueToClientString,
   type MetadataField,
 } from "@main/core/ai/metadataGeneration.js";
 import type { PostFrontMatter } from "@main/core/shared/types.js";
@@ -272,12 +271,5 @@ describe("normalizeGeneratedMetadata", () => {
       ["title", "tags"]
     );
     expect(normalized.title).toBe("日本語のタイトルです");
-  });
-});
-
-describe("metadataValueToClientString", () => {
-  it("joins arrays with commas and passes strings through", () => {
-    expect(metadataValueToClientString(["a", "b", "c"])).toBe("a, b, c");
-    expect(metadataValueToClientString("plain")).toBe("plain");
   });
 });

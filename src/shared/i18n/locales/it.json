@@ -367,7 +367,7 @@
   "metadata.stopGeneratingTitle": "Interrompi la generazione",
   "metadata.generateTitle": "Genera con l’IA",
   "metadata.copyTitle": "Copia negli appunti",
-  "metadata.tagsPlaceholder": "tag1, tag2, tag3",
+  "metadata.tagsPlaceholder": "Un tag per riga",
   "metadata.refusedNotFound": "Questo post non è stato trovato. Riaprilo per modificarne i metadati.",
   "metadata.refusedSlugTaken": "Un altro post usa già lo slug «{slug}»",
   "metadata.refusedLocked": "Questo post è bloccato. Sbloccalo per modificarlo.",

@@ -360,7 +360,7 @@
   "metadata.stopGeneratingTitle": "Erzeugen stoppen",
   "metadata.generateTitle": "Mit KI erzeugen",
   "metadata.copyTitle": "In die Zwischenablage kopieren",
-  "metadata.tagsPlaceholder": "Tag1, Tag2, Tag3",
+  "metadata.tagsPlaceholder": "Ein Tag pro Zeile",
   "metadata.refusedNotFound": "Dieser Beitrag wurde nicht gefunden. Öffnen Sie ihn erneut, um seine Metadaten zu bearbeiten.",
   "metadata.refusedSlugTaken": "Ein anderer Beitrag verwendet bereits den Slug „{slug}“",
   "metadata.refusedLocked": "Dieser Beitrag ist gesperrt. Heben Sie die Sperre auf, um ihn zu bearbeiten.",

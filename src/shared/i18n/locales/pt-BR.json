@@ -367,7 +367,7 @@
   "metadata.stopGeneratingTitle": "Parar a geração",
   "metadata.generateTitle": "Gerar com IA",
   "metadata.copyTitle": "Copiar para a área de transferência",
-  "metadata.tagsPlaceholder": "tag1, tag2, tag3",
+  "metadata.tagsPlaceholder": "Uma tag por linha",
   "metadata.refusedNotFound": "Esta publicação não foi encontrada. Abra-a novamente para editar os metadados.",
   "metadata.refusedSlugTaken": "Outra publicação já usa o slug “{slug}”",
   "metadata.refusedLocked": "Esta publicação está bloqueada. Desbloqueie-a para editá-la.",

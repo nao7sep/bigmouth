@@ -8,10 +8,8 @@ import { createProvider } from "../core/ai/factory.js";
 import {
   buildMetadataGenerationRequest,
   isMetadataField,
-  metadataValueToClientString,
   normalizeGeneratedMetadata,
   normalizeMetadataFields,
-  type MetadataField,
 } from "../core/ai/metadataGeneration.js";
 import { logAiFailure } from "../core/ai/errorDetails.js";
 import { info as logInfo } from "../core/services/logger.js";
@@ -104,12 +102,10 @@ async function generateMetadata(
       signal,
     });
     const generated = normalizeGeneratedMetadata(raw, validFields);
-    const values = {} as Record<MetadataField, string>;
     for (const field of validFields) {
       const value = generated[field];
       if (value === undefined) throw new Error(`Structured metadata response omitted ${field}`);
-      values[field] = metadataValueToClientString(value);
-      results[field] = { value: values[field] };
+      results[field] = { value };
     }
     logInfo("metadata generation completed", maskCredentials({
       workspace: wsId,

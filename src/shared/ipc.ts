@@ -320,7 +320,7 @@ export interface PostUpdate {
   frontMatter?: EditablePostMetadata;
 }
 
-export type MetadataGenerationResults = Record<string, { value: string } | { error: string }>;
+export type MetadataGenerationResults = Record<string, { value: string | string[] } | { error: string }>;
 
 export interface AnalysisStreamParams {
   wsId: string;
