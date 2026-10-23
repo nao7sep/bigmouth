@@ -97,3 +97,16 @@ export async function showStartupFailure(err: unknown): Promise<void> {
     detail: carried ? text(carried) : t("dialog.startupFailure.detail"),
   });
 }
+
+/** Local permission to disclose both a credential and the submitted document. */
+export async function confirmAiEndpoint(endpoint: string): Promise<boolean> {
+  const { t } = mainTranslator();
+  return await showPlainMessageDialog({
+    title: t("ai.destinationTitle"),
+    message: t("ai.destinationQuestion", { endpoint }),
+    detail: t(new URL(endpoint).protocol === "http:" ? "ai.destinationHttpDetail" : "ai.destinationDetail"),
+    buttons: [t("common.cancel"), t("ai.destinationAllow")],
+    defaultId: 0,
+    cancelId: 0,
+  }) === 1;
+}

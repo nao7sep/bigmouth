@@ -85,6 +85,7 @@ export const storageTasks = {
   addExistingWorkspace: (dataDirectory: string) => workspaceStore.openWorkspace(dataDirectory),
   suggestWorkspaceLocation: workspaceStore.suggestWorkspaceLocation,
   updateWorkspace: workspaceStore.updateWorkspace,
+  approveAiEndpoint: workspaceStore.approveAiEndpoint,
   deleteWorkspace(id: string) {
     const removed = workspaceStore.getWorkspace(id);
     const result = workspaceStore.deleteWorkspace(id);

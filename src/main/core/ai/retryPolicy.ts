@@ -10,6 +10,7 @@
 export const MAX_ATTEMPTS = 3;
 /** The app's backoff before the second and third attempts, when no Retry-After says otherwise. */
 export const RETRY_DELAYS_MS = [2_000, 5_000] as const;
+/** Longest automatic wait; a longer provider minimum ends the call instead. */
 export const RETRY_AFTER_CAP_MS = 30_000;
 
 const RETRY_STATUSES = new Set([408, 429, 503]);
@@ -36,7 +37,8 @@ export function isRetryable(err: unknown): boolean {
 
 /**
  * The wait before the attempt after `attempt` (1-based): the provider's
- * Retry-After, capped, where it sent one, else the app's backoff.
+ * Retry-After minimum where it sent one, else the app's backoff. The caller
+ * decides whether it can wait that long; shortening it would resend too early.
  */
 export function retryDelayMs(err: unknown, attempt: number, now: number = Date.now()): number {
   const headers = (err as { headers?: unknown } | null)?.headers;
@@ -44,7 +46,7 @@ export function retryDelayMs(err: unknown, attempt: number, now: number = Date.n
   if (value) {
     const seconds = Number(value);
     const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
-    if (Number.isFinite(ms)) return Math.max(0, Math.min(RETRY_AFTER_CAP_MS, ms));
+    if (Number.isFinite(ms)) return Math.max(0, ms);
   }
   return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length) - 1]!;
 }

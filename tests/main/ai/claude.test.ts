@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // The fake SDK surface. Hoisted so the vi.mock factory can close over it.
 const sdk = vi.hoisted(() => ({
-  ctorArgs: null as null | { apiKey: string; baseURL?: string; maxRetries?: number },
+  ctorArgs: null as null | { apiKey: string; baseURL?: string; maxRetries?: number; fetchOptions?: { redirect: string } },
   create: vi.fn(),
   stream: vi.fn(),
 }));
@@ -23,7 +23,7 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@anthropic-ai/sdk", () => {
   class FakeAnthropic {
     messages: { create: typeof sdk.create; stream: typeof sdk.stream };
-    constructor(opts: { apiKey: string; baseURL?: string; maxRetries?: number }) {
+    constructor(opts: { apiKey: string; baseURL?: string; maxRetries?: number; fetchOptions?: { redirect: string } }) {
       sdk.ctorArgs = opts;
       this.messages = { create: sdk.create, stream: sdk.stream };
     }
@@ -113,9 +113,9 @@ beforeEach(() => {
 describe("ClaudeProvider construction", () => {
   // Every call is paid: the SDK's default of two retries could bill a request
   // up to three times, so the client never retries on its own.
-  it("passes the api key and endpoint and turns off the SDK's own retries", () => {
+  it("passes the api key and endpoint and disables automatic retries and redirects", () => {
     new ClaudeProvider("sk-test", req("claude-test-model", { endpoint: "https://proxy.example/anthropic" }), CALL);
-    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", baseURL: "https://proxy.example/anthropic", maxRetries: 0 });
+    expect(sdk.ctorArgs).toEqual({ apiKey: "sk-test", baseURL: "https://proxy.example/anthropic", maxRetries: 0, fetchOptions: { redirect: "error" } });
   });
 });
 
@@ -228,6 +228,35 @@ describe("retries", () => {
     await rejection;
     expect(sdk.stream).toHaveBeenCalledTimes(MAX_ATTEMPTS);
     expect(recorded.calls).toHaveLength(MAX_ATTEMPTS);
+  });
+
+  it.each(["120", "Sun, 04 Oct 2026 00:02:00 GMT"])(
+    "returns the original refusal when Retry-After %s exceeds the automatic wait bound",
+    async (retryAfter) => {
+      vi.setSystemTime(new Date("2026-10-04T00:00:00Z"));
+      const error = refused(429, { "retry-after": retryAfter });
+      sdk.stream.mockReturnValue(settled({ error }));
+      const pending = new ClaudeProvider("k", req(), CALL).generateJson("s", "u", { type: "object" });
+      await expect(pending).rejects.toBe(error);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(sdk.stream).toHaveBeenCalledTimes(1);
+      expect(recorded.calls).toHaveLength(1);
+    },
+  );
+
+  it("does not resend when the outer cap expires before Retry-After", async () => {
+    sdk.stream.mockReturnValue(settled({ error: refused(429, { "retry-after": "3" }) }));
+    const pending = new ClaudeProvider("k", req(), CALL).generateJson(
+      "s", "u", { type: "object" }, { maxDurationMs: 1_000 },
+    );
+    const rejection = expect(pending).rejects.toThrow(/did not finish within/);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await rejection;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sdk.stream).toHaveBeenCalledTimes(1);
+    expect(recorded.calls).toEqual([
+      expect.objectContaining({ stopped: false, error: expect.objectContaining({ message: "429 from the provider" }) }),
+    ]);
   });
 
   it("resends a refused connection", async () => {
@@ -437,6 +466,12 @@ describe("generateJson", () => {
         await vi.advanceTimersByTimeAsync(30_000);
       }
       await rejection;
+      expect(recorded.calls).toEqual([
+        expect.objectContaining({
+          stopped: false,
+          error: expect.objectContaining({ message: expect.stringMatching(/did not finish within 5 minutes/) }),
+        }),
+      ]);
     });
 
     it("reports the caller's abort as itself", async () => {
@@ -447,6 +482,9 @@ describe("generateJson", () => {
       const rejection = expect(promise).rejects.toThrow(/Request was aborted/);
       controller.abort();
       await rejection;
+      expect(recorded.calls).toEqual([
+        expect.objectContaining({ stopped: true, error: undefined }),
+      ]);
     });
   });
 

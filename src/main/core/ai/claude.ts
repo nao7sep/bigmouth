@@ -6,7 +6,7 @@ import Anthropic, { type Middleware } from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import type { AiProvider, ProviderCallContext } from "./provider.js";
 import { buildClaudeParams } from "./claudeRequest.js";
-import { MAX_ATTEMPTS, isRetryable, retryDelayMs, waitFor } from "./retryPolicy.js";
+import { MAX_ATTEMPTS, RETRY_AFTER_CAP_MS, isRetryable, retryDelayMs, waitFor } from "./retryPolicy.js";
 import { utcNow } from "../shared/timestamps.js";
 import { serializeError } from "../services/logger.js";
 import { writeProviderCall } from "../../storageAccess.js";
@@ -98,7 +98,8 @@ export class ClaudeProvider implements AiProvider {
     this.secrets = [apiKey];
     // Every call here is paid, so the SDK never retries on its own: the app's
     // retryPolicy is the only loop, and each attempt is recorded.
-    this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0 });
+    // Approval names one destination; a redirect must not disclose its key or document elsewhere.
+    this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0, fetchOptions: { redirect: "error" } });
     this.request = request;
     this.call = call;
   }
@@ -160,11 +161,14 @@ export class ClaudeProvider implements AiProvider {
     mayResend: () => boolean = () => true,
   ): Promise<T> {
     for (let count = 1; ; count += 1) {
+      signal.throwIfAborted();
       try {
         return await attempt();
       } catch (err) {
         if (signal.aborted || count >= MAX_ATTEMPTS || !isRetryable(err) || !mayResend()) throw err;
-        await waitFor(retryDelayMs(err, count), signal);
+        const delay = retryDelayMs(err, count);
+        if (delay > RETRY_AFTER_CAP_MS) throw err;
+        await waitFor(delay, signal);
       }
     }
   }
@@ -190,7 +194,9 @@ export class ClaudeProvider implements AiProvider {
     // caller's signal is the user's Stop.
     const cap = new AbortController();
     const capTimer =
-      options.maxDurationMs !== undefined ? setTimeout(() => cap.abort(), options.maxDurationMs) : undefined;
+      options.maxDurationMs !== undefined ? setTimeout(() => cap.abort(new Error(
+        `Claude did not finish within ${Math.round(options.maxDurationMs! / 60_000)} minutes, so the request was abandoned.`,
+      )), options.maxDurationMs) : undefined;
     capTimer?.unref();
     const outer = AbortSignal.any([cap.signal, options.signal].filter((s): s is AbortSignal => s !== undefined));
     const params = this.params(
@@ -201,12 +207,10 @@ export class ClaudeProvider implements AiProvider {
 
     let message: Anthropic.Message;
     try {
-      message = await this.withRetries(outer, () => this.jsonAttempt(params, outer));
+      message = await this.withRetries(outer, () => this.jsonAttempt(params, outer, options.signal));
     } catch (err) {
       if (cap.signal.aborted && !options.signal?.aborted) {
-        throw new Error(
-          `Claude did not finish within ${Math.round(options.maxDurationMs! / 60_000)} minutes, so the request was abandoned.`,
-        );
+        throw cap.signal.reason;
       }
       throw err;
     } finally {
@@ -228,6 +232,7 @@ export class ClaudeProvider implements AiProvider {
   private async jsonAttempt(
     params: Anthropic.MessageCreateParamsNonStreaming,
     outer: AbortSignal,
+    userSignal?: AbortSignal,
   ): Promise<Anthropic.Message> {
     const watchdog = idleWatchdog();
     const capture = requestCapture(params);
@@ -239,7 +244,13 @@ export class ClaudeProvider implements AiProvider {
     stream.on("text", watchdog.progress);
     stream.on("thinking", watchdog.progress);
     try {
-      return await this.recorded(startedAt, capture, stream.finalMessage(), () => outer.aborted);
+      const pending = stream.finalMessage().catch((err: unknown) => {
+        // The SDK describes every aborted request as a user stop. Preserve the
+        // outer timeout's actual cause in the record before propagating it.
+        if (outer.aborted && !userSignal?.aborted) throw outer.reason;
+        throw err;
+      });
+      return await this.recorded(startedAt, capture, pending, () => userSignal?.aborted ?? false);
     } catch (err) {
       if (watchdog.tripped()) throw new Error(idleMessage("request"));
       throw err;

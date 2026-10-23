@@ -1,9 +1,10 @@
+import { authorizedRoleCall } from "../authorizedAiCall.js";
 import { ipcMain } from "electron";
 
 import { CHANNELS, analysisStreamChannel, type AnalysisStreamFrame, type AnalysisStreamParams } from "@shared/ipc";
 import type { Workspace } from "@shared/types";
 import { getPost } from "../storageAccess.js";
-import { getAnalysisPrompts, getRoleCall } from "../storageAccess.js";
+import { getAnalysisPrompts } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import { resolvePromptRequest, usesContentPlaceholder } from "../core/ai/promptTemplates.js";
 import { logAiFailure } from "../core/ai/errorDetails.js";
@@ -31,7 +32,7 @@ async function resolveAnalysisRequest(
   const { systemPrompt, userContent } = resolvePromptRequest(prompt.text, { content: postContent });
   const promptMode = usesContentPlaceholder(prompt.text) ? "inline-content" : "split-system-user";
 
-  const roleCall = (await getRoleCall(ws, "analysis"));
+  const roleCall = (await authorizedRoleCall(ws, "analysis"));
   let provider;
   try {
     provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "analysis" });

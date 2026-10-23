@@ -10,28 +10,34 @@ import { registerAnalysisHandlers } from "@main/ipc/analysis.js";
 import { registerMetadataHandlers } from "@main/ipc/metadata.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 import { initLogger, closeLogger } from "@main/core/services/logger.js";
+import { initAppDir, createWorkspace, approveAiEndpoint } from "@main/core/services/workspaceStore.js";
 
 const fixture = vi.hoisted(() => ({
   key: "sk-ant-fake-diagnostic-sentinel-12345",
+  workspaceId: "",
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   calls: [] as unknown[],
 }));
 vi.mock("electron", () => ({ ipcMain: {
   handle: (channel: string, callback: (...args: unknown[]) => unknown) => fixture.handlers.set(channel, callback),
 } }));
-vi.mock("@main/ipc/context.js", () => ({ resolveWorkspace: async () => ({ id: "ws", dataDirectory: "/fixture" }) }));
-vi.mock("@main/storageAccess.js", () => ({
-  getPost: async () => ({ content: "stored draft", frontMatter: { id: "post", language: "en", target: "blog", title: "Title" } }),
-  getAnalysisPrompts: async () => [{ name: "Check", text: "Check the draft." }],
-  getGenerationPrompts: async () => ({ prompts: { title: "Write a title." } }),
-  getRoleCall: async () => ({ apiKey: fixture.key, endpoint: "https://custom.example.test", model: "claude-haiku-4-5", thinking: "off" }),
-  writeProviderCall: async (call: unknown) => { fixture.calls.push(call); },
-}));
+vi.mock("@main/storageAccess.js", async () => {
+  const workspaceStore = await import("@main/core/services/workspaceStore.js");
+  return {
+    getWorkspace: async (id: string) => workspaceStore.getWorkspace(id),
+    getPost: async () => ({ content: "stored draft", frontMatter: { id: "post", language: "en", target: "blog", title: "Title" } }),
+    getAnalysisPrompts: async () => [{ name: "Check", text: "Check the draft." }],
+    getGenerationPrompts: async () => ({ prompts: { title: "Write a title." } }),
+    getRoleCall: async () => ({ apiKey: fixture.key, endpoint: "https://custom.example.test", model: "claude-haiku-4-5", thinking: "off" }),
+    writeProviderCall: async (call: unknown) => { fixture.calls.push(call); },
+  };
+});
 
 const fetchMock = vi.fn<typeof fetch>();
 let home: string;
 let ownerId = 0;
 let output: string[];
+const savedDataDir = process.env.BIGMOUTH_DATA_DIR;
 beforeEach(() => {
   fixture.handlers.clear();
   fixture.calls.length = 0;
@@ -39,6 +45,10 @@ beforeEach(() => {
   registerMetadataHandlers();
   registerImagingHandlers();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ai-diagnostics-"));
+  process.env.BIGMOUTH_DATA_DIR = home;
+  initAppDir();
+  fixture.workspaceId = createWorkspace("Diagnostics", path.join(home, "workspace")).id;
+  approveAiEndpoint(fixture.workspaceId, "https://custom.example.test");
   initLogger(path.join(home, "records.sqlite3"), path.join(home, "logs"));
   output = [];
   vi.spyOn(console, "log").mockImplementation((...args) => { output.push(JSON.stringify(args)); });
@@ -50,6 +60,8 @@ afterEach(() => {
   closeLogger();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  if (savedDataDir === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = savedDataDir;
   fs.rmSync(home, { recursive: true, force: true });
 });
 
@@ -77,12 +89,12 @@ async function invoke(kind: "analysis" | "metadata" | "imaging"): Promise<unknow
   // it too, while the live request is unchanged.
   const draft = `Draft mentioning ${fixture.key}`;
   if (kind === "analysis") {
-    await fixture.handlers.get(CHANNELS.analysisStreamStart)!(event, "req", { wsId: "ws", postId: "post", promptName: "Check", content: draft });
+    await fixture.handlers.get(CHANNELS.analysisStreamStart)!(event, "req", { wsId: fixture.workspaceId, postId: "post", promptName: "Check", content: draft });
     await vi.waitFor(() => expect(frames.some(frame => frame.type === "done" || frame.type === "error")).toBe(true));
     return frames;
   }
-  if (kind === "metadata") return fixture.handlers.get(CHANNELS.generateMetadata)!(event, "req", "ws", "post", ["title"], draft);
-  return fixture.handlers.get(CHANNELS.generateImaging)!(event, "req", "ws", "post", draft, {
+  if (kind === "metadata") return fixture.handlers.get(CHANNELS.generateMetadata)!(event, "req", fixture.workspaceId, "post", ["title"], draft);
+  return fixture.handlers.get(CHANNELS.generateImaging)!(event, "req", fixture.workspaceId, "post", draft, {
     count: 3, relation: "direct", emotionalLens: "calm", literalness: "literal", people: "no-people", style: "photo",
   });
 }

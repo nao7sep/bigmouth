@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { RETRY_AFTER_CAP_MS, RETRY_DELAYS_MS, isRetryable, retryDelayMs, waitFor } from "@main/core/ai/retryPolicy.js";
+import { RETRY_DELAYS_MS, isRetryable, retryDelayMs, waitFor } from "@main/core/ai/retryPolicy.js";
 
 function status(code: number, headers?: Record<string, string>) {
   return Object.assign(new Error(`${code}`), { status: code, headers: new Headers(headers) });
@@ -34,11 +34,12 @@ describe("isRetryable", () => {
 });
 
 describe("retryDelayMs", () => {
-  it("honours Retry-After in seconds or as a date, capped at 30 seconds", () => {
+  it("honours Retry-After in seconds or as a date without shortening the provider minimum", () => {
     expect(retryDelayMs(status(429, { "retry-after": "4" }), 1)).toBe(4_000);
-    expect(retryDelayMs(status(429, { "retry-after": "120" }), 1)).toBe(RETRY_AFTER_CAP_MS);
+    expect(retryDelayMs(status(429, { "retry-after": "120" }), 1)).toBe(120_000);
     const now = Date.parse("2026-10-04T00:00:00Z");
     expect(retryDelayMs(status(503, { "retry-after": "Sun, 04 Oct 2026 00:00:07 GMT" }), 1, now)).toBe(7_000);
+    expect(retryDelayMs(status(503, { "retry-after": "Sun, 04 Oct 2026 00:02:00 GMT" }), 1, now)).toBe(120_000);
     expect(retryDelayMs(status(503, { "retry-after": "Sat, 03 Oct 2026 23:00:00 GMT" }), 1, now)).toBe(0);
   });
 
