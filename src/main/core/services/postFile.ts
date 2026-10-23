@@ -19,6 +19,21 @@ import { FORMAT_VERSION_KEY, NewerFormatError, checkFormatVersion } from "../sha
 // Length, in graphemes, of a body-derived preview label for an untitled post.
 const EXCERPT_MAX_CHARS = 100;
 
+// gray-matter exposes its engines at runtime but omits them from its types.
+// Keep its safe YAML data parser and validate before gray-matter can normalize
+// a null result into an empty object.
+const yamlEngine = (matter as unknown as {
+  engines: { yaml: { parse: (input: string) => unknown } };
+}).engines.yaml;
+
+function parseYamlMap(input: string): Record<string, unknown> {
+  const data = yamlEngine.parse(input);
+  if (data === null || typeof data !== "object" || Object.getPrototypeOf(data) !== Object.prototype) {
+    throw new Error("post front matter must be a YAML map");
+  }
+  return data as Record<string, unknown>;
+}
+
 // Markdown bodies use two trailing spaces as a hard line break, so the body
 // normalization keeps line ends and only drops blank lines at the edges. Only
 // leading and trailing blank lines are dropped.
@@ -122,7 +137,7 @@ export function frontMatterShapeProblem(frontMatter: Record<string, unknown>): s
 /**
  * Parses raw file text into an owned front matter object and trimmed content.
  *
- * The `{}` is not decoration: called with no options, gray-matter memoizes every
+ * Passing options is necessary: called with no options, gray-matter memoizes every
  * parse in a module-global cache keyed by the whole input string, and never
  * evicts. Every autosave flush parses the post again, so a writing session
  * retains every intermediate version of every post it has touched for the life
@@ -131,9 +146,28 @@ export function frontMatterShapeProblem(frontMatter: Record<string, unknown>): s
  * need no defensive deep-clone.
  */
 export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; content: string } {
-  const parsed = matter(raw, {});
+  // gray-matter lets the opening delimiter select an engine, including one
+  // that evaluates JavaScript. Reject that choice before calling the parser;
+  // the engine overrides also block its case-insensitive JS aliases.
+  const source = raw.replace(/^\uFEFF/, "");
+  if (source.startsWith("---") && source[3] !== "-") {
+    const language = source.slice(3).split("\n", 1)[0].trim();
+    if (language && !/^(yaml|yml)$/i.test(language)) {
+      throw new Error("post front matter must use YAML");
+    }
+  }
+  const rejectEngine = (): never => { throw new Error("post front matter must use YAML"); };
+  const parsed = matter(raw, {
+    engines: { yaml: parseYamlMap, javascript: rejectEngine, json: rejectEngine },
+  });
+  const frontMatter = parsed.data as Record<string, unknown>;
+  // Empty optional YAML text is absence in the app's typed model. Normalize it
+  // here so index projection and readers agree without rewriting the source.
+  for (const key of OPTIONAL_TEXT_KEYS) {
+    if (frontMatter[key] === null) delete frontMatter[key];
+  }
   return {
-    frontMatter: parsed.data as PostFrontMatter,
+    frontMatter: frontMatter as PostFrontMatter,
     content: multiline(parsed.content, BODY_MULTILINE_OPTS),
   };
 }
@@ -191,7 +225,7 @@ export function writePost(filePath: string, frontMatter: PostFrontMatter, conten
   const output = serializePost(frontMatter, content);
   // recorded: a post .md file is the primary user-authored durable text this app owns — the very thing
   // the backup exists for. `filePath` is the full absolute path wherever the workspace lives — the default
-  // ~/Documents/BigMouth/<name> or a location the user chose; either way the same managed-
+  // OS Documents/BigMouth directory or a location the user chose; either way the same managed-
   // text choke point records the exact bytes just written (data-backup conventions: every authored .md
   // is recorded, external managed locations included).
   writeManagedText(filePath, output);

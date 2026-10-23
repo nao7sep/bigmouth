@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import matter from "gray-matter";
 import type { PostFrontMatter } from "@main/core/shared/types.js";
-import { readPost, writePost, parsePostRaw } from "@main/core/services/postFile.js";
+import { readPost, writePost, parsePostRaw, projectIndexEntry } from "@main/core/services/postFile.js";
+import { rebuild, clearCache as clearIndexCache } from "@main/core/services/postIndex.js";
 
 let dir: string;
 
@@ -13,6 +14,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearIndexCache(dir);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -102,5 +104,53 @@ describe("parsing does not accumulate in gray-matter's global cache", () => {
     (first.frontMatter as { title?: string }).title = "Mutated";
 
     expect(second.frontMatter.title).toBe("Shared");
+  });
+});
+
+describe("front matter is YAML data", () => {
+  it.each(["javascript", "js", "JS", "JavaScript", "json", "JSON", "coffee", "__proto__"])(
+    "rejects a file-selected %s engine before it can evaluate metadata",
+    (language) => {
+      const marker = globalThis as typeof globalThis & { bigmouthFrontMatterExecuted?: boolean };
+      const raw = `---${language}\n(globalThis.bigmouthFrontMatterExecuted = true, { id: "post-1", status: "draft" })\n---\nBody`;
+      const file = path.join(dir, "posts", "post.md");
+      fs.mkdirSync(path.dirname(file));
+      fs.writeFileSync(file, raw);
+      try {
+        expect(() => parsePostRaw(raw)).toThrow("must use YAML");
+        expect(() => parsePostRaw(`\uFEFF${raw}`)).toThrow("must use YAML");
+        expect(() => readPost(file)).toThrow("must use YAML");
+        expect(rebuild(dir)).toMatchObject({ indexed: 0, skipped: [{ fileName: "post.md" }] });
+        expect(marker.bigmouthFrontMatterExecuted).toBeUndefined();
+        expect(fs.readFileSync(file, "utf-8")).toBe(raw);
+      } finally {
+        delete marker.bigmouthFrontMatterExecuted;
+      }
+    },
+  );
+
+  it.each(["", "yaml", "yml", "YAML"])("preserves ordinary YAML with delimiter language %j", (language) => {
+    const raw = `---${language}\nid: post-1\nstatus: draft\ntitle: A title\ncustom:\n  enabled: true\n---\n\n---\nbody: stays body\n---\n`;
+    const post = parsePostRaw(raw);
+    expect(post.frontMatter).toMatchObject({ id: "post-1", title: "A title", custom: { enabled: true } });
+    expect(post.content).toBe("---\nbody: stays body\n---");
+  });
+
+  it.each(["null", "42", "a scalar", "2026-10-23", "!!binary aGVsbG8=", "- first\n- second"])("rejects non-map YAML %j", (metadata) => {
+    expect(() => parsePostRaw(`---\n${metadata}\n---\nBody`)).toThrow("must be a YAML map");
+  });
+
+  it("normalizes empty optional text and indexes an empty slug without writing the file", () => {
+    const raw = "---\nid: post-1\nstatus: draft\nslug:\ntitle: null\nextra:\n---\n\nBody";
+    const file = path.join(dir, "posts", "post.md");
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, raw);
+    const post = readPost(file);
+    expect(post.frontMatter).not.toHaveProperty("slug");
+    expect(post.frontMatter).not.toHaveProperty("title");
+    expect(post.frontMatter).not.toHaveProperty("extra");
+    expect(projectIndexEntry(post.frontMatter, "post.md", post.content)).toMatchObject({ id: "post-1", excerpt: "Body" });
+    expect(rebuild(dir)).toMatchObject({ indexed: 1, skipped: [] });
+    expect(fs.readFileSync(file, "utf-8")).toBe(raw);
   });
 });
