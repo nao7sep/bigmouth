@@ -9,6 +9,7 @@ export const WORKER_ENTRIES = {
   storage: "storage-worker",
   backup: "backup-worker",
   recordsReader: "records-reader-worker",
+  image: "image-helper",
 } as const;
 
 /** The preload script, built into the preload output folder beside the main one. */

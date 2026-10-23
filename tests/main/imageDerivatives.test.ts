@@ -1,6 +1,6 @@
 // Covers image derivatives: their names and format version, generation that
 // writes both files whole and only for the bytes it was asked about, what an
-// animated, changed or damaged image gets (nothing), the one-at-a-time queue,
+// animated, changed or damaged image gets (nothing), per-hash coalescing,
 // session memory of failures, the refusal of unknown hashes, and the sweep.
 // Images are made by sharp in each test; no fixtures are kept.
 
@@ -109,7 +109,7 @@ describe("readImageFacts", () => {
 
 describe("generateDerivatives", () => {
   it("writes a display image and a thumbnail of the bytes it was asked about, without their metadata", async () => {
-    const bytes = await photo();
+    const bytes = await photo(6000, 4000);
     const outcome = await generateDerivatives(write("photo.jpg", bytes), sha(bytes), thumbnails);
     expect(outcome).toEqual({ kind: "generated" });
     const hash = sha(bytes);
@@ -129,23 +129,93 @@ describe("generateDerivatives", () => {
     expect([display.width, display.height]).toEqual([200, 100]);
   });
 
-  it("writes each file under a temporary name and renames it into place", async () => {
+  it("writes complete files inside a private stage and renames them into place", async () => {
     const bytes = await photo(400, 300);
-    const writes = vi.spyOn(fsp, "writeFile");
-    const renames = vi.spyOn(fsp, "rename");
+    const rename = fsp.rename;
+    const stages: string[] = [];
+    const renames = vi.spyOn(fsp, "rename").mockImplementation(async (from, to) => {
+      const file = String(from);
+      expect(file).toMatch(/\.tmp$/);
+      const stage = path.dirname(file);
+      stages.push(stage);
+      if (process.platform !== "win32") expect(fs.statSync(stage).mode & 0o777).toBe(0o700);
+      expect((await sharp(file).metadata()).format).toBe("webp");
+      await rename(from, to);
+    });
     try {
-      await generateDerivatives(write("photo.jpg", bytes), sha(bytes), thumbnails);
-      const written = writes.mock.calls.map(([file]) => String(file));
-      expect(written).toHaveLength(2);
-      for (const file of written) expect(file).toMatch(/\.tmp$/);
-      expect(renames.mock.calls.map(([from, to]) => [String(from), path.basename(String(to))])).toEqual([
-        [written[0], derivativeName(sha(bytes), "display")],
-        [written[1], derivativeName(sha(bytes), "thumb")],
+      expect(await generateDerivatives(write("photo.jpg", bytes), sha(bytes), thumbnails)).toEqual({ kind: "generated" });
+      expect(renames.mock.calls.map(([, to]) => path.basename(String(to)))).toEqual([
+        derivativeName(sha(bytes), "display"), derivativeName(sha(bytes), "thumb"),
       ]);
+      expect(stages).toHaveLength(2);
+      expect(stages[0]).toBe(stages[1]);
+      expect(fs.existsSync(stages[0])).toBe(false);
+    } finally { renames.mockRestore(); }
+  });
+
+  it("streams the source through a private snapshot without reading the whole source into a buffer", async () => {
+    const bytes = await photo(6000, 4000);
+    const source = write("large.jpg", bytes);
+    const read = vi.spyOn(fsp, "readFile");
+    const open = fsp.open;
+    const opens = vi.spyOn(fsp, "open");
+    opens.mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+      const handle = await open(...args);
+      if (String(args[0]).endsWith("source.snapshot")) {
+        expect(args[1]).toBe("wx");
+        if (process.platform !== "win32") expect((await handle.stat()).mode & 0o777).toBe(0o600);
+      }
+      return handle;
+    });
+    const progress = vi.fn();
+    try {
+      expect(await generateDerivatives(source, sha(bytes), thumbnails, root, undefined, progress)).toEqual({ kind: "generated" });
+      expect(read.mock.calls.some(([file]) => String(file) === source)).toBe(false);
+      expect(opens.mock.calls.some(([file]) => String(file).endsWith("source.snapshot"))).toBe(true);
+      // At least one copied chunk plus snapshot, metadata and both renditions.
+      expect(progress.mock.calls.length).toBeGreaterThanOrEqual(5);
     } finally {
-      writes.mockRestore();
-      renames.mockRestore();
+      read.mockRestore();
+      opens.mockRestore();
     }
+  });
+
+  it("renders the hashed snapshot even if the original changes before decoding", async () => {
+    const original = await photo(400, 300);
+    const replacement = await photo(900, 100);
+    expect(original.length).toBeLessThan(64 * 1024);
+    const source = write("changing.jpg", original);
+    let progress = 0;
+    const outcome = await generateDerivatives(source, sha(original), thumbnails, root, undefined, () => {
+      // This small source produces one chunk; the second notification follows
+      // pipeline completion and snapshot closure, before metadata is decoded.
+      if (++progress === 2) fs.writeFileSync(source, replacement);
+    });
+    expect(outcome).toEqual({ kind: "generated" });
+    expect(fs.readFileSync(source)).toEqual(replacement);
+    const rendered = await sharp(path.join(thumbnails, derivativeName(sha(original), "display"))).metadata();
+    expect([rendered.width, rendered.height]).toEqual([400, 300]);
+    expect(cacheFiles()).toEqual([derivativeName(sha(original), "display"), derivativeName(sha(original), "thumb")]);
+  });
+
+  it("uses and removes the exact newly owned stage directory on decode failure", async () => {
+    const stage = path.join(root, "owner", "job");
+    const bytes = Buffer.from("not an image");
+    const result = await generateDerivatives(write("damaged.jpg", bytes), sha(bytes), thumbnails, root, stage);
+    expect(result.kind).toBe("failed");
+    expect(fs.existsSync(stage)).toBe(false);
+    expect(cacheFiles()).toEqual([]);
+  });
+
+  it("refuses an already-existing stage directory without removing someone else's files", async () => {
+    const stage = path.join(root, "existing-stage");
+    fs.mkdirSync(stage);
+    fs.writeFileSync(path.join(stage, "keep.txt"), "keep");
+    const bytes = await photo(200, 100);
+    const result = await generateDerivatives(write("photo.jpg", bytes), sha(bytes), thumbnails, root, stage);
+    expect(result.kind).toBe("failed");
+    expect(fs.readFileSync(path.join(stage, "keep.txt"), "utf8")).toBe("keep");
+    expect(cacheFiles()).toEqual([]);
   });
 
   it("leaves no partial file when a write fails", async () => {
@@ -237,18 +307,15 @@ describe("ImageDerivatives", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it("makes one image at a time, however many are asked for, and each once", async () => {
+  it("coalesces duplicate hashes while independent images can generate concurrently", async () => {
     const { generate, runs, mostAtOnce } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
     for (const hash of [a, b, c]) cache.register(hash, "ws", path.join(root, `${hash}.png`), root);
 
     const asked = [cache.resolve(a, "thumb"), cache.resolve(a, "display"), cache.resolve(b, "thumb"), cache.resolve(c, "display")];
-    await until(() => runs.length === 1);
-    runs[0].settle({ kind: "generated" });
-    await until(() => runs.length === 2);
-    runs[1].settle({ kind: "generated" });
     await until(() => runs.length === 3);
-    runs[2].settle({ kind: "generated" });
+    expect(mostAtOnce()).toBe(3);
+    for (const run of runs) run.settle({ kind: "generated" });
 
     const served = await Promise.all(asked);
     expect(served.map((file) => file && path.basename(file))).toEqual([
@@ -257,10 +324,10 @@ describe("ImageDerivatives", () => {
       derivativeName(b, "thumb"),
       derivativeName(c, "display"),
     ]);
-    // The queue order follows whichever file checks finish first, which the OS
-    // decides; what holds is one image at a time, each made once.
+    // Scheduling belongs to the helper pool. The cache only merges requests
+    // for the same bytes and allows each distinct image to reach the generator.
     expect(runs.map((run) => run.hash).sort()).toEqual([a, b, c]);
-    expect(mostAtOnce()).toBe(1);
+    expect(generate).toHaveBeenCalledTimes(3);
   });
 
   it("does not try a failed image again this session, and logs it once", async () => {
@@ -316,7 +383,7 @@ describe("ImageDerivatives", () => {
 
   it("generates the real derivatives of a registered image", async () => {
     const bytes = await photo(800, 600);
-    const cache = new ImageDerivatives(thumbnails);
+    const cache = new ImageDerivatives(thumbnails, generateDerivatives);
     cache.register(sha(bytes), "ws", write("photo.jpg", bytes), root);
     const file = await cache.resolve(sha(bytes), "thumb");
     expect((await sharp(file!).metadata()).width).toBe(THUMB_EDGE);
@@ -329,7 +396,7 @@ describe("ImageDerivatives", () => {
     fs.mkdirSync(assets, { recursive: true });
     const source = path.join(assets, "linked.jpg");
     fs.symlinkSync(shared, source);
-    const cache = new ImageDerivatives(thumbnails);
+    const cache = new ImageDerivatives(thumbnails, generateDerivatives);
     cache.register(sha(bytes), "ws", source, root);
     expect(await cache.resolve(sha(bytes), "thumb")).toBe(path.join(thumbnails, derivativeName(sha(bytes), "thumb")));
   });
@@ -340,18 +407,18 @@ describe("ImageDerivatives", () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-outside-derivative-"));
     const outside = path.join(outsideDir, "outside.jpg");
     fs.writeFileSync(outside, bytes);
-    const cache = new ImageDerivatives(thumbnails);
+    const cache = new ImageDerivatives(thumbnails, generateDerivatives);
     cache.register(sha(bytes), "ws", source, root);
     fs.unlinkSync(source);
     fs.symlinkSync(outside, source);
-    const read = vi.spyOn(fsp, "readFile");
+    const opened = vi.spyOn(fsp, "open");
     try {
       expect(await cache.resolve(sha(bytes), "thumb")).toBeNull();
-      expect(read.mock.calls.some(([file]) => String(file) === source || String(file) === outside)).toBe(false);
+      expect(opened.mock.calls.some(([file]) => String(file) === source || String(file) === outside)).toBe(false);
       expect(cacheFiles()).toEqual([]);
       expect(fs.readFileSync(outside)).toEqual(bytes);
     } finally {
-      read.mockRestore();
+      opened.mockRestore();
       fs.rmSync(outsideDir, { recursive: true, force: true });
     }
   });
@@ -407,7 +474,7 @@ describe("sweeping the cache", () => {
   });
 
   it("does nothing without a cache folder", async () => {
-    expect(await new ImageDerivatives(thumbnails).sweep(new Set(), Date.now())).toBe(0);
+    expect(await new ImageDerivatives(thumbnails, generateDerivatives).sweep(new Set(), Date.now())).toBe(0);
   });
 
   function workspaceWith(name: string, records: Record<string, unknown[]>): string {

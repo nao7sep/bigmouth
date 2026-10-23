@@ -35,6 +35,7 @@ export default defineConfig({
           [WORKER_ENTRIES.recordsReader]: resolve("src/main/core/services/recordsReaderWorker.ts"),
           [WORKER_ENTRIES.storage]: resolve("src/main/storageWorker.ts"),
           [WORKER_ENTRIES.backup]: resolve("src/main/core/services/backupWorker.ts"),
+          [WORKER_ENTRIES.image]: resolve("src/main/imageHelper.ts"),
         },
         output: {
           entryFileNames: "[name].js",

@@ -49,6 +49,8 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 import { registerAssetScheme, handleAssetProtocol, byteRange } from "@main/assetProtocol.js";
 import { configureImageDerivatives, derivativeName } from "@main/imageDerivatives.js";
+import { ImageHelperPool } from "@main/imageHelperPool.js";
+import { generateDerivatives } from "@main/imageGeneration.js";
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { assetDir } from "@main/core/services/assetStore.js";
 
@@ -252,7 +254,13 @@ describe("thumbnails and display images", () => {
   let photo: Buffer;
   let hash: string;
 
+  afterEach(() => { vi.restoreAllMocks(); });
+
   beforeEach(async () => {
+    // Exercise real cache generation and serving here; the separate helper
+    // integration owns process transport, which requires Electron in production.
+    vi.spyOn(ImageHelperPool.prototype, "generate").mockImplementation((_workspace, source, hash, dir, root) =>
+      generateDerivatives(source, hash, dir, root));
     thumbnails = path.join(home, "thumbnails");
     photo = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: "#3366cc" } }).jpeg().toBuffer();
     hash = createHash("sha256").update(photo).digest("hex");
