@@ -269,3 +269,123 @@ it("names the analysis prompt choice", async () => {
   const view = await renderTab();
   expect((view.getByRole("combobox", { name: "Prompt" }) as HTMLSelectElement).value).toBe("Summary");
 });
+
+function deferredPrompts() {
+  let resolve!: (prompts: AnalysisPrompt[]) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<AnalysisPrompt[]>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+const analysisView = (promptsVersion: number, analysisTrigger = 0) => (
+  <AnalysisTab postId="p1" content="some body text" analysisTrigger={analysisTrigger} promptsVersion={promptsVersion} />
+);
+
+describe("AnalysisTab prompt read lifecycle", () => {
+  it("announces a pending initial read and shows empty advice only after successful settlement", async () => {
+    const read = deferredPrompts();
+    mockListPrompts.mockReturnValue(read.promise);
+    const view = render(analysisView(0));
+    expect(view.getByRole("status").textContent).toBe("Loading…");
+    expect(view.queryByText(/No prompts configured/)).toBeNull();
+    await act(async () => { read.resolve([]); });
+    expect(view.queryByRole("status")).toBeNull();
+    expect(view.getByText(/No prompts configured/)).toBeTruthy();
+  });
+
+  it("settles a failed initial read as an error without empty advice", async () => {
+    const read = deferredPrompts();
+    mockListPrompts.mockReturnValue(read.promise);
+    const view = render(analysisView(0));
+    await act(async () => { read.reject(new Error("unreadable prompt file")); });
+    expect(view.queryByRole("status")).toBeNull();
+    expect(view.getByRole("alert").textContent).toContain("Analysis prompts could not be loaded");
+    expect(view.queryByText(/No prompts configured/)).toBeNull();
+  });
+
+  it("disables old choices and starting analysis while a refresh is pending or failed", async () => {
+    mockListPrompts.mockResolvedValueOnce(PROMPTS);
+    const view = await renderTab();
+    const select = view.getByRole("combobox", { name: "Prompt" }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "Critique" } });
+    const read = deferredPrompts();
+    mockListPrompts.mockReturnValueOnce(read.promise);
+    view.rerender(analysisView(1, 1));
+    expect(view.getByRole("status").textContent).toBe("Loading…");
+    expect(select.disabled).toBe(true);
+    expect((view.getByRole("button", { name: "Analyze" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockRunStream).not.toHaveBeenCalled();
+    await act(async () => { read.reject(new Error("reload failed")); });
+    expect(view.queryByRole("status")).toBeNull();
+    expect(view.getByRole("alert").textContent).toContain("Analysis prompts could not be loaded");
+    expect(select.disabled).toBe(true);
+    expect(select.value).toBe("Critique");
+    expect((view.getByRole("button", { name: "Analyze" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(analysisView(1, 2));
+    expect(mockRunStream).not.toHaveBeenCalled();
+
+    const retry = deferredPrompts();
+    mockListPrompts.mockReturnValueOnce(retry.promise);
+    view.rerender(analysisView(2, 2));
+    expect(view.queryByRole("alert")).toBeNull();
+    await act(async () => { retry.resolve(PROMPTS); });
+    expect(select.disabled).toBe(false);
+    expect(select.value).toBe("Critique");
+    expect((view.getByRole("button", { name: "Analyze" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each(["success", "failure"])("ignores stale %s and its settlement while the replacement read is pending", async (outcome) => {
+    const obsolete = deferredPrompts();
+    const current = deferredPrompts();
+    mockListPrompts.mockReturnValueOnce(obsolete.promise).mockReturnValueOnce(current.promise);
+    const view = render(analysisView(0));
+    view.rerender(analysisView(1));
+    await act(async () => {
+      if (outcome === "success") obsolete.resolve(PROMPTS);
+      else obsolete.reject(new Error("old read failed"));
+    });
+    expect(view.getByRole("status").textContent).toBe("Loading…");
+    expect(view.queryByRole("alert")).toBeNull();
+    expect(view.queryByRole("combobox")).toBeNull();
+    await act(async () => { current.resolve([{ name: "Latest", text: "latest prompt" }]); });
+    expect((view.getByRole("combobox", { name: "Prompt" }) as HTMLSelectElement).value).toBe("Latest");
+    expect(view.queryByRole("status")).toBeNull();
+  });
+
+  it.each(["success", "failure"])("ignores stale %s after the replacement read has completed", async (outcome) => {
+    const obsolete = deferredPrompts();
+    mockListPrompts.mockReturnValueOnce(obsolete.promise).mockResolvedValueOnce([{ name: "Latest", text: "new" }]);
+    const view = render(analysisView(0));
+    await act(async () => { view.rerender(analysisView(1)); });
+    await act(async () => {
+      if (outcome === "success") obsolete.resolve(PROMPTS);
+      else obsolete.reject(new Error("old failure"));
+    });
+    const select = view.getByRole("combobox", { name: "Prompt" }) as HTMLSelectElement;
+    expect(select.value).toBe("Latest");
+    expect(select.disabled).toBe(false);
+    expect(view.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps Stop available while prompts refresh and after their refresh fails", async () => {
+    mockListPrompts.mockResolvedValueOnce(PROMPTS);
+    let signal: AbortSignal | undefined;
+    mockRunStream.mockImplementation((_post, _prompt, _content, opts) => new Promise((_resolve, reject) => {
+      signal = opts.signal;
+      signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    }));
+    const view = await renderTab();
+    fireEvent.click(view.getByRole("button", { name: "Analyze" }));
+    const read = deferredPrompts();
+    mockListPrompts.mockReturnValueOnce(read.promise);
+    view.rerender(analysisView(1));
+    expect((view.getByRole("button", { name: "Stop" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { read.reject(new Error("refresh failed")); });
+    expect(view.getByRole("alert").textContent).toContain("Analysis prompts could not be loaded");
+    const stop = view.getByRole("button", { name: "Stop" }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    await act(async () => { fireEvent.click(stop); });
+    expect(signal?.aborted).toBe(true);
+    expect((view.getByRole("button", { name: "Analyze" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});

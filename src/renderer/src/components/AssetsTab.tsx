@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
-import { listAssets, uploadAsset, deleteAsset, assetUrl, assetDerivativeUrl, reportProblem } from "../api";
+import { onWindowActivated, listAssets, uploadAsset, deleteAsset, assetUrl, assetDerivativeUrl, reportProblem } from "../api";
 import { assetPicture } from "../util/assetImages";
-import { clearPostAssets, publishPostAssets } from "../hooks/usePostAssets";
+import { clearPostAssets, publishPostAssets, usePostAssets } from "../hooks/usePostAssets";
 import { presentFailure } from "../util/presentFailure";
 import {
   collidingAssetFilenames,
@@ -129,7 +129,12 @@ export function AssetsTab({
     if (current.current) { setUploadNotice(notice); return; }
     for (const line of notice.lines) reportStorageResult(line, notice.severity);
   };
-  const [assets, setAssets] = useState<AssetMeta[]>([]);
+  // Assets owns the single listing request; Preview subscribes to the same projection.
+  const projection = usePostAssets(workspaceId, postId);
+  const assets = projection ?? [];
+  const [listingPending, setListingPending] = useState(true);
+  const listingVersion = useRef(0);
+  const [loadError, setLoadError] = useState<Message | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
   const [uploadNotice, setUploadNotice] = useState<AssetNotice | null>(null);
@@ -148,16 +153,22 @@ export function AssetsTab({
   }, []);
 
   const load = useCallback(async (): Promise<Message | null> => {
+    if (!current.current) return null;
+    const version = ++listingVersion.current;
+    setListingPending(true);
     try {
       const { assets: list, movedAside } = await listAssets(postId, workspaceId);
+      if (!current.current || listingVersion.current !== version) {
+        if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
+        return null;
+      }
+      setLoadError(null);
       assetsRef.current = list;
       publishPostAssets(workspaceId, postId, list);
-      if (current.current) {
-        setAssets(list);
-        if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
-      } else if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
+      if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
       return null;
     } catch (err) {
+      if (!current.current || listingVersion.current !== version) return null;
       publishPostAssets(workspaceId, postId, null);
       return presentFailure(
         message("assets.loadFailed"),
@@ -165,22 +176,31 @@ export function AssetsTab({
         err,
         { postId },
       );
+    } finally {
+      if (current.current && listingVersion.current === version) setListingPending(false);
     }
   }, [postId, workspaceId, reportStorageResult]);
 
   useEffect(() => {
-    setAssets([]);
     assetsRef.current = [];
     clearPostAssets(workspaceId, postId);
+    setLoadError(null);
     setUploadNotice(null);
     setRecoveryNotice(null);
-    void load().then((failure) => {
-      if (failure && current.current) showNotice({
-        severity: "error",
-        lines: [{ message: failure }],
-        issueKeys: [`refresh:${postId}`],
-      });
+    const refresh = () => void load().then((failure) => {
+      if (failure && current.current) setLoadError(failure);
     });
+    refresh();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = onWindowActivated(() => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 300);
+    });
+    return () => {
+      ++listingVersion.current;
+      off();
+      clearTimeout(timer);
+    };
   }, [load]);
 
   const uploadFiles = async (
@@ -373,12 +393,13 @@ export function AssetsTab({
     if (!ok) return;
     try {
       const { unsaved } = await deleteAsset(postId, filename, workspaceId);
-      if (current.current) setAssets((prev) => {
-        const next = prev.filter((a) => a.filename !== filename);
-        assetsRef.current = next;
-        return next;
-      });
-      publishPostAssets(workspaceId, postId, assetsRef.current.filter((a) => a.filename !== filename));
+      if (current.current) {
+        // Retire a refresh started before deletion so it cannot restore the removed card.
+        ++listingVersion.current;
+        setListingPending(false);
+        assetsRef.current = assetsRef.current.filter((a) => a.filename !== filename);
+        publishPostAssets(workspaceId, postId, assetsRef.current);
+      }
       if (unsaved?.includes("modifiedTime")) {
         showNotice({
           severity: "warning",
@@ -491,8 +512,16 @@ export function AssetsTab({
         </OperationalResult>
       )}
 
+      {loadError && (
+        <OperationalResult severity="error" className="assets-result assets-result--error" dismissClassName="assets-result-dismiss" onDismiss={() => setLoadError(null)}>
+          {text(loadError)}
+        </OperationalResult>
+      )}
+
       {/* Asset grid */}
-      {assets.length === 0 ? (
+      {listingPending && projection === undefined ? (
+        <div className="assets-empty" role="status">{t("common.loading")}</div>
+      ) : projection === null ? null : assets.length === 0 ? (
         <div className="assets-empty">{t("assets.empty")}</div>
       ) : (
           <div className="assets-grid">

@@ -29,15 +29,23 @@ export function AnalysisTab({
   const [thinking, setThinking] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Message | null>(null);
+  const [promptsLoading, setPromptsLoading] = useState(true);
+  // A version change and keyboard trigger can share an effect pass, before
+  // the loading state renders; the run guard must already see the pending read.
+  const promptsLoadingRef = useRef(true);
   const [promptsError, setPromptsError] = useState<Message | null>(null);
   const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
   // Load prompts on mount and after Settings updates them
   useEffect(() => {
+    let active = true;
+    promptsLoadingRef.current = true;
+    setPromptsLoading(true);
+    setPromptsError(null);
     listAnalysisPrompts()
       .then((list) => {
-        setPromptsError(null);
+        if (!active) return;
         setPrompts(list);
         setSelectedPrompt((current) => {
           if (list.length === 0) return "";
@@ -45,12 +53,19 @@ export function AnalysisTab({
         });
       })
       .catch((err) => {
+        if (!active) return;
         setPromptsError(presentFailure(
           message("analysis.promptsFailed"),
           "renderer: analysis prompts load failed",
           err,
         ));
+      })
+      .finally(() => {
+        if (!active) return;
+        promptsLoadingRef.current = false;
+        setPromptsLoading(false);
       });
+    return () => { active = false; };
   }, [promptsVersion]);
 
   // Reset state and cancel any in-flight analysis when post changes
@@ -76,7 +91,7 @@ export function AnalysisTab({
   };
 
   const run = async () => {
-    if (!selectedPrompt || loading || !content.trim()) return;
+    if (!selectedPrompt || loading || promptsLoadingRef.current || promptsError || !content.trim()) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -124,6 +139,9 @@ export function AnalysisTab({
   });
 
   if (prompts.length === 0 && !loading) {
+    if (promptsLoading) {
+      return <div className="panel-empty" role="status">{t("common.loading")}</div>;
+    }
     if (promptsError) {
       return (
         <OperationalResult severity="error" className="panel-error">
@@ -150,7 +168,7 @@ export function AnalysisTab({
           aria-label={t("analysis.prompt")}
           value={selectedPrompt}
           onChange={(e) => setSelectedPrompt(e.target.value)}
-          disabled={loading}
+          disabled={loading || promptsLoading || !!promptsError}
         >
           {prompts.map((p) => (
             <option key={p.name} value={p.name}>
@@ -162,11 +180,18 @@ export function AnalysisTab({
         <button
           className="action-button"
           onClick={loading ? stop : run}
-          disabled={!loading && (!selectedPrompt || !content.trim())}
+          disabled={!loading && (promptsLoading || !!promptsError || !selectedPrompt || !content.trim())}
         >
           {loading ? t("common.stop") : t("analysis.analyze")}
         </button>
       </div>
+
+      {promptsLoading && <div className="panel-empty" role="status">{t("common.loading")}</div>}
+      {promptsError && (
+        <OperationalResult severity="error" className="panel-error">
+          {text(promptsError)}
+        </OperationalResult>
+      )}
 
       {error && (
         <OperationalResult severity="error" className="panel-error">

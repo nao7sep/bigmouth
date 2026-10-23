@@ -4,6 +4,7 @@ import type { AssetMeta } from "@shared/types";
 
 // AssetsTab reaches the backend through these four api calls.
 vi.mock("@renderer/api", () => ({
+  onWindowActivated: vi.fn(() => () => {}),
   reportProblem: vi.fn(),
   getStoragePending: vi.fn().mockResolvedValue(false),
   onStoragePendingChanged: vi.fn(() => () => {}),
@@ -22,7 +23,8 @@ import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
 import { AssetUploadAdmissionError, AssetUploadFailureError } from "@renderer/util/assetUpload";
 import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
-import { listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
+import { onWindowActivated, listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
+import { usePostAssets } from "@renderer/hooks/usePostAssets";
 import { carryingText } from "@shared/i18n/carriedMessage";
 
 const mockListAssets = vi.mocked(listAssets);
@@ -81,6 +83,44 @@ function assetCollection(container: HTMLElement): HTMLElement {
 }
 
 describe("AssetsTab loading", () => {
+  it("keeps pending distinct from empty and shares activation refresh with consumers", async () => {
+    vi.useFakeTimers();
+    let finish!: (value: { assets: AssetMeta[] }) => void;
+    mockListAssets.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const tab = await renderTab();
+    expect(tab.getByRole("status").textContent).toBe("Loading…");
+    expect(tab.queryByText("No assets yet.")).toBeNull();
+    await act(async () => finish({ assets: [asset({ filename: "first.png" })] }));
+    function Consumer() {
+      const assets = usePostAssets("w1", "p1");
+      return <output>{assets?.map(a => a.filename).join(",") ?? "absent"}</output>;
+    }
+    const consumer = render(<Consumer />);
+    expect(consumer.getByText("first.png", { selector: "output" })).toBeTruthy();
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "outside.png" })] });
+    const activate = vi.mocked(onWindowActivated).mock.calls.at(-1)![0];
+    await act(async () => { activate(); activate(); await vi.advanceTimersByTimeAsync(300); });
+    expect(mockListAssets).toHaveBeenCalledTimes(2);
+    expect(consumer.getByText("outside.png", { selector: "output" })).toBeTruthy();
+    tab.unmount();
+    expect(consumer.getByText("outside.png", { selector: "output" })).toBeTruthy();
+    consumer.unmount();
+    const reopened = render(<Consumer />);
+    expect(reopened.getByText("absent")).toBeTruthy();
+  });
+
+  it("ignores a departed listing even after the same post is reopened", async () => {
+    let finish!: (value: { assets: AssetMeta[] }) => void;
+    mockListAssets.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const old = await renderTab();
+    old.unmount();
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "current.png" })] });
+    const current = await renderTab();
+    await act(async () => finish({ assets: [asset({ filename: "stale.png" })] }));
+    expect(current.getByText("current.png")).toBeTruthy();
+    expect(current.queryByText("stale.png")).toBeNull();
+  });
+
   it("shows the empty state when there are no assets", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
     const { getByText } = await renderTab();

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { AssetMeta } from "@shared/types";
 
 /**
@@ -12,7 +12,7 @@ import type { AssetMeta } from "@shared/types";
  * been listed yet.
  */
 const listings = new Map<string, readonly AssetMeta[] | null>();
-const listeners = new Set<() => void>();
+const listeners = new Map<string, Set<() => void>>();
 
 function key(workspaceId: string, postId: string): string {
   return `${workspaceId}\u0000${postId}`;
@@ -20,21 +20,33 @@ function key(workspaceId: string, postId: string): string {
 
 export function publishPostAssets(workspaceId: string, postId: string, assets: readonly AssetMeta[] | null): void {
   listings.set(key(workspaceId, postId), assets);
-  for (const listener of listeners) listener();
+  for (const listener of listeners.get(key(workspaceId, postId)) ?? []) listener();
 }
 
 /** Drops a post's listing while it is listed again, so nothing shows a listing older than the files. */
 export function clearPostAssets(workspaceId: string, postId: string): void {
-  if (listings.delete(key(workspaceId, postId))) for (const listener of listeners) listener();
+  if (listings.delete(key(workspaceId, postId))) for (const listener of listeners.get(key(workspaceId, postId)) ?? []) listener();
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
+function subscribe(id: string, listener: () => void): () => void {
+  let subscribers = listeners.get(id);
+  if (!subscribers) {
+    subscribers = new Set();
+    listeners.set(id, subscribers);
+  }
+  subscribers.add(listener);
+  return () => {
+    subscribers.delete(listener);
+    if (subscribers.size === 0) {
+      listeners.delete(id);
+      listings.delete(id);
+    }
+  };
 }
 
 /** The post's published listing: its assets, `null` when listing failed, `undefined` before the first. */
 export function usePostAssets(workspaceId: string, postId: string): readonly AssetMeta[] | null | undefined {
   const id = key(workspaceId, postId);
-  return useSyncExternalStore(subscribe, () => listings.get(id));
+  const subscribePost = useCallback((listener: () => void) => subscribe(id, listener), [id]);
+  return useSyncExternalStore(subscribePost, () => listings.get(id));
 }
