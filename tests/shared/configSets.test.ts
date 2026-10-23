@@ -54,3 +54,8 @@ describe("config sets", () => {
     expect(workspaceSetIssue("generationPrompts", { prompts: [] })).not.toBeNull();
   });
 });
+
+it("requires unique trimmed names in targets and analysis prompts", () => {
+  expect(workspaceSetIssue("targets", [{ name: "Blog", defaultLanguage: "en", requiresMetadata: false }, { name: " Blog ", defaultLanguage: "ja", requiresMetadata: true }])).toMatch(/unique/);
+  expect(workspaceSetIssue("analysisPrompts", [{ name: "Review", text: "one" }, { name: " Review ", text: "two" }])).toMatch(/unique/);
+});

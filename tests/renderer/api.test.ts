@@ -20,6 +20,8 @@ import {
   listReferrers,
   rebuildPostIndex,
   listTargets,
+  listAnalysisPrompts,
+  getWorkspaceConfig,
   saveTargets,
   renameTarget,
   getSettings,
@@ -268,7 +270,7 @@ describe("api wrappers — call-through and argument shape", () => {
       const b = bridge();
       installBridge(b);
       void listTargets();
-      expect(b.listTargets).toHaveBeenCalledWith("w1");
+      expect(b.listTargets).toHaveBeenCalledWith("w1", undefined);
     });
 
     it("saveTargets forwards ws + targets", () => {
@@ -288,7 +290,7 @@ describe("api wrappers — call-through and argument shape", () => {
       const targets = [{ name: "Blog", defaultLanguage: "en", requiresMetadata: true }];
       void listTargets("w9");
       void saveTargets(targets, "w9");
-      expect(b.listTargets).toHaveBeenCalledWith("w9");
+      expect(b.listTargets).toHaveBeenCalledWith("w9", undefined);
       expect(b.saveTargets).toHaveBeenCalledWith("w9", targets);
     });
 
@@ -570,4 +572,18 @@ describe("api wrappers — call-through and argument shape", () => {
       );
     });
   });
+});
+
+it("forwards edit-only list requests and coherent workspace config requests", async () => {
+  const listTargetsBridge = vi.fn().mockResolvedValue([]);
+  const listPromptsBridge = vi.fn().mockResolvedValue([]);
+  const config = { settings: {}, targets: [], notice: null };
+  const workspaceConfigBridge = vi.fn().mockResolvedValue(config);
+  installBridge({ listTargets: listTargetsBridge, listAnalysisPrompts: listPromptsBridge, getWorkspaceConfig: workspaceConfigBridge });
+  void listTargets("repair", true);
+  void listAnalysisPrompts("repair", true);
+  expect(listTargetsBridge).toHaveBeenCalledWith("repair", true);
+  expect(listPromptsBridge).toHaveBeenCalledWith("repair", true);
+  await expect(getWorkspaceConfig("repair")).resolves.toEqual(config);
+  expect(workspaceConfigBridge).toHaveBeenCalledWith("repair");
 });

@@ -3,11 +3,16 @@ import { ipcMain } from "electron";
 import { CHANNELS } from "@shared/ipc";
 import type { Settings } from "@shared/types";
 import { SETTINGS_SET_KEYS, workspaceSetIssue } from "@shared/configSets";
-import { getConfigNotice, getSettings, saveSettings } from "../storageAccess.js";
+import { getWorkspaceConfig, getConfigNotice, getSettings, saveSettings } from "../storageAccess.js";
 import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
 export function registerSettingsHandlers(): void {
+  ipcMain.handle(CHANNELS.getWorkspaceConfig, async (_event, wsId: string) => {
+    const ws = await resolveWorkspace(wsId);
+    return getWorkspaceConfig(ws.dataDirectory);
+  });
+
   ipcMain.handle(CHANNELS.getSettings, async (_event, wsId: string) => {
     const ws = await resolveWorkspace(wsId);
     const settings = await getSettings(ws.dataDirectory);

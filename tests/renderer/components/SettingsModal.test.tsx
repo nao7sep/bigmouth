@@ -1292,3 +1292,88 @@ it("keeps Save owned when one submitted set fails before another settles", async
   await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
   expect(view.getByRole("alert").textContent).toContain("Settings could not be saved");
 });
+
+describe("duplicate config names can be repaired", () => {
+  async function renderDuplicates(kind: "targets" | "prompts") {
+    seedLoaders();
+    if (kind === "targets") mock.listTargets.mockResolvedValue([targets()[0], { ...targets()[0], defaultLanguage: "ja" }]);
+    else mock.listAnalysisPrompts.mockResolvedValue([prompts()[0], { ...prompts()[0], text: "Second prompt" }]);
+    mock.saveTargets.mockImplementation(async (rows) => rows);
+    mock.saveAnalysisPrompts.mockImplementation(async (rows) => rows);
+    const result = render(<ConfirmProvider><SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} /></ConfirmProvider>);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(mock.listTargets).toHaveBeenCalledWith("ws1", true);
+    expect(mock.listAnalysisPrompts).toHaveBeenCalledWith("ws1", true);
+    fireEvent.click(result.getByRole("tab", { name: kind === "targets" ? "Targets" : "Analysis" }));
+    return result;
+  }
+
+  it("saves corrected duplicate targets directly without rewriting posts through an ambiguous old name", async () => {
+    const view = await renderDuplicates("targets");
+    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    const names = within(view.getByRole("tabpanel")).getAllByRole("textbox");
+    fireEvent.change(names[1], { target: { value: "Notes" } });
+    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Save" })); });
+    expect(mock.renameTarget).not.toHaveBeenCalled();
+    expect(mock.saveTargets).toHaveBeenCalledWith([{ ...targets()[0] }, { ...targets()[0], name: "Notes", defaultLanguage: "ja" }], "ws1");
+  });
+
+  it("marks duplicate prompt names and enables Save after each name is unique", async () => {
+    const view = await renderDuplicates("prompts");
+    expect(view.getAllByText("An analysis prompt with this name already exists.")).toHaveLength(2);
+    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    const names = within(view.getByRole("tabpanel")).getAllByRole("textbox");
+    fireEvent.change(names[2], { target: { value: "Check" } });
+    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Save" })); });
+    expect(mock.saveAnalysisPrompts).toHaveBeenCalledWith([prompts()[0], { name: "Check", text: "Second prompt" }], "ws1");
+  });
+});
+
+describe("SettingsModal visible field labels", () => {
+  it("names General fields and the editor text style group", async () => {
+    const view = await renderModal();
+    for (const name of ["Supported languages", "Editor placeholder text", "Extra field placeholder text", "UI font", "Editor font"]) {
+      expect(view.getByRole("textbox", { name })).toBe(view.getByLabelText(name, { exact: true }));
+    }
+    for (const name of ["Posts per load", "Editor font size (px)", "Line height", "Editor padding (px)"]) {
+      expect(view.getByRole("spinbutton", { name })).toBe(view.getByLabelText(name));
+    }
+    const group = view.getByRole("group", { name: "Editor text style" });
+    for (const name of ["Bold", "Italic", "Underline"]) expect(within(group).getByRole("checkbox", { name })).toBeTruthy();
+  });
+
+  it("keeps each target row's label bound to its own fields after another row is removed", async () => {
+    const view = await renderModal();
+    fireEvent.click(view.getByRole("tab", { name: "Targets" }));
+    fireEvent.click(view.getByRole("button", { name: "+ Add Target" }));
+    const names = view.getAllByRole("textbox", { name: "Name" });
+    fireEvent.change(names[1]!, { target: { value: "second" } });
+    const second = names[1]!.closest(".settings-list-item") as HTMLElement;
+    const language = within(second).getByRole("combobox", { name: "Language" });
+    const metadata = within(second).getByRole("combobox", { name: "Requires metadata" });
+    const languageId = language.id;
+    fireEvent.click(within(names[0]!.closest(".settings-list-item") as HTMLElement).getByRole("button", { name: "Delete" }));
+    expect(view.getByLabelText("Name")).toBe(names[1]);
+    expect(view.getByLabelText("Language")).toBe(language);
+    expect(language.id).toBe(languageId);
+    expect(view.getByLabelText("Requires metadata")).toBe(metadata);
+  });
+
+  it("names generation and analysis prompt text fields", async () => {
+    const view = await renderModal();
+    fireEvent.click(view.getByRole("tab", { name: "Generation" }));
+    const generation = view.getByRole("tabpanel");
+    const fields = within(generation).getAllByRole("textbox");
+    expect(fields.length).toBeGreaterThan(1);
+    for (const field of fields) {
+      const label = (field as HTMLTextAreaElement).labels?.[0];
+      expect(label).toBeTruthy();
+      expect(within(generation).getByRole("textbox", { name: label!.textContent! })).toBe(field);
+    }
+    fireEvent.click(view.getByRole("tab", { name: "Analysis" }));
+    expect(view.getByRole("textbox", { name: "Name" })).toBe(view.getByLabelText("Name"));
+    expect(view.getByRole("textbox", { name: "Prompt text ({content} = post content)" })).toBe(view.getByLabelText("Prompt text ({content} = post content)"));
+  });
+});

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import type { AppSettings, Settings, Target, AnalysisPrompt, AnthropicSettingsView, GenerationPromptsData, Workspace } from "@shared/types";
 import { AI_ROLE_IDS, PROVIDER_LABELS, hasThinkingChoice, rowFor, thinkingAfterModelEdit, type AiRole } from "@shared/aiModels";
-import { isEndpoint } from "@shared/configSets";
+import { duplicateConfigNames, isEndpoint } from "@shared/configSets";
 import { THEME_PREFERENCES } from "@shared/appSettings";
 import { SYSTEM_TIME_ZONE, systemTimeZone, timeZoneOptions } from "@shared/timeZone";
 import { LANGUAGE_NAMES, LANGUAGES, languageNameIn, normalizeLanguagePreference, type Language } from "@shared/i18n/languages";
@@ -181,9 +181,9 @@ export function SettingsModal({
       getAnthropicSettings(workspaceId),
       getGenerationPromptDefaults(workspaceId),
       getGenerationPrompts(workspaceId),
-      listTargets(workspaceId),
+      listTargets(workspaceId, true),
       listAnalysisPromptDefaults(workspaceId),
-      listAnalysisPrompts(workspaceId),
+      listAnalysisPrompts(workspaceId, true),
     ])
       .then(([app, s, ai, genDefaults, gen, tgts, analysisDefaults, analysisPrompts]) => {
         if (cancelled) return;
@@ -255,8 +255,8 @@ export function SettingsModal({
       return false;
     }
     const tNames = targets.map((t) => t.name.trim());
-    if (tNames.some((n) => !n) || new Set(tNames).size !== tNames.length) return false;
-    if (prompts.some((p) => !p.name.trim() || !p.text.trim())) return false;
+    if (tNames.some((n) => !n) || duplicateConfigNames(targets).size > 0) return false;
+    if (prompts.some((p) => !p.name.trim() || !p.text.trim()) || duplicateConfigNames(prompts).size > 0) return false;
     return true;
   };
 
@@ -278,7 +278,7 @@ export function SettingsModal({
     setSaveError(null);
     setRenameSkips([]);
     try {
-      const renames = targets
+      const renames = (duplicateConfigNames(initialTargets.current).size > 0 ? [] : targets)
         .map((target) => ({
           oldName: target.originalName?.trim() ?? "",
           newName: target.name.trim(),
@@ -542,6 +542,7 @@ function GeneralTab({
   onAppSettingsChange: (s: AppSettings) => void;
 }) {
   const { t, locale } = useI18n();
+  const fieldIds = useId();
   const update = (patch: Partial<Settings>) =>
     onChange({ ...settings, ...patch });
 
@@ -597,8 +598,9 @@ function GeneralTab({
         </select>
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.supportedLanguages")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-supportedLanguages`}>{t("settings.supportedLanguages")}</label>
         <input
+          id={`${fieldIds}-supportedLanguages`}
           className="form-input"
           value={languagesText}
           onChange={(e) => {
@@ -610,8 +612,9 @@ function GeneralTab({
         {errors.supportedLanguages && <FieldError msg={errors.supportedLanguages} />}
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.postsPerLoad")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-postsPerLoad`}>{t("settings.postsPerLoad")}</label>
         <input
+          id={`${fieldIds}-postsPerLoad`}
           className="form-input"
           type="number"
           value={perLoadText}
@@ -627,8 +630,9 @@ function GeneralTab({
         {errors.postsPerLoad && <FieldError msg={errors.postsPerLoad} />}
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.editorWatermark")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-editorWatermark`}>{t("settings.editorWatermark")}</label>
         <textarea
+          id={`${fieldIds}-editorWatermark`}
           className="form-input"
           rows={5}
           value={settings.editorWatermark}
@@ -637,8 +641,9 @@ function GeneralTab({
         />
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.extraFieldWatermark")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-extraFieldWatermark`}>{t("settings.extraFieldWatermark")}</label>
         <textarea
+          id={`${fieldIds}-extraFieldWatermark`}
           className="form-input"
           rows={3}
           value={settings.extraFieldWatermark}
@@ -714,6 +719,7 @@ function FontsSection({
   update: (patch: Partial<Settings>) => void;
 }) {
   const { t } = useI18n();
+  const fieldIds = useId();
   const cf = settings.contentFont;
   const updateContentFont = (patch: Partial<Settings["contentFont"]>) =>
     update({ contentFont: { ...cf, ...patch } });
@@ -726,8 +732,9 @@ function FontsSection({
   return (
     <>
       <div className="form-field">
-        <label className="form-label">{t("settings.uiFont")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-uiFont`}>{t("settings.uiFont")}</label>
         <input
+          id={`${fieldIds}-uiFont`}
           className="form-input"
           value={settings.uiFontFamily}
           onChange={(e) => update({ uiFontFamily: e.target.value })}
@@ -736,8 +743,9 @@ function FontsSection({
         <p className="settings-hint">{t("settings.uiFontHint")}</p>
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.editorFont")}</label>
+        <label className="form-label" htmlFor={`${fieldIds}-editorFont`}>{t("settings.editorFont")}</label>
         <input
+          id={`${fieldIds}-editorFont`}
           className="form-input"
           value={cf.family}
           onChange={(e) => updateContentFont({ family: e.target.value })}
@@ -746,8 +754,9 @@ function FontsSection({
       </div>
       <div className="form-row">
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">{t("settings.editorFontSize")}</label>
+          <label className="form-label" htmlFor={`${fieldIds}-editorFontSize`}>{t("settings.editorFontSize")}</label>
           <input
+            id={`${fieldIds}-editorFontSize`}
             className="form-input"
             type="number"
             min={CONTENT_FONT_SIZE_MIN}
@@ -758,8 +767,9 @@ function FontsSection({
           {errors["contentFont.size"] && <FieldError msg={errors["contentFont.size"]} />}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">{t("settings.lineHeight")}</label>
+          <label className="form-label" htmlFor={`${fieldIds}-lineHeight`}>{t("settings.lineHeight")}</label>
           <input
+            id={`${fieldIds}-lineHeight`}
             className="form-input"
             type="number"
             min={CONTENT_LINE_HEIGHT_MIN}
@@ -773,8 +783,9 @@ function FontsSection({
           )}
         </div>
         <div className="form-field" style={{ flex: 1 }}>
-          <label className="form-label">{t("settings.editorPadding")}</label>
+          <label className="form-label" htmlFor={`${fieldIds}-editorPadding`}>{t("settings.editorPadding")}</label>
           <input
+            id={`${fieldIds}-editorPadding`}
             className="form-input"
             type="number"
             min={CONTENT_PADDING_MIN}
@@ -789,8 +800,8 @@ function FontsSection({
         </div>
       </div>
       <div className="form-field">
-        <label className="form-label">{t("settings.editorTextStyle")}</label>
-        <div style={{ display: "flex", gap: 16 }}>
+        <div className="form-label" id={`${fieldIds}-text-style`}>{t("settings.editorTextStyle")}</div>
+        <div role="group" aria-labelledby={`${fieldIds}-text-style`} style={{ display: "flex", gap: 16 }}>
           <label style={checkboxStyle}>
             <input type="checkbox" checked={cf.bold} onChange={(e) => updateContentFont({ bold: e.target.checked })} />
             {t("settings.bold")}
@@ -1031,6 +1042,7 @@ function TargetsTab({
   onChange: (t: EditableTarget[]) => void;
 }) {
   const { t } = useI18n();
+  const fieldIds = useId();
   const canAddTarget = supportedLanguages.length > 0;
 
   const addTarget = () => {
@@ -1055,10 +1067,7 @@ function TargetsTab({
     onChange(targets.filter((_, i) => i !== index));
   };
 
-  const trimmedNames = targets.map((t) => t.name.trim());
-  const duplicateNames = new Set(
-    trimmedNames.filter((n, i) => n && trimmedNames.indexOf(n) !== i)
-  );
+  const duplicateNames = duplicateConfigNames(targets);
   return (
     <div className="settings-section">
       {!canAddTarget && (
@@ -1067,8 +1076,9 @@ function TargetsTab({
       {targets.map((target, i) => (
         <div key={target.rowId} className="settings-list-item">
           <div className="form-field">
-            <label className="form-label">{t("workspaces.name")}</label>
+            <label className="form-label" htmlFor={`${fieldIds}-${target.rowId}-name`}>{t("workspaces.name")}</label>
               <input
+                id={`${fieldIds}-${target.rowId}-name`}
                 className="form-input"
                 value={target.name}
                 onChange={(e) => updateTarget(i, { name: e.target.value })}
@@ -1078,8 +1088,9 @@ function TargetsTab({
           </div>
           <div className="form-row">
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">{t("newPost.language")}</label>
+              <label className="form-label" htmlFor={`${fieldIds}-${target.rowId}-language`}>{t("newPost.language")}</label>
               <select
+                id={`${fieldIds}-${target.rowId}-language`}
                 className="form-select"
                 value={target.defaultLanguage}
                 onChange={(e) =>
@@ -1095,8 +1106,9 @@ function TargetsTab({
               </select>
             </div>
             <div className="form-field" style={{ flex: 1 }}>
-              <label className="form-label">{t("settings.requiresMetadata")}</label>
+              <label className="form-label" htmlFor={`${fieldIds}-${target.rowId}-requiresMetadata`}>{t("settings.requiresMetadata")}</label>
               <select
+                id={`${fieldIds}-${target.rowId}-requiresMetadata`}
                 className="form-select"
                 value={target.requiresMetadata ? "yes" : "no"}
                 onChange={(e) =>
@@ -1138,6 +1150,7 @@ function GenerationTab({
   onChange: (d: GenerationPromptsData) => void;
 }) {
   const { t } = useI18n();
+  const fieldIds = useId();
   const updatePrompt = (key: string, value: string) => {
     onChange({ ...data, prompts: { ...data.prompts, [key]: value } });
   };
@@ -1156,10 +1169,11 @@ function GenerationTab({
         const current = data.prompts?.[key] ?? "";
         return (
           <div key={key} className="form-field">
-            <label className="form-label">{t(GENERATION_PROMPT_LABELS[key]!)}</label>
+            <label className="form-label" htmlFor={`${fieldIds}-${key}`}>{t(GENERATION_PROMPT_LABELS[key]!)}</label>
             <textarea
               className="form-input"
               rows={6}
+              id={`${fieldIds}-${key}`}
               value={current}
               onChange={(e) => updatePrompt(key, e.target.value)}
               style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}
@@ -1183,6 +1197,8 @@ function AnalysisPromptsTab({
   onChange: (p: AnalysisPrompt[]) => void;
 }) {
   const { t, rich } = useI18n();
+  const fieldIds = useId();
+  const duplicateNames = duplicateConfigNames(prompts);
   const addPrompt = () => {
     onChange([...prompts, { name: "", text: "" }]);
   };
@@ -1209,19 +1225,22 @@ function AnalysisPromptsTab({
       {prompts.map((p, i) => (
         <div key={i} className="settings-list-item">
           <div className="form-field">
-            <label className="form-label">{t("workspaces.name")}</label>
+            <label className="form-label" htmlFor={`${fieldIds}-${i}-name`}>{t("workspaces.name")}</label>
               <input
                 className="form-input"
+                id={`${fieldIds}-${i}-name`}
                 value={p.name}
                 onChange={(e) => updatePrompt(i, { name: e.target.value })}
               />
             {!p.name.trim() && <FieldError msg={message("settings.nameRequired")} />}
+            {p.name.trim() && duplicateNames.has(p.name.trim()) && <FieldError msg={message("settings.analysisPromptNameTaken")} />}
           </div>
           <div className="form-field">
-            <label className="form-label">{rich("settings.promptText", { placeholder: "{content}" })}</label>
+            <label className="form-label" htmlFor={`${fieldIds}-${i}-text`}>{rich("settings.promptText", { placeholder: "{content}" })}</label>
             <textarea
               className="form-input"
               rows={6}
+              id={`${fieldIds}-${i}-text`}
               value={p.text}
               onChange={(e) => updatePrompt(i, { text: e.target.value })}
               style={{ resize: "vertical", fontFamily: "var(--bm-font-mono)", fontSize: 12 }}

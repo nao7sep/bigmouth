@@ -14,9 +14,9 @@ export function registerAnalysisPromptHandlers(): void {
     return DEFAULT_ANALYSIS_PROMPTS;
   });
 
-  ipcMain.handle(CHANNELS.listAnalysisPrompts, async (_event, wsId: string) => {
+  ipcMain.handle(CHANNELS.listAnalysisPrompts, async (_event, wsId: string, forEditing?: boolean) => {
     const dir = (await resolveWorkspace(wsId)).dataDirectory;
-    const prompts = await getAnalysisPrompts(dir);
+    const prompts = await getAnalysisPrompts(dir, forEditing === true);
     info("analysis prompts loaded", { workspace: wsId, count: prompts.length });
     return prompts;
   });

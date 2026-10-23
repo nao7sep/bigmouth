@@ -101,10 +101,29 @@ function shapeIssue(key: WorkspaceSetKey, value: unknown): string | null {
   }
 }
 
+/** Names identify rows during execution, so surrounding whitespace cannot distinguish them. */
+export function duplicateConfigNames(rows: readonly { name: string }[]): Set<string> {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { name } of rows) {
+    const trimmed = name.trim();
+    if (seen.has(trimmed)) duplicates.add(trimmed);
+    seen.add(trimmed);
+  }
+  return duplicates;
+}
+
+/** Only shape-valid lists can be exposed for repairing ambiguous names. */
+export function hasDuplicateConfigNames(key: "targets" | "analysisPrompts", value: unknown): boolean {
+  return shapeIssue(key, value) === null && duplicateConfigNames(value as { name: string }[]).size > 0;
+}
+
 /** The one check per set, applied where Save accepts it and where it is read (config-sets-conventions). */
 export function workspaceSetIssue(key: WorkspaceSetKey, value: unknown): string | null {
   const issue = shapeIssue(key, value);
-  if (issue !== null || !isSettingsKey(key)) return issue;
+  if (issue !== null) return issue;
+  if ((key === "targets" || key === "analysisPrompts") && duplicateConfigNames(value as { name: string }[]).size > 0) return `${key} names must be unique`;
+  if (!isSettingsKey(key)) return null;
   const [field, error] = Object.entries(settingsSetErrors(key, value as Settings[typeof key]))[0] ?? [];
   return field && error ? `${field}: ${error.key}` : null;
 }

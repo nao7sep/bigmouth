@@ -92,6 +92,7 @@ export const storageTasks = {
     if (result && removed) postStore.clearCache(removed.dataDirectory);
     return result;
   },
+  getWorkspaceConfig: configStore.getWorkspaceConfig,
   getSettings: configStore.getSettings,
   getConfigNotice: configStore.getConfigNotice,
   saveSettings: configStore.saveSettings,

@@ -42,6 +42,7 @@ import type {
   Target,
   UiState,
   Workspace,
+  WorkspaceConfigView,
   WorkspaceDeleteResult,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
@@ -253,13 +254,14 @@ const api = {
   },
 
   // --- Targets ---
-  listTargets: (wsId: string) => ipcRenderer.invoke(CHANNELS.listTargets, wsId) as Promise<Target[]>,
+  listTargets: (wsId: string, forEditing?: boolean) => ipcRenderer.invoke(CHANNELS.listTargets, wsId, forEditing) as Promise<Target[]>,
   saveTargets: (wsId: string, targets: Target[]) =>
     ipcRenderer.invoke(CHANNELS.saveTargets, wsId, targets) as Promise<Target[]>,
   renameTarget: (wsId: string, oldName: string, newName: string) =>
     ipcRenderer.invoke(CHANNELS.renameTarget, wsId, oldName, newName) as Promise<TargetRenameResult>,
 
   // --- Settings ---
+  getWorkspaceConfig: (wsId: string) => ipcRenderer.invoke(CHANNELS.getWorkspaceConfig, wsId) as Promise<WorkspaceConfigView>,
   getSettings: (wsId: string) => ipcRenderer.invoke(CHANNELS.getSettings, wsId) as Promise<Settings>,
   saveSettings: (wsId: string, settings: Partial<Settings>) =>
     ipcRenderer.invoke(CHANNELS.saveSettings, wsId, settings) as Promise<Settings>,
@@ -280,8 +282,8 @@ const api = {
     ipcRenderer.invoke(CHANNELS.saveGenerationPrompts, wsId, data) as Promise<GenerationPromptsData>,
 
   // --- Analysis prompts ---
-  listAnalysisPrompts: (wsId: string) =>
-    ipcRenderer.invoke(CHANNELS.listAnalysisPrompts, wsId) as Promise<AnalysisPrompt[]>,
+  listAnalysisPrompts: (wsId: string, forEditing?: boolean) =>
+    ipcRenderer.invoke(CHANNELS.listAnalysisPrompts, wsId, forEditing) as Promise<AnalysisPrompt[]>,
   listAnalysisPromptDefaults: (wsId: string) =>
     ipcRenderer.invoke(CHANNELS.listAnalysisPromptDefaults, wsId) as Promise<AnalysisPrompt[]>,
   saveAnalysisPrompts: (wsId: string, prompts: AnalysisPrompt[]) =>

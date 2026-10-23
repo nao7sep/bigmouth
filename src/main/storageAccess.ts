@@ -18,6 +18,7 @@ export const suggestWorkspaceLocation = command("suggestWorkspaceLocation");
 export const updateWorkspace = command("updateWorkspace");
 export const approveAiEndpoint = command("approveAiEndpoint");
 export const deleteWorkspace = command("deleteWorkspace");
+export const getWorkspaceConfig = command("getWorkspaceConfig");
 export const getSettings = command("getSettings");
 export const getConfigNotice = command("getConfigNotice");
 export const saveSettings = command("saveSettings");

@@ -27,6 +27,7 @@ import type {
   PostMutationResult,
   PostStatus,
   Settings,
+  WorkspaceConfigView,
   Target,
   UiState,
   Workspace,
@@ -132,6 +133,7 @@ export const CHANNELS = {
   renameTarget: "target:rename",
 
   // Settings
+  getWorkspaceConfig: "settings:workspaceConfig",
   getSettings: "settings:get",
   saveSettings: "settings:save",
   getConfigNotice: "settings:configNotice",
@@ -446,11 +448,12 @@ export interface BigMouthApi {
   writeRendererLog(entry: RendererLogEntry): void;
 
   // Targets
-  listTargets(wsId: string): Promise<Target[]>;
+  listTargets(wsId: string, forEditing?: boolean): Promise<Target[]>;
   saveTargets(wsId: string, targets: Target[]): Promise<Target[]>;
   renameTarget(wsId: string, oldName: string, newName: string): Promise<TargetRenameResult>;
 
   // Settings
+  getWorkspaceConfig(wsId: string): Promise<WorkspaceConfigView>;
   getSettings(wsId: string): Promise<Settings>;
   saveSettings(wsId: string, settings: Partial<Settings>): Promise<Settings>;
   /** Null, or why some stored settings are not in use; the file keeps them. */
@@ -466,7 +469,7 @@ export interface BigMouthApi {
   saveGenerationPrompts(wsId: string, data: GenerationPromptsData): Promise<GenerationPromptsData>;
 
   // Analysis prompts
-  listAnalysisPrompts(wsId: string): Promise<AnalysisPrompt[]>;
+  listAnalysisPrompts(wsId: string, forEditing?: boolean): Promise<AnalysisPrompt[]>;
   listAnalysisPromptDefaults(wsId: string): Promise<AnalysisPrompt[]>;
   saveAnalysisPrompts(wsId: string, prompts: AnalysisPrompt[]): Promise<AnalysisPrompt[]>;
 

@@ -9,11 +9,12 @@ import type {
   WorkspaceConfig,
   Workspace,
 } from "../shared/types.js";
-import type { AnthropicSettings, AnthropicSettingsInput, AnthropicSettingsView } from "@shared/types";
+import type { WorkspaceConfigView, AnthropicSettings, AnthropicSettingsInput, AnthropicSettingsView } from "@shared/types";
 import {
   SETTINGS_SET_KEYS,
   WORKSPACE_SET_KEYS,
   keptStoredSets,
+  hasDuplicateConfigNames,
   modelSetKey,
   setsDifferingFromBuiltIn,
   thinkingSetKey,
@@ -21,6 +22,7 @@ import {
   type WorkspaceSetKey,
 } from "@shared/configSets";
 import { AI_ROLE_IDS, rowFor, thinkingFor, type AiRole } from "@shared/aiModels";
+import { carryingText } from "@shared/i18n/carriedMessage";
 import { message, type Message } from "@shared/i18n/translate";
 import { writeSetFile } from "../shared/setFile.js";
 import { NewerFormatError, UnreadableStoreError, readJsonStore } from "../shared/storeFormat.js";
@@ -80,12 +82,23 @@ export function effectiveConfig(map: Record<string, unknown>): { config: Workspa
   return { config, issues };
 }
 
-function readConfig(dataDir: string): WorkspaceConfig {
-  const { config, issues } = effectiveConfig(readMap(dataDir));
-  for (const { key, issue } of issues) {
+interface ConfigSnapshot {
+  stored: Record<string, unknown>;
+  config: WorkspaceConfig;
+  issues: { key: WorkspaceSetKey; issue: string }[];
+}
+
+function readSnapshot(dataDir: string): ConfigSnapshot {
+  const stored = readMap(dataDir);
+  const interpreted = effectiveConfig(stored);
+  for (const { key, issue } of interpreted.issues) {
     warn("workspace config set is invalid; using built-in", { path: path.join(dataDir, CONFIG_FILE), key, issue });
   }
-  return config;
+  return { stored, ...interpreted };
+}
+
+function readConfig(dataDir: string): WorkspaceConfig {
+  return readSnapshot(dataDir).config;
 }
 
 /**
@@ -93,9 +106,13 @@ function readConfig(dataDir: string): WorkspaceConfig {
  * keeping as stored every set this build cannot use that the save did not
  * change: an invalid set, read as its built-in, and a set another version wrote.
  */
-function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>): void {
-  const stored = readMap(dataDir);
-  const current = readConfig(dataDir);
+function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>, snapshot = readSnapshot(dataDir)): WorkspaceConfig {
+  const { stored, config: current } = snapshot;
+  for (const key of WORKSPACE_SET_KEYS) {
+    if (!Object.hasOwn(changes, key)) continue;
+    const issue = workspaceSetIssue(key, changes[key]);
+    if (issue !== null) throw new Error(issue);
+  }
   const builtIn = makeDefaultConfig();
   const sets = setsDifferingFromBuiltIn({ ...current, ...changes }, builtIn, WORKSPACE_SET_KEYS);
   // Prompts are stored sparse, only those the user changed, so a later
@@ -111,15 +128,24 @@ function writeSets(dataDir: string, changes: Partial<WorkspaceConfig>): void {
     stored,
     WORKSPACE_SET_KEYS,
     (key, value) => workspaceSetIssue(key as WorkspaceSetKey, value) === null,
-    (key) => Object.hasOwn(changes, key) &&
-      JSON.stringify(changes[key as keyof WorkspaceConfig]) !== JSON.stringify(current[key as keyof WorkspaceConfig]),
+    (key) => {
+      if (!Object.hasOwn(changes, key)) return false;
+      // The repair editor receives duplicate rows themselves, so even replacing
+      // them with the built-in is an explicit correction of that original list.
+      const before = (key === "targets" || key === "analysisPrompts") && hasDuplicateConfigNames(key, stored[key])
+        ? stored[key]
+        : current[key as keyof WorkspaceConfig];
+      return JSON.stringify(changes[key as keyof WorkspaceConfig]) !== JSON.stringify(before);
+    },
   );
-  writeSetFile("workspaceConfig", path.join(dataDir, CONFIG_FILE), { ...sets, ...kept });
+  const published = { ...sets, ...kept };
+  writeSetFile("workspaceConfig", path.join(dataDir, CONFIG_FILE), published);
+  return effectiveConfig(published).config;
 }
 
 /** Where a workspace's stored settings could not all be used, or null when they could. */
 export function getConfigNotice(dataDir: string): Message | null {
-  const { issues } = effectiveConfig(readMap(dataDir));
+  const { issues } = readSnapshot(dataDir);
   return issues.length > 0 ? message("session.settingsInvalid", { path: path.join(dataDir, CONFIG_FILE) }) : null;
 }
 
@@ -133,17 +159,20 @@ function normalizeSettings(settings: Settings): Settings {
 }
 
 function normalizeTargets(targets: Target[]): Target[] {
-  return targets.map(({ name, defaultLanguage, requiresMetadata }) => ({ name, defaultLanguage, requiresMetadata }));
+  return targets.map(({ name, defaultLanguage, requiresMetadata }) => ({ name: name.trim(), defaultLanguage, requiresMetadata }));
 }
 
 function normalizeAnalysisPrompts(prompts: AnalysisPrompt[]): AnalysisPrompt[] {
-  return prompts.map(({ name, text }) => ({ name, text }));
+  return prompts.map(({ name, text }) => ({ name: name.trim(), text }));
 }
 
 // --- Settings -----------------------------------------------------------------
 
 export function getSettings(dataDir: string): Settings {
-  const c = readConfig(dataDir);
+  return settingsFromConfig(readConfig(dataDir));
+}
+
+function settingsFromConfig(c: WorkspaceConfig): Settings {
   return {
     timezone: c.timezone,
     supportedLanguages: c.supportedLanguages,
@@ -156,8 +185,9 @@ export function getSettings(dataDir: string): Settings {
 }
 
 export function saveSettings(dataDir: string, settings: Partial<Settings>): Settings {
-  writeSets(dataDir, normalizeSettings({ ...getSettings(dataDir), ...settings }));
-  return getSettings(dataDir);
+  const snapshot = readSnapshot(dataDir);
+  const changes = normalizeSettings({ ...settingsFromConfig(snapshot.config), ...settings });
+  return settingsFromConfig(writeSets(dataDir, changes, snapshot));
 }
 
 // --- The Anthropic section ----------------------------------------------------
@@ -203,7 +233,11 @@ export function getRoleCall(workspace: Workspace, role: AiRole): RoleCall {
  * environment overrides it. The key value never crosses the IPC bridge.
  */
 export function getAnthropicSettingsForClient(workspace: Workspace): AnthropicSettingsView {
-  const section = anthropicSection(readConfig(workspace.dataDirectory));
+  return anthropicSettingsView(workspace, readConfig(workspace.dataDirectory));
+}
+
+function anthropicSettingsView(workspace: Workspace, config: WorkspaceConfig): AnthropicSettingsView {
+  const section = anthropicSection(config);
   const thinking = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) {
     thinking[role] = thinkingFor(section.models[role], section.thinking[role]) ?? section.thinking[role];
@@ -227,15 +261,15 @@ export function saveAnthropicSettings(workspace: Workspace, input: AnthropicSett
   const movedTo = input.apiKey?.trim() ? apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey) : null;
   const models = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) models[role] = input.models[role].trim();
-  writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
-  const view = getAnthropicSettingsForClient(workspace);
+  const config = writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
+  const view = anthropicSettingsView(workspace, config);
   return movedTo ? { ...view, keyNotice: message("settings.keyFileMovedAside", { path: movedTo }) } : view;
 }
 
 // --- Targets ------------------------------------------------------------------
 
-export function getTargets(dataDir: string): Target[] {
-  return readConfig(dataDir).targets;
+export function getTargets(dataDir: string, forEditing = false): Target[] {
+  return namedRows(dataDir, "targets", forEditing);
 }
 
 export function saveTargets(dataDir: string, targets: Target[]): Target[] {
@@ -246,8 +280,8 @@ export function saveTargets(dataDir: string, targets: Target[]): Target[] {
 
 // --- Analysis Prompts ---------------------------------------------------------
 
-export function getAnalysisPrompts(dataDir: string): AnalysisPrompt[] {
-  return readConfig(dataDir).analysisPrompts;
+export function getAnalysisPrompts(dataDir: string, forEditing = false): AnalysisPrompt[] {
+  return namedRows(dataDir, "analysisPrompts", forEditing);
 }
 
 export function saveAnalysisPrompts(dataDir: string, prompts: AnalysisPrompt[]): AnalysisPrompt[] {
@@ -268,4 +302,23 @@ export function saveGenerationPrompts(
 ): GenerationPromptsData {
   writeSets(dataDir, { generationPrompts: data });
   return data;
+}
+
+function namedRows<K extends "targets" | "analysisPrompts">(dataDir: string, key: K, forEditing: boolean): WorkspaceConfig[K] {
+  const snapshot = readSnapshot(dataDir);
+  if (hasDuplicateConfigNames(key, snapshot.stored[key])) {
+    if (forEditing) return snapshot.stored[key] as WorkspaceConfig[K];
+    throw new Error(carryingText(message(key === "targets" ? "settings.targetsDuplicate" : "settings.analysisPromptsDuplicate")));
+  }
+  return snapshot.config[key];
+}
+
+/** One file read supplies every value used to open the workspace. */
+export function getWorkspaceConfig(dataDir: string): WorkspaceConfigView {
+  const { config, issues, stored } = readSnapshot(dataDir);
+  return {
+    settings: settingsFromConfig(config),
+    targets: hasDuplicateConfigNames("targets", stored.targets) ? [] : config.targets,
+    notice: issues.length ? message("session.settingsInvalid", { path: path.join(dataDir, CONFIG_FILE) }) : null,
+  };
 }

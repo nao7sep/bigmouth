@@ -11,9 +11,7 @@ import {
   listPosts,
   createPost,
   getPost,
-  listTargets,
-  getSettings,
-  getConfigNotice,
+  getWorkspaceConfig,
   openRecordsWindow,
   onPostContentSaved,
   onWindowActivated,
@@ -338,7 +336,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, [uiFontFamily]);
 
     const loadConfig = useCallback(async () => {
-      const [nextTargets, settings, notice] = await Promise.all([listTargets(workspace.id), getSettings(workspace.id), getConfigNotice(workspace.id)]);
+      const { targets: nextTargets, settings, notice } = await getWorkspaceConfig(workspace.id);
       if (!mounted.current) return;
       setTargets(nextTargets);
       applySettings(settings);

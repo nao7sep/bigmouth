@@ -8,9 +8,9 @@ import { info } from "../core/services/logger.js";
 import { resolveWorkspace } from "./context.js";
 
 export function registerTargetHandlers(): void {
-  ipcMain.handle(CHANNELS.listTargets, async (_event, wsId: string) => {
+  ipcMain.handle(CHANNELS.listTargets, async (_event, wsId: string, forEditing?: boolean) => {
     const ws = await resolveWorkspace(wsId);
-    const targets = await getTargets(ws.dataDirectory);
+    const targets = await getTargets(ws.dataDirectory, forEditing === true);
     info("targets loaded", { workspace: ws.id, count: targets.length });
     return targets;
   });

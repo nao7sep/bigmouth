@@ -37,7 +37,7 @@ vi.mock("@main/core/services/logger.js", () => ({
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
 }));
 
-import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, getWorkspace } from "@main/core/services/workspaceStore.js";
 import { DEFAULT_ANALYSIS_PROMPTS } from "@main/core/shared/defaults.js";
 import { registerAnalysisPromptHandlers } from "@main/ipc/analysisPrompts.js";
 
@@ -104,4 +104,15 @@ describe("analysis-prompt IPC handlers", () => {
     await expect(invoke(CHANNELS.listAnalysisPrompts, "nope")).rejects.toThrow(/Workspace not found/);
     await expect(invoke(CHANNELS.saveAnalysisPrompts, "nope", [{ name: "P", text: "t" }])).rejects.toThrow(/Workspace not found/);
   });
+});
+
+it("exposes duplicated prompts only for editing and accepts a corrected list", async () => {
+  const ws = getWorkspace(wsId)!;
+  const rows = [{ name: "Review", text: "One" }, { name: " Review ", text: "Two" }];
+  fs.writeFileSync(path.join(ws.dataDirectory, "config.json"), JSON.stringify({ formatVersion: 1, analysisPrompts: rows }));
+  await expect(invoke(CHANNELS.listAnalysisPrompts, wsId)).rejects.toThrow(/settings.analysisPromptsDuplicate/);
+  expect(await invoke(CHANNELS.listAnalysisPrompts, wsId, true)).toEqual(rows);
+  const fixed = [{ name: "Review", text: "One" }, { name: "Check", text: "Two" }];
+  await invoke(CHANNELS.saveAnalysisPrompts, wsId, fixed);
+  expect(await invoke(CHANNELS.listAnalysisPrompts, wsId)).toEqual(fixed);
 });

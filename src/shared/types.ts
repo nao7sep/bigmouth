@@ -375,3 +375,10 @@ export interface Settings {
   uiFontFamily: string;
   contentFont: ContentFont;
 }
+
+/** The coherent settings projection used when opening a workspace. */
+export interface WorkspaceConfigView {
+  settings: Settings;
+  targets: Target[];
+  notice: Message | null;
+}

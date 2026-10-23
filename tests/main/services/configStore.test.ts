@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as storeFormat from "@main/core/shared/storeFormat.js";
 import * as logger from "@main/core/services/logger.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -24,6 +25,7 @@ import {
   saveAnthropicSettings,
   effectiveConfig,
   getConfigNotice,
+  getWorkspaceConfig,
 } from "@main/core/services/configStore.js";
 import type { AnthropicSettingsInput } from "@shared/types";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
@@ -566,4 +568,62 @@ describe("workspace config format version", () => {
 
     expect(fs.readFileSync(file(), "utf8")).toBe(body);
   });
+});
+
+describe("operation snapshots and duplicate-name repair", () => {
+  it("reads config once per settings and Anthropic save and returns the published values", () => {
+    const read = vi.spyOn(storeFormat, "readJsonStore");
+    try {
+      expect(saveSettings(dataDir, { uiFontFamily: "Iosevka" }).uiFontFamily).toBe("Iosevka");
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(1);
+      read.mockClear();
+      expect(saveAnthropicSettings(ws, { ...defaultAnthropicSettings(), endpoint: "https://proxy.example" }).endpoint).toBe("https://proxy.example");
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(1);
+    } finally { read.mockRestore(); }
+  });
+
+  it("refuses ambiguous execution lists while exposing original rows for repair and preserving them on unrelated saves", () => {
+    const targets = [
+      { name: " Blog ", defaultLanguage: "en", requiresMetadata: false },
+      { name: "Blog", defaultLanguage: "ja", requiresMetadata: true },
+    ];
+    const prompts = [{ name: "Review", text: "First" }, { name: " Review ", text: "Second" }];
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, targets, analysisPrompts: prompts }));
+    for (const [load, key] of [[getTargets, "settings.targetsDuplicate"], [getAnalysisPrompts, "settings.analysisPromptsDuplicate"]] as const) {
+      try { load(dataDir); throw new Error("expected refusal"); }
+      catch (error) { expect(carriedMessage(error)).toEqual({ key }); }
+    }
+    expect(getTargets(dataDir, true)).toEqual(targets);
+    expect(getAnalysisPrompts(dataDir, true)).toEqual(prompts);
+    saveSettings(dataDir, { uiFontFamily: "Inter" });
+    expect(setsIn(path.join(dataDir, "config.json"))).toMatchObject({ targets, analysisPrompts: prompts });
+    expect(() => saveTargets(dataDir, targets)).toThrow(/unique/);
+    expect(() => saveAnalysisPrompts(dataDir, prompts)).toThrow(/unique/);
+    expect(saveTargets(dataDir, [{ ...targets[0], name: " Blog " }, { ...targets[1], name: "Notes" }]).map((row) => row.name)).toEqual(["Blog", "Notes"]);
+    saveAnalysisPrompts(dataDir, [{ name: " Review ", text: "First" }, { name: "Check", text: "Second" }]);
+    expect(getAnalysisPrompts(dataDir).map((row) => row.name)).toEqual(["Review", "Check"]);
+    expect(getTargets(dataDir).map((row) => row.name)).toEqual(["Blog", "Notes"]);
+  });
+
+  it("builds a coherent workspace projection from one read even with duplicate targets", () => {
+    const stored = { timezone: "UTC", targets: [{ name: "Blog", defaultLanguage: "en", requiresMetadata: false }, { name: "Blog", defaultLanguage: "ja", requiresMetadata: true }] };
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, ...stored }));
+    const read = vi.spyOn(storeFormat, "readJsonStore");
+    try {
+      expect(getWorkspaceConfig(dataDir)).toMatchObject({ settings: { timezone: "UTC" }, targets: [], notice: { key: "session.settingsInvalid" } });
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(1);
+    } finally { read.mockRestore(); }
+  });
+});
+
+it("can repair duplicated rows by removing every target or resetting analysis prompts to built-ins", () => {
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1,
+    targets: [{ name: "Blog", defaultLanguage: "en", requiresMetadata: false }, { name: "Blog", defaultLanguage: "ja", requiresMetadata: true }],
+    analysisPrompts: [{ name: "Review", text: "One" }, { name: "Review", text: "Two" }],
+  }));
+  saveTargets(dataDir, []);
+  saveAnalysisPrompts(dataDir, structuredClone(DEFAULT_ANALYSIS_PROMPTS));
+  expect(getTargets(dataDir)).toEqual([]);
+  expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
+  expect(setsIn(path.join(dataDir, "config.json"))).toEqual({});
 });

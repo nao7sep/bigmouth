@@ -18,6 +18,7 @@ vi.mock("@main/storageAccess.js", async () => {
   const configStore = await import("@main/core/services/configStore.js");
   return {
     getWorkspace: async (...args: Parameters<typeof workspaceStore.getWorkspace>) => workspaceStore.getWorkspace(...args),
+    getWorkspaceConfig: async (...args: Parameters<typeof configStore.getWorkspaceConfig>) => configStore.getWorkspaceConfig(...args),
     getSettings: async (...args: Parameters<typeof configStore.getSettings>) => configStore.getSettings(...args),
     saveSettings: async (...args: Parameters<typeof configStore.saveSettings>) => configStore.saveSettings(...args),
   };
@@ -129,4 +130,11 @@ describe("settings IPC handlers", () => {
     await expect(invoke(CHANNELS.getSettings, "nope")).rejects.toThrow(/Workspace not found/);
     await expect(invoke(CHANNELS.saveSettings, "nope", validSettings())).rejects.toThrow(/Workspace not found/);
   });
+});
+
+it("loads workspace settings, targets and notice through one snapshot handler", async () => {
+  const config = await invoke<import("@shared/types").WorkspaceConfigView>(CHANNELS.getWorkspaceConfig, wsId);
+  expect(config.settings.timezone).toBe("system");
+  expect(config.targets).toEqual([]);
+  expect(config.notice).toBeNull();
 });

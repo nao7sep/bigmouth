@@ -6,6 +6,7 @@ import type {
   PostMutationResult,
   PostSummary,
   Settings,
+  WorkspaceConfigView,
   Target,
   Workspace,
 } from "@shared/types";
@@ -24,9 +25,7 @@ vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   listPosts: vi.fn(),
   createPost: vi.fn(),
-  listTargets: vi.fn(),
-  getSettings: vi.fn(),
-  getConfigNotice: vi.fn(),
+  getWorkspaceConfig: vi.fn(),
   getPost: vi.fn(),
   openRecordsWindow: vi.fn(),
   onPostContentSaved: (cb: (e: { postId: string; summary: unknown }) => void) => {
@@ -248,15 +247,14 @@ vi.mock("@renderer/components/ShortcutsModal", () => ({
 vi.mock("@renderer/components/AboutModal", () => ({ AboutModal: modalMock("about-modal") }));
 
 import { WorkspaceSession, type WorkspaceSessionHandle } from "@renderer/WorkspaceSession";
-import { listPosts, createPost, listTargets, getSettings, getConfigNotice, getPost, openRecordsWindow } from "@renderer/api";
+import { listPosts, createPost, getWorkspaceConfig, getPost, openRecordsWindow } from "@renderer/api";
 
 const mockListPosts = vi.mocked(listPosts);
 const mockCreatePost = vi.mocked(createPost);
-const mockListTargets = vi.mocked(listTargets);
-const mockGetSettings = vi.mocked(getSettings);
+const mockGetWorkspaceConfig = vi.mocked(getWorkspaceConfig);
 const mockOpenRecords = vi.mocked(openRecordsWindow);
 const mockGetPost = vi.mocked(getPost);
-const mockGetConfigNotice = vi.mocked(getConfigNotice);
+
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -356,9 +354,7 @@ beforeEach(() => {
   anyModalOpen = false;
   mockListPosts.mockReset().mockResolvedValue(LIST);
   mockCreatePost.mockReset().mockResolvedValue(POST_B_CREATED);
-  mockListTargets.mockReset().mockResolvedValue(TARGETS);
-  mockGetSettings.mockReset().mockResolvedValue(SETTINGS);
-  mockGetConfigNotice.mockReset().mockResolvedValue(null);
+  mockGetWorkspaceConfig.mockReset().mockResolvedValue({ targets: TARGETS, settings: SETTINGS, notice: null });
   mockOpenRecords.mockReset().mockResolvedValue();
   rightFlush.mockReset().mockResolvedValue(true);
   insertAtCursor.mockReset();
@@ -379,8 +375,7 @@ describe("WorkspaceSession initial load", () => {
     // (loadPosts closes over pubBatchSize), so posts may load more than once; what
     // matters is that each loader ran and the panes received the data.
     expect(mockListPosts).toHaveBeenCalled();
-    expect(mockListTargets).toHaveBeenCalled();
-    expect(mockGetSettings).toHaveBeenCalled();
+    expect(mockGetWorkspaceConfig).toHaveBeenCalled();
 
     expect(getByTestId("left-drafts").textContent).toBe("a,b");
     expect(getByTestId("left-discarded").textContent).toBe("x1");
@@ -395,7 +390,7 @@ describe("WorkspaceSession initial load", () => {
   });
 
   it("says when stored settings could not be used, until dismissed", async () => {
-    mockGetConfigNotice.mockResolvedValue({ key: "session.settingsInvalid", values: { path: "/d/a/config.json" } });
+    mockGetWorkspaceConfig.mockResolvedValue({ targets: TARGETS, settings: SETTINGS, notice: { key: "session.settingsInvalid", values: { path: "/d/a/config.json" } } });
     const { container, getByText } = await mountLoaded();
     const notice = getByText(/Some settings saved in \/d\/a\/config.json could not be used/);
     expect(notice).toBeTruthy();
@@ -404,7 +399,7 @@ describe("WorkspaceSession initial load", () => {
   });
 
   it("shows times in the computer's zone when the workspace follows System", async () => {
-    mockGetSettings.mockResolvedValue({ ...SETTINGS, timezone: "system" });
+    mockGetWorkspaceConfig.mockResolvedValue({ targets: TARGETS, settings: { ...SETTINGS, timezone: "system" }, notice: null });
     const { getByTestId } = await mountLoaded();
     // The renderer project pins TZ to Asia/Tokyo.
     expect(getByTestId("left-timezone").textContent).toBe("Asia/Tokyo");
@@ -458,9 +453,9 @@ describe("WorkspaceSession initial load", () => {
   });
 
   it("cannot apply a workspace font after the session unmounts", async () => {
-    let resolveSettings!: (settings: Settings) => void;
-    mockGetSettings.mockReturnValue(
-      new Promise<Settings>((resolve) => {
+    let resolveSettings!: (settings: WorkspaceConfigView) => void;
+    mockGetWorkspaceConfig.mockReturnValue(
+      new Promise<WorkspaceConfigView>((resolve) => {
         resolveSettings = resolve;
       }),
     );
@@ -469,7 +464,7 @@ describe("WorkspaceSession initial load", () => {
     unmount();
 
     await act(async () => {
-      resolveSettings({ ...SETTINGS, uiFontFamily: "Late Font" });
+      resolveSettings({ targets: TARGETS, settings: { ...SETTINGS, uiFontFamily: "Late Font" }, notice: null });
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -718,8 +713,7 @@ describe("WorkspaceSession modals", () => {
     fireEvent.click(getByTestId("left-settings"));
     expect(getByTestId("settings-modal")).toBeTruthy();
 
-    mockListTargets.mockClear();
-    mockGetSettings.mockClear();
+    mockGetWorkspaceConfig.mockClear();
     mockListPosts.mockClear();
     rightFlush.mockClear();
     await act(async () => {
@@ -732,8 +726,7 @@ describe("WorkspaceSession modals", () => {
     // Renaming a target rewrites `target` in every post file, so reloading only
     // the targets left the open post carrying a name that matched nothing: the
     // Metadata tab vanished. Reloading the post keeps its target projection current.
-    expect(mockListTargets).toHaveBeenCalledTimes(1);
-    expect(mockGetSettings).toHaveBeenCalledTimes(1);
+    expect(mockGetWorkspaceConfig).toHaveBeenCalledTimes(1);
     expect(mockListPosts).toHaveBeenCalledTimes(1);
     // The analysis prompts version bumps so the right pane reloads prompts. (It
     // is only mounted with a post open, so we just assert the modal cycle here.)
@@ -803,8 +796,7 @@ describe("WorkspaceSession modals", () => {
       await Promise.resolve();
     });
     fireEvent.click(getByTestId("left-settings"));
-    mockListTargets.mockClear();
-    mockGetSettings.mockClear();
+    mockGetWorkspaceConfig.mockClear();
     mockListPosts.mockClear();
     rightFlush.mockReset().mockResolvedValue(false);
 
@@ -815,8 +807,7 @@ describe("WorkspaceSession modals", () => {
     });
 
     expect(getByText(/Metadata changes could not be saved/)).toBeTruthy();
-    expect(mockListTargets).not.toHaveBeenCalled();
-    expect(mockGetSettings).not.toHaveBeenCalled();
+    expect(mockGetWorkspaceConfig).not.toHaveBeenCalled();
     expect(mockListPosts).not.toHaveBeenCalled();
   });
 

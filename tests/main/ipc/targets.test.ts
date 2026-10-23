@@ -212,3 +212,14 @@ describe("targets IPC handlers", () => {
     await expect(invoke(CHANNELS.renameTarget, "nope", "Blog", "Journal")).rejects.toThrow(/Workspace not found/);
   });
 });
+
+it("exposes duplicated targets only for repair and refuses ambiguous bulk rename", async () => {
+  const ws = getWorkspace(wsId)!;
+  const rows = [target("Blog"), target(" Blog ", { defaultLanguage: "ja" })];
+  fs.writeFileSync(path.join(ws.dataDirectory, "config.json"), JSON.stringify({ formatVersion: 1, targets: rows }));
+  await expect(invoke(CHANNELS.listTargets, wsId)).rejects.toThrow(/settings.targetsDuplicate/);
+  expect(await invoke(CHANNELS.listTargets, wsId, true)).toEqual(rows);
+  await expect(invoke(CHANNELS.renameTarget, wsId, "Blog", "Notes")).rejects.toThrow(/settings.targetsDuplicate/);
+  await invoke(CHANNELS.saveTargets, wsId, [target("Blog"), target("Notes")]);
+  expect(await invoke(CHANNELS.listTargets, wsId)).toEqual([target("Blog"), target("Notes")]);
+});

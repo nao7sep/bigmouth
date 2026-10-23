@@ -18,6 +18,7 @@ import type {
   ImagingOptions,
   UiState,
   Workspace,
+  WorkspaceConfigView,
   WorkspaceDeleteResult,
   ImagingRelation,
   ImagingMood,
@@ -260,8 +261,8 @@ export function rebuildPostIndex(workspaceId?: string): Promise<{
 
 // --- Targets ---
 
-export function listTargets(workspaceId?: string): Promise<Target[]> {
-  return bridge().listTargets(requireWs(workspaceId));
+export function listTargets(workspaceId?: string, forEditing?: boolean): Promise<Target[]> {
+  return bridge().listTargets(requireWs(workspaceId), forEditing);
 }
 
 export function saveTargets(targets: Target[], workspaceId?: string): Promise<Target[]> {
@@ -321,8 +322,8 @@ export function saveGenerationPrompts(data: GenerationPromptsData, workspaceId?:
 
 // --- Analysis prompts ---
 
-export function listAnalysisPrompts(workspaceId?: string): Promise<AnalysisPrompt[]> {
-  return bridge().listAnalysisPrompts(requireWs(workspaceId));
+export function listAnalysisPrompts(workspaceId?: string, forEditing?: boolean): Promise<AnalysisPrompt[]> {
+  return bridge().listAnalysisPrompts(requireWs(workspaceId), forEditing);
 }
 
 export function listAnalysisPromptDefaults(workspaceId?: string): Promise<AnalysisPrompt[]> {
@@ -530,4 +531,8 @@ function describeError(err: unknown, seen = new WeakSet<object>()): Record<strin
     };
   }
   return { error: String(err) };
+}
+
+export function getWorkspaceConfig(workspaceId?: string): Promise<WorkspaceConfigView> {
+  return bridge().getWorkspaceConfig(requireWs(workspaceId));
 }
