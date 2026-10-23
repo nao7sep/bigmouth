@@ -216,6 +216,15 @@ export function getAppRoot(): string {
   return required(appDir);
 }
 
+/** Electron's profile and Chromium session files share the selected app root. */
+export function getElectronUserDataDir(): string {
+  return path.join(getAppRoot(), "electron");
+}
+
+export function getElectronSessionDataDir(): string {
+  return path.join(getElectronUserDataDir(), "session");
+}
+
 /** The workspace registry file. */
 export function getWorkspacesJsonPath(): string {
   return required(workspacesJsonPath);

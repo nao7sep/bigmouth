@@ -1,4 +1,6 @@
-import { app, BrowserWindow, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor, dialog } from "electron";
+import { configureFrameworkStorage } from "./frameworkStorage.js";
+import english from "@shared/i18n/locales/en.json";
 
 import { confirmRunningWork, confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
@@ -33,20 +35,42 @@ import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
 
 app.setName(APP_NAME);
 
+// Take the existing app-wide lock before moving userData: Electron keys that
+// lock by the userData path. Different storage overrides must not allow two
+// processes to write the same workspace. Only its coordination files use the
+// original location; persistent sessions are configured before readiness.
+const ownsInstance = app.requestSingleInstanceLock();
+
+// Its pre-ready error box works without creating an app window.
+const frameworkReady = (() => {
+  if (!ownsInstance) return false;
+  try {
+    configureFrameworkStorage(app);
+    return true;
+  } catch (error) {
+    console.error("[bigmouth] Framework storage could not be configured:", error);
+    try {
+      dialog.showErrorBox(english["dialog.startupFailure.title"], english["dialog.startupFailure.message"]);
+    } catch (dialogError) {
+      console.error("[bigmouth] Startup failure dialog could not be shown:", dialogError);
+    } finally { app.exit(1); }
+    return false;
+  }
+})();
+
 // The stores below deliberately keep their indexes and write-behind buffers in
 // process memory. A second process over the same workspace could therefore make
 // decisions from stale state (including assigning the same export slug twice)
 // and overwrite a newer index.json. One app process may own that state; a second
 // launch is routed back to its existing window before it can touch durable data.
-const ownsInstance = app.requestSingleInstanceLock();
-if (ownsInstance) setLogSink((record) => {
+if (frameworkReady) setLogSink((record) => {
   void storageLog(record).catch((error) => console.error("[bigmouth] Log could not reach storage", error));
 });
 
 let shuttingDown = false;
 
 // The main window, apart from the records window beside it: closing it quits
-// on Windows and Linux, and on macOS the Dock reopens it.
+// on every platform.
 let mainWindow: BrowserWindow | null = null;
 
 // When the OS itself is going down, quit must never block on a dialog
@@ -208,7 +232,7 @@ async function handleStartupFailure(err: unknown): Promise<void> {
 
 if (!ownsInstance) {
   app.quit();
-} else {
+} else if (frameworkReady) {
   // Must run before the app is ready: declares the raw-asset scheme privileged.
   registerAssetScheme();
 
@@ -220,7 +244,7 @@ if (!ownsInstance) {
 
   app.whenReady().then(bootstrap).catch(handleStartupFailure);
 
-  // Quitting off macOS follows the main window's close (openMainWindow), once.
+  // Quitting follows the main window's close (openMainWindow), once.
   // This listener only stops Electron's default quit when every window is gone.
   app.on("window-all-closed", () => {});
 
@@ -229,7 +253,7 @@ if (!ownsInstance) {
   // records database, then exit deterministically. The post store owns pending
   // edits (write-behind), so this flush — not a renderer round-trip — is what
   // guarantees the newest keystroke is on disk. Menu Quit, Cmd+Q, the Dock's
-  // Quit, closing the main window off macOS, and a macOS or Linux logout all
+  // Quit, closing the main window, and a macOS or Linux logout all
   // arrive here. When the user's posts cannot be written, a quit the user
   // started asks to cancel, retry or quit anyway; an ending session never asks.
   // A quit arriving while that runs, the question included, is held too, so

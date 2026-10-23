@@ -30,6 +30,10 @@ const shell = vi.hoisted(() => ({
   exits: [] as number[],
   quitRequests: 0,
   ownsInstance: true,
+  startupCalls: [] as string[],
+  frameworkPaths: [] as [string, string][],
+  nativeErrors: [] as [string, string][],
+  nativeErrorFailure: false,
   windows: [] as { isMinimized: () => boolean; restore: () => void; focus: () => void }[],
   mainWindow: { minimized: false, restores: 0, focuses: 0 },
   dialogs: [] as { detail?: string; buttons?: string[] }[],
@@ -54,16 +58,24 @@ const shell = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     setName: () => {},
-    requestSingleInstanceLock: () => shell.ownsInstance,
+    setPath: (name: string, directory: string) => {
+      shell.startupCalls.push(`setPath:${name}`);
+      shell.frameworkPaths.push([name, directory]);
+    },
+    requestSingleInstanceLock: () => { shell.startupCalls.push("singleton"); return shell.ownsInstance; },
     getVersion: () => "0.0.0-test",
     getPreferredSystemLanguages: () => ["en-US"],
     getSystemLocale: () => "en-US",
-    whenReady: () => Promise.resolve(),
+    whenReady: () => { shell.startupCalls.push("whenReady"); return Promise.resolve(); },
     on: (event: string, cb: (...args: unknown[]) => unknown) => appHandlers.set(event, cb),
     quit: () => { shell.quitRequests++; },
     getPath: (name: string) => `/os-reported/${name}`,
     exit: (code: number) => shell.exits.push(code),
   },
+  dialog: { showErrorBox: (title: string, content: string) => {
+    shell.nativeErrors.push([title, content]);
+    if (shell.nativeErrorFailure) throw new Error("native error box unavailable");
+  } },
   systemPreferences: { setUserDefault: () => {}, removeUserDefault: () => {} },
   BrowserWindow: { getAllWindows: () => shell.windows },
   powerMonitor: {
@@ -278,6 +290,10 @@ let killSpy: MockInstance<typeof process.kill>;
 let consoleErrorSpy: MockInstance<typeof console.error>;
 
 beforeEach(() => {
+  shell.startupCalls.length = 0;
+  shell.frameworkPaths.length = 0;
+  shell.nativeErrors.length = 0;
+  shell.nativeErrorFailure = false;
   killSpy = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => { shell.kills.push(signal); return true; });
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   processHandlers.clear();
@@ -307,6 +323,36 @@ afterEach(async () => {
 // The storage worker cannot reach Electron, so startup asks for the folder the
 // OS reports, which follows a Documents folder moved out of the home directory.
 describe("startup", () => {
+  it("keeps the existing singleton identity and assigns both framework directories before readiness", async () => {
+    await bootApp();
+    expect(shell.startupCalls).toEqual(["singleton", "setPath:userData", "setPath:sessionData", "whenReady"]);
+    expect(shell.frameworkPaths).toEqual([
+      ["userData", path.join(home, "electron")],
+      ["sessionData", path.join(home, "electron", "session")],
+    ]);
+  });
+
+  it.each([false, true])("halts before readiness when the framework root fails, even if error reporting fails: %s", async (dialogFails) => {
+    vi.resetModules();
+    appHandlers.clear();
+    windowHandlers.clear();
+    powerHandlers.clear();
+    shell.exits.length = 0;
+    shell.windowOpens = 0;
+    shell.nativeErrorFailure = dialogFails;
+    fs.writeFileSync(path.join(home, "electron"), "not a directory");
+    await import("@main/index.js");
+    expect(shell.exits).toEqual([1]);
+    expect(shell.nativeErrors).toEqual([[
+      "BigMouth could not start", "BigMouth could not finish opening its settings and workspace.",
+    ]]);
+    expect(shell.startupCalls).toEqual(["singleton"]);
+    expect(shell.frameworkPaths).toEqual([]);
+    expect(shell.windowOpens).toBe(0);
+    expect(appHandlers.size).toBe(0);
+    expect(powerHandlers.size).toBe(0);
+  });
+
   it("hands storage the Documents folder Electron reports", async () => {
     await bootApp();
     expect(flush.initializedDocuments).toEqual(["/os-reported/documents"]);
