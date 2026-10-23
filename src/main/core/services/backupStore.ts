@@ -8,7 +8,7 @@
  *
  * Recording runs on its own thread (backupWorker.ts), which applies writes in save order, so a slow or
  * locked store never holds up the save that called it or the storage work behind it. `record` hands the
- * thread a copy of the exact bytes written and returns; `recordFile` hands it an installed attachment the
+ * bounded queue a copy of the exact bytes written and returns; `recordFile` hands it an installed attachment the
  * app never held whole, to be read from disk in parts. Failures are the thread's to report: one warn,
  * never a failed save. At an ordinary quit the pending writes get a short bound; at OS session end they
  * are skipped.
@@ -17,11 +17,13 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
+import { BackupAdmission } from "./backupAdmission.js";
 import { Worker } from "node:worker_threads";
 import { getBackupsDbPath } from "./storagePaths.js";
 import { formatUtcIso } from "../shared/timestamps.js";
 import { warn as logWarn, serializeError } from "./logger.js";
-import type { BackupWorkerNotice, BackupWorkerRequest } from "./backupWorker.js";
+import type { BackupWorkerNotice, BackupWorkerRequest, BackupWrite } from "./backupWorker.js";
 
 // One session per process launch: every row this launch writes carries it.
 const SESSION_ID = formatUtcIso(new Date());
@@ -45,27 +47,57 @@ export function useBackupPartSize(bytes: number): void {
   partSize = bytes;
 }
 
-let recorder: Worker | null = null;
-// The recorder failing to start or dying is reported once; recording then stays off.
+interface Recorder { worker: Worker; queue: BackupAdmission }
+let recorder: Recorder | null = null;
 let recorderFailed = false;
+let retirement: Promise<void> | null = null;
 
-function ensureRecorder(): Worker | null {
+function release(write: BackupWrite): void {
+  if (write.kind === "record-file") {
+    try { fs.closeSync(write.fd); } catch { /* No retained version remains to protect. */ }
+  }
+}
+
+function disable(owner: Recorder, error: unknown): void {
+  if (recorder !== owner) return;
+  recorder = null;
+  recorderFailed = true;
+  owner.queue.abandonPending();
+  // Failure notification is not proof that native work has stopped using its descriptor.
+  retirement = owner.worker.terminate().then(() => { owner.queue.retired(); retirement = null; });
+  logWarn("backup recorder stopped; recording disabled for this session", { error: serializeError(error) });
+}
+
+function ensureRecorder(): Recorder | null {
   if (recorder) return recorder;
-  if (recorderFailed) return null;
+  if (recorderFailed || retirement) return null;
   try {
     if (!recorderModule) throw new Error("The backup recorder's module is not known.");
-    const created = new Worker(recorderModule);
-    created.unref();
-    created.on("message", (notice: BackupWorkerNotice) => logWarn(notice.text, notice.fields));
-    created.on("messageerror", (error) => logWarn("backup recorder: a notice could not be read", { error: serializeError(error) }));
-    const lost = (error: unknown) => {
-      if (recorder !== created) return;
-      recorder = null;
-      recorderFailed = true;
-      logWarn("backup recorder stopped; recording disabled for this session", { error: serializeError(error) });
-    };
-    created.on("error", lost);
-    created.on("exit", (code) => lost(new Error(`The backup recorder exited with code ${code}.`)));
+    const worker = new Worker(recorderModule);
+    worker.unref();
+    // Best effort history must not retain unbounded copies or open files behind a slow disk.
+    // This is an ownership budget, not a free-memory check or a limit on primary saves.
+    const queue = new BackupAdmission(
+      { bytes: Math.floor(os.totalmem() / 256), descriptors: os.availableParallelism() * 8 },
+      (write, signal) => worker.postMessage({ ...write, signal } satisfies BackupWorkerRequest,
+        write.kind === "record" ? [write.bytes.buffer as ArrayBuffer] : []),
+      release,
+      () => logWarn("backup recorder is full; some saved versions could not be retained"),
+    );
+    const created = { worker, queue };
+    worker.on("message", (notice: BackupWorkerNotice) => {
+      if (notice.kind === "warn") logWarn(notice.text, notice.fields);
+      else if (recorder === created) {
+        try { queue.reap(); } catch (error) { disable(created, error); }
+      }
+    });
+    const lost = (error: unknown) => disable(created, error);
+    worker.on("messageerror", lost);
+    worker.on("error", lost);
+    worker.on("exit", (code) => {
+      queue.retired();
+      lost(new Error(`The backup recorder exited with code ${code}.`));
+    });
     recorder = created;
   } catch (error) {
     recorderFailed = true;
@@ -74,99 +106,60 @@ function ensureRecorder(): Worker | null {
   return recorder;
 }
 
-/**
- * Records one protected write: `absolutePath` is the full absolute path of the file as written, and
- * `bytes` the exact bytes just written, never a re-read of the file. Returns at once; never throws.
- */
+function offer(write: BackupWrite): void {
+  const owner = ensureRecorder();
+  if (!owner) { release(write); return; }
+  try { owner.queue.offer(write); }
+  catch (error) { disable(owner, error); }
+}
+
+/** Records exact published bytes; never waits for recording or throws to the primary save. */
 export function record(absolutePath: string, bytes: Uint8Array): void {
   try {
-    const worker = ensureRecorder();
-    if (!worker) return;
-    // A copy the thread owns: the caller keeps using its own buffer.
-    const copy = new Uint8Array(bytes);
-    worker.postMessage(
-      {
-        kind: "record",
-        file: getBackupsDbPath(),
-        sessionId: SESSION_ID,
-        path: absolutePath,
-        bytes: copy,
-        writtenAt: new Date().toISOString(),
-        partSize,
-      } satisfies BackupWorkerRequest,
-      [copy.buffer],
-    );
+    offer({ kind: "record", file: getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
+      bytes, writtenAt: new Date().toISOString(), partSize });
   } catch (error) {
-    logWarn("backup store: failed to hand a write to the recorder", { file: absolutePath, error: serializeError(error) });
+    logWarn("backup store: failed to capture a write", { file: absolutePath, error: serializeError(error) });
   }
 }
 
-/**
- * Records an attachment installed from a staged copy whose bytes the app never held whole:
- * `fd` is open for reading on the installed file, taken right after it was installed, and
- * `sha256` and `size` describe the bytes the app copied. The recorder reads the file through `fd`
- * in parts, so a later replace or delete of the path cannot change what is recorded, and records
- * it only if it still hashes to `sha256`. This call owns `fd` and closes it, here or on the
- * recorder once read. Returns at once; never throws.
- */
+/** Consumes a pinned installed-file descriptor; only its opening thread closes it after acknowledgement. */
 export function recordFile(absolutePath: string, fd: number, sha256: string, size: number): void {
-  let handedOver = false;
   try {
-    const worker = ensureRecorder();
-    if (!worker) return;
-    worker.postMessage({
-      kind: "record-file",
-      file: getBackupsDbPath(),
-      sessionId: SESSION_ID,
-      path: absolutePath,
-      fd,
-      sha256,
-      size,
-      writtenAt: new Date().toISOString(),
-      partSize,
-    } satisfies BackupWorkerRequest);
-    handedOver = true;
+    offer({ kind: "record-file", file: getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
+      fd, sha256, size, writtenAt: new Date().toISOString(), partSize });
   } catch (error) {
-    logWarn("backup store: failed to hand a write to the recorder", { file: absolutePath, error: serializeError(error) });
-  } finally {
-    if (!handedOver) {
-      try { fs.closeSync(fd); } catch { /* The descriptor has nothing left to protect. */ }
-    }
+    try { fs.closeSync(fd); } catch { /* Capture never acquired ownership. */ }
+    logWarn("backup store: failed to capture a write", { file: absolutePath, error: serializeError(error) });
   }
 }
 
-// Asks the recorder to answer once every earlier write is applied, and waits up to `boundMs`.
-function settle(kind: "drain" | "close", boundMs: number): boolean {
-  const worker = recorder;
-  if (!worker) return true;
-  const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
-  worker.postMessage({ kind, signal } satisfies BackupWorkerRequest);
-  return Atomics.wait(signal, 0, 0, boundMs) !== "timed-out";
+function settle(boundMs: number, close: boolean): boolean {
+  const owner = recorder;
+  if (!owner) return true;
+  const deadline = performance.now() + boundMs;
+  try {
+    if (!owner.queue.drain(boundMs)) return false;
+    if (!close) return true;
+    const signal = new Int32Array(new SharedArrayBuffer(4));
+    owner.worker.postMessage({ kind: "close", signal } satisfies BackupWorkerRequest);
+    return Atomics.wait(signal, 0, 0, Math.max(0, deadline - performance.now())) !== "timed-out";
+  } catch (error) { disable(owner, error); return false; }
 }
 
-/** Waits up to `boundMs` for the writes already handed over; true when all were applied. */
-export function drainBackups(boundMs: number): boolean {
-  return settle("drain", boundMs);
-}
+/** Waits within one overall bound for admitted writes, including those still pending locally. */
+export function drainBackups(boundMs: number): boolean { return settle(boundMs, false); }
 
-/**
- * Ends recording for the process: the pending writes get `boundMs` (0 skips them, as at OS session
- * end), then the recorder is let go without waiting.
- */
-export function stopBackups(boundMs: number): void {
-  const worker = recorder;
-  if (!worker) return;
-  // Closing the store with the drain releases its file before the thread goes.
-  if (boundMs > 0) settle("close", boundMs);
+/** Drops pending work at OS shutdown; retains active handles until the worker actually exits. */
+export function stopBackups(boundMs: number): Promise<void> {
+  const owner = recorder;
+  if (!owner) return retirement ?? Promise.resolve();
+  if (boundMs > 0) settle(boundMs, true);
   recorder = null;
-  void worker.terminate();
+  owner.queue.abandonPending();
+  retirement = owner.worker.terminate().then(() => { owner.queue.retired(); retirement = null; });
+  return retirement;
 }
 
-/**
- * Applies the pending writes and releases the store file, keeping the recorder for the next write.
- * For tests that relocate the storage root between cases; the next write opens the store under the
- * current root.
- */
-export function closeBackupStore(): void {
-  settle("close", 5000);
-}
+/** Test roots may change only after outstanding writes and the database have closed. */
+export function closeBackupStore(): void { settle(5000, true); }

@@ -11,15 +11,17 @@ import { parentPort } from "node:worker_threads";
 
 import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
-export type BackupWorkerRequest =
+export type BackupWrite =
   | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string; partSize: number }
-  // A file the app installed without holding its bytes: `fd` is open on the installed copy and this
-  // thread owns it, closing it once read. `sha256` and `size` are what the app copied.
-  | { kind: "record-file"; file: string; sessionId: string; path: string; fd: number; sha256: string; size: number; writtenAt: string; partSize: number }
-  // Answers through `signal` once every earlier request is applied; "close" also releases the store.
-  | { kind: "drain" | "close"; signal: Int32Array };
+  // A file the app installed without holding its bytes: `fd` is open on the installed copy and its
+  // originating owner keeps it open until acknowledgement. `sha256` and `size` are what the app copied.
+  | { kind: "record-file"; file: string; sessionId: string; path: string; fd: number; sha256: string; size: number; writtenAt: string; partSize: number };
 
-export type BackupWorkerNotice = { kind: "warn"; text: string; fields: Record<string, unknown> };
+export type BackupWorkerRequest =
+  | (BackupWrite & { signal: Int32Array })
+  | { kind: "close"; signal: Int32Array };
+
+export type BackupWorkerNotice = { kind: "warn"; text: string; fields: Record<string, unknown> } | { kind: "settled" };
 
 if (parentPort === null) {
   throw new Error("The backup recorder requires a parent port.");
@@ -238,24 +240,19 @@ function recordFile(request: Extract<BackupWorkerRequest, { kind: "record-file" 
   } catch (error) {
     if (error instanceof ChangedFileError) warn("backup store: an attachment changed on disk before it was recorded; nothing recorded", { file: request.path });
     else warn("backup store: failed to record a write", { file: request.path, error: describe(error) });
-  } finally {
-    try { fs.closeSync(request.fd); } catch { /* The descriptor has nothing left to protect. */ }
   }
 }
 
-// A request that could not be read never reaches its record; it is reported, and a file's
-// descriptor in it stays open until the process ends.
-port.on("messageerror", (error) => warn("backup store: a write could not be handed to the recorder", { error: describe(error) }));
+// The origin closes descriptors only after this acknowledgement or physical exit.
+port.on("messageerror", (error) => { throw error; });
 port.on("message", (request: BackupWorkerRequest) => {
-  if (request.kind === "record") {
-    record(request);
-    return;
+  try {
+    if (request.kind === "record") record(request);
+    else if (request.kind === "record-file") recordFile(request);
+    else close();
+  } finally {
+    Atomics.store(request.signal, 0, 1);
+    Atomics.notify(request.signal, 0);
+    port.postMessage({ kind: "settled" } satisfies BackupWorkerNotice);
   }
-  if (request.kind === "record-file") {
-    recordFile(request);
-    return;
-  }
-  if (request.kind === "close") close();
-  Atomics.store(request.signal, 0, 1);
-  Atomics.notify(request.signal, 0);
 });

@@ -288,9 +288,11 @@ describe("never holds up the save", () => {
     const locker = new DatabaseSync(storeFile());
     locker.exec("BEGIN EXCLUSIVE");
     try {
-      const started = Date.now();
-      record(file, Buffer.from("while locked"));
-      expect(Date.now() - started).toBeLessThan(100);
+      const wait = vi.spyOn(Atomics, "wait");
+      try {
+        record(file, Buffer.from("while locked"));
+        expect(wait).not.toHaveBeenCalled();
+      } finally { wait.mockRestore(); }
       expect(drainBackups(100)).toBe(false);
     } finally {
       locker.exec("COMMIT");
@@ -299,20 +301,21 @@ describe("never holds up the save", () => {
     expect(rows(file).map(text)).toEqual(["while locked"]);
   });
 
-  it("gives pending writes a bound at quit", () => {
+  it("gives pending writes a bound at quit", async () => {
     const file = path.join(root, "doc.md");
     record(file, Buffer.from("drained at quit"));
-    stopBackups(5000);
+    await stopBackups(5000);
     expect(rows(file).map(text)).toEqual(["drained at quit"]);
   });
 
-  it("does not wait for pending writes at OS session end", () => {
+  it("does not wait for pending writes at OS session end", async () => {
     record(path.join(root, "doc.md"), Buffer.from("pending"));
     expect(drainBackups(5000)).toBe(true);
     const wait = vi.spyOn(Atomics, "wait");
     try {
-      stopBackups(0);
+      const retired = stopBackups(0);
       expect(wait).not.toHaveBeenCalled();
+      await retired;
     } finally {
       wait.mockRestore();
     }
