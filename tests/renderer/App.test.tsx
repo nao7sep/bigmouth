@@ -24,7 +24,9 @@ vi.mock("@renderer/api", () => ({
 // test drive the imperative flush handle App calls before switching workspaces).
 const sessionFlush = vi.fn<() => Promise<boolean>>();
 
-vi.mock("@renderer/WorkspaceSession", () => {
+vi.mock("@renderer/WorkspaceSession", async () => {
+  const { PaneDivider } = await import("@renderer/components/PaneDivider");
+  const { LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX } = await import("@renderer/paneConstants");
   const { forwardRef, useImperativeHandle } = require("react") as typeof import("react");
   return {
     WorkspaceSession: forwardRef(function MockSession(
@@ -32,6 +34,13 @@ vi.mock("@renderer/WorkspaceSession", () => {
         workspace: Workspace;
         onSwitchWorkspace: () => void;
         onStartLeftDrag: (event: React.MouseEvent) => void;
+        onStartRightDrag: (event: React.MouseEvent) => void;
+        leftWidth: number;
+        rightWidth: number;
+        onLeftWidthChange: (width: number) => void;
+        onRightWidthChange: (width: number) => void;
+        onLeftWidthCommit: (width: number) => void;
+        onRightWidthCommit: (width: number) => void;
         onWorkspaceUpdated: (workspace: Workspace) => void;
       },
       ref: React.Ref<{ flushPendingChanges: () => Promise<boolean> }>
@@ -39,6 +48,10 @@ vi.mock("@renderer/WorkspaceSession", () => {
       useImperativeHandle(ref, () => ({ flushPendingChanges: sessionFlush }), []);
       return (
         <div data-testid="session">
+          <PaneDivider label="Posts divider" width={props.leftWidth} min={LEFT_MIN} max={LEFT_MAX} sign={1}
+            onMouseDown={props.onStartLeftDrag} onWidthChange={props.onLeftWidthChange} onCommitWidth={props.onLeftWidthCommit} />
+          <PaneDivider label="Tools divider" width={props.rightWidth} min={RIGHT_MIN} max={RIGHT_MAX} sign={-1}
+            onMouseDown={props.onStartRightDrag} onWidthChange={props.onRightWidthChange} onCommitWidth={props.onRightWidthCommit} />
           <span data-testid="session-ws">{props.workspace.id}</span>
           <span data-testid="session-ws-name">{props.workspace.name}</span>
           <button
@@ -661,4 +674,34 @@ it("retires removed active A while preserving an in-flight selection of B", asyn
   await act(async () => { flushed(true); });
   expect(view.getByTestId("session-ws").textContent).toBe("ws2");
   expect(mockUpdateUiState).toHaveBeenLastCalledWith({ activeWorkspaceId: "ws2" });
+});
+
+describe("App keyboard pane widths", () => {
+  it.each(["Posts divider", "Tools divider"])("updates %s live and persists once across release and blur", async (name) => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
+    const view = await renderApp();
+    const divider = view.getByRole("separator", { name });
+    const start = Number(divider.getAttribute("aria-valuenow"));
+    const delta = name === "Posts divider" ? 16 : -16;
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    fireEvent.keyDown(divider, { key: "ArrowRight", repeat: true });
+    expect(Number(divider.getAttribute("aria-valuenow"))).toBe(start + 2 * delta);
+    expect(mockUpdateUiState).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.keyUp(divider, { key: "ArrowRight" }); });
+    fireEvent.blur(divider);
+    expect(mockUpdateUiState).toHaveBeenCalledExactlyOnceWith({ [name === "Posts divider" ? "paneLeftWidth" : "paneRightWidth"]: start + 2 * delta });
+  });
+
+  it("routes keyboard save failure through the shell result without reverting width", async () => {
+    mockGetUiState.mockResolvedValue(uiState("ws1"));
+    mockUpdateUiState.mockRejectedValueOnce(new Error("EACCES /private/tmp/KEY-PANE-SENTINEL"));
+    const view = await renderApp();
+    const divider = view.getByRole("separator", { name: "Posts divider" });
+    const start = Number(divider.getAttribute("aria-valuenow"));
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    await act(async () => { fireEvent.blur(divider); });
+    expect(Number(divider.getAttribute("aria-valuenow"))).toBe(start + 16);
+    expect(view.getByRole("alert").textContent).toContain("current width is still in use");
+    expect(view.getByRole("alert").textContent).not.toContain("KEY-PANE-SENTINEL");
+  });
 });

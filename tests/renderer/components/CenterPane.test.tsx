@@ -597,6 +597,31 @@ describe("CenterPane toolbar actions", () => {
 });
 
 describe("CenterPane delete", () => {
+  it("requires a successful link check after Retry before offering deletion", async () => {
+    mockListReferrers.mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ count: 2, ids: ["a", "b"] });
+    const { container } = await renderPane();
+    fireEvent.click(container.querySelector(".btn-delete")!);
+    await screen.findByText("Could not check which posts link to this post. Try again.");
+    expect(document.querySelector("button.btn-delete-confirm")).toBeNull();
+    expect(mockDeletePost).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText((text) => text.includes("2 other posts link"));
+    expect(mockListReferrers).toHaveBeenCalledTimes(2);
+    expect(mockDeletePost).not.toHaveBeenCalled();
+  });
+
+  it("cancels a failed link check without attempting deletion", async () => {
+    mockListReferrers.mockRejectedValueOnce(new Error("offline"));
+    const { container } = await renderPane();
+    fireEvent.click(container.querySelector(".btn-delete")!);
+    await screen.findByText("Could not check which posts link to this post. Try again.");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockListReferrers).toHaveBeenCalledTimes(1);
+    expect(mockDeletePost).not.toHaveBeenCalled();
+  });
+
   it("does not open an obsolete delete prompt after the pane was replaced", async () => {
     let answer!: (value: { count: number; ids: string[] }) => void;
     mockListReferrers.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));

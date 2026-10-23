@@ -1,3 +1,4 @@
+import { LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX } from "@renderer/paneConstants";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type {
@@ -329,6 +330,10 @@ function renderSession(ref?: React.Ref<WorkspaceSessionHandle>) {
       appLayoutRef={appLayoutRef}
       leftWidth={360}
       rightWidth={480}
+      onLeftWidthChange={vi.fn()}
+      onRightWidthChange={vi.fn()}
+      onLeftWidthCommit={vi.fn()}
+      onRightWidthCommit={vi.fn()}
       onStartLeftDrag={noopDrag}
       onStartRightDrag={noopDrag}
       onSwitchWorkspace={onSwitchWorkspace}
@@ -1343,4 +1348,22 @@ it("does not start continuation reads after the creation's workspace session has
   view.unmount();
   await act(async () => { finish(POST_B_CREATED); });
   expect(mockListPosts).toHaveBeenCalledTimes(reads);
+});
+
+it("renders named focusable separators with each pane's displayed width and configured bounds", async () => {
+  const view = await mountLoaded();
+  const left = view.getByRole("separator", { name: "Resize the post list" });
+  expect(left.tabIndex).toBe(0);
+  expect(left.getAttribute("aria-orientation")).toBe("vertical");
+  expect(left.getAttribute("aria-valuemin")).toBe(String(LEFT_MIN));
+  expect(left.getAttribute("aria-valuemax")).toBe(String(LEFT_MAX));
+  expect(left.getAttribute("aria-valuenow")).toBe("360");
+  fireEvent.click(view.getByTestId("left-select-a"));
+  await act(async () => { await Promise.resolve(); });
+  const right = view.getByRole("separator", { name: "Resize the tools pane" });
+  expect(right.tabIndex).toBe(0);
+  expect(right.getAttribute("aria-orientation")).toBe("vertical");
+  expect(right.getAttribute("aria-valuemin")).toBe(String(RIGHT_MIN));
+  expect(right.getAttribute("aria-valuemax")).toBe(String(RIGHT_MAX));
+  expect(right.getAttribute("aria-valuenow")).toBe("480");
 });

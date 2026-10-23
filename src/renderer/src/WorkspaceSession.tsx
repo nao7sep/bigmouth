@@ -17,6 +17,8 @@ import {
   onWindowActivated,
 } from "./api";
 import { presentFailure } from "./util/presentFailure";
+import { PaneDivider } from "./components/PaneDivider";
+import { LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX } from "./paneConstants";
 import { LeftPane } from "./components/LeftPane";
 import { OperationalResult } from "./components/OperationalResult";
 import { ListedMessageView } from "./components/NamedItems";
@@ -91,6 +93,10 @@ interface WorkspaceSessionProps {
   rightWidth: number;
   onStartLeftDrag: MouseEventHandler<HTMLDivElement>;
   onStartRightDrag: MouseEventHandler<HTMLDivElement>;
+  onLeftWidthChange: (width: number) => void;
+  onRightWidthChange: (width: number) => void;
+  onLeftWidthCommit: (width: number) => void;
+  onRightWidthCommit: (width: number) => void;
   onSwitchWorkspace: () => void;
   /** A rename saved from Settings, so the app shows the open workspace's new name. */
   onWorkspaceUpdated: (workspace: Workspace) => void;
@@ -109,6 +115,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       rightWidth,
       onStartLeftDrag,
       onStartRightDrag,
+      onLeftWidthChange,
+      onRightWidthChange,
+      onLeftWidthCommit,
+      onRightWidthCommit,
       onSwitchWorkspace,
       onWorkspaceUpdated,
     },
@@ -708,7 +718,16 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             workspaceName={workspace.name}
             timezone={timezone}
           />
-          <div className="pane-divider" onMouseDown={onStartLeftDrag} />
+          <PaneDivider
+            label={t("app.resizePosts")}
+            width={leftWidth}
+            min={LEFT_MIN}
+            max={LEFT_MAX}
+            sign={1}
+            onMouseDown={onStartLeftDrag}
+            onWidthChange={onLeftWidthChange}
+            onCommitWidth={onLeftWidthCommit}
+          />
           {selectedPostId ? (
             <>
               <CenterPane
@@ -729,7 +748,16 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 contentFont={contentFont}
                 editorRef={editorRef}
               />
-              <div className="pane-divider" onMouseDown={onStartRightDrag} />
+              <PaneDivider
+                label={t("app.resizeTools")}
+                width={rightWidth}
+                min={RIGHT_MIN}
+                max={RIGHT_MAX}
+                sign={-1}
+                onMouseDown={onStartRightDrag}
+                onWidthChange={onRightWidthChange}
+                onCommitWidth={onRightWidthCommit}
+              />
               <RightPane
                 ref={rightPaneRef}
                 workspaceId={workspace.id}

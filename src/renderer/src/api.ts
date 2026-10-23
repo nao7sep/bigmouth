@@ -500,10 +500,8 @@ export function assetDerivativeUrl(kind: ImageDerivativeKind, contentHash: strin
  * Records a renderer-side failure in the session log.
  *
  * The renderer is sandboxed and writes no records, so without this everything
- * it recovers from would leave no trace anywhere — a failed `listReferrers`
- * silently downgrades a delete confirmation from naming the posts that would be
- * unlinked to a bare "cannot be undone", and a user reporting it would leave
- * nothing to reconstruct.
+ * it recovers from would leave no diagnostic trace. A failed deletion precheck,
+ * for example, offers retry while the log retains the cause for investigation.
  *
  * Never throws: a failure to record something must not become a second failure
  * the caller has to handle. That is also why it is a `send`, not an `invoke`.

@@ -279,15 +279,21 @@ export function CenterPane({
   };
 
   const runDeleteConfirm = async () => {
-    let referrerCount = 0;
-    try {
-      const { count } = await listReferrers(postId, workspaceId);
-      referrerCount = count;
-    } catch (err) {
-      // The confirmation silently loses the "N posts link to this" clause, so a
-      // destructive prompt gets weaker without anyone knowing why.
-      reportProblem("referrer count unavailable for the delete confirmation", err, { postId });
-      referrerCount = 0;
+    let referrerCount: number;
+    while (true) {
+      try {
+        const { count } = await listReferrers(postId, workspaceId);
+        referrerCount = count;
+        break;
+      } catch (err) {
+        reportProblem("referrer count unavailable for the delete confirmation", err, { postId });
+        if (!mountedRef.current) return;
+        const retry = await confirm({
+          message: t("center.deleteCheckFailed"),
+          confirmLabel: t("common.retry"),
+        });
+        if (!retry || !mountedRef.current) return;
+      }
     }
 
     if (!mountedRef.current) return;

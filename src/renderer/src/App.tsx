@@ -30,17 +30,17 @@ import { message, type Message } from "@shared/i18n/translate";
 import { StoragePendingNotice, StoragePendingResults, useStorageResultReporter } from "./StoragePending";
 import "./App.css";
 
-// Each side pane stores an INTENT width in pixels: the width the user dragged
+// Each side pane stores an INTENT width in pixels: the width the user resized
 // the pane to, independent of the current viewport. Intent is clamped only to
 // the pane's own configured bounds on read — never against the container — so a
 // narrow viewport at load time can't shrink the saved intent. The DISPLAYED
 // width is derived from this intent and the live container width (see
-// clampPaneWidth); only a drag updates the intent and persists it. A viewport
+// clampPaneWidth); only an explicit resize updates and persists the intent. A viewport
 // resize re-derives the display from the unchanged intent and persists nothing,
 // so widening the window restores the pane to its intended width.
 //
 // Intents live in the main process's state.json (view state), hydrated once on
-// mount via getUiState and persisted on drag-end via updateUiState, not in
+// mount via getUiState and persisted on resize completion via updateUiState, not in
 // renderer localStorage: view state has one owner, the main process
 // (persisted-store-separation-conventions).
 
@@ -67,7 +67,7 @@ export function App() {
     setShellResults((current) => current.filter((result) => result.key !== key));
   }, []);
 
-  // Intent widths (px): what the user dragged each side pane to. Seeded with the
+  // Intent widths (px): what the user resized each side pane to. Seeded with the
   // shared defaults and replaced by the persisted intents once state.json is
   // hydrated on mount (below), clamped only to per-pane bounds — restoring keeps
   // the persisted intent rather than overwriting it with a viewport-fitted value.
@@ -307,6 +307,19 @@ export function App() {
   // Tears down an in-flight splitter drag: set while one is running, null otherwise.
   const activeDragRef = useRef<(() => void) | null>(null);
 
+  const savePaneWidth = useCallback((stateKey: "paneLeftWidth" | "paneRightWidth", width: number) => {
+    void updateUiState({ [stateKey]: width })
+      .then(() => resolveShellResult(stateKey))
+      .catch((err: unknown) => {
+        reportShellResult(stateKey, presentFailure(
+          message("app.paneWidthSaveFailed"),
+          "renderer: pane width save failed",
+          err,
+          { stateKey },
+        ));
+      });
+  }, [reportShellResult, resolveShellResult]);
+
   const startDrag = useCallback(
     (
       e: ReactMouseEvent,
@@ -332,18 +345,8 @@ export function App() {
       };
       const onUp = () => {
         endDrag();
-        // Only a drag persists, and it persists the INTENT (px) to state.json.
-        // Resize and mount never reach here, so they never overwrite the stored value.
-        void updateUiState({ [stateKey]: intentRef.current })
-          .then(() => resolveShellResult(stateKey))
-          .catch((err: unknown) => {
-            reportShellResult(stateKey, presentFailure(
-              message("app.paneWidthSaveFailed"),
-              "renderer: pane width save failed",
-              err,
-              { stateKey },
-            ));
-          });
+        // Resizing explicitly persists intent; measuring the viewport does not.
+        savePaneWidth(stateKey, intentRef.current);
       };
       const endDrag = () => {
         document.body.style.cursor = "";
@@ -360,7 +363,7 @@ export function App() {
       // listeners attached and the body stuck with col-resize and no selection.
       activeDragRef.current = endDrag;
     },
-    [reportShellResult, resolveShellResult]
+    [savePaneWidth]
   );
 
   useEffect(() => () => activeDragRef.current?.(), []);
@@ -431,6 +434,10 @@ export function App() {
             onStartRightDrag={(e) =>
               startDrag(e, rightIntentRef, setRightIntent, "paneRightWidth", -1, RIGHT_MIN, RIGHT_MAX)
             }
+            onLeftWidthChange={setLeftIntent}
+            onRightWidthChange={setRightIntent}
+            onLeftWidthCommit={(width) => savePaneWidth("paneLeftWidth", width)}
+            onRightWidthCommit={(width) => savePaneWidth("paneRightWidth", width)}
             onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
             onWorkspaceUpdated={handleActiveWorkspaceUpdated}
           />
