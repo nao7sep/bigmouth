@@ -55,7 +55,15 @@ jobs:
     strategy:
       fail-fast: false # a Windows failure never cancels the macOS build
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            artifacts: |
+              dist/*.dmg
+              dist/*.zip
+          - os: windows-latest
+            artifacts: |
+              dist/*.exe
+              dist/*.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -104,7 +112,4 @@ jobs:
             These builds are unsigned, so the OS warns on first launch:
             - **macOS**: right-click the app → **Open** (or `xattr -dr com.apple.quarantine BigMouth.app`)
             - **Windows**: SmartScreen → **More info** → **Run anyway**
-          files: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.zip
+          files: ${{ matrix.artifacts }}
