@@ -5,7 +5,7 @@
 // driving the handlers and reading the result back, and each channel's main
 // validation / not-found branch is asserted through the thrown Error.
 //
-// A fresh workspace ships with NO targets (dataDir.ts writes an empty targets.json),
+// A fresh workspace has no configured targets and writes no targets.json at startup,
 // so a target is registered through the real configStore before any post is created
 // — otherwise createPost would always fail with "No targets configured".
 
@@ -32,7 +32,11 @@ vi.mock("@main/storageAccess.js", async () => {
     getWorkspace: async (...args: Parameters<typeof workspace.getWorkspace>) => workspace.getWorkspace(...args),
     getSettings: async (...args: Parameters<typeof config.getSettings>) => config.getSettings(...args),
     getTargets: async (...args: Parameters<typeof config.getTargets>) => config.getTargets(...args),
-    setContentSaveListener: post.setContentSaveListener,
+    setContentSaveListener: (listener: ((event: import("@main/storageOwner.js").WorkspaceContentSaveEvent) => void) | null) => post.setContentSaveListener(listener ? (event) => {
+      for (const ws of workspace.listWorkspaces()) {
+        if (ws.dataDirectory === event.dataDir) listener({ ...event, wsId: ws.id });
+      }
+    } : null),
     setHeldEditFailureListener: () => {},
     // Storage here runs in-process, so no text is ever held behind a save.
     holdsContentFor: () => false,
@@ -510,6 +514,7 @@ describe("queuePostContent (the content stream)", () => {
 
       const saved = sends(CHANNELS.postContentSaved) as PostContentSavedEvent[];
       expect(saved).toHaveLength(1);
+      expect(saved[0].wsId).toBe(wsId);
       expect(saved[0].postId).toBe(id);
       expect(saved[0].summary.id).toBe(id);
       expect(saved[0].newerEditHeld).toBe(false);
@@ -535,7 +540,7 @@ describe("queuePostContent (the content stream)", () => {
 
       expect(sends(CHANNELS.postContentSaved)).toEqual([]);
       expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
-        { postId: id, kind: "unsaveable" },
+        { wsId, postId: id, kind: "unsaveable" },
       ]);
       // The store did not quietly recreate the file the user's sync client removed.
       expect(fs.existsSync(file)).toBe(false);
@@ -548,7 +553,7 @@ describe("queuePostContent (the content stream)", () => {
     (await invoke(CHANNELS.queuePostContent, "nope", "p1", "text with nowhere to go"));
     expect(sends(CHANNELS.postContentSaved)).toEqual([]);
     expect(sends(CHANNELS.postContentSaveFailed)).toEqual([
-      { postId: "p1", kind: "unsaveable" },
+      { wsId: "nope", postId: "p1", kind: "unsaveable" },
     ]);
   });
 

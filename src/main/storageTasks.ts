@@ -122,8 +122,6 @@ export const storageTasks = {
     }
     return postStore.queueMetadata(dir, id, validation.edits, editedAt);
   },
-  queueContent: postStore.queueContent,
-  queueMetadata: postStore.queueMetadata,
   flushPostEdits: postStore.flushPostEdits,
   getPost: postStore.getPost,
   createPost(...args: Parameters<typeof postStore.createPost>) {
@@ -133,11 +131,6 @@ export const storageTasks = {
     return postStore.createPost(...args);
   },
   updatePost(...args: Parameters<typeof postStore.updatePost>) {
-    const post = postStore.getPost(args[0], args[1]);
-    if (!post) return null;
-    if (post.frontMatter.locked) throw Object.assign(new Error("This post is locked. Unlock it to edit it."), { name: "PostLockedError" });
-    const source = args[2].frontMatter?.sourceId;
-    if (source && !postStore.postExists(args[0], source)) throw new Error("Source post not found");
     return mutationResult(postStore.updatePost(...args));
   },
   changeStatus(...args: Parameters<typeof postStore.changeStatus>) {

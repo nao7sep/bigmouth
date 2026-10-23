@@ -29,6 +29,9 @@ import {
   getAnthropicSettings,
   saveAnthropicSettings,
   onWindowActivated,
+  onPostContentSaved,
+  onPostContentSaveFailed,
+  onPostMetadataRefused,
   listAssets,
   uploadAsset,
   deleteAsset,
@@ -586,4 +589,44 @@ it("forwards edit-only list requests and coherent workspace config requests", as
   expect(listPromptsBridge).toHaveBeenCalledWith("repair", true);
   await expect(getWorkspaceConfig("repair")).resolves.toEqual(config);
   expect(workspaceConfigBridge).toHaveBeenCalledWith("repair");
+});
+
+it("keeps saved, failed and refused events with copied post ids inside the subscription workspace", () => {
+  type Saved = import("@shared/ipc").PostContentSavedEvent;
+  type Failed = import("@shared/ipc").PostContentSaveFailedEvent;
+  type Refused = import("@shared/ipc").PostMetadataRefusedEvent;
+  let saved!: (event: Saved) => void;
+  let failed!: (event: Failed) => void;
+  let refused!: (event: Refused) => void;
+  const unsubscribe = vi.fn();
+  installBridge({
+    onPostContentSaved: (listener: typeof saved) => { saved = listener; return unsubscribe; },
+    onPostContentSaveFailed: (listener: typeof failed) => { failed = listener; return unsubscribe; },
+    onPostMetadataRefused: (listener: typeof refused) => { refused = listener; return unsubscribe; },
+  });
+  setActiveWorkspace("workspace-a");
+  const gotSaved = vi.fn();
+  const gotFailed = vi.fn();
+  const gotRefused = vi.fn();
+  const off = [onPostContentSaved(gotSaved), onPostContentSaveFailed(gotFailed), onPostMetadataRefused(gotRefused)];
+  // The active workspace may change before old subscriptions unmount. Each
+  // subscription retains the workspace it belongs to throughout that overlap.
+  setActiveWorkspace("workspace-b");
+  const savedEvent = { wsId: "workspace-a", postId: "copied-id", summary: { id: "copied-id" } as Saved["summary"], newerEditHeld: false };
+  const failedEvent: Failed = { wsId: "workspace-a", postId: "copied-id", kind: "retrying" };
+  const refusedEvent: Refused = { wsId: "workspace-a", postId: "copied-id", edits: { slug: "taken" }, refusal: { key: "metadata.refusedSlugTaken", values: { slug: "taken" } } };
+  saved({ ...savedEvent, wsId: "workspace-b" });
+  failed({ ...failedEvent, wsId: "workspace-b" });
+  refused({ ...refusedEvent, wsId: "workspace-b" });
+  expect(gotSaved).not.toHaveBeenCalled();
+  expect(gotFailed).not.toHaveBeenCalled();
+  expect(gotRefused).not.toHaveBeenCalled();
+  saved(savedEvent);
+  failed(failedEvent);
+  refused(refusedEvent);
+  expect(gotSaved).toHaveBeenCalledExactlyOnceWith(savedEvent);
+  expect(gotFailed).toHaveBeenCalledExactlyOnceWith(failedEvent);
+  expect(gotRefused).toHaveBeenCalledExactlyOnceWith(refusedEvent);
+  off.forEach((stop) => stop());
+  expect(unsubscribe).toHaveBeenCalledTimes(3);
 });

@@ -476,10 +476,11 @@ describe("updatedAtUtc", () => {
   const modified = (id: string) => getPost(dataDir, id)!.frontMatter.updatedAtUtc;
 
   function created(): { id: string; filePath: string } {
+    const source = createPost(dataDir, "blogger", "en");
     const post = createPost(dataDir, "blogger", "en");
     updatePost(dataDir, post.frontMatter.id, {
       content: "Body.",
-      frontMatter: { title: "Title", sourceId: "src-1" },
+      frontMatter: { title: "Title", sourceId: source.frontMatter.id },
     });
     vi.setSystemTime(T1);
     return { id: post.frontMatter.id, filePath: post.filePath };
@@ -530,7 +531,7 @@ describe("updatedAtUtc", () => {
     // source linked again.
     queueContent(dataDir, id, "Body.");
     expect(flushPostEdits(dataDir, id)).toBe(true);
-    updatePost(dataDir, id, { content: "Body.", frontMatter: { title: "Title", sourceId: "src-1" } });
+    updatePost(dataDir, id, { content: "Body.", frontMatter: { title: "Title", sourceId: getPost(dataDir, id)!.frontMatter.sourceId } });
 
     expect(modified(id)).toBe(T0.toISOString());
     expect(fs.readFileSync(filePath, "utf-8")).toBe(before);
@@ -1172,5 +1173,70 @@ describe("a refused post deletion", () => {
     const saved = getPost(dataDir, post.frontMatter.id)!;
     expect(saved.content).toContain("draft survives refused delete");
     expect(saved.frontMatter.title).toBe("Title survives");
+  });
+});
+
+describe("one author baseline per pending edit buffer", () => {
+  it("reads the post body once across many queued packets and keeps the last semantic edit time", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    const read = vi.spyOn(fs, "readFileSync");
+    const lastEdit = new Date("2030-01-01T00:00:10.000Z");
+    try {
+      for (let i = 0; i < 10; i++) {
+        queueContent(dataDir, id, `Body ${i}`, new Date(lastEdit.getTime() - 1000));
+        queueMetadata(dataDir, id, { title: `Title ${i}` }, lastEdit);
+      }
+      // Canonical-equivalent content and English-only metadata leave the
+      // semantic value unchanged, so these later packets cannot move its time.
+      queueContent(dataDir, id, "\nBody 9\n\n", new Date(lastEdit.getTime() + 1000));
+      queueMetadata(dataDir, id, { title: "Title 9", titleEn: "ignored in English" }, new Date(lastEdit.getTime() + 2000));
+      expect(read.mock.calls.filter(([file]) => String(file) === post.filePath)).toHaveLength(1);
+    } finally { read.mockRestore(); }
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(getPost(dataDir, id)?.frontMatter.updatedAtUtc).toBe(lastEdit.toISOString());
+
+    const nextRead = vi.spyOn(fs, "readFileSync");
+    try {
+      queueContent(dataDir, id, "Next edit");
+      queueMetadata(dataDir, id, { title: "Next title" });
+      expect(nextRead.mock.calls.filter(([file]) => String(file) === post.filePath)).toHaveLength(1);
+    } finally { nextRead.mockRestore(); }
+  });
+
+  it("reads current external fields at flush while keeping the author's buffered fields", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    queueContent(dataDir, id, "Authored body");
+    queueMetadata(dataDir, id, { title: "Authored title" });
+    const external = fs.readFileSync(post.filePath, "utf8")
+      .replace("target: blogger", "target: externally-changed")
+      .replace("status: draft", "status: verified");
+    fs.writeFileSync(post.filePath, external);
+    queueContent(dataDir, id, "Final authored body");
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    const saved = getPost(dataDir, id)!;
+    expect(saved.content).toBe("Final authored body");
+    expect(saved.frontMatter.title).toBe("Authored title");
+    expect(saved.frontMatter.target).toBe("externally-changed");
+    expect(saved.frontMatter.status).toBe("verified");
+  });
+
+  it("keeps an unreadable baseline as null until the buffer is flushed against a readable file", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const id = post.frontMatter.id;
+    const original = fs.readFileSync(post.filePath, "utf8");
+    fs.writeFileSync(post.filePath, "---\ninvalid: [\n---\n");
+    const read = vi.spyOn(fs, "readFileSync");
+    try {
+      queueContent(dataDir, id, "First");
+      queueMetadata(dataDir, id, { title: "Authored title" });
+      queueContent(dataDir, id, "Final");
+      expect(read.mock.calls.filter(([file]) => String(file) === post.filePath)).toHaveLength(1);
+    } finally { read.mockRestore(); }
+    fs.writeFileSync(post.filePath, original);
+    expect(flushPostEdits(dataDir, id)).toBe(true);
+    expect(getPost(dataDir, id)?.content).toBe("Final");
+    expect(getPost(dataDir, id)?.frontMatter.title).toBe("Authored title");
   });
 });

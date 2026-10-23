@@ -51,6 +51,7 @@ import { carryingText } from "@shared/i18n/carriedMessage";
 import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { message, type Message } from "@shared/i18n/translate";
+import { validatePostUpdate } from "../shared/postUpdate.js";
 
 export function clearCache(dataDir: string): void {
   index.clearCache(dataDir);
@@ -109,6 +110,9 @@ const PENDING_RETRY_DELAY_MS = 5000;
  * once rather than on every keystroke.
  */
 interface PendingEdit {
+  // Captured once for semantic edit comparisons. Only a fresh disk read at
+  // publication may authorize writing the post or determine its current fields.
+  authorBaseline?: Post | null;
   content?: string;
   frontMatter: EditablePostMetadata;
   editedAt: Date;
@@ -257,15 +261,19 @@ export function queueMetadata(dataDir: string, id: string, edits: EditablePostMe
 }
 
 function pendingAuthorSnapshot(dataDir: string, id: string, pending: PendingEdit): string | null {
-  try {
-    const post = readFromDisk(dataDir, id);
-    if (!post) return null;
-    overlayPending(post, pending);
-    return contentSnapshot(post);
-  } catch {
-    // A currently unreadable file must not discard the user's buffered edit.
-    return null;
+  if (pending.authorBaseline === undefined) {
+    try {
+      pending.authorBaseline = readFromDisk(dataDir, id);
+    } catch {
+      // An unreadable baseline must not discard the user's buffered edit. A
+      // later flush still reads the actual file and can save if it is readable.
+      pending.authorBaseline = null;
+    }
   }
+  if (pending.authorBaseline === null) return null;
+  const post = structuredClone(pending.authorBaseline);
+  overlayPending(post, pending);
+  return contentSnapshot(post);
 }
 
 function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): void {
@@ -492,7 +500,7 @@ class PostLockedError extends Error {
 function rewritePost(
   dataDir: string,
   id: string,
-  change: (post: Post) => void,
+  change: (post: Post) => void | false,
   contentEdited = false,
   requiresEditable = false,
 ): Post | null {
@@ -509,7 +517,7 @@ function rewritePost(
   overlayPending(post, pending);
   const onFile = contentSnapshot(onDisk);
   const buffered = contentSnapshot(post);
-  change(post);
+  if (change(post) === false) return post;
 
   const fm = post.frontMatter;
   const written = contentSnapshot(post);
@@ -534,11 +542,17 @@ export function updatePost(
   updates: { content?: string; frontMatter?: EditablePostMetadata }
 ): Post | null {
   return rewritePost(dataDir, id, (post) => {
-    const requestedSlug = updates.frontMatter?.slug;
+    const validation = validatePostUpdate(post.frontMatter, updates);
+    if (!validation.ok) throw new Error(validation.message);
+    const edits = validation.edits;
+    if (typeof edits.sourceId === "string" && edits.sourceId && !postExists(dataDir, edits.sourceId)) {
+      throw new Error("Source post not found");
+    }
+    const requestedSlug = edits.slug;
     if (typeof requestedSlug === "string" && requestedSlug.length > 0 && slugConflictMessage(dataDir, id, requestedSlug)) {
       throw new Error(`Another post already uses the slug ${JSON.stringify(requestedSlug)}`);
     }
-    if (updates.frontMatter) applyMetadata(post.frontMatter, updates.frontMatter);
+    applyMetadata(post.frontMatter, edits);
     if (updates.content !== undefined) post.content = updates.content;
   }, false, true);
 }
@@ -578,9 +592,10 @@ function slugConflictMessage(dataDir: string, id: string, slug: string): Message
 
 /** Moves a post to `newStatus`, locked or not. Selecting the current status writes nothing. */
 export function changeStatus(dataDir: string, id: string, newStatus: PostStatus): Post | null {
-  const current = getPost(dataDir, id);
-  if (!current || current.frontMatter.status === newStatus) return current;
-  return rewritePost(dataDir, id, (post) => applyStatusTransition(post.frontMatter, newStatus, utcNow()));
+  return rewritePost(dataDir, id, (post) => {
+    if (post.frontMatter.status === newStatus) return false;
+    applyStatusTransition(post.frontMatter, newStatus, utcNow());
+  });
 }
 
 /**

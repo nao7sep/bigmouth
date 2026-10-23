@@ -30,7 +30,6 @@ import {
 import { EditPendingError } from "../storageOwner.js";
 import type { RebuildResult } from "../core/services/postIndex.js";
 import { getSettings, getTargets } from "../storageAccess.js";
-import { validatePostUpdate } from "../core/shared/postUpdate.js";
 import { POST_STATUSES, isPostStatus } from "../core/shared/postLifecycle.js";
 import { isPagedPostStatus } from "@shared/postStatus";
 import { debug as logDebug, info, warn, error as logError, serializeError } from "../core/services/logger.js";
@@ -48,13 +47,12 @@ function broadcast(channel: string, payload: PostContentSavedEvent | PostContent
 }
 
 export function registerPostHandlers(): void {
-  // The write-behind buffer's save events, broadcast to every window. Post ids
-  // are unique nanoids, so the renderer matches by post id alone.
+  // Buffer events carry their workspace identity through to every window.
   setContentSaveListener((event) => {
     if (event.kind === "saved") {
       // Text held behind this save, waiting for storage, is newer than what
       // was written, so the post must keep showing that it is not saved yet.
-      const saved: PostContentSavedEvent = { postId: event.id, summary: event.summary, newerEditHeld: holdsContentFor(event.id) };
+      const saved: PostContentSavedEvent = { wsId: event.wsId, postId: event.id, summary: event.summary, newerEditHeld: holdsContentFor(event.wsId, event.id) };
       broadcast(CHANNELS.postContentSaved, saved);
       return;
     }
@@ -62,6 +60,7 @@ export function registerPostHandlers(): void {
     // write failure is retried from the buffer, while a missing post and a
     // locked one never can be.
     const failure: PostContentSaveFailedEvent = {
+      wsId: event.wsId,
       postId: event.id,
       kind: event.kind === "save-failed" ? "retrying" : "unsaveable",
     };
@@ -77,8 +76,8 @@ export function registerPostHandlers(): void {
   // An edit storage could not take yet is held by the storage owner and
   // delivered when storage takes work again; until a save event arrives the
   // post shows the retrying state, the same as a write that will be retried.
-  const reportHeld = (id: string) => {
-    const pending: PostContentSaveFailedEvent = { postId: id, kind: "retrying" };
+  const reportHeld = (wsId: string, id: string) => {
+    const pending: PostContentSaveFailedEvent = { wsId, postId: id, kind: "retrying" };
     broadcast(CHANNELS.postContentSaveFailed, pending);
   };
 
@@ -87,6 +86,7 @@ export function registerPostHandlers(): void {
   // not take is unsaveable text, and a metadata value the store refused goes
   // back to its field, which then shows why and makes quit ask before it is lost.
   setHeldEditFailureListener((request, failure) => {
+    const wsId = String(request.args[0]);
     const id = String(request.args[1]);
     logError("held post edit failed on delivery", {
       postId: id,
@@ -94,11 +94,12 @@ export function registerPostHandlers(): void {
       ...(failure instanceof Error ? { error: serializeError(failure) } : { refusal: failure }),
     });
     if (failure instanceof Error) {
-      const unsaveable: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable" };
+      const unsaveable: PostContentSaveFailedEvent = { wsId, postId: id, kind: "unsaveable" };
       broadcast(CHANNELS.postContentSaveFailed, unsaveable);
       return;
     }
     const refused: PostMetadataRefusedEvent = {
+      wsId,
       postId: id,
       edits: request.args[2] as EditablePostMetadata,
       refusal: failure as Message,
@@ -122,11 +123,11 @@ export function registerPostHandlers(): void {
       await pending;
     } catch (err) {
       if (err instanceof EditPendingError) {
-        reportHeld(id);
+        reportHeld(wsId, id);
         return;
       }
       logError("post content queue failed", { workspace: wsId, postId: id, error: serializeError(err) });
-      const failure: PostContentSaveFailedEvent = { postId: id, kind: "unsaveable" };
+      const failure: PostContentSaveFailedEvent = { wsId, postId: id, kind: "unsaveable" };
       broadcast(CHANNELS.postContentSaveFailed, failure);
     }
   });
@@ -141,7 +142,7 @@ export function registerPostHandlers(): void {
       return await queueWorkspaceMetadata(wsId, id, edits);
     } catch (err) {
       if (!(err instanceof EditPendingError)) throw err;
-      reportHeld(id);
+      reportHeld(wsId, id);
       return null;
     }
   });
@@ -272,48 +273,18 @@ export function registerPostHandlers(): void {
   ipcMain.handle(CHANNELS.updatePost, async (_event, wsId: string, id: string, updates: PostUpdate) => {
     const dir = (await resolveWorkspace(wsId)).dataDirectory;
     const content = updates?.content;
-    const existing = (await getPost(dir, id));
-    if (!existing) {
-      throw new Error("Post not found");
-    }
-
-    const validation = validatePostUpdate(existing.frontMatter, updates);
-    if (!validation.ok) {
-      warn("post update rejected", {
-        workspace: wsId,
-        postId: id,
-        reason: validation.reason,
-        ...(validation.reservedKeys ? { reservedKeys: validation.reservedKeys } : {}),
-      });
-      throw new Error(validation.message);
-    }
-
-    const edits = validation.edits;
-
-    // The only edit check that needs the filesystem: a referenced source post
-    // must exist. The self-source rule is decided purely in validatePostUpdate.
-    if (typeof edits.sourceId === "string" && edits.sourceId && !(await postExists(dir, edits.sourceId))) {
-      throw new Error("Source post not found");
-    }
-
-    const oldSlug = existing.frontMatter.slug?.trim() ?? "";
-    const oldFilePath = existing.filePath;
-    const post = (await updatePost(dir, id, { content, frontMatter: edits }));
+    // Validation and publication share the store's current-file snapshot.
+    const post = await updatePost(dir, id, updates);
     if (!post) {
       warn("post update failed", { workspace: wsId, postId: id, reason: "not-found-after-update" });
       throw new Error("Post not found");
     }
 
-    const newSlug = post.frontMatter.slug?.trim() ?? "";
     info("post updated", {
       workspace: wsId,
       postId: post.frontMatter.id,
       contentUpdated: content !== undefined,
-      frontMatterKeys: Object.keys(edits),
-      slugChanged: oldSlug !== newSlug,
-      fileChanged: oldFilePath !== post.filePath,
-      before: existing.frontMatter,
-      after: post.frontMatter,
+      frontMatterKeys: Object.keys(updates.frontMatter ?? {}),
     });
 
     // Include the canonical list summary so the renderer's optimistic update uses

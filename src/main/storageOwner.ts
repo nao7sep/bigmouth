@@ -6,7 +6,7 @@ import { WORKER_ENTRIES } from "./builtEntries.js";
 
 export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
-export const isAuthored = (name: StorageCommand) => ["queueContent", "queueMetadata", "queueWorkspaceContent", "queueWorkspaceMetadata"].includes(name);
+export const isAuthored = (name: StorageCommand) => ["queueWorkspaceContent", "queueWorkspaceMetadata"].includes(name);
 // These user mutations retain their logical result through actual settlement.
 // Their deadline ends the UI's normal wait through pending status, not a false
 // failure. Reads/startup and optional records/UI-state writes remain bounded.
@@ -17,17 +17,18 @@ const mutationCommands = new Set<StorageCommand>([
   "setLocked", "deletePost", "renameTarget", "installAsset", "deleteAsset", "saveAppSettings",
 ]);
 const retainsSettlement = (name: StorageCommand) => mutationCommands.has(name);
-const isContent = (name: StorageCommand) => name === "queueContent" || name === "queueWorkspaceContent";
+const isContent = (name: StorageCommand) => name === "queueWorkspaceContent";
 // Requests that must still reach the worker after their caller stops waiting:
 // authored edits, and a cancelled quit's resumption of debounced writes.
 const mustReachWorker = (name: StorageCommand) => isAuthored(name) || name === "resumePendingFlushes";
 export interface StorageRequest { id: number; name: StorageCommand; args: unknown[] }
 export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; backupBoundMs: number; signal: Int32Array; port: MessagePort }
 export interface StorageFlushRequest { flush: true; edits: StorageRequest[]; signal: Int32Array; port: MessagePort }
+export type WorkspaceContentSaveEvent = ContentSaveEvent & { wsId: string };
 export type StorageReply =
   | { id: number; ok: true; value: unknown }
   | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown } }
-  | { event: "content-save"; value: ContentSaveEvent }
+  | { event: "content-save"; value: WorkspaceContentSaveEvent }
   | { event: "record-stored" }
   | { event: "flush-settled" }
   // The worker could not read a request it was sent, so it never ran it.
@@ -87,7 +88,7 @@ export class StorageOwner {
   private delivering = new Map<number, Waiting>();
   private held = new Map<string, HeldEdits>();
   private pendingListener: ((pending: boolean) => void) | null = null;
-  private contentListener: ((event: ContentSaveEvent) => void) | null = null;
+  private contentListener: ((event: WorkspaceContentSaveEvent) => void) | null = null;
   private flushSettled: (() => void) | null = null;
   private recordListener: (() => void) | null = null;
   private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
@@ -102,7 +103,7 @@ export class StorageOwner {
   storagePending(): boolean { return this.active?.expired === true && retainsSettlement(this.active.request.name); }
   onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
 
-  onContentSave(listener: ((event: ContentSaveEvent) => void) | null): void { this.contentListener = listener; }
+  onContentSave(listener: ((event: WorkspaceContentSaveEvent) => void) | null): void { this.contentListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
   /** A held edit the store refused or could not take once delivered: its caller has already been answered. */
   onHeldEditFailed(listener: ((request: StorageRequest, failure: unknown) => void) | null): void { this.heldFailureListener = listener; }
@@ -173,8 +174,8 @@ export class StorageOwner {
   }
 
   /** Whether content for this post is still on this side of the worker: held, queued, or sent without a reply. */
-  holdsContentFor(postId: string): boolean {
-    const ours = (request: StorageRequest) => isContent(request.name) && request.args[1] === postId;
+  holdsContentFor(wsId: string, postId: string): boolean {
+    const ours = (request: StorageRequest) => isContent(request.name) && request.args[0] === wsId && request.args[1] === postId;
     for (const post of this.held.values()) if (post.content && ours(post.content)) return true;
     return [this.active, ...this.queued, ...this.delivering.values()].some((waiting) => waiting !== null && ours(waiting.request));
   }
@@ -392,15 +393,18 @@ export class StorageOwner {
 
   private failWaiting(error: Error): void {
     const waiting = [this.active, ...this.queued, ...this.delivering.values()];
+    const held = this.takeHeld();
     const wasPending = this.storagePending();
     this.delivering.clear();
     this.active = null;
     this.queued = [];
+    for (const item of waiting) if (item) clearTimeout(item.timer);
     for (const item of waiting) {
       if (!item) continue;
-      clearTimeout(item.timer);
       if (!item.expired || (item.started && retainsSettlement(item.request.name))) item.reject(error);
+      else if (isAuthored(item.request.name)) this.heldFailureListener?.(item.request, error);
     }
+    for (const request of held) this.heldFailureListener?.(request, error);
     if (wasPending) this.pendingListener?.(false);
   }
 }

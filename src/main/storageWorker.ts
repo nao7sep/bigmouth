@@ -1,4 +1,5 @@
 import { parentPort } from "node:worker_threads";
+import { listWorkspaces } from "./core/services/workspaceStore.js";
 import { storageTasks } from "./storageTasks.js";
 import { setContentSaveListener } from "./core/services/postStore.js";
 import { onRecordStored } from "./core/services/recordsStore.js";
@@ -18,7 +19,13 @@ function apply(request: StorageRequest) {
 }
 setContentSaveListener((value) => {
   const event = value.kind === "save-failed" ? { ...value, error: serializeError(value.error) } : value;
-  port.postMessage({ event: "content-save", value: event } satisfies StorageReply);
+  // The registry is already cached by workspace resolution; aliases receive the
+  // same physical save with their own identity, without another file read.
+  for (const workspace of listWorkspaces()) {
+    if (workspace.dataDirectory === value.dataDir) {
+      port.postMessage({ event: "content-save", value: { ...event, wsId: workspace.id } } satisfies StorageReply);
+    }
+  }
 });
 onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies StorageReply));
 // A request that could not be read is said to be, so the owner fails it rather
@@ -52,7 +59,7 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
     storageTasks.holdPendingFlushes();
     for (const edit of request.edits) {
       try {
-        if (!["queueContent", "queueMetadata", "queueWorkspaceContent", "queueWorkspaceMetadata"].includes(edit.name)) continue;
+        if (!["queueWorkspaceContent", "queueWorkspaceMetadata"].includes(edit.name)) continue;
         const result = apply(edit);
         if (result !== null && !edit.name.endsWith("Content")) failures.push({ id: String(edit.args[1]), message: "The metadata edit could not be saved." });
       } catch (error) {

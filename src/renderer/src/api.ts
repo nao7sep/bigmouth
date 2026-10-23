@@ -189,7 +189,10 @@ export function reportMetadataRefusal(id: string, refused: boolean): void {
 export function onPostContentSaved(
   listener: (event: PostContentSavedEvent) => void,
 ): () => void {
-  return bridge().onPostContentSaved(listener);
+  const workspaceId = requireWs();
+  return bridge().onPostContentSaved((event) => {
+    if (event.wsId === workspaceId) listener(event);
+  });
 }
 
 /** Calls `listener` each time this window comes back to the front. */
@@ -202,14 +205,20 @@ export function onWindowActivated(listener: () => void): () => void {
 export function onPostContentSaveFailed(
   listener: (event: PostContentSaveFailedEvent) => void,
 ): () => void {
-  return bridge().onPostContentSaveFailed(listener);
+  const workspaceId = requireWs();
+  return bridge().onPostContentSaveFailed((event) => {
+    if (event.wsId === workspaceId) listener(event);
+  });
 }
 
 /** A held metadata edit the store refused once storage took it. */
 export function onPostMetadataRefused(
   listener: (event: PostMetadataRefusedEvent) => void,
 ): () => void {
-  return bridge().onPostMetadataRefused(listener);
+  const workspaceId = requireWs();
+  return bridge().onPostMetadataRefused((event) => {
+    if (event.wsId === workspaceId) listener(event);
+  });
 }
 
 export function updatePost(

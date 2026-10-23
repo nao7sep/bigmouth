@@ -35,8 +35,6 @@ export const clearCache = command("clearCache");
 export const rebuildIndex = command("rebuildIndex");
 export const queueWorkspaceContent = (wsId: string, id: string, content: string) => storageOwner.run("queueWorkspaceContent", [wsId, id, content, new Date()]);
 export const queueWorkspaceMetadata = (wsId: string, id: string, edits: unknown) => storageOwner.run("queueWorkspaceMetadata", [wsId, id, edits, new Date()]);
-export const queueContent = (...args: Parameters<StorageTasks["queueContent"]>) => storageOwner.run("queueContent", [args[0], args[1], args[2], args[3] ?? new Date()]);
-export const queueMetadata = (...args: Parameters<StorageTasks["queueMetadata"]>) => storageOwner.run("queueMetadata", [args[0], args[1], args[2], args[3] ?? new Date()]);
 export const flushPostEdits = command("flushPostEdits");
 export const getPost = command("getPost");
 export const createPost = command("createPost");
@@ -63,5 +61,5 @@ export const writeProviderCall = command("writeProviderCall");
 
 export const setContentSaveListener = storageOwner.onContentSave.bind(storageOwner);
 export const setHeldEditFailureListener = storageOwner.onHeldEditFailed.bind(storageOwner);
-export const holdsContentFor = (postId: string) => storageOwner.holdsContentFor(postId);
+export const holdsContentFor = (wsId: string, postId: string) => storageOwner.holdsContentFor(wsId, postId);
 export const deletePost = command("deletePost");

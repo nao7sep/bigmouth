@@ -6,7 +6,9 @@ import { Worker } from "node:worker_threads";
 import { build } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WORKER_ENTRIES } from "@main/builtEntries.js";
-import { EditPendingError, StorageOwner, type StorageRequest, type StorageFlushRequest, storageOwner } from "@main/storageOwner.js";
+import { EditPendingError, StorageOwner, type StorageRequest, type StorageFlushRequest, type WorkspaceContentSaveEvent, storageOwner } from "@main/storageOwner.js";
+
+const EDITED_AT = new Date("2026-10-23T00:00:00.000Z");
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const sent = vi.hoisted(() => [] as { channel: string; payload: unknown }[]);
@@ -90,6 +92,86 @@ describe("storage mutation ownership", () => {
     } finally { await owner.stop(); }
   });
 
+  it("reports every retained held edit once when the worker crashes, after releasing ownership", async () => {
+    vi.useFakeTimers();
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const failure = new Error("worker crashed");
+    const failed = vi.fn((request: StorageRequest) => {
+      expect(owner.holdsContentFor(request.args[0] as string, request.args[1] as string)).toBe(false);
+    });
+    owner.onHeldEditFailed(failed);
+    try {
+      const read = owner.run("getUiState", [], 10).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(10);
+      await read;
+      await expect(owner.run("queueWorkspaceContent", ["/workspace", "post", "older text", EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
+      await expect(owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "first" }, EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
+      await expect(owner.run("queueWorkspaceContent", ["/workspace", "post", "latest text", EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
+      await expect(owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "second" }, EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
+      worker.emit("error", failure);
+      worker.emit("exit", 1);
+      await owner.stop();
+      expect(failed.mock.calls.map(([request]) => request.args[2])).toEqual([
+        { title: "first" }, "latest text", { title: "second" },
+      ]);
+      for (const call of failed.mock.calls) expect(call).toEqual([expect.any(Object), failure]);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(worker.requests).toHaveLength(1);
+    } finally { await owner.stop(); }
+  });
+
+  it.each(["active", "queued", "delivering"] as const)(
+    "reports an expired %s authored edit once when its worker crashes",
+    async (location) => {
+      vi.useFakeTimers();
+      const worker = new HeldWorker();
+      const owner = new StorageOwner(() => worker as unknown as Worker);
+      const failed = vi.fn();
+      owner.onHeldEditFailed(failed);
+      let flush: StorageFlushRequest | undefined;
+      try {
+        if (location !== "active") void owner.run("getUiState", [], 1000).catch(() => undefined);
+        const content = owner.run("queueWorkspaceContent", ["/workspace", "post", "pending text", EDITED_AT], 10).catch((error: unknown) => error);
+        const metadata = owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "pending title" }, EDITED_AT], 10).catch((error: unknown) => error);
+        if (location === "delivering") {
+          expect(owner.flushWithin(0)).toEqual({ kind: "expired" });
+          flush = worker.requests.at(-1) as unknown as StorageFlushRequest;
+          expect(flush.edits).toHaveLength(2);
+        }
+        await vi.advanceTimersByTimeAsync(10);
+        expect(await content).toBeInstanceOf(EditPendingError);
+        expect(await metadata).toBeInstanceOf(EditPendingError);
+        const error = new Error("worker crashed");
+        worker.emit("error", error);
+        worker.emit("exit", 1);
+        expect(failed.mock.calls).toEqual([
+          [expect.objectContaining({ name: "queueWorkspaceContent" }), error],
+          [expect.objectContaining({ name: "queueWorkspaceMetadata" }), error],
+        ]);
+        expect(owner.holdsContentFor("/workspace", "post")).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally { flush?.port.close(); await owner.stop(); }
+    },
+  );
+
+  it("rejects unexpired authored requests through their original caller without a second failure notification", async () => {
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const failed = vi.fn();
+    owner.onHeldEditFailed(failed);
+    try {
+      const content = owner.run("queueWorkspaceContent", ["/workspace", "post", "pending text", EDITED_AT]).catch((error: unknown) => error);
+      const metadata = owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "pending title" }, EDITED_AT]).catch((error: unknown) => error);
+      const error = new Error("worker crashed");
+      worker.emit("error", error);
+      worker.emit("exit", 1);
+      expect(await content).toBe(error);
+      expect(await metadata).toBe(error);
+      expect(failed).not.toHaveBeenCalled();
+    } finally { await owner.stop(); }
+  });
+
   // A hand-off that cannot be read must not leave its request, or storage, waiting forever.
   it("fails a request the worker could not read as not done, and moves on", async () => {
     vi.useFakeTimers();
@@ -147,10 +229,10 @@ describe("storage mutation ownership", () => {
       const held = owner.run("getUiState", [], 10).catch(() => undefined);
       await vi.advanceTimersByTimeAsync(10);
       await held;
-      await expect(owner.run("queueContent", ["/workspace", "post", "typed while blocked"])).rejects.toBeInstanceOf(EditPendingError);
+      await expect(owner.run("queueWorkspaceContent", ["/workspace", "post", "typed while blocked", EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
       expect(worker.requests).toHaveLength(1);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
-      expect(worker.requests[1]).toMatchObject({ name: "queueContent", args: ["/workspace", "post", "typed while blocked"] });
+      expect(worker.requests[1]).toMatchObject({ name: "queueWorkspaceContent", args: ["/workspace", "post", "typed while blocked", EDITED_AT] });
     } finally { await owner.stop(); }
   });
 
@@ -160,13 +242,13 @@ describe("storage mutation ownership", () => {
     const owner = new StorageOwner(() => worker as unknown as Worker);
     try {
       const read = owner.run("getUiState", [], 1000).catch(() => undefined);
-      const edit = owner.run("queueContent", ["/workspace", "post", "queued behind a read"], 10).catch((error: unknown) => error);
+      const edit = owner.run("queueWorkspaceContent", ["/workspace", "post", "queued behind a read", EDITED_AT], 10).catch((error: unknown) => error);
       const lock = owner.run("setLocked", ["/workspace", "post", true], 1000).catch(() => undefined);
       await vi.advanceTimersByTimeAsync(10);
       expect(await edit).toBeInstanceOf(EditPendingError);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       await read;
-      expect(worker.requests[1]).toMatchObject({ name: "queueContent", args: ["/workspace", "post", "queued behind a read"] });
+      expect(worker.requests[1]).toMatchObject({ name: "queueWorkspaceContent", args: ["/workspace", "post", "queued behind a read", EDITED_AT] });
       worker.emit("message", { id: worker.requests[1].id, ok: true, value: undefined });
       expect(worker.requests[2].name).toBe("setLocked");
       worker.emit("message", { id: worker.requests[2].id, ok: true, value: null });
@@ -200,11 +282,11 @@ describe("storage mutation ownership", () => {
       await vi.advanceTimersByTimeAsync(10);
       await held;
       for (const run of [
-        () => owner.run("queueMetadata", ["/workspace", "post", { title: "first", slug: "kept" }]),
-        () => owner.run("queueContent", ["/workspace", "post", "older text"]),
-        () => owner.run("queueMetadata", ["/workspace", "post", { title: "second" }]),
-        () => owner.run("queueContent", ["/workspace", "post", "newest text"]),
-        () => owner.run("queueMetadata", ["/workspace", "post", { title: "third" }]),
+        () => owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "first", slug: "kept" }, EDITED_AT]),
+        () => owner.run("queueWorkspaceContent", ["/workspace", "post", "older text", EDITED_AT]),
+        () => owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "second" }, EDITED_AT]),
+        () => owner.run("queueWorkspaceContent", ["/workspace", "post", "newest text", EDITED_AT]),
+        () => owner.run("queueWorkspaceMetadata", ["/workspace", "post", { title: "third" }, EDITED_AT]),
       ]) await expect(run()).rejects.toBeInstanceOf(EditPendingError);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       for (let index = 1; index < 5; index++) worker.emit("message", { id: worker.requests[index].id, ok: true, value: index === 4 ? { key: "metadata.refusedInvalid" } : null });
@@ -221,7 +303,7 @@ describe("storage mutation ownership", () => {
     const owner = new StorageOwner(() => worker as unknown as Worker);
     let flushRequest: StorageFlushRequest | undefined;
     try {
-      const edit = owner.run("queueContent", ["/workspace", "post", "accepted"]);
+      const edit = owner.run("queueWorkspaceContent", ["/workspace", "post", "accepted", EDITED_AT]);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: undefined });
       await edit;
       const flushing = owner.flushAsync(1000);
@@ -270,15 +352,17 @@ describe("storage mutation ownership", () => {
       const slow = owner.run("getUiState", [], 10).catch(() => undefined);
       await vi.advanceTimersByTimeAsync(10);
       await slow;
-      await expect(owner.run("queueContent", ["/workspace", "post", "held"])).rejects.toBeInstanceOf(EditPendingError);
-      expect(owner.holdsContentFor("post")).toBe(true);
-      expect(owner.holdsContentFor("other")).toBe(false);
+      await expect(owner.run("queueWorkspaceContent", ["/workspace", "post", "held", EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
+      expect(owner.holdsContentFor("/workspace", "post")).toBe(true);
+      expect(owner.holdsContentFor("another-workspace", "post")).toBe(false);
+      expect(owner.holdsContentFor("/workspace", "other")).toBe(false);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       // Sent, but the worker has not replied: still on this side.
-      expect(worker.requests[1].name).toBe("queueContent");
-      expect(owner.holdsContentFor("post")).toBe(true);
+      expect(worker.requests[1].name).toBe("queueWorkspaceContent");
+      expect(owner.holdsContentFor("/workspace", "post")).toBe(true);
+      expect(owner.holdsContentFor("another-workspace", "post")).toBe(false);
       worker.emit("message", { id: worker.requests[1].id, ok: true, value: undefined });
-      expect(owner.holdsContentFor("post")).toBe(false);
+      expect(owner.holdsContentFor("/workspace", "post")).toBe(false);
     } finally { await owner.stop(); }
   });
 
@@ -287,7 +371,7 @@ describe("storage mutation ownership", () => {
     const worker = new HeldWorker();
     const owner = new StorageOwner(() => worker as unknown as Worker);
     const run = vi.spyOn(storageOwner, "run").mockImplementation((name, args) => owner.run(name, args));
-    const holds = vi.spyOn(storageOwner, "holdsContentFor").mockImplementation((id) => owner.holdsContentFor(id));
+    const holds = vi.spyOn(storageOwner, "holdsContentFor").mockImplementation((wsId, id) => owner.holdsContentFor(wsId, id));
     sent.length = 0;
     try {
       const { registerPostHandlers } = await import("@main/ipc/posts.js");
@@ -300,12 +384,12 @@ describe("storage mutation ownership", () => {
       await handlers.get(CHANNELS.queuePostContent)!({}, "workspace-id", "post", "newer text");
       const summary = { id: "post" };
       // An older buffered save lands while the newer text waits.
-      worker.emit("message", { event: "content-save", value: { kind: "saved", dataDir: "/d", id: "post", summary } });
+      worker.emit("message", { event: "content-save", value: { wsId: "workspace-id", kind: "saved", dataDir: "/d", id: "post", summary } });
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       worker.emit("message", { id: worker.requests[1].id, ok: true, value: undefined });
-      worker.emit("message", { event: "content-save", value: { kind: "saved", dataDir: "/d", id: "post", summary } });
+      worker.emit("message", { event: "content-save", value: { wsId: "workspace-id", kind: "saved", dataDir: "/d", id: "post", summary } });
       expect(sent.filter((item) => item.channel === CHANNELS.postContentSaved).map((item) => item.payload))
-        .toEqual([{ postId: "post", summary, newerEditHeld: true }, { postId: "post", summary, newerEditHeld: false }]);
+        .toEqual([{ wsId: "workspace-id", postId: "post", summary, newerEditHeld: true }, { wsId: "workspace-id", postId: "post", summary, newerEditHeld: false }]);
     } finally { run.mockRestore(); holds.mockRestore(); await owner.stop(); }
   });
 
@@ -329,7 +413,7 @@ describe("storage mutation ownership", () => {
       const refusal = { key: "metadata.refusedSlugTaken", values: { slug: "taken" } };
       worker.emit("message", { id: worker.requests[1].id, ok: true, value: refusal });
       expect(sent.filter((item) => item.channel === CHANNELS.postMetadataRefused).map((item) => item.payload))
-        .toEqual([{ postId: "post", edits: { slug: "taken" }, refusal }]);
+        .toEqual([{ wsId: "workspace-id", postId: "post", edits: { slug: "taken" }, refusal }]);
     } finally { run.mockRestore(); await owner.stop(); }
   });
 
@@ -338,18 +422,18 @@ describe("storage mutation ownership", () => {
     const owner = new StorageOwner(() => worker as unknown as Worker);
     const ports: StorageFlushRequest[] = [];
     try {
-      const started = owner.run("queueContent", ["/workspace", "post", "first"]);
+      const started = owner.run("queueWorkspaceContent", ["/workspace", "post", "first", EDITED_AT]);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: undefined });
       await started;
       const flushing = owner.flushAsync(1000);
       const first = worker.requests[1] as unknown as StorageFlushRequest;
       ports.push(first);
-      await expect(owner.run("queueContent", ["/workspace", "post", "during flush"])).rejects.toBeInstanceOf(EditPendingError);
+      await expect(owner.run("queueWorkspaceContent", ["/workspace", "post", "during flush", EDITED_AT])).rejects.toBeInstanceOf(EditPendingError);
       worker.emit("message", { event: "flush-settled" });
       first.port.postMessage({ failures: [] });
       // The held edit is delivered as storage frees, then a second flush writes it.
       await vi.waitFor(() => expect(worker.requests).toHaveLength(4));
-      expect(worker.requests[2]).toMatchObject({ name: "queueContent", args: ["/workspace", "post", "during flush"] });
+      expect(worker.requests[2]).toMatchObject({ name: "queueWorkspaceContent", args: ["/workspace", "post", "during flush", EDITED_AT] });
       const second = worker.requests[3] as unknown as StorageFlushRequest;
       ports.push(second);
       expect(second.flush).toBe(true);
@@ -405,11 +489,13 @@ it.each(["async", "session-end"] as const)("runs real store writes and %s quit f
     });
     owner = new StorageOwner(() => new Worker(entry, { env: { ...process.env, BIGMOUTH_DATA_DIR: root } }));
     await owner.run("initialize", []);
+    const saveEvents: WorkspaceContentSaveEvent[] = [];
+    owner.onContentSave((event) => saveEvents.push(event));
     const workspace = await owner.run("createWorkspace", ["Test"]);
     await owner.run("saveTargets", [workspace.dataDirectory, [{ name: "blog", defaultLanguage: "en", requiresMetadata: false }]]);
     const post = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
     const authored = new Date(new Date(post.frontMatter.createdAtUtc).getTime() + 1);
-    await owner.run("queueContent", [workspace.dataDirectory, post.frontMatter.id, "written by the worker", authored]);
+    await owner.run("queueWorkspaceContent", [workspace.id, post.frontMatter.id, "written by the worker", authored]);
     expect(mode === "async" ? await owner.flushAsync(2000) : owner.flushWithin(2000)).toEqual({ kind: "flushed", failures: [] });
     const raw = fs.readFileSync(post.filePath, "utf8");
     expect(raw).toContain("written by the worker");
@@ -418,7 +504,25 @@ it.each(["async", "session-end"] as const)("runs real store writes and %s quit f
     // Locking before the debounce writes the buffered text with the lock, so
     // the quit that follows has nothing left to save and reports nothing.
     await owner.run("resumePendingFlushes", []);
-    await owner.run("queueContent", [workspace.dataDirectory, post.frontMatter.id, "locked before autosave"]);
+    // Copying a post into another workspace preserves its id. Worker events
+    // still identify which physical copy was saved.
+    const secondWorkspace = await owner.run("createWorkspace", ["Second", path.join(root, "second-workspace")]);
+    const copiedFile = path.join(secondWorkspace.dataDirectory, path.relative(workspace.dataDirectory, post.filePath));
+    fs.mkdirSync(path.dirname(copiedFile), { recursive: true });
+    fs.copyFileSync(post.filePath, copiedFile);
+    await owner.run("refreshIndex", [secondWorkspace.dataDirectory]);
+    const savedBeforeCopies = saveEvents.length;
+    await owner.run("queueWorkspaceContent", [workspace.id, post.frontMatter.id, "first workspace copy", new Date()]);
+    await owner.run("queueWorkspaceContent", [secondWorkspace.id, post.frontMatter.id, "second workspace copy", new Date()]);
+    expect(mode === "async" ? await owner.flushAsync(2000) : owner.flushWithin(2000)).toEqual({ kind: "flushed", failures: [] });
+    // Synchronous flush events are delivered on the next event-loop turn.
+    await owner.run("resumePendingFlushes", []);
+    expect(saveEvents.slice(savedBeforeCopies).filter((event) => event.kind === "saved").map((event) => [event.wsId, event.id])).toEqual([
+      [workspace.id, post.frontMatter.id], [secondWorkspace.id, post.frontMatter.id],
+    ]);
+    expect(fs.readFileSync(post.filePath, "utf8")).toContain("first workspace copy");
+    expect(fs.readFileSync(copiedFile, "utf8")).toContain("second workspace copy");
+    await owner.run("queueWorkspaceContent", [workspace.id, post.frontMatter.id, "locked before autosave", new Date()]);
     await owner.run("setLocked", [workspace.dataDirectory, post.frontMatter.id, true]);
     const late = await owner.run("createPost", [workspace.dataDirectory, "blog", "en"]);
     expect(mode === "async" ? await owner.flushAsync(2000) : owner.flushWithin(2000)).toEqual({ kind: "flushed", failures: [] });
@@ -426,7 +530,7 @@ it.each(["async", "session-end"] as const)("runs real store writes and %s quit f
 
     // An edit buffered after the last quit flush, as while the quit question
     // is open, is written by the finish step.
-    const lateEdit = owner.run("queueContent", [workspace.dataDirectory, late.frontMatter.id, "typed during the question"]);
+    const lateEdit = owner.run("queueWorkspaceContent", [workspace.id, late.frontMatter.id, "typed during the question", new Date()]);
     // The synchronous flush has not yielded to its settlement event yet.
     // Finish must take ownership of an edit still held on the main thread too.
     if (mode === "session-end") await expect(lateEdit).rejects.toBeInstanceOf(EditPendingError);

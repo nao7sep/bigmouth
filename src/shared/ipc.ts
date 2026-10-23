@@ -168,6 +168,7 @@ export const CHANNELS = {
 // --- Content-save events (main -> renderer) ---
 
 export interface PostContentSavedEvent {
+  wsId: string;
   postId: string;
   /**
    * The canonical list projection (one index row). It carries no updatedAtUtc —
@@ -183,6 +184,7 @@ export interface PostContentSavedEvent {
 }
 
 export interface PostContentSaveFailedEvent {
+  wsId: string;
   postId: string;
   /**
    * Which failure this is. "retrying": a write failed, the text is still
@@ -195,6 +197,7 @@ export interface PostContentSaveFailedEvent {
 
 /** A held metadata edit the store refused on delivery: the edits it carried and why. */
 export interface PostMetadataRefusedEvent {
+  wsId: string;
   postId: string;
   edits: EditablePostMetadata;
   refusal: Message;
