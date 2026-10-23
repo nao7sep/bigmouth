@@ -86,6 +86,8 @@ export const CHANNELS = {
   readRecordSources: "records:sources",
   recordsChanged: "records:changed",
 
+  getDurabilityUnconfirmed: "storage:durabilityUnconfirmed",
+  durabilityUnconfirmed: "storage:durabilityWarning",
   getStoragePending: "storage:pending",
   storagePendingChanged: "storage:pendingChanged",
 
@@ -370,6 +372,8 @@ export type Platform =
   | "netbsd";
 
 export interface BigMouthApi {
+  getDurabilityUnconfirmed(): Promise<boolean>;
+  onDurabilityUnconfirmed(listener: () => void): () => void;
   getStoragePending(): Promise<boolean>;
   onStoragePendingChanged(listener: (pending: boolean) => void): () => void;
   /** The running OS, exposed synchronously from the preload (process.platform). */

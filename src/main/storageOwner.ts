@@ -30,6 +30,7 @@ export type StorageReply =
   | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown } }
   | { event: "content-save"; value: WorkspaceContentSaveEvent }
   | { event: "record-stored" }
+  | { event: "durability-unconfirmed" }
   | { event: "flush-settled" }
   // The worker could not read a request it was sent, so it never ran it.
   | { event: "request-unreadable" };
@@ -90,6 +91,8 @@ export class StorageOwner {
   private pendingListener: ((pending: boolean) => void) | null = null;
   private contentListener: ((event: WorkspaceContentSaveEvent) => void) | null = null;
   private flushSettled: (() => void) | null = null;
+  private durabilityListener: (() => void) | null = null;
+  private unconfirmedDurability = false;
   private recordListener: (() => void) | null = null;
   private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
 
@@ -104,6 +107,8 @@ export class StorageOwner {
   onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
 
   onContentSave(listener: ((event: WorkspaceContentSaveEvent) => void) | null): void { this.contentListener = listener; }
+  durabilityUnconfirmed(): boolean { return this.unconfirmedDurability; }
+  onDurabilityUnconfirmed(listener: (() => void) | null): void { this.durabilityListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
   /** A held edit the store refused or could not take once delivered: its caller has already been answered. */
   onHeldEditFailed(listener: ((request: StorageRequest, failure: unknown) => void) | null): void { this.heldFailureListener = listener; }
@@ -345,7 +350,8 @@ export class StorageOwner {
 
   private receive(reply: StorageReply): void {
     if ("event" in reply) {
-      if (reply.event === "record-stored") this.recordListener?.();
+      if (reply.event === "durability-unconfirmed") { this.unconfirmedDurability = true; this.durabilityListener?.(); }
+      else if (reply.event === "record-stored") this.recordListener?.();
       else if (reply.event === "flush-settled") { this.flushing = false; this.flushSettled?.(); this.flushSettled = null; this.dispatch(); }
       else if (reply.event === "request-unreadable") this.loseActive(new Error("Storage could not read this request. Nothing was done."));
       else this.contentListener?.(reply.value);

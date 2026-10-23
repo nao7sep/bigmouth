@@ -32,3 +32,16 @@ it("carries pending storage settlement through the bridge and releases its subsc
   dispose();
   expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.storagePendingChanged, callback);
 });
+
+it("carries the retained durability result and releases its event subscription", async () => {
+  const api = electron.api!;
+  expect(await api.getDurabilityUnconfirmed()).toBe(true);
+  expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.getDurabilityUnconfirmed);
+  const listener = vi.fn();
+  const dispose = api.onDurabilityUnconfirmed(listener);
+  const callback = electron.listeners.get(CHANNELS.durabilityUnconfirmed)!;
+  callback({});
+  expect(listener).toHaveBeenCalledTimes(1);
+  dispose();
+  expect(electron.removeListener).toHaveBeenCalledWith(CHANNELS.durabilityUnconfirmed, callback);
+});

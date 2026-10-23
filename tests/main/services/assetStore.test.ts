@@ -267,6 +267,37 @@ describe("an uploaded copy keeps its source's metadata", () => {
     expect(listAssets(dataDir, POST).assets[0].uploadedAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
+  it("applies the source's metadata to the staged descriptor before flushing or publishing a replacement", () => {
+    install(dataDir, POST, "a.png", Buffer.from("old"), meta("a.png"));
+    const destination = path.join(assetDir(dataDir, POST), "a.png");
+    const upload = stage(Buffer.from("new"));
+    const stagedPath = path.join(stagingDir(dataDir), upload.name);
+    const identity = fs.statSync(stagedPath);
+    const fsync = fs.fsyncSync;
+    const rename = vi.spyOn(fs, "renameSync");
+    let observedFlushes = 0;
+    const flush = vi.spyOn(fs, "fsyncSync").mockImplementation((fd) => {
+      const stat = fs.fstatSync(fd);
+      if (stat.dev === identity.dev && stat.ino === identity.ino) {
+        observedFlushes += 1;
+        expect(stat.mtime.toISOString()).toBe(source.mtime.toISOString());
+        if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(source.mode);
+        expect(fs.existsSync(stagedPath)).toBe(true);
+        expect(fs.readFileSync(destination, "utf8")).toBe("old");
+        expect(rename).not.toHaveBeenCalled();
+      }
+      fsync(fd);
+    });
+    try {
+      installAsset(dataDir, POST, "a.png", upload, meta("a.png"), source);
+      expect(observedFlushes).toBe(1);
+      expect(fs.readFileSync(destination, "utf8")).toBe("new");
+    } finally {
+      flush.mockRestore();
+      rename.mockRestore();
+    }
+  });
+
   it("keeps the new source's metadata when it replaces an asset", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     install(dataDir, POST, "a.png", Buffer.from("xyz"), meta("a.png"), source);
@@ -312,6 +343,36 @@ describe("installing a staged upload", () => {
     expect(staged()).toEqual([]);
     const [record] = JSON.parse(fs.readFileSync(path.join(assetDir(dataDir, POST), "meta.json"), "utf8")).assets;
     expect(record).toMatchObject({ size: 6, contentHash: upload.sha256, mtimeMs: fs.statSync(file).mtimeMs });
+  });
+
+  it("keeps the previous asset and metadata intact and the stage recoverable when its file flush fails", () => {
+    install(dataDir, POST, "a.png", Buffer.from("old"), { ...meta("a.png"), width: 12 });
+    const dir = assetDir(dataDir, POST);
+    const destination = path.join(dir, "a.png");
+    const metadataPath = path.join(dir, "meta.json");
+    const metadataBefore = fs.readFileSync(metadataPath);
+    const upload = stage(Buffer.from("replacement"));
+    const stagedPath = path.join(stagingDir(dataDir), upload.name);
+    const identity = fs.statSync(stagedPath);
+    const failure = Object.assign(new Error("injected staged file flush failure"), { code: "EIO" });
+    const fsync = fs.fsyncSync;
+    const rename = vi.spyOn(fs, "renameSync");
+    const flush = vi.spyOn(fs, "fsyncSync").mockImplementation((fd) => {
+      const stat = fs.fstatSync(fd);
+      if (stat.dev === identity.dev && stat.ino === identity.ino) throw failure;
+      fsync(fd);
+    });
+    try {
+      expect(() => installAsset(dataDir, POST, "a.png", upload, meta("a.png", 11))).toThrow(failure);
+      expect(rename).not.toHaveBeenCalled();
+      expect(fs.readFileSync(destination, "utf8")).toBe("old");
+      expect(fs.readFileSync(metadataPath)).toEqual(metadataBefore);
+      expect(fs.readFileSync(stagedPath, "utf8")).toBe("replacement");
+      expect(staged()).toEqual([upload.name]);
+    } finally {
+      flush.mockRestore();
+      rename.mockRestore();
+    }
   });
 
   it.runIf(process.platform !== "win32")("publishes a new file with the ordinary mode, not the stage's private one", () => {

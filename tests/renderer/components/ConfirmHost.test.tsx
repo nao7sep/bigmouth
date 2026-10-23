@@ -5,6 +5,8 @@ import { ConfirmProvider, useConfirm, type ConfirmOptions } from "@renderer/comp
 
 vi.mock("@renderer/api", () => ({
   getStoragePending: vi.fn().mockResolvedValue(false),
+  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
+  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: vi.fn(() => () => {}),
   reportProblem: vi.fn(),
 }));

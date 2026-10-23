@@ -65,6 +65,7 @@
   "store.unreadable": "BigMouth konnte {path} nicht lesen, daher wurde die Datei nicht verändert. Reparieren oder verschieben Sie die Datei und versuchen Sie es dann erneut.",
   "app.storageChangeFailed": "Die Änderung konnte nicht gespeichert werden. Prüfe sie, bevor du es erneut versuchst.",
   "app.storagePending": "Diese Änderung wird noch gespeichert. Du kannst diese Ansicht verlassen. Warte, bis der Vorgang abgeschlossen ist, bevor du es erneut versuchst.",
+  "app.durabilityUnconfirmed": "Die Änderungen wurden gespeichert, aber der Schutz bei einem Stromausfall konnte nicht bestätigt werden.",
   "app.uiStateLoadFailed": "Die gespeicherten Oberflächeneinstellungen und der zuletzt genutzte Arbeitsbereich konnten nicht geladen werden. Für diesen Start gelten die Standardwerte.",
   "app.workspacesLoadFailed": "Die Arbeitsbereiche konnten nicht geladen werden. Der gemerkte Arbeitsbereich bleibt unverändert; versuchen Sie es erneut.",
   "app.activeWorkspaceSaveFailed": "Dieser Arbeitsbereich ist geöffnet, konnte aber nicht für den nächsten Start gemerkt werden.",

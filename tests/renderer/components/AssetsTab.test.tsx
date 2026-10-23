@@ -7,6 +7,8 @@ vi.mock("@renderer/api", () => ({
   onWindowActivated: vi.fn(() => () => {}),
   reportProblem: vi.fn(),
   getStoragePending: vi.fn().mockResolvedValue(false),
+  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
+  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: vi.fn(() => () => {}),
   listAssets: vi.fn(),
   uploadAsset: vi.fn(),

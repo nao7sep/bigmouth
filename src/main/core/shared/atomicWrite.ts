@@ -2,10 +2,11 @@
  * Atomic file write, and the single managed-text choke point layered on top of it.
  *
  * {@link writeFileAtomic} writes a sibling temp file in the target's own directory, then renames it
- * over the target. A crash mid-write leaves either the old file or the new one, never a truncated one —
- * which is what keeps the JSON stores under the storage root (workspaces.json, config.json, the post
- * index, …) readable after any interruption. The rename is atomic only when the temp file is on the
- * same filesystem as the target, hence the same-directory temp.
+ * over the target. This prevents a torn replacement during process termination.
+ * Final bytes and permissions are flushed before publication, then the changed
+ * directory entry is flushed. Unsupported barriers or post-publication failures
+ * are reported separately: publication succeeded, but power-loss protection is
+ * unconfirmed. A filesystem or device may provide weaker guarantees than its API.
  *
  * The temp name is `<stem>-<nanoid>.tmp` (the derived-filename grammar): the nanoid is what lets two
  * concurrent unlocked writers of the same target each rename their own complete content into place
@@ -28,6 +29,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { confirmPublication, flushStagedFile, flushPublishedPath } from "./publication.js";
 import { nanoid } from "nanoid";
 import { record } from "../services/backupStore.js";
 
@@ -38,7 +40,10 @@ import { record } from "../services/backupStore.js";
  */
 export function writeFileAtomic(filePath: string, content: string | Buffer, mode?: number): boolean {
   if (holdsBytes(filePath, content)) {
-    if (mode !== undefined) fs.chmodSync(filePath, mode);
+    if (mode !== undefined) {
+      fs.chmodSync(filePath, mode);
+      confirmPublication(filePath, flushPublishedPath(filePath));
+    }
     return false;
   }
   const dir = path.dirname(filePath);
@@ -50,11 +55,13 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   const keptMode = mode === undefined ? existingMode(filePath) : undefined;
   let created = false;
   let fd: number | undefined;
+  let bytesConfirmed = false;
   try {
     fd = fs.openSync(tempPath, "wx", 0o600);
     created = true;
     fs.writeFileSync(fd, content);
     fs.fchmodSync(fd, mode ?? keptMode ?? (0o666 & ~process.umask()));
+    bytesConfirmed = flushStagedFile(fd);
     fs.closeSync(fd);
     fd = undefined;
     fs.renameSync(tempPath, filePath);
@@ -64,6 +71,7 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
     try { if (created) fs.rmSync(tempPath, { force: true }); } catch { /* Preserve the save failure. */ }
     throw err;
   }
+  confirmPublication(filePath, bytesConfirmed);
   return true;
 }
 

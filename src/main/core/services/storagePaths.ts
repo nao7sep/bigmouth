@@ -8,14 +8,14 @@
  *
  * Keeping it apart also keeps an import cycle out: atomicWrite reaches into the
  * backup store, which needs the root, and the registry reaches back into
- * atomicWrite. So this module imports only node built-ins and constants that
- * import nothing.
+ * atomicWrite. The directory publication helper depends only on Node built-ins.
  *
  * The convention this serves: ONE resolver owns the home-directory call, the
  * `BIGMOUTH_DATA_DIR` check, and the names of all standard subpaths — so two
  * derivations of the same file can never drift.
  */
 
+import { createDirectory } from "../shared/publication.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -171,7 +171,7 @@ export function initStorageRoot(): void {
   apiKeysPath = path.join(appDir, "api-keys.json");
 
   try {
-    fs.mkdirSync(appDir, { recursive: true, mode: 0o700 });
+    createDirectory(appDir, 0o700);
     fs.mkdirSync(logsDir, { recursive: true });
     if (!fs.statSync(appDir).isDirectory()) {
       throw new Error("not a directory");

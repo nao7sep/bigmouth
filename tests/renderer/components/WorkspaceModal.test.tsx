@@ -15,6 +15,8 @@ vi.mock("@renderer/api", () => ({
   pickWorkspaceDirectory: vi.fn(),
   suggestWorkspaceLocation: vi.fn(),
   getStoragePending: vi.fn(async () => false),
+  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
+  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: vi.fn(() => () => {}),
 }));
 

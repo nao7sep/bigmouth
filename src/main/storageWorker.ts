@@ -1,3 +1,4 @@
+import { onDurabilityUnconfirmed } from "./core/shared/publication.js";
 import { parentPort } from "node:worker_threads";
 import { listWorkspaces } from "./core/services/workspaceStore.js";
 import { storageTasks } from "./storageTasks.js";
@@ -27,6 +28,7 @@ setContentSaveListener((value) => {
     }
   }
 });
+onDurabilityUnconfirmed(() => port.postMessage({ event: "durability-unconfirmed" } satisfies StorageReply));
 onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies StorageReply));
 // A request that could not be read is said to be, so the owner fails it rather
 // than waiting for a reply that cannot come.

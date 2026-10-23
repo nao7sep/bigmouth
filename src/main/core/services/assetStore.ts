@@ -25,6 +25,7 @@
  * All public functions take a dataDir parameter (the workspace data directory).
  */
 
+import { createDirectory, flushStagedFile, confirmPublication } from "../shared/publication.js";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -212,7 +213,7 @@ export function assetPath(dataDir: string, postId: string, filename: string): st
 
 function ensureAssetDir(dataDir: string, postId: string): string {
   const dir = assetDir(dataDir, postId);
-  fs.mkdirSync(dir, { recursive: true });
+  createDirectory(dir);
   return dir;
 }
 
@@ -304,15 +305,21 @@ export function installAsset(
   // Install the file by renaming the staged copy into place (atomic, and replaces
   // any same-named file, keeping its permissions), then commit the metadata. If a
   // crash lands between the two, the orphaned file is reconciled back into the
-  // list on the next read — no data is lost. The stage was written private; it
+  // list on the next read. The stage was written private; it
   // takes the replaced file's mode, or the ordinary one, before it is published.
-  fs.chmodSync(fromPath, existingMode(destPath) ?? (0o666 & ~process.umask()));
+  const stage = fs.openSync(fromPath, "r+");
+  let bytesConfirmed: boolean;
+  try {
+    fs.fchmodSync(stage, existingMode(destPath) ?? (0o666 & ~process.umask()));
+    if (source) keepSourceMetadata(fromPath, source);
+    bytesConfirmed = flushStagedFile(stage);
+  } finally { fs.closeSync(stage); }
   fs.renameSync(fromPath, destPath);
+  confirmPublication(destPath, bytesConfirmed, path.dirname(fromPath));
   // The descriptor is taken before anything else can reach the new file, so the
   // backup reads the bytes installed here even if the asset is replaced or
   // deleted before the recorder gets to it.
   const installed = openForBackup(destPath);
-  if (source) keepSourceMetadata(destPath, source);
   // The modified time is read after the source's is applied: it is the one the
   // file keeps, and what reconcileAssets compares to trust this hash later.
   const { mtimeMs } = installed === null ? fs.statSync(destPath) : fs.fstatSync(installed);
