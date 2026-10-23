@@ -1,7 +1,7 @@
 /** The app's logger (logging-conventions). */
 
 import { utcNow, formatUtcIso } from "../shared/timestamps.js";
-import { closeRecords, currentRecordsPath, openRecords, writeLogRecord } from "./recordsStore.js";
+import { closeRecords, currentRecordsPath, openRecords, writeLogRecord, type LogRecord } from "./recordsStore.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
@@ -69,11 +69,10 @@ function serializeErrorInner(err: unknown, seen: WeakSet<object>): unknown {
   return { message: String(err) };
 }
 
-let logSink: ((level: LogLevel, message: string, fields?: LogFields) => void) | null = null;
+let logSink: ((record: LogRecord) => void) | null = null;
 export function setLogSink(sink: typeof logSink): void { logSink = sink; }
 
 function emit(level: LogLevel, message: string, fields?: LogFields): void {
-  if (logSink) { logSink(level, message, fields); return; }
   const record: Record<string, unknown> = {
     time: formatUtcIso(utcNow()),
     level,
@@ -100,22 +99,24 @@ function emit(level: LogLevel, message: string, fields?: LogFields): void {
     });
   }
 
-  // Echo to the console (also the best-effort fallback when file writes fail):
-  // warnings and errors to stderr, everything else to stdout.
-  if (level === "warn" || level === "error") {
-    console.error(line);
-  } else {
-    console.log(line);
-  }
-
-  writeLogRecord({
+  const entry: LogRecord = {
     time: record.time as string,
     level,
     message,
     workspaceId: domainId(fields?.workspace ?? fields?.workspaceId),
     postId: domainId(fields?.postId),
     event: line,
-  });
+  };
+  if (logSink) logSink(entry);
+  else storeLogRecord(entry);
+}
+
+/** Delivers an already emitted event without changing its instant or filtering it again. */
+export function storeLogRecord(record: LogRecord): void {
+  // Echo the same serialized event to the console and storage.
+  if (record.level === "warn" || record.level === "error") console.error(record.event);
+  else console.log(record.event);
+  writeLogRecord(record);
 }
 
 function domainId(value: unknown): string | null {

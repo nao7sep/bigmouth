@@ -10,7 +10,7 @@ import * as recordsStore from "./core/services/recordsStore.js";
 import { initAppDir } from "./core/services/workspaceStore.js";
 import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
-import { initLogger, closeLogger, info, warn, error, debug, getRecordsPath, serializeError } from "./core/services/logger.js";
+import { initLogger, closeLogger, info, warn, error, storeLogRecord, getRecordsPath, serializeError } from "./core/services/logger.js";
 import { stopBackups } from "./core/services/backupStore.js";
 import { getLogsDir, getRecordsDbPath, getThumbnailsDir, setDocumentsDirectory } from "./core/services/storagePaths.js";
 
@@ -67,8 +67,8 @@ export const storageTasks = {
     try { stopBackups(backupBoundMs); }
     finally { closeLogger(); }
   },
-  log(level: "debug" | "info" | "warn" | "error", message: string, fields?: Record<string, unknown>) {
-    ({ debug, info, warn, error })[level](message, fields);
+  log(record: recordsStore.LogRecord) {
+    storeLogRecord(record);
   },
   fileExists(filePath: string) { return fs.existsSync(filePath); },
   readSourceMetadata(sourcePath: unknown, size: number) {

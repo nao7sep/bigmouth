@@ -13,8 +13,10 @@ import {
   error,
   isDebugLoggingEnabled,
   serializeError,
+  setLogSink,
+  storeLogRecord,
 } from "@main/core/services/logger.js";
-import { writeProviderCall } from "@main/core/services/recordsStore.js";
+import { writeProviderCall, type LogRecord } from "@main/core/services/recordsStore.js";
 
 let rootDir: string;
 let dbPath: string;
@@ -45,6 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setLogSink(null);
   closeLogger();
   vi.useRealTimers();
   delete process.env.BIGMOUTH_DEBUG;
@@ -124,6 +127,48 @@ describe("records", () => {
 });
 
 describe("envelope", () => {
+  it("preserves the emission instant and envelope through delayed sink delivery", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-23T03:04:05.123Z"));
+    const queued: LogRecord[] = [];
+    setLogSink((record) => queued.push(record));
+    const fields = { workspace: "workspace", postId: "post", count: 1, time: "spoof", level: "error", message: "spoof" };
+    info("emitted before storage became ready", fields);
+    fields.count = 2;
+    expect(readLogLines()).toEqual([]);
+    vi.setSystemTime(new Date("2026-10-23T03:14:05.123Z"));
+    const echo = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      storeLogRecord(queued[0]);
+      const [row] = query<LogRecord>("SELECT time, level, message, workspace_id AS workspaceId, post_id AS postId, event FROM log_records");
+      expect(row).toEqual(queued[0]);
+      expect(echo).toHaveBeenCalledWith(row.event);
+      expect(JSON.parse(row.event)).toEqual({
+        time: "2026-10-23T03:04:05.123Z", level: "info", message: "emitted before storage became ready",
+        workspace: "workspace", postId: "post", count: 1,
+      });
+    } finally { echo.mockRestore(); }
+  });
+
+  it("timestamps direct delivery at emission too", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-23T03:04:05.123Z"));
+    info("direct");
+    expect(readLogLines()).toEqual([{ time: "2026-10-23T03:04:05.123Z", level: "info", message: "direct" }]);
+  });
+
+  it("serializes a forwarding event before handing it to the sink, including fallback", () => {
+    const sink = vi.fn();
+    setLogSink(sink);
+    expect(() => warn("unserializable field", { value: 1n, workspaceId: "workspace" })).not.toThrow();
+    expect(sink).toHaveBeenCalledOnce();
+    const record = sink.mock.calls[0][0] as LogRecord;
+    expect(record).toMatchObject({ level: "warn", message: "unserializable field", workspaceId: "workspace" });
+    expect(JSON.parse(record.event)).toMatchObject({
+      time: record.time, level: "warn", message: "unserializable field", logSerializationError: expect.any(String),
+    });
+  });
+
   it("writes one JSON object per line with time / level / message", () => {
     info("hello world");
     const [line] = readLogLines();
@@ -159,6 +204,18 @@ describe("envelope", () => {
 });
 
 describe("debug gating", () => {
+  it("filters debug only at emission and preserves an accepted event at delivery", () => {
+    const queued: LogRecord[] = [];
+    setLogSink((record) => queued.push(record));
+    debug("disabled at origin");
+    expect(queued).toEqual([]);
+    process.env.BIGMOUTH_DEBUG = "1";
+    debug("enabled at origin");
+    delete process.env.BIGMOUTH_DEBUG;
+    storeLogRecord(queued[0]);
+    expect(readLogLines()).toEqual([expect.objectContaining({ level: "debug", message: "enabled at origin" })]);
+  });
+
   it("is silent unless debug logging is enabled", () => {
     debug("should not appear");
     info("marker");

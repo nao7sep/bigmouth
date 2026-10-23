@@ -39,8 +39,8 @@ app.setName(APP_NAME);
 // and overwrite a newer index.json. One app process may own that state; a second
 // launch is routed back to its existing window before it can touch durable data.
 const ownsInstance = app.requestSingleInstanceLock();
-if (ownsInstance) setLogSink((level, message, fields) => {
-  void storageLog(level, message, fields).catch((error) => console.error("[bigmouth] Log could not reach storage", error));
+if (ownsInstance) setLogSink((record) => {
+  void storageLog(record).catch((error) => console.error("[bigmouth] Log could not reach storage", error));
 });
 
 let shuttingDown = false;
