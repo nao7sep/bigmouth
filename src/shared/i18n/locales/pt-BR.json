@@ -81,7 +81,6 @@
   "common.keepEditing": "Continuar editando",
   "common.discardTitle": "Descartar as alterações?",
   "common.discardMessage": "Há alterações não salvas. Descartá-las e fechar?",
-  "common.optional": "(opcional)",
   "workspaces.title": "Espaços de trabalho",
   "workspaces.empty": "Ainda não há espaços de trabalho. Crie um ou adicione uma pasta que já contenha um espaço de trabalho do BigMouth.",
   "workspaces.pickerFailed": "Não foi possível abrir o seletor de pastas. Sua localização não mudou; tente novamente.",

@@ -123,11 +123,6 @@ export function getUiState(): UiState {
   return ensureLoaded();
 }
 
-/** True once initStateStore() has run — for callers that must also work without it. */
-export function isStateStoreReady(): boolean {
-  return uiState !== null && stateJsonPath !== null;
-}
-
 /**
  * Merges a partial patch into the UI state, normalizes, persists, and returns the
  * new state. This is where state.json first materializes — a fresh install writes

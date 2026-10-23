@@ -81,7 +81,6 @@
   "common.keepEditing": "Keep editing",
   "common.discardTitle": "Discard changes?",
   "common.discardMessage": "You have unsaved changes. Discard them and close?",
-  "common.optional": "(optional)",
   "workspaces.title": "Workspaces",
   "workspaces.empty": "No workspaces yet. Create one, or add a folder that already holds a BigMouth workspace.",
   "workspaces.pickerFailed": "The folder picker could not be opened. Your location is unchanged; try again.",

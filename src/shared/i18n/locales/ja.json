@@ -81,7 +81,6 @@
   "common.keepEditing": "編集を続ける",
   "common.discardTitle": "変更を破棄しますか？",
   "common.discardMessage": "保存していない変更があります。破棄して閉じますか？",
-  "common.optional": "（任意）",
   "workspaces.title": "ワークスペース",
   "workspaces.empty": "ワークスペースはまだありません。新しく作成するか、BigMouth のワークスペースが入っているフォルダを追加してください。",
   "workspaces.pickerFailed": "フォルダの選択画面を開けませんでした。場所は変わっていません。もう一度お試しください。",

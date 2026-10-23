@@ -81,7 +81,6 @@
   "common.keepEditing": "계속 편집",
   "common.discardTitle": "변경 사항을 버리시겠습니까?",
   "common.discardMessage": "저장하지 않은 변경 사항이 있습니다. 버리고 닫으시겠습니까?",
-  "common.optional": "(선택 사항)",
   "workspaces.title": "작업 공간",
   "workspaces.empty": "아직 작업 공간이 없습니다. 새로 만들거나, BigMouth 작업 공간이 들어 있는 폴더를 추가하십시오.",
   "workspaces.pickerFailed": "폴더 선택 창을 열 수 없습니다. 위치는 바뀌지 않았습니다. 다시 시도하십시오.",

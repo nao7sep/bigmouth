@@ -186,7 +186,7 @@ function state(dataDir: string): Map<string, PostIndexEntry> {
 /**
  * Loads the index for a workspace: parse `index.json` if present and valid,
  * otherwise rebuild from disk. Either way, reconcile against the actual files
- * (cheap — a directory listing, plus a read only of files the index is missing)
+ * (a directory listing and file observations, reading changed or unobserved files)
  * and persist if anything drifted, so a stale or crash-truncated index heals on
  * first use.
  */

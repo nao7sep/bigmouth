@@ -81,7 +81,6 @@
   "common.keepEditing": "继续编辑",
   "common.discardTitle": "放弃更改？",
   "common.discardMessage": "你有未保存的更改。要放弃这些更改并关闭吗？",
-  "common.optional": "（可选）",
   "workspaces.title": "工作区",
   "workspaces.empty": "还没有工作区。新建一个，或添加已包含 BigMouth 工作区的文件夹。",
   "workspaces.pickerFailed": "无法打开文件夹选择器。位置没有改变；请重试。",

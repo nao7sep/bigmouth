@@ -81,7 +81,6 @@
   "common.keepEditing": "Weiter bearbeiten",
   "common.discardTitle": "Änderungen verwerfen?",
   "common.discardMessage": "Sie haben nicht gespeicherte Änderungen. Verwerfen und schließen?",
-  "common.optional": "(optional)",
   "workspaces.title": "Arbeitsbereiche",
   "workspaces.empty": "Noch keine Arbeitsbereiche. Erstellen Sie einen, oder fügen Sie einen Ordner hinzu, der bereits einen BigMouth-Arbeitsbereich enthält.",
   "workspaces.pickerFailed": "Die Ordnerauswahl konnte nicht geöffnet werden. Ihr Speicherort bleibt unverändert; versuchen Sie es erneut.",

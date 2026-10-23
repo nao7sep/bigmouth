@@ -5,9 +5,6 @@
 export type AiProvider = "anthropic";
 export type ModelKind = "text-frontier" | "text-smart" | "text-balanced" | "text-fast";
 
-// The lineup research document the rows and defaults below come from.
-export const MODEL_LINEUP = "ai-model-lineup-20261004";
-
 export const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
 
 // Product names, a display mapping at the interface edge; the id is the api-key id.

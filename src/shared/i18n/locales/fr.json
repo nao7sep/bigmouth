@@ -81,7 +81,6 @@
   "common.keepEditing": "Continuer à modifier",
   "common.discardTitle": "Abandonner les modifications\u00a0?",
   "common.discardMessage": "Des modifications ne sont pas enregistrées. Les abandonner et fermer\u00a0?",
-  "common.optional": "(facultatif)",
   "workspaces.title": "Espaces de travail",
   "workspaces.empty": "Aucun espace de travail pour l’instant. Créez-en un, ou ajoutez un dossier qui contient déjà un espace de travail BigMouth.",
   "workspaces.pickerFailed": "Le sélecteur de dossier n’a pas pu s’ouvrir. Votre emplacement est inchangé\u00a0; réessayez.",

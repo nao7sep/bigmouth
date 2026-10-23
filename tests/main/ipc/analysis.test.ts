@@ -313,8 +313,8 @@ describe("analysis stream handlers", () => {
     expect(framesFor(event, channel)).toEqual([{ type: "error", message: "provider exploded" }]);
   });
 
-  // A stream must not outlive the window that asked for it — the app stays
-  // alive on macOS after its window closes, and the stream would bill to the end.
+  // A stream must not outlive the renderer that asked for it: destruction
+  // cancels the provider so an abandoned request cannot keep billing.
   it("aborts a stream when its window is destroyed", async () => {
     const event = makeEvent();
     await start(event, "req-closed", params);

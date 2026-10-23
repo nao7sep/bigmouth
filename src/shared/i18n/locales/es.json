@@ -81,7 +81,6 @@
   "common.keepEditing": "Seguir editando",
   "common.discardTitle": "¿Descartar los cambios?",
   "common.discardMessage": "Tienes cambios sin guardar. ¿Descartarlos y cerrar?",
-  "common.optional": "(opcional)",
   "workspaces.title": "Espacios de trabajo",
   "workspaces.empty": "Todavía no hay espacios de trabajo. Crea uno o agrega una carpeta que ya contenga un espacio de trabajo de BigMouth.",
   "workspaces.pickerFailed": "No se pudo abrir el selector de carpetas. Tu ubicación no cambió; inténtalo de nuevo.",
