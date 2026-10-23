@@ -2,6 +2,8 @@ import { LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX } from "@renderer/paneConstant
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type {
+  EditablePostMetadata,
+  PostFrontMatter,
   Post,
   PostListResponse,
   PostMutationResult,
@@ -358,6 +360,7 @@ async function mountLoaded(ref?: React.Ref<WorkspaceSessionHandle>) {
 beforeEach(() => {
   anyModalOpen = false;
   mockListPosts.mockReset().mockResolvedValue(LIST);
+  mockGetPost.mockReset().mockResolvedValue(POST_A);
   mockCreatePost.mockReset().mockResolvedValue(POST_B_CREATED);
   mockGetWorkspaceConfig.mockReset().mockResolvedValue({ targets: TARGETS, settings: SETTINGS, notice: null });
   mockOpenRecords.mockReset().mockResolvedValue();
@@ -1000,7 +1003,7 @@ describe("WorkspaceSession reread on activation", () => {
     expect(getByTestId("left-verified").textContent).toBe("c,a");
   });
 
-  it("leaves the open post alone", async () => {
+  it("refreshes open-post facts while retaining typed body text", async () => {
     const { getByTestId } = await mountLoaded();
     await act(async () => {
       fireEvent.click(getByTestId("left-select-a"));
@@ -1012,6 +1015,8 @@ describe("WorkspaceSession reread on activation", () => {
     });
     const frontMatter = props.right?.frontMatter;
     expect(frontMatter).toBe(POST_A.frontMatter);
+    const external = { ...POST_A, frontMatter: { ...POST_A.frontMatter, locked: true, target: "outside", status: "verified" as const } };
+    mockGetPost.mockResolvedValueOnce(external);
     mockListPosts.mockClear().mockResolvedValue(EDITED);
 
     act(() => activate());
@@ -1019,8 +1024,44 @@ describe("WorkspaceSession reread on activation", () => {
 
     expect(mockListPosts).toHaveBeenCalledTimes(1);
     expect(getByTestId("center-postid").textContent).toBe("a");
-    expect(props.right?.frontMatter).toBe(frontMatter);
+    expect(props.right?.frontMatter).toBe(external.frontMatter);
+    expect(props.center?.rereadPost).toBe(external);
     expect(props.right?.content).toBe("BODY");
+  });
+
+  it("keeps an accepted metadata edit made during refresh while applying an external lock", async () => {
+    const view = await mountLoaded();
+    await act(async () => { fireEvent.click(view.getByTestId("left-select-a")); });
+    fireEvent.click(view.getByTestId("center-loaded"));
+    let finish!: (post: Post) => void;
+    mockGetPost.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    act(() => activate());
+    await settle(300);
+    act(() => (props.right!.onMetadataEdited as (id: string, edits: EditablePostMetadata) => void)("a", { title: "typed during read" }));
+    await act(async () => finish({ ...POST_A, frontMatter: { ...POST_A.frontMatter, locked: true, title: "older title" } }));
+    expect(props.right!.frontMatter).toMatchObject({ locked: true, title: "typed during read" });
+    expect((props.center!.rereadPost as Post).frontMatter).toMatchObject({ locked: true, title: "typed during read" });
+  });
+
+  it("does not let an older refresh replace a mutation or a different selection", async () => {
+    const view = await mountLoaded();
+    await act(async () => { fireEvent.click(view.getByTestId("left-select-a")); });
+    fireEvent.click(view.getByTestId("center-loaded"));
+    let finish!: (post: Post) => void;
+    mockGetPost.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    act(() => activate());
+    await settle(300);
+    fireEvent.click(view.getByTestId("center-updated"));
+    await act(async () => finish(POST_A));
+    expect((props.right!.frontMatter as PostFrontMatter).status).toBe("verified");
+    mockGetPost.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    act(() => activate());
+    await settle(300);
+    await act(async () => { fireEvent.click(view.getByTestId("left-select-b")); });
+    await act(async () => finish(POST_A));
+    expect(props.center!.postId).toBe("b");
+    expect(props.center!.rereadPost).toBeNull();
+    expect(props.right!.frontMatter).toBeNull();
   });
 
   it("surfaces a failed reread and stops listening once the session closes", async () => {
@@ -1028,7 +1069,7 @@ describe("WorkspaceSession reread on activation", () => {
     mockListPosts.mockClear().mockRejectedValue(new Error("disk gone"));
     act(() => activate());
     await settle(300);
-    expect(getByText(/post list/i)).toBeTruthy();
+    expect(getByText("The workspace could not be refreshed. Reopen it to try again.")).toBeTruthy();
 
     unmount();
     expect(activationListeners.size).toBe(0);

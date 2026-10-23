@@ -142,6 +142,7 @@
   "session.loadFailed": "Dieser Arbeitsbereich konnte nicht geladen werden. Öffnen Sie ihn erneut, um es noch einmal zu versuchen.",
   "session.metadataUnsaved": "Metadatenänderungen konnten nicht gespeichert werden. Beheben Sie das, bevor die Einstellungen neu geladen werden.",
   "session.refreshFailed": "Die Einstellungen wurden geändert, aber dieser Arbeitsbereich konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um die gespeicherten Einstellungen zu verwenden.",
+  "session.activationRefreshFailed": "Der Arbeitsbereich konnte nicht aktualisiert werden. Öffnen Sie ihn erneut, um es noch einmal zu versuchen.",
   "session.deleteCleanupIncomplete": "Der Beitrag wurde gelöscht, aber einige Quellverknüpfungen oder Anhänge konnten nicht entfernt werden. Die verbleibenden Dateien befinden sich weiterhin im Arbeitsbereich.",
   "session.postListFailed": "Die Beitragsliste konnte nicht aktualisiert werden. Öffnen Sie den Arbeitsbereich erneut, um es noch einmal zu versuchen.",
   "session.unreadablePosts": {

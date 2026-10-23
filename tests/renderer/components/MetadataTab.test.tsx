@@ -55,6 +55,7 @@ function renderTab(
     content: string;
     locked: boolean;
     extraFieldWatermark: string;
+    onUnsavedChange: (unsaved: boolean) => void;
   }> = {}
 ) {
   const ref = createRef<MetadataTabHandle>();
@@ -69,6 +70,7 @@ function renderTab(
       extraFieldWatermark={overrides.extraFieldWatermark ?? ""}
       onMetadataEdited={onMetadataEdited}
       locked={overrides.locked}
+      onUnsavedChange={overrides.onUnsavedChange}
     />
   );
   // The Title field is the first textarea rendered.
@@ -630,4 +632,127 @@ describe("MetadataTab tag arrays", () => {
     expect(queuedEdits()).toContainEqual({ tags: ["my, tag", "my、other tag"] });
     expect(queuedEdits()).not.toContainEqual({ tags: generatedTags });
   });
+});
+
+function renderRefreshingMetadata(initial: PostFrontMatter = frontMatter()) {
+  const onMetadataEdited = vi.fn();
+  const element = (frontMatter: PostFrontMatter, locked = false) => <MetadataTab
+    workspaceId="w1" postId="p1" frontMatter={frontMatter} content="some body text"
+    extraFieldWatermark="" onMetadataEdited={onMetadataEdited} locked={locked}
+  />;
+  const view = render(element(initial));
+  return { ...view, refresh: (frontMatter: PostFrontMatter, locked = false) => view.rerender(element(frontMatter, locked)) };
+}
+
+describe("MetadataTab canonical refresh", () => {
+  it("adopts outside changes in untouched fields without queuing them", () => {
+    const view = renderRefreshingMetadata();
+    view.refresh({ ...frontMatter(), title: "Outside title", slug: "outside", tags: ["one", "two"], extra: "outside extra" });
+    expect((view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement).value).toBe("Outside title");
+    expect((view.getByRole("textbox", { name: "Slug" }) as HTMLTextAreaElement).value).toBe("outside");
+    expect((view.getByRole("textbox", { name: "Tags" }) as HTMLTextAreaElement).value).toBe("one\ntwo");
+    expect((view.getByRole("textbox", { name: "Extra" }) as HTMLTextAreaElement).value).toBe("outside extra");
+    expect(mockQueue).not.toHaveBeenCalled();
+  });
+
+  it("retains an in-flight local field while refreshing unrelated untouched fields", async () => {
+    let accept!: (refusal: null) => void;
+    mockQueue.mockReturnValueOnce(new Promise((resolve) => { accept = resolve; }));
+    const view = renderRefreshingMetadata();
+    const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
+    fireEvent.change(title, { target: { value: "My pending title" } });
+    view.refresh({ ...frontMatter(), title: "Outside title", slug: "outside" });
+    expect(title.value).toBe("My pending title");
+    expect((view.getByRole("textbox", { name: "Slug" }) as HTMLTextAreaElement).value).toBe("outside");
+    expect(mockQueue).toHaveBeenCalledOnce();
+    await act(async () => { accept(null); });
+    view.refresh({ ...frontMatter(), title: "Still older than my edit" });
+    expect(title.value).toBe("My pending title");
+    expect(mockQueue).toHaveBeenCalledOnce();
+  });
+
+  it("keeps raw formatting for an accepted snapshot, then adopts a later external value", async () => {
+    const view = renderRefreshingMetadata();
+    const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
+    fireEvent.change(title, { target: { value: " My\n  title " } });
+    await act(async () => { await Promise.resolve(); });
+    view.refresh({ ...frontMatter(), title: "My title" });
+    expect(title.value).toBe(" My\n  title ");
+    view.refresh({ ...frontMatter(), title: "A later outside title" });
+    expect(title.value).toBe("A later outside title");
+    expect(mockQueue).toHaveBeenCalledOnce();
+  });
+
+  it("retains a refused value even after an accepted snapshot previously released its dirty marker", async () => {
+    const view = renderRefreshingMetadata();
+    const slug = view.getByRole("textbox", { name: "Slug" }) as HTMLTextAreaElement;
+    fireEvent.change(slug, { target: { value: "taken" } });
+    await act(async () => { await Promise.resolve(); });
+    view.refresh({ ...frontMatter(), slug: "taken" });
+    act(() => {
+      refusedListeners.forEach((cb) => cb({ postId: "p1", edits: { slug: "taken" }, refusal: { key: "metadata.refusedSlugTaken", values: { slug: "taken" } } }));
+    });
+    view.refresh({ ...frontMatter(), slug: "other-canonical-slug" });
+    expect(slug.value).toBe("taken");
+    expect(view.getByRole("alert").textContent).toContain('Another post already uses the slug "taken"');
+    expect(mockQueue).toHaveBeenCalledOnce();
+  });
+
+  it("retains a failed edit through canonical updates", async () => {
+    mockQueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    const view = renderRefreshingMetadata();
+    const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
+    fireEvent.change(title, { target: { value: "Unsaved title" } });
+    await act(async () => { await Promise.resolve(); });
+    view.refresh({ ...frontMatter(), title: "Unsaved title" });
+    view.refresh({ ...frontMatter(), title: "Outside title" });
+    expect(title.value).toBe("Unsaved title");
+    expect(mockQueue).toHaveBeenCalledOnce();
+  });
+
+  it("marks generated fields dirty so a stale canonical refresh cannot overwrite them", async () => {
+    mockGenerateMetadataField.mockResolvedValue("Generated title");
+    const view = renderRefreshingMetadata();
+    const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
+    const field = title.closest(".meta-field") as HTMLElement;
+    await act(async () => { fireEvent.click(within(field).getByRole("button", { name: "Generate" })); });
+    view.refresh({ ...frontMatter(), title: "Old canonical title" });
+    expect(title.value).toBe("Generated title");
+    expect(mockQueue).toHaveBeenCalledOnce();
+    view.refresh({ ...frontMatter(), title: "Generated title" });
+    view.refresh({ ...frontMatter(), title: "New external title" });
+    expect(title.value).toBe("New external title");
+  });
+
+  it("locks editing and generation while retaining local text and refreshing untouched fields", () => {
+    const view = renderRefreshingMetadata();
+    const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
+    fireEvent.change(title, { target: { value: "Typed before lock" } });
+    view.refresh({ ...frontMatter(), title: "Outside title", slug: "new-slug" }, true);
+    expect(title.value).toBe("Typed before lock");
+    expect(title.readOnly).toBe(true);
+    expect((view.getByRole("textbox", { name: "Slug" }) as HTMLTextAreaElement).value).toBe("new-slug");
+    expect((view.getByRole("button", { name: "Generate All" }) as HTMLButtonElement).disabled).toBe(true);
+    for (const button of view.getAllByRole("button", { name: "Generate" })) expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(title, { target: { value: "Blocked change" } });
+    expect(title.value).toBe("Typed before lock");
+    expect(mockQueue).toHaveBeenCalledOnce();
+  });
+});
+
+it("reports admission lifetime synchronously and retains rescue until every round and refusal is resolved", async () => {
+  const rounds: Array<{ resolve: (value: null) => void; reject: (error: Error) => void }> = [];
+  mockQueue.mockImplementation(() => new Promise((resolve, reject) => { rounds.push({ resolve, reject }); }));
+  const onUnsavedChange = vi.fn();
+  const { titleInput } = renderTab({ onUnsavedChange });
+  fireEvent.change(titleInput, { target: { value: "First" } });
+  expect(onUnsavedChange).toHaveBeenCalledExactlyOnceWith(true);
+  fireEvent.change(titleInput, { target: { value: "Second" } });
+  await act(async () => { rounds[0]!.resolve(null); });
+  expect(onUnsavedChange.mock.calls).toEqual([[true]]);
+  await act(async () => { rounds[1]!.reject(new Error("queue failed")); });
+  expect(onUnsavedChange.mock.calls).toEqual([[true]]);
+  fireEvent.change(titleInput, { target: { value: "Correction" } });
+  await act(async () => { rounds[2]!.resolve(null); });
+  expect(onUnsavedChange.mock.calls).toEqual([[true], [false]]);
 });

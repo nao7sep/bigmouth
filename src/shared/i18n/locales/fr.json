@@ -142,6 +142,7 @@
   "session.loadFailed": "Cet espace de travail n’a pas pu être chargé. Rouvrez-le pour réessayer.",
   "session.metadataUnsaved": "Les modifications des métadonnées n’ont pas pu être enregistrées. Réglez-les avant de recharger les réglages.",
   "session.refreshFailed": "Les réglages ont changé, mais cet espace de travail n’a pas pu être actualisé. Rouvrez l’espace de travail pour utiliser les réglages enregistrés.",
+  "session.activationRefreshFailed": "L’espace de travail n’a pas pu être actualisé. Rouvrez-le pour réessayer.",
   "session.deleteCleanupIncomplete": "La publication a été supprimée, mais certains liens vers la source ou pièces jointes n’ont pas pu être retirés. Les fichiers restants se trouvent toujours dans l’espace de travail.",
   "session.postListFailed": "La liste des publications n’a pas pu être actualisée. Rouvrez l’espace de travail pour réessayer.",
   "session.unreadablePosts": {

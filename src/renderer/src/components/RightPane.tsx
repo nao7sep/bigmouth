@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnalysisTab } from "./AnalysisTab";
 import { ImagingTab } from "./ImagingTab";
 import { AssetsTab } from "./AssetsTab";
@@ -65,8 +65,28 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   const metadataRef = useRef<MetadataTabHandle>(null);
   const locked = frontMatter?.locked === true;
 
-  // The Metadata tab is only meaningful for targets that require metadata.
-  const showMetadata = target?.requiresMetadata ?? false;
+  // A post change creates a fresh owner so late admissions from an older mount
+  // cannot clear another post's rescue state, even after navigating back.
+  const metadataOwner = useMemo(() => ({ workspaceId, postId }), [workspaceId, postId]);
+  const currentMetadataOwner = useRef(metadataOwner);
+  currentMetadataOwner.current = metadataOwner;
+  const [unsavedMetadata, setUnsavedMetadata] = useState<{ owner: typeof metadataOwner; unsaved: boolean } | null>(null);
+  const handleMetadataUnsavedChange = useCallback((unsaved: boolean) => {
+    if (currentMetadataOwner.current !== metadataOwner) return;
+    setUnsavedMetadata({ owner: metadataOwner, unsaved });
+  }, [metadataOwner]);
+
+  // Pending or refused edits keep their copy/edit rescue surface available if
+  // an external target change removes its ordinary metadata requirement.
+  const showMetadata = Boolean(target?.requiresMetadata) || (unsavedMetadata?.owner === metadataOwner && unsavedMetadata.unsaved);
+  // Keep this post's admitted raw values and refusal subscription alive after
+  // its target drops metadata; held delivery can still refuse them later.
+  const [retainedMetadataOwner, setRetainedMetadataOwner] = useState<typeof metadataOwner | null>(null);
+  const mountMetadata = showMetadata || retainedMetadataOwner === metadataOwner;
+  useLayoutEffect(() => {
+    if (showMetadata) setRetainedMetadataOwner(metadataOwner);
+  }, [showMetadata, metadataOwner]);
+
   const visibleTabs: RightTab[] = showMetadata
     ? [...RIGHT_TABS]
     : RIGHT_TABS.filter((t) => t !== "Metadata");
@@ -149,9 +169,10 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             />
           )}
         </div>
-        {showMetadata && (
+        {mountMetadata && (
           <div
-            {...getPanelProps("Metadata")}
+            {...(showMetadata ? getPanelProps("Metadata") : {})}
+            hidden={!showMetadata}
             className={effectiveTab === "Metadata" ? "" : "tab-hidden"}
           >
             {loading || !frontMatter ? (
@@ -159,13 +180,14 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             ) : (
               <MetadataTab
                 ref={metadataRef}
-                key={postId}
+                key={JSON.stringify([workspaceId, postId])}
                 workspaceId={workspaceId}
                 postId={postId}
                 frontMatter={frontMatter}
                 content={content}
                 extraFieldWatermark={extraFieldWatermark}
                 onMetadataEdited={onMetadataEdited}
+                onUnsavedChange={handleMetadataUnsavedChange}
                 isActive={effectiveTab === "Metadata"}
                 locked={locked}
               />

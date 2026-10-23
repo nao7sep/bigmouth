@@ -142,6 +142,7 @@
   "session.loadFailed": "Non è stato possibile caricare questo spazio di lavoro. Riaprilo per riprovare.",
   "session.metadataUnsaved": "Non è stato possibile salvare le modifiche ai metadati. Risolvile prima di ricaricare le impostazioni.",
   "session.refreshFailed": "Le impostazioni sono cambiate, ma non è stato possibile aggiornare questo spazio di lavoro. Riapri lo spazio di lavoro per usare le impostazioni salvate.",
+  "session.activationRefreshFailed": "Non è stato possibile aggiornare lo spazio di lavoro. Riaprilo per riprovare.",
   "session.deleteCleanupIncomplete": "Il post è stato eliminato, ma alcuni collegamenti alla fonte o allegati non sono stati rimossi. I file rimanenti sono ancora nello spazio di lavoro.",
   "session.postListFailed": "Non è stato possibile aggiornare l’elenco dei post. Riapri lo spazio di lavoro per riprovare.",
   "session.unreadablePosts": {

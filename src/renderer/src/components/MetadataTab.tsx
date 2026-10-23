@@ -50,6 +50,7 @@ interface MetadataTabProps {
   extraFieldWatermark: string;
   /** Edits the main process has buffered, for views that show them (the export's slug). */
   onMetadataEdited: (postId: string, edits: EditablePostMetadata) => void;
+  onUnsavedChange?: (unsaved: boolean) => void;
   isActive?: boolean;
   locked?: boolean;
 }
@@ -72,6 +73,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
       content,
       extraFieldWatermark,
       onMetadataEdited,
+      onUnsavedChange,
       isActive = false,
       locked = false,
     },
@@ -84,7 +86,8 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
 
     // `fields` is the single source of truth for the editable values while this
     // tab is mounted. The component is keyed by postId (see RightPane), so it
-    // remounts for each post and seeds from front matter exactly once.
+    // seeds each post from front matter; canonical refreshes reconcile only
+    // fields without an outstanding local edit or refusal.
     //
     // Every edit streams to the main-process post store as it happens, exactly
     // like the editor's content: the store owns the debounce, the disk write and
@@ -93,6 +96,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // and is assigned at each mutation site, eagerly.
     const [fields, setFields] = useState(() => extractFields(frontMatter));
     const fieldsRef = useRef(fields);
+    const dirtyFieldsRef = useRef(new Set<string>());
     const [generating, setGenerating] = useState<Record<string, boolean>>({});
     const [generatingAll, setGeneratingAll] = useState(false);
     // `field` marks a refusal of that field's value, so fixing the field clears it.
@@ -106,16 +110,49 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     // refused with the reason. Replies arrive in the order the edits were sent,
     // so the last reply for a field is about its newest value.
     const queuedRef = useRef<Record<string, Promise<void>>>({});
+    const admissionsRef = useRef(0);
+    const onUnsavedChangeRef = useRef(onUnsavedChange);
+    onUnsavedChangeRef.current = onUnsavedChange;
+    const reportedUnsavedRef = useRef(false);
     const refusedRef = useRef<Record<string, { raw: string; message: Message }>>({});
+    useEffect(() => {
+      const canonical = extractFields(frontMatter);
+      const next = { ...fieldsRef.current };
+      let changed = false;
+      for (const [key, raw] of Object.entries(canonical)) {
+        if (refusedRef.current[key]) continue;
+        if (dirtyFieldsRef.current.has(key)) {
+          if (JSON.stringify(parseFieldValue(key, raw)) === JSON.stringify(parseFieldValue(key, next[key] ?? ""))) {
+            dirtyFieldsRef.current.delete(key);
+          }
+          // An accepted snapshot releases the edit without normalizing its
+          // current raw presentation. A later external change may replace it.
+          continue;
+        }
+        if (next[key] === raw) continue;
+        next[key] = raw;
+        changed = true;
+      }
+      if (!changed) return;
+      fieldsRef.current = next;
+      setFields(next);
+    }, [frontMatter]);
+
     // Whether main was last told this tab shows a refused value. A refused value
     // was never buffered, so it exists only on screen: main asks before quitting
     // or closing the window while any tab reports one.
     const reportedRefusalRef = useRef(false);
     const syncRefusalReport = useCallback(() => {
       const refused = Object.keys(refusedRef.current).length > 0;
-      if (refused === reportedRefusalRef.current) return;
-      reportedRefusalRef.current = refused;
-      reportMetadataRefusal(postId, refused);
+      if (refused !== reportedRefusalRef.current) {
+        reportedRefusalRef.current = refused;
+        reportMetadataRefusal(postId, refused);
+      }
+      const unsaved = admissionsRef.current > 0 || refused;
+      if (unsaved !== reportedUnsavedRef.current) {
+        reportedUnsavedRef.current = unsaved;
+        onUnsavedChangeRef.current?.(unsaved);
+      }
     }, [postId]);
     const {
       copiedKey,
@@ -138,6 +175,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     }, []);
 
     const setFieldValues = (values: Record<string, string>) => {
+      for (const key of Object.keys(values)) dirtyFieldsRef.current.add(key);
       fieldsRef.current = { ...fieldsRef.current, ...values };
       setFields(fieldsRef.current);
     };
@@ -148,8 +186,11 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const queueField = useCallback(
       (key: string, raw: string, generated?: string | string[]): Promise<void> => {
         const edits = { [key]: generated ?? parseFieldValue(key, raw) } as EditablePostMetadata;
+        admissionsRef.current += 1;
+        syncRefusalReport();
         const round = queuePostMetadata(postId, edits, workspaceId).then(
           (refusal) => {
+            admissionsRef.current -= 1;
             if (refusal === null) {
               delete refusedRef.current[key];
               onMetadataEditedRef.current(postId, edits);
@@ -160,6 +201,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
             syncRefusalReport();
           },
           (err: unknown) => {
+            admissionsRef.current -= 1;
             refusedRef.current[key] = {
               raw,
               message: presentFailure(

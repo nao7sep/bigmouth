@@ -38,7 +38,7 @@ interface CenterPaneProps {
   onSelectPost: (id: string) => void;
   onGoBack?: () => void;
   onBeforeStatusChange?: () => Promise<boolean>;
-  /** This post as the session reread it after Settings closed; see the effect that applies it. */
+  /** Canonical post facts from activation, Settings or a completed mutation. */
   rereadPost?: Post | null;
   pubBatchSize: number;
   watermark: string;
@@ -112,6 +112,10 @@ export function CenterPane({
     onPostUpdatedRef.current = onPostUpdated;
   }, [onPostUpdated]);
 
+  const mountedRereadRef = useRef(rereadPost);
+  const latestRereadRef = useRef(rereadPost);
+  latestRereadRef.current = rereadPost;
+
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
@@ -119,10 +123,13 @@ export function CenterPane({
     getPost(postId, workspaceId)
       .then((loaded) => {
         if (cancelled) return;
-        setPost(loaded);
+        const latest = latestRereadRef.current;
+        const canonical = latest && latest !== mountedRereadRef.current && latest.frontMatter.id === postId
+          ? { ...loaded, frontMatter: latest.frontMatter } : loaded;
+        setPost(canonical);
         setContent(loaded.content);
         notifyContentChange(loaded.content);
-        onPostLoaded(loaded);
+        onPostLoaded(canonical);
         setStatusError(null);
         setSaveError(null);
       })
@@ -142,13 +149,9 @@ export function CenterPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Renaming a target in Settings rewrites `target` in every post file, and the
-  // session rereads the open post when Settings closes. Its front matter replaces
-  // this pane's copy so the toolbar never names the old target; the editor text
-  // is left alone, since this pane already holds the newest content. Only a
-  // reread arriving after this pane mounted applies: a pane mounted later loads
-  // the post itself, and an older reread must not overwrite that load.
-  const mountedRereadRef = useRef(rereadPost);
+  // Refresh facts without replacing the editor's newest text. A reread from
+  // before this pane mounted belongs to its predecessor and cannot supersede
+  // the initial load; one arriving during that load is retained above.
   useEffect(() => {
     if (!rereadPost || rereadPost === mountedRereadRef.current) return;
     if (rereadPost.frontMatter.id !== postId) return;

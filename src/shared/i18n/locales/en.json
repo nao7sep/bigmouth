@@ -142,6 +142,7 @@
   "session.loadFailed": "This workspace could not be loaded. Reopen it to try again.",
   "session.metadataUnsaved": "Metadata changes could not be saved. Resolve them before reloading settings.",
   "session.refreshFailed": "Settings changed, but this workspace could not be refreshed. Reopen the workspace to use the saved settings.",
+  "session.activationRefreshFailed": "The workspace could not be refreshed. Reopen it to try again.",
   "session.deleteCleanupIncomplete": "The post was deleted, but some source links or attachments could not be removed. The remaining files are still in the workspace.",
   "session.postListFailed": "The post list could not be refreshed. Reopen the workspace to try again.",
   "session.unreadablePosts": {

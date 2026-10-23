@@ -255,6 +255,27 @@ describe("CenterPane toolbar metadata", () => {
     expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("typed since load");
   });
 
+  it("applies an external lock without replacing unsaved editor text", async () => {
+    const { props, rerender } = await renderPane();
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "unsaved text" } });
+    rerender(<ConfirmProvider><CenterPane {...props} rereadPost={post({ locked: true }, "outside text")} /></ConfirmProvider>);
+    const editor = screen.getByTestId("editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("unsaved text");
+    expect(editor.getAttribute("data-readonly")).toBe("true");
+  });
+
+  it("keeps a canonical refresh that arrives before the initial load settles", async () => {
+    let finish!: (value: Post) => void;
+    mockGetPost.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const props = baseProps();
+    const view = render(<ConfirmProvider><CenterPane {...props} /></ConfirmProvider>);
+    view.rerender(<ConfirmProvider><CenterPane {...props} rereadPost={post({ locked: true, target: "outside" })} /></ConfirmProvider>);
+    await act(async () => finish(post()));
+    expect(screen.getByTestId("editor").getAttribute("data-readonly")).toBe("true");
+    expect(view.getByText("outside")).toBeTruthy();
+    expect(props.onPostLoaded).toHaveBeenCalledWith(expect.objectContaining({ frontMatter: expect.objectContaining({ locked: true }) }));
+  });
+
   it("ignores a reread that predates the pane", async () => {
     const stale = post({ target: "stale" });
     const { container } = await renderPane({ rereadPost: stale });

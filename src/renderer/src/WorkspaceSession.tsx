@@ -84,6 +84,15 @@ const TAB_SHORTCUTS: ReadonlyArray<readonly [Shortcut, RightTab]> = [
 const DEFAULT_WATERMARK =
   "Consider starting with an outline:\n- Who is this for?\n- What should they take away?\n- What are the key points?";
 
+function withMetadata(post: Post, edits: EditablePostMetadata): Post {
+  const frontMatter = { ...post.frontMatter };
+  for (const [key, value] of Object.entries(edits)) {
+    if (value === null) delete frontMatter[key];
+    else if (value !== undefined) frontMatter[key] = value;
+  }
+  return { ...post, frontMatter };
+}
+
 interface WorkspaceSessionProps {
   workspace: Workspace;
   // The pane row, surfaced to the parent so its splitter clamp can measure the
@@ -167,11 +176,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      *
      * Two kinds, and the difference decides where each is written:
      *
-     *   - read only LATER (selectedPostId, currentPost, metadataTab): assigned
+     *   - read only LATER (selectedPostId, metadataTab): assigned
      *     during render, below. Always current by the time any event fires.
-     *   - read back in the SAME tick as their setter (the lists, which an
-     *     append or an optimistic list update reads before React re-renders):
-     *     assigned by commitLists, eagerly.
+     *   - read back in the SAME tick as their setter (current post and lists):
+     *     assigned eagerly by their publication owner, before another callback
+     *     can read them without a render in between.
      *
      * Each ref has exactly one of these, never also a post-render effect
      * copying state into it: that copy lands too late for a same-tick read, and
@@ -184,6 +193,38 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     const selectedPostIdRef = useRef<string | null>(null);
     const metadataTabRef = useRef(false);
     const currentPostRef = useRef<Post | null>(null);
+    const postRequest = useRef(0);
+    const readingMetadata = useRef<EditablePostMetadata | null>(null);
+    // One owner publishes canonical front matter to both panes. Its request
+    // version also retires reads overtaken by a mutation. Accepted field edits
+    // during a read overlay its result, just as the storage buffer overlays disk.
+    const adoptSelectedPost = useCallback((post: Post, retireRead = true) => {
+      if (!mounted.current || selectedPostIdRef.current !== post.frontMatter.id) return;
+      if (retireRead) {
+        ++postRequest.current;
+        readingMetadata.current = null;
+      }
+      currentPostRef.current = post;
+      setCurrentPost(post);
+      setRereadPost(post);
+    }, []);
+    const refreshSelectedPost = useCallback(async () => {
+      const id = selectedPostIdRef.current;
+      if (!id) return;
+      const request = ++postRequest.current;
+      const edits: EditablePostMetadata = {};
+      readingMetadata.current = edits;
+      try {
+        const post = await getPost(id, workspace.id);
+        if (!mounted.current || selectedPostIdRef.current !== id || postRequest.current !== request) return;
+        adoptSelectedPost(Object.keys(edits).length ? withMetadata(post, edits) : post);
+      } catch (error) {
+        if (!mounted.current || selectedPostIdRef.current !== id || postRequest.current !== request) return;
+        throw error;
+      } finally {
+        if (readingMetadata.current === edits) readingMetadata.current = null;
+      }
+    }, [workspace.id, adoptSelectedPost]);
     const listsRef = useRef<PostLists>(lists);
     // Counts the app's own writes to the lists, so a background reread that was
     // out while one happened knows it is older and is dropped.
@@ -228,7 +269,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         if (!mounted.current || request !== selectionRequest.current || (options?.mayAdopt && !options.mayAdopt())) return false;
         selectedPostIdRef.current = id;
         setSelectedPostId(id);
+        ++postRequest.current;
+        readingMetadata.current = null;
+        currentPostRef.current = null;
         setCurrentPost(null);
+        setRereadPost(null);
         setEditorContent("");
         return true;
       },
@@ -276,8 +321,8 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     /**
      * Reads the lists again as they are on disk, keeping as many posts of each
      * paged section loaded as are shown now. Post files can change outside the
-     * app (git, another editor) and nothing watches them. The open post is left
-     * as it is, unsaved edits and all; only the lists are reread.
+     * app (git, another editor) and nothing watches them. The selected-post
+     * refresh separately updates front matter while the editor retains text.
      */
     const refreshPosts = useCallback(async () => {
       const request = ++listRequestRef.current;
@@ -306,10 +351,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       const off = onWindowActivated(() => {
         clearTimeout(timer);
         timer = setTimeout(() => {
-          refreshPosts().catch((err: unknown) => {
+          Promise.all([refreshPosts(), refreshSelectedPost()]).catch((err: unknown) => {
+            if (!mounted.current) return;
             setLoadError(presentFailure(
-              message("session.postListFailed"),
-              "renderer: post list refresh on activation failed",
+              message("session.activationRefreshFailed"),
+              "renderer: workspace refresh on activation failed",
               err,
             ));
           });
@@ -319,7 +365,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
         off();
         clearTimeout(timer);
       };
-    }, [refreshPosts]);
+    }, [refreshPosts, refreshSelectedPost]);
 
     const applySettings = useCallback((settings: Settings) => {
       if (settings.postsPerLoad) setPubBatchSize(settings.postsPerLoad);
@@ -398,15 +444,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
           await Promise.all([loadConfig(), loadPosts()]);
           if (!mounted.current) return;
 
-          // The open post too: a rename rewrites `target` in every post FILE, so
-          // the copy in memory is stale and would match no target at all.
-          const openId = selectedPostIdRef.current;
-          if (openId) {
-            const reread = await getPost(openId, workspace.id);
-            if (!mounted.current || selectedPostIdRef.current !== openId) return;
-            setCurrentPost(reread);
-            setRereadPost(reread);
-          }
+          await refreshSelectedPost();
         } catch (err) {
           setLoadError(presentFailure(
             message("session.refreshFailed"),
@@ -417,7 +455,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       })();
 
       setAnalysisPromptsVersion((n) => n + 1);
-    }, [flushRightPaneChanges, loadConfig, loadPosts, workspace.id]);
+    }, [flushRightPaneChanges, loadConfig, loadPosts, refreshSelectedPost]);
 
     useEffect(() => {
       // Any open modal/dialog owns the keyboard; global shortcuts must not
@@ -563,26 +601,18 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
       applyMutatedPost(summary, result.frontMatter.status, id);
 
-      if (id === selectedPostIdRef.current) {
-        setCurrentPost(result);
-      }
-    }, [applyMutatedPost]);
+      adoptSelectedPost(result);
+    }, [applyMutatedPost, adoptSelectedPost]);
 
     // A metadata edit the store has buffered: fold it into the open post, so
     // views reading its front matter (the export's slug) show it at once. The
     // list catches up from the save event once the store writes it.
     const handleMetadataEdited = useCallback((postId: string, edits: EditablePostMetadata) => {
-      setCurrentPost((post) => {
-        // A reply can land after the user moved to another post.
-        if (!post || post.frontMatter.id !== postId) return post;
-        const frontMatter = { ...post.frontMatter };
-        for (const [key, value] of Object.entries(edits)) {
-          if (value === null) delete frontMatter[key];
-          else if (value !== undefined) frontMatter[key] = value;
-        }
-        return { ...post, frontMatter };
-      });
-    }, []);
+      const post = currentPostRef.current;
+      if (!post || post.frontMatter.id !== postId) return;
+      if (readingMetadata.current) Object.assign(readingMetadata.current, edits);
+      adoptSelectedPost(withMetadata(post, edits), false);
+    }, [adoptSelectedPost]);
 
     // Background content saves (the main process owns the write cadence) update
     // the same list buckets; there is no full post payload and no need for one —
@@ -639,7 +669,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     }, []);
 
     selectedPostIdRef.current = selectedPostId;
-    currentPostRef.current = currentPost;
 
     const currentTarget =
       currentPost && currentPost.frontMatter.id === selectedPostId
@@ -737,7 +766,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
                 onPostUpdated={handlePostUpdated}
                 onPostDeleted={handlePostDeleted}
                 onContentChange={setEditorContent}
-                onPostLoaded={setCurrentPost}
+                onPostLoaded={(post) => adoptSelectedPost(post, false)}
                 onExport={() => setExportOpen(true)}
                 onSelectPost={handleNavigateToPost}
                 onGoBack={navHistory.length > 0 ? handleGoBack : undefined}

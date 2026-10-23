@@ -142,6 +142,7 @@
   "session.loadFailed": "このワークスペースを読み込めませんでした。開き直してもう一度お試しください。",
   "session.metadataUnsaved": "メタデータの変更を保存できませんでした。設定を再読み込みする前に解決してください。",
   "session.refreshFailed": "設定は変更されましたが、このワークスペースを更新できませんでした。保存した設定を使うには、ワークスペースを開き直してください。",
+  "session.activationRefreshFailed": "ワークスペースを更新できませんでした。開き直してもう一度お試しください。",
   "session.deleteCleanupIncomplete": "投稿は削除されましたが、一部の参照リンクや添付ファイルを削除できませんでした。残ったファイルはワークスペースにあります。",
   "session.postListFailed": "投稿の一覧を更新できませんでした。ワークスペースを開き直してもう一度お試しください。",
   "session.unreadablePosts": {
