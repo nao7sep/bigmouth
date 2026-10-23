@@ -228,9 +228,12 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  * a missing `meta.json` next to real files is recovered, never an error.
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
-  const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId), dataDir);
-  const listed = assets.map(details);
-  return movedAside ? { assets: listed, movedAside } : { assets: listed };
+  const { assets, movedAside, unavailable } = reconcileAssets(assetDir(dataDir, postId), dataDir);
+  return {
+    assets: assets.map(details),
+    ...(movedAside ? { movedAside } : {}),
+    ...(unavailable.length ? { unavailable } : {}),
+  };
 }
 
 /**
@@ -417,15 +420,24 @@ function reconcileAssets(dir: string, dataDir: string): {
   assets: RecordedAsset[];
   records: RecordedAsset[];
   refusal: Error | null;
+  unavailable: string[];
   movedAside?: { path: string; movedTo: string };
 } {
-  if (!fs.existsSync(dir)) return { assets: [], records: [], refusal: null };
-
-  const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
+  let filenames: string[];
+  try {
+    filenames = fs.readdirSync(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { assets: [], records: [], refusal: null, unavailable: [] };
+    }
+    throw error;
+  }
+  const onDisk = new Set(filenames.filter((entry) => !isReservedAssetName(entry)));
 
   const { cached, refusal, movedAside } = readAssetMeta(safeResolveUnder(dataDir, path.relative(dataDir, dir), META_FILENAME));
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
+  const unavailable: string[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
     if (!onDisk.has(entry.filename)) continue;
@@ -440,6 +452,7 @@ function reconcileAssets(dir: string, dataDir: string): {
       // A failed observation says nothing about the upload's facts. Keep them
       // through sibling writes while omitting this inaccessible attachment.
       records.push(entry);
+      unavailable.push(entry.filename);
       logWarn("asset could not be listed", { path: path.resolve(dir, entry.filename), error: serializeError(error) });
     }
   }
@@ -450,10 +463,11 @@ function reconcileAssets(dir: string, dataDir: string): {
       result.push(asset);
       records.push(asset);
     } catch (error) {
+      unavailable.push(filename);
       logWarn("asset could not be listed", { path: path.resolve(dir, filename), error: serializeError(error) });
     }
   }
-  return { assets: result, records, refusal, movedAside };
+  return { assets: result, records, refusal, movedAside, unavailable };
 }
 
 /**

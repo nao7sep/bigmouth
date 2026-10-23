@@ -121,6 +121,24 @@ describe("AssetsTab loading", () => {
     expect(current.queryByText("stale.png")).toBeNull();
   });
 
+  it("keeps healthy attachments usable and reports unavailable siblings without claiming an empty folder", async () => {
+    mockListAssets.mockResolvedValue({ assets: [asset({ filename: "healthy.png" })], unavailable: ["unreadable.png"] });
+    const view = await renderTab();
+    expect(view.getByText("healthy.png")).toBeTruthy();
+    expect(view.getByText("Some attachments could not be listed: unreadable.png.")).toBeTruthy();
+    expect(view.queryByText("No assets yet.")).toBeNull();
+  });
+
+  it("does not call a wholly unavailable collection empty", async () => {
+    mockListAssets.mockResolvedValue({ assets: [], unavailable: ["unreadable.png"] });
+    const view = await renderTab();
+    expect(view.getByText("Some attachments could not be listed: unreadable.png.")).toBeTruthy();
+    expect(view.queryByText("No assets yet.")).toBeNull();
+    fireEvent.click(view.container.querySelector(".assets-result-dismiss")!);
+    expect(view.queryByText("Some attachments could not be listed: unreadable.png.")).toBeNull();
+    expect(view.queryByText("No assets yet.")).toBeNull();
+  });
+
   it("shows the empty state when there are no assets", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
     const { getByText } = await renderTab();

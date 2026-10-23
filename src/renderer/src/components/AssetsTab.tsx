@@ -135,6 +135,9 @@ export function AssetsTab({
   const [listingPending, setListingPending] = useState(true);
   const listingVersion = useRef(0);
   const [loadError, setLoadError] = useState<Message | null>(null);
+  const [unavailable, setUnavailable] = useState<string[]>([]);
+  const [dismissedUnavailable, setDismissedUnavailable] = useState<string | null>(null);
+  const unavailableIdentity = JSON.stringify(unavailable);
   const [uploading, setUploading] = useState(false);
   const [dragState, setDragState] = useState<DragState>("idle");
   const [uploadNotice, setUploadNotice] = useState<AssetNotice | null>(null);
@@ -157,12 +160,14 @@ export function AssetsTab({
     const version = ++listingVersion.current;
     setListingPending(true);
     try {
-      const { assets: list, movedAside } = await listAssets(postId, workspaceId);
+      const { assets: list, movedAside, unavailable = [] } = await listAssets(postId, workspaceId);
       if (!current.current || listingVersion.current !== version) {
         if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
         return null;
       }
       setLoadError(null);
+      setUnavailable(unavailable);
+      if (unavailable.length === 0) setDismissedUnavailable(null);
       assetsRef.current = list;
       publishPostAssets(workspaceId, postId, list);
       if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
@@ -183,6 +188,8 @@ export function AssetsTab({
 
   useEffect(() => {
     assetsRef.current = [];
+    setUnavailable([]);
+    setDismissedUnavailable(null);
     clearPostAssets(workspaceId, postId);
     setLoadError(null);
     setUploadNotice(null);
@@ -518,11 +525,18 @@ export function AssetsTab({
         </OperationalResult>
       )}
 
+      {unavailable.length > 0 && dismissedUnavailable !== unavailableIdentity && (
+        <OperationalResult severity="warning" className="assets-result assets-result--warning"
+          dismissClassName="assets-result-dismiss" onDismiss={() => setDismissedUnavailable(unavailableIdentity)}>
+          <ListedMessageView listed={{ message: message("assets.unavailable"), items: unavailable.map(name => ({ name })), namesIn: "names" }} />
+        </OperationalResult>
+      )}
+
       {/* Asset grid */}
       {listingPending && projection === undefined ? (
         <div className="assets-empty" role="status">{t("common.loading")}</div>
       ) : projection === null ? null : assets.length === 0 ? (
-        <div className="assets-empty">{t("assets.empty")}</div>
+        unavailable.length === 0 ? <div className="assets-empty">{t("assets.empty")}</div> : null
       ) : (
           <div className="assets-grid">
             {assets.map((asset) => (

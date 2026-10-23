@@ -116,7 +116,9 @@ describe("installAsset / listAssets / deleteAsset", () => {
       return open(file, flags, mode);
     });
     try {
-      expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["accessible.png"]);
+      const listing = listAssets(dataDir, POST);
+      expect(listing.assets.map((a) => a.filename)).toEqual(["accessible.png"]);
+      expect(listing.unavailable).toEqual(["blocked.png"]);
       install(dataDir, POST, "new.png", Buffer.from("new"), meta("new.png"));
       expect(() => deleteAsset(dataDir, POST, "accessible.png")).not.toThrow();
       expect(fs.existsSync(path.join(assetDir(dataDir, POST), "accessible.png"))).toBe(false);
@@ -135,10 +137,41 @@ describe("installAsset / listAssets / deleteAsset", () => {
       return stat(...args);
     });
     try {
-      expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+      const listing = listAssets(dataDir, POST);
+      expect(listing.assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+      expect(listing.unavailable).toEqual(["blocked.png"]);
       install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"));
     } finally { failed.mockRestore(); }
     expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ ...meta("blocked.png"), width: 12, contentHash: sha("abc") });
+  });
+
+  it("propagates failure to enumerate the whole asset directory", () => {
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    const failure = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    const read = vi.spyOn(fs, "readdirSync").mockImplementationOnce(() => { throw failure; });
+    try { expect(() => listAssets(dataDir, POST)).toThrow(failure); }
+    finally { read.mockRestore(); }
+  });
+
+  it("lists healthy and unavailable entries without writing the metadata sidecar", () => {
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    const dir = assetDir(dataDir, POST);
+    fs.mkdirSync(path.join(dir, "unavailable.png"));
+    const metaPath = path.join(dir, "meta.json");
+    const before = fs.readFileSync(metaPath);
+    const write = vi.spyOn(fs, "writeFileSync");
+    try {
+      const listing = listAssets(dataDir, POST);
+      expect(listing.assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+      expect(listing.unavailable).toEqual(["unavailable.png"]);
+      expect(write).not.toHaveBeenCalled();
+      expect(fs.readFileSync(metaPath)).toEqual(before);
+    } finally { write.mockRestore(); }
+  });
+
+  it("omits unavailable when every listed entry can be inspected", () => {
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    expect(listAssets(dataDir, POST)).not.toHaveProperty("unavailable");
   });
 
   it("omits directories without hiding healthy files", () => {
@@ -154,7 +187,9 @@ describe("installAsset / listAssets / deleteAsset", () => {
     const broken = path.join(assetDir(dataDir, POST), "broken.png");
     fs.unlinkSync(broken);
     fs.symlinkSync(path.join(dataDir, "missing"), broken);
-    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+    const listing = listAssets(dataDir, POST);
+    expect(listing.assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+    expect(listing.unavailable).toEqual(["broken.png"]);
     install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"));
     fs.unlinkSync(broken);
     fs.writeFileSync(broken, "abc");

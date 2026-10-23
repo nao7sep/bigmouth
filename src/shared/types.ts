@@ -267,6 +267,8 @@ export interface AssetMeta {
  */
 export interface AssetListing {
   assets: AssetMeta[];
+  /** Filenames omitted because the corresponding entry could not be inspected. */
+  unavailable?: string[];
   movedAside?: { path: string; movedTo: string };
 }
 
