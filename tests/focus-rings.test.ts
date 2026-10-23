@@ -351,14 +351,20 @@ function probe(target: Target, withClasses: boolean): HTMLElement {
 // Whether the rule styles the target itself because it has focus: a subject
 // that matches the element once it is focused and not before.
 function focusRuleOn(rule: Rule, target: Target, withClasses = true): boolean {
+  return focusRulesOn([rule], target, withClasses)[0];
+}
+
+// Probe all rules with one focus transition; rebuilding and focusing the same
+// element for every rule repeatedly runs jsdom's style and focus machinery.
+function focusRulesOn(rules: Rule[], target: Target, withClasses = true): boolean[] {
   const element = probe(target, withClasses);
   probeDocument.body.append(element);
-  const parts = subjects(rule.selector);
-  const before = parts.map((part) => element.matches(part));
+  const parts = rules.map((rule) => subjects(rule.selector));
+  const before = parts.map((list) => list.map((part) => element.matches(part)));
   element.focus();
-  const after = parts.map((part) => element.matches(part));
+  const after = parts.map((list) => list.map((part) => element.matches(part)));
   element.remove();
-  return after.some((matched, index) => matched && !before[index]);
+  return after.map((list, ruleIndex) => list.some((matched, index) => matched && !before[ruleIndex][index]));
 }
 
 function firstValue(style: CSSStyleDeclaration, property: string): string {
@@ -465,9 +471,10 @@ function uncoveredOwnPages(sites: Site[], ownStyles: Map<string, string>): strin
 // Focus rules that draw on a container, reaching it by role, attribute or class.
 function drawingOnContainers(sites: Site[], rules: Rule[]): string[] {
   const targets = [...roleContainers, ...containers(sites, rules).map((site) => site.target)];
-  return rules
-    .filter((rule) => draws(rule.style))
-    .filter((rule) => targets.some((target) => focusRuleOn(rule, target)))
+  const drawing = rules.filter((rule) => draws(rule.style));
+  const matches = targets.map((target) => focusRulesOn(drawing, target));
+  return drawing
+    .filter((_, index) => matches.some((target) => target[index]))
     .map((rule) => rule.selector);
 }
 
