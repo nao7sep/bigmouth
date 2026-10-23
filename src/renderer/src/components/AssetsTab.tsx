@@ -220,7 +220,7 @@ export function AssetsTab({
     const operationalFailures: Array<{ file: File; reason: Message }> = [];
     // Added, but something that records the addition could not be saved.
     const unsaved: NamedItem[] = [];
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       try {
         const { asset, unsaved: unsavedParts } = await uploadAsset(postId, file, workspaceId);
         if (unsavedParts?.includes("details")) {
@@ -237,6 +237,10 @@ export function AssetsTab({
           // or the workspace folder could not take it.
           operationalFailures.push({ file, reason: err.reason });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });
+          if (err.stopBatch) {
+            operationalFailures.push(...files.slice(index + 1).map((file) => ({ file, reason: message("assets.uploadBatchStopped") })));
+            break;
+          }
         } else {
           // A failure that carries its own words, such as a meta.json a newer
           // version saved, is told in them.

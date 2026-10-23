@@ -10,10 +10,11 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import v8 from "node:v8";
 import vm from "node:vm";
+import { EventEmitter, once } from "node:events";
 import { MessageChannel } from "node:worker_threads";
 
-import { receiveUpload } from "@main/assetUpload.js";
-import { ASSET_UPLOAD_SLICE_BYTES } from "@shared/ipc";
+import { receiveUpload, StagingFile, UploadLifetime, type UploadPort } from "@main/assetUpload.js";
+import { ASSET_UPLOAD_SLICE_BYTES, ASSET_UPLOAD_SLICES_IN_FLIGHT, ASSET_UPLOAD_IDLE_MS, type AssetUploadFromMain } from "@shared/ipc";
 import { mainEnd, playRenderer, slicesOf } from "./uploadStream.js";
 
 let root: string;
@@ -26,13 +27,222 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
 const staged = () => (fs.existsSync(staging) ? fs.readdirSync(staging) : []);
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
+class ControlledPort extends EventEmitter implements UploadPort {
+  readonly sent: AssetUploadFromMain[] = [];
+  postMessage(message: AssetUploadFromMain): void {
+    this.sent.push(message);
+    this.emit("credit");
+  }
+  start(): void {}
+  slice(size = 1): void { this.emit("message", { data: { type: "slice", data: new ArrayBuffer(size) } }); }
+  end(): void { this.emit("message", { data: { type: "end" } }); }
+  close(): void { this.emit("close"); }
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("UploadLifetime", () => {
+  it("bounds inactivity from construction and resets on progress without refreshing after stop", async () => {
+    vi.useFakeTimers();
+    const port = new ControlledPort();
+    const lifetime = new UploadLifetime(port);
+    const stopped = vi.fn();
+    lifetime.onStop(stopped);
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS - 1);
+    expect(lifetime.reason).toBeNull();
+    lifetime.progress();
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS - 1);
+    expect(lifetime.reason).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await lifetime.stopped).toBe("stalled");
+    port.close();
+    lifetime.progress();
+    expect(stopped).toHaveBeenCalledExactlyOnceWith("stalled");
+    expect(vi.getTimerCount()).toBe(0);
+    lifetime.dispose();
+  });
+
+  it("disables inactivity permanently for installation but still observes abandonment", async () => {
+    vi.useFakeTimers();
+    const port = new ControlledPort();
+    const lifetime = new UploadLifetime(port);
+    const removed = vi.fn();
+    const unsubscribe = lifetime.onStop(removed);
+    unsubscribe();
+    lifetime.beginInstall();
+    lifetime.progress();
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS * 2);
+    expect(lifetime.reason).toBeNull();
+    port.close();
+    expect(await lifetime.stopped).toBe("abandoned");
+    expect(removed).not.toHaveBeenCalled();
+    const late = vi.fn();
+    lifetime.onStop(late);
+    expect(late).toHaveBeenCalledExactlyOnceWith("abandoned");
+    lifetime.dispose();
+  });
+
+  it("clears the inactivity timer when disposed", async () => {
+    vi.useFakeTimers();
+    const lifetime = new UploadLifetime(new ControlledPort());
+    lifetime.dispose();
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS * 2);
+    expect(lifetime.reason).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe("receiveUpload", () => {
+  it("observes a close before staging starts", async () => {
+    const port = new ControlledPort();
+    const lifetime = new UploadLifetime(port);
+    port.close();
+    const create = vi.spyOn(StagingFile, "create");
+    expect(await receiveUpload(port, staging, lifetime)).toEqual({ kind: "abandoned" });
+    expect(create).not.toHaveBeenCalled();
+    expect(staged()).toEqual([]);
+    lifetime.dispose();
+  });
+
+  it("cleans up a stage created after the port already closed", async () => {
+    const port = new ControlledPort();
+    const gate = deferred();
+    const create = StagingFile.create;
+    vi.spyOn(StagingFile, "create").mockImplementation(async (dir) => {
+      await gate.promise;
+      return create(dir);
+    });
+    const receiving = receiveUpload(port, staging);
+    port.close();
+    gate.resolve();
+    expect(await receiving).toEqual({ kind: "abandoned" });
+    expect(port.sent).toEqual([]);
+    expect(staged()).toEqual([]);
+  });
+
+  it("reports a stalled write immediately through its lifetime but keeps the stage until the write settles", async () => {
+    vi.useFakeTimers();
+    const port = new ControlledPort();
+    const lifetime = new UploadLifetime(port);
+    const gate = deferred();
+    const started = deferred();
+    const original = StagingFile.prototype.write;
+    vi.spyOn(StagingFile.prototype, "write").mockImplementation(async function (this: StagingFile, bytes) {
+      started.resolve();
+      await gate.promise;
+      await original.call(this, bytes);
+    });
+    const discard = vi.spyOn(StagingFile.prototype, "discard");
+    const ready = once(port, "credit");
+    const receiving = receiveUpload(port, staging, lifetime);
+    let settled = false;
+    void receiving.then(() => { settled = true; });
+    await ready;
+    port.slice();
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS);
+    expect(await lifetime.stopped).toBe("stalled");
+    expect(settled).toBe(false);
+    expect(staged()).toHaveLength(1);
+    expect(discard).not.toHaveBeenCalled();
+    gate.resolve();
+    expect(await receiving).toEqual({ kind: "stalled" });
+    expect(staged()).toEqual([]);
+    lifetime.dispose();
+  });
+
+  it("refreshes inactivity when a real write completes and lets a progressing upload end", async () => {
+    vi.useFakeTimers();
+    const port = new ControlledPort();
+    const lifetime = new UploadLifetime(port);
+    const gate = deferred();
+    const started = deferred();
+    const original = StagingFile.prototype.write;
+    vi.spyOn(StagingFile.prototype, "write").mockImplementation(async function (this: StagingFile, bytes) {
+      started.resolve();
+      await gate.promise;
+      await original.call(this, bytes);
+    });
+    const ready = once(port, "credit");
+    const receiving = receiveUpload(port, staging, lifetime);
+    await ready;
+    port.slice();
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS / 2);
+    const written = once(port, "credit");
+    gate.resolve();
+    await written;
+    await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS / 2 + 1);
+    expect(lifetime.reason).toBeNull();
+    port.end();
+    const result = await receiving;
+    expect(result.kind).toBe("staged");
+    if (result.kind === "staged") await result.staging.discard();
+    lifetime.dispose();
+  });
+
+  it("refuses credit overruns without building an unbounded write queue", async () => {
+    const port = new ControlledPort();
+    const gate = deferred();
+    const started = deferred();
+    const original = StagingFile.prototype.write;
+    const write = vi.spyOn(StagingFile.prototype, "write").mockImplementation(async function (this: StagingFile, bytes) {
+      started.resolve();
+      await gate.promise;
+      await original.call(this, bytes);
+    });
+    const ready = once(port, "credit");
+    const receiving = receiveUpload(port, staging);
+    await ready;
+    port.slice();
+    await started.promise;
+    for (let index = 1; index <= ASSET_UPLOAD_SLICES_IN_FLIGHT; index += 1) port.slice();
+    expect(port.sent).toHaveLength(ASSET_UPLOAD_SLICES_IN_FLIGHT);
+    gate.resolve();
+    expect(await receiving).toEqual({ kind: "abandoned" });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(staged()).toEqual([]);
+  });
+
+  it("refuses an empty slice separately from the valid empty-file end message", async () => {
+    const port = new ControlledPort();
+    const ready = once(port, "credit");
+    const receiving = receiveUpload(port, staging);
+    await ready;
+    port.slice(0);
+    expect(await receiving).toEqual({ kind: "abandoned" });
+    expect(staged()).toEqual([]);
+  });
+
+  it("fails and discards the stage instead of spinning when the filesystem writes zero bytes", async () => {
+    const open = fsp.open;
+    const write = vi.fn(async () => ({ bytesWritten: 0, buffer: new Uint8Array(0) }));
+    vi.spyOn(fsp, "open").mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+      const handle = await open(...args);
+      (handle as unknown as { write: typeof write }).write = write;
+      return handle;
+    });
+    const port = new ControlledPort();
+    const ready = once(port, "credit");
+    const receiving = receiveUpload(port, staging);
+    await ready;
+    port.slice();
+    expect(await receiving).toMatchObject({ kind: "write-failed", problem: "failed" });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(staged()).toEqual([]);
+  });
+
   it("stages the exact bytes with their hash and length", async () => {
     // Two whole slices and a part, with every byte value.
     const bytes = Buffer.alloc(ASSET_UPLOAD_SLICE_BYTES * 2 + 1000);

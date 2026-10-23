@@ -267,11 +267,14 @@ export interface AssetUploadStart {
  */
 export const ASSET_UPLOAD_SLICE_BYTES = 4 * 1024 * 1024;
 export const ASSET_UPLOAD_SLICES_IN_FLIGHT = 2;
+/** No-progress bound, reset by actual transfer/write progress rather than total file size. */
+export const ASSET_UPLOAD_IDLE_MS = 30_000;
 
-/** Renderer to main on an upload's port: the next slice, the end of the file, or a read that failed. */
+/** Stream progress, failure, or acknowledgement that the sender now awaits actual installation. */
 export type AssetUploadToMain =
   | { type: "slice"; data: ArrayBuffer }
   | { type: "end" }
+  | { type: "install" }
   | { type: "abort" };
 
 /**
@@ -281,6 +284,7 @@ export type AssetUploadToMain =
  */
 export type AssetUploadFromMain =
   | { type: "next" }
+  | { type: "installing" }
   | { type: "result"; result: AssetUploadResult }
   | { type: "failed"; message: string };
 
@@ -294,8 +298,9 @@ export type AssetUploadAdmission =
   | { code: "post-missing" };
 
 /**
- * Why the file's bytes did not reach the workspace, as data the renderer maps to
- * its own copy. Each leaves nothing behind: the partial copy is removed.
+ * Why the file was not installed, as data the renderer maps to its own copy.
+ * Partial stages are removed after their physical writes settle; a stalled
+ * operation may still own temporary data when its user wait ends.
  * `source-unreadable`: the picked file could not be read to the end.
  * `workspace-unwritable`: the copy could not be written into the workspace
  * folder, because its disk is `full`, writing there is `denied`, or the write
@@ -303,6 +308,8 @@ export type AssetUploadAdmission =
  */
 export type AssetUploadFailure =
   | { code: "source-unreadable" }
+  | { code: "stalled" }
+  | { code: "busy" }
   | { code: "workspace-unwritable"; problem: WorkspaceWriteProblem };
 export type WorkspaceWriteProblem = "full" | "denied" | "failed";
 

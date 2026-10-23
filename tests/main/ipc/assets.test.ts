@@ -15,8 +15,10 @@ import os from "node:os";
 import path from "node:path";
 import { MessageChannel } from "node:worker_threads";
 import { createHash } from "node:crypto";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import {
   ASSET_UPLOAD_SLICE_BYTES,
+  ASSET_UPLOAD_IDLE_MS,
   CHANNELS,
   type AssetDeleteResult,
   type AssetUploadFromMain,
@@ -25,7 +27,10 @@ import {
 import { mainEnd, playRenderer, slicesOf, type SliceStep } from "../uploadStream.js";
 import type { AssetListing, AssetMeta, Post, Target } from "@shared/types";
 
-const transport = vi.hoisted(() => ({ afterPublication: null as null | (() => Promise<void>) }));
+const transport = vi.hoisted(() => ({
+  afterPublication: null as null | (() => Promise<void>),
+  beforeWorkspaceResolution: null as null | ((id: string) => Promise<void>),
+}));
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
@@ -45,7 +50,10 @@ vi.mock("@main/storageAccess.js", async () => {
   const { storageTasks } = await import("@main/storageTasks.js");
   const asset = await import("@main/core/services/assetStore.js");
   return {
-    getWorkspace: async (...args: Parameters<typeof workspace.getWorkspace>) => workspace.getWorkspace(...args),
+    getWorkspace: async (...args: Parameters<typeof workspace.getWorkspace>) => {
+      await transport.beforeWorkspaceResolution?.(args[0]);
+      return workspace.getWorkspace(...args);
+    },
     getSettings: async (...args: Parameters<typeof config.getSettings>) => config.getSettings(...args),
     getTargets: async (...args: Parameters<typeof config.getTargets>) => config.getTargets(...args),
     setContentSaveListener: post.setContentSaveListener,
@@ -102,6 +110,8 @@ import { changeStatus, clearCache, deletePost, getPost, setLocked } from "@main/
 import { assetDir, stagingDir } from "@main/core/services/assetStore.js";
 import { handleUpload, registerAssetHandlers } from "@main/ipc/assets.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
+import { StagingFile } from "@main/assetUpload.js";
+import * as storageAccess from "@main/storageAccess.js";
 
 let home: string;
 let wsId: string;
@@ -184,6 +194,7 @@ async function createDraft(): Promise<string> {
 
 beforeEach(() => {
   transport.afterPublication = null;
+  transport.beforeWorkspaceResolution = null;
   derivatives.current = null;
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
   process.env.BIGMOUTH_DATA_DIR = home;
@@ -429,9 +440,20 @@ describe("uploadAsset", () => {
 
   it("answers nothing and removes the stage when the renderer goes away mid-file", async () => {
     const id = await createDraft();
-    const reply = await send(id, upload("gone.png", PNG_1x1), (index) => (index === 0 ? Buffer.from("first part") : "close"));
-    expect(reply).toBeNull();
-    expect(staged()).toEqual([]);
+    const discarded = barrier();
+    const realDiscard = StagingFile.prototype.discard;
+    const discard = vi.spyOn(StagingFile.prototype, "discard").mockImplementation(async function (this: StagingFile) {
+      await realDiscard.call(this);
+      discarded.release();
+    });
+    try {
+      const reply = await send(id, upload("gone.png", PNG_1x1), (index) => (index === 0 ? Buffer.from("first part") : "close"));
+      expect(reply).toBeNull();
+      // The closed caller has already returned; cleanup still owns started I/O.
+      await discarded.promise;
+      await nextTurn();
+      expect(staged()).toEqual([]);
+    } finally { discard.mockRestore(); }
   });
 
   it("says the workspace folder is full when a staged write meets ENOSPC, and removes the stage", async () => {
@@ -765,6 +787,175 @@ describe("deleteAsset", () => {
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-02-01T00:00:00.000Z");
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+
+/** A controllable operation boundary, without delaying unrelated native work. */
+function barrier() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
+describe("upload lifetime ownership", () => {
+  it("observes a closed port while workspace lookup is held and never creates a late stage", async () => {
+    const id = await createDraft();
+    const lookup = barrier();
+    const entered = barrier();
+    transport.beforeWorkspaceResolution = async () => { entered.release(); await lookup.promise; };
+    const create = vi.spyOn(StagingFile, "create");
+    const { port1, port2 } = new MessageChannel();
+    const renderer = playRenderer(port1, () => null);
+    const pending = handleUpload(mainEnd(port2), { wsId, postId: id, name: "gone.txt" });
+    try {
+      await entered.promise;
+      port1.close();
+      await pending;
+      expect(await renderer).toBeNull();
+      expect(create).not.toHaveBeenCalled();
+      lookup.release();
+      await nextTurn();
+      expect(create).not.toHaveBeenCalled();
+      expect(staged()).toEqual([]);
+    } finally {
+      lookup.release();
+      await pending;
+      await nextTurn();
+      create.mockRestore();
+      transport.beforeWorkspaceResolution = null;
+      port1.close(); port2.close();
+    }
+  });
+
+  it.each(["creation", "write"] as const)("answers a stalled stage %s but retains same-workspace admission through cleanup", async (phase) => {
+    const id = await createDraft();
+    const other = createWorkspace("Other", path.join(home, "other-workspace"));
+    saveTargets(other.dataDirectory, [TARGET]);
+    const otherPost = await invoke<Post>(CHANNELS.createPost, other.id, "blogger", "en");
+    const held = barrier();
+    const entered = barrier();
+    const discarded = barrier();
+    const realCreate = StagingFile.create;
+    const realWrite = StagingFile.prototype.write;
+    const realDiscard = StagingFile.prototype.discard;
+    let holdOnce = true;
+    const create = vi.spyOn(StagingFile, "create").mockImplementation(async (dir) => {
+      if (phase === "creation" && dir === stagingDir(dataDir) && holdOnce) {
+        holdOnce = false; entered.release(); await held.promise;
+      }
+      return realCreate.call(StagingFile, dir);
+    });
+    const write = vi.spyOn(StagingFile.prototype, "write").mockImplementation(async function (this: StagingFile, bytes) {
+      if (phase === "write" && this.path.startsWith(stagingDir(dataDir) + path.sep) && holdOnce) {
+        holdOnce = false; entered.release(); await held.promise;
+      }
+      await realWrite.call(this, bytes);
+    });
+    const discard = vi.spyOn(StagingFile.prototype, "discard").mockImplementation(async function (this: StagingFile) {
+      await realDiscard.call(this);
+      if (this.path.startsWith(stagingDir(dataDir) + path.sep)) discarded.release();
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const pending = send(id, upload("stalled.txt", Buffer.from("draft bytes")));
+    try {
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS);
+      expect(await pending).toEqual({ type: "result", result: { ok: false, failure: { code: "stalled" } } });
+      expect(discard).not.toHaveBeenCalled();
+      expect(await send(id, upload("busy.txt", Buffer.from("busy"))))
+        .toEqual({ type: "result", result: { ok: false, failure: { code: "busy" } } });
+      expect(await send(otherPost.frontMatter.id, upload("other.txt", Buffer.from("other")), undefined,
+        { wsId: other.id, postId: otherPost.frontMatter.id, name: "other.txt" }))
+        .toMatchObject({ type: "result", result: { ok: true, asset: { filename: "other.txt" } } });
+      expect(fs.existsSync(path.join(assetDir(dataDir, id), "stalled.txt"))).toBe(false);
+      held.release();
+      await discarded.promise;
+      await nextTurn();
+      expect(staged()).toEqual([]);
+      expect(await send(id, upload("retry.txt", Buffer.from("retry"))))
+        .toMatchObject({ type: "result", result: { ok: true, asset: { filename: "retry.txt" } } });
+    } finally {
+      held.release();
+      await pending;
+      await discarded.promise;
+      await nextTurn();
+      vi.useRealTimers();
+      create.mockRestore(); write.mockRestore(); discard.mockRestore();
+      clearCache(other.dataDirectory);
+    }
+  });
+
+  it("never publishes when the renderer does not acknowledge installation", async () => {
+    const id = await createDraft();
+    const proposal = barrier();
+    const install = vi.spyOn(storageAccess, "installAsset");
+    const discarded = barrier();
+    const realDiscard = StagingFile.prototype.discard;
+    const discard = vi.spyOn(StagingFile.prototype, "discard").mockImplementation(async function (this: StagingFile) {
+      await realDiscard.call(this);
+      discarded.release();
+    });
+    const { port1, port2 } = new MessageChannel();
+    let ended = false;
+    const replies: AssetUploadFromMain[] = [];
+    port1.on("message", (reply: AssetUploadFromMain) => {
+      replies.push(reply);
+      if (reply.type === "next" && !ended) { ended = true; port1.postMessage({ type: "end" }); }
+      if (reply.type === "installing") proposal.release();
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const pending = handleUpload(mainEnd(port2), { wsId, postId: id, name: "unacknowledged.txt" });
+    try {
+      await proposal.promise;
+      expect(install).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS);
+      await pending;
+      await discarded.promise;
+      await nextTurn();
+      expect(replies).toContainEqual({ type: "result", result: { ok: false, failure: { code: "stalled" } } });
+      expect(install).not.toHaveBeenCalled();
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect(staged()).toEqual([]);
+      expect(fs.existsSync(path.join(assetDir(dataDir, id), "unacknowledged.txt"))).toBe(false);
+    } finally {
+      await pending;
+      await discarded.promise;
+      vi.useRealTimers();
+      port1.close(); port2.close(); install.mockRestore(); discard.mockRestore();
+    }
+  });
+
+  it("keeps a started installation pending beyond the upload deadline through its actual reply", async () => {
+    const id = await createDraft();
+    const publication = barrier();
+    const reply = barrier();
+    transport.afterPublication = async () => { publication.release(); await reply.promise; };
+    const install = vi.spyOn(storageAccess, "installAsset");
+    const discard = vi.spyOn(StagingFile.prototype, "discard");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    let settled = false;
+    const pending = send(id, upload("installed.txt", Buffer.from("one attachment"))).then((result) => { settled = true; return result; });
+    try {
+      await publication.promise;
+      expect(fs.readFileSync(path.join(assetDir(dataDir, id), "installed.txt"), "utf8")).toBe("one attachment");
+      await vi.advanceTimersByTimeAsync(ASSET_UPLOAD_IDLE_MS * 2);
+      expect(settled).toBe(false);
+      expect(discard).not.toHaveBeenCalled();
+      expect(await send(id, upload("busy.txt", Buffer.from("busy"))))
+        .toEqual({ type: "result", result: { ok: false, failure: { code: "busy" } } });
+      reply.release();
+      expect(await pending).toMatchObject({ type: "result", result: { ok: true, asset: { filename: "installed.txt" } } });
+      expect(install).toHaveBeenCalledTimes(1);
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect(staged()).toEqual([]);
+      expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets.map((asset) => asset.filename)).toEqual(["installed.txt"]);
+    } finally {
+      reply.release(); await pending;
+      transport.afterPublication = null;
+      vi.useRealTimers();
+      install.mockRestore(); discard.mockRestore();
     }
   });
 });

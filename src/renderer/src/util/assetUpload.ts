@@ -11,12 +11,12 @@ export class AssetUploadAdmissionError extends Error {
   }
 }
 
-/** The file's bytes did not reach the workspace; nothing of it was kept. */
+/** The attachment was not installed; stalled work may still own its temporary stage. */
 export class AssetUploadFailureError extends Error {
   /** Why, and what to do about it, as the interface says it. */
   readonly reason: Message;
 
-  constructor(reason: Message) {
+  constructor(reason: Message, readonly stopBatch = false) {
     super(reason.key);
     this.name = "AssetUploadFailureError";
     this.reason = reason;

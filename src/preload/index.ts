@@ -12,6 +12,7 @@ import {
   type AnalysisStreamHandle,
   type AnalysisStreamParams,
   ASSET_UPLOAD_SLICE_BYTES,
+  ASSET_UPLOAD_IDLE_MS,
   type AssetDeleteResult,
   type AssetUploadFromMain,
   type AssetUploadResult,
@@ -80,6 +81,11 @@ function startAiRequest<T>(channel: string, ...args: unknown[]): AiRequestHandle
   };
 }
 
+// Source reads cannot be cancelled. Retain each workspace's slot through read
+// settlement; separate workspaces may progress within this window's capacity.
+const uploadCapacity = Math.max(2, typeof navigator === "undefined" ? 2 : navigator.hardwareConcurrency || 2);
+const ownedUploads = new Map<string, object>();
+
 /**
  * Streams a picked or dropped file to main for an upload (see AssetUploadStart):
  * main asks for each slice with `next`, and each is read from the file only when
@@ -92,26 +98,47 @@ function startAiRequest<T>(channel: string, ...args: unknown[]): AiRequestHandle
  * caller is told the file could not be read.
  */
 function streamAssetUpload(wsId: string, postId: string, file: File): Promise<AssetUploadResult> {
+  if (ownedUploads.has(wsId) || ownedUploads.size >= uploadCapacity) return Promise.resolve({ ok: false, failure: { code: "busy" } });
   const { port1, port2 } = new MessageChannel();
+  const claim = {};
+  ownedUploads.set(wsId, claim);
   const send = (message: AssetUploadToMain): void => port1.postMessage(message);
   return new Promise<AssetUploadResult>((resolve, reject) => {
     let offset = 0;
     let ended = false;
     let settled = false;
+    let installing = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let reading = Promise.resolve();
     const finish = (settle: () => void): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(idleTimer);
       port1.close();
+      void reading.then(() => {
+        if (ownedUploads.get(wsId) === claim) ownedUploads.delete(wsId);
+      });
       settle();
+    };
+    const abort = (code: "stalled" | "source-unreadable"): void => {
+      if (settled) return;
+      try { send({ type: "abort" }); }
+      catch (error) { console.error("[bigmouth] Upload abort could not reach main", error); }
+      finish(() => resolve({ ok: false, failure: { code } }));
+    };
+    const progress = (): void => {
+      if (settled || installing) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => abort("stalled"), ASSET_UPLOAD_IDLE_MS);
     };
     // Requests are served one after another, so slices go out in file order even
     // when main asks for two at once.
-    let reading = Promise.resolve();
     const sendNext = async (): Promise<void> => {
       if (settled || ended) return;
       if (offset === file.size) {
         ended = true;
         send({ type: "end" });
+        progress();
         return;
       }
       const end = Math.min(offset + ASSET_UPLOAD_SLICE_BYTES, file.size);
@@ -119,22 +146,38 @@ function streamAssetUpload(wsId: string, postId: string, file: File): Promise<As
       try {
         data = await file.slice(offset, end).arrayBuffer();
       } catch {
-        if (!settled) send({ type: "abort" });
-        finish(() => resolve({ ok: false, failure: { code: "source-unreadable" } }));
+        abort("source-unreadable");
         return;
       }
+      if (settled) return;
       offset = end;
-      if (!settled) send({ type: "slice", data });
+      send({ type: "slice", data });
+      progress();
     };
     port1.onmessage = (event: { data: AssetUploadFromMain }) => {
       const reply = event.data;
-      if (reply.type === "next") reading = reading.then(sendNext);
+      if (settled) return;
+      if (reply.type === "next") {
+        progress();
+        reading = reading.then(sendNext).catch((error: unknown) => finish(() => reject(error)));
+      } else if (reply.type === "installing") {
+        installing = true;
+        clearTimeout(idleTimer);
+        try { send({ type: "install" }); }
+        catch (error) { finish(() => reject(error)); }
+      }
       else if (reply.type === "result") finish(() => resolve(reply.result));
       else if (reply.type === "failed") finish(() => reject(new Error(reply.message)));
     };
-    const sourcePath = webUtils.getPathForFile(file);
-    const start: AssetUploadStart = { wsId, postId, name: file.name, ...(sourcePath ? { sourcePath } : {}) };
-    ipcRenderer.postMessage(CHANNELS.uploadAsset, start, [port2]);
+    progress();
+    try {
+      const sourcePath = webUtils.getPathForFile(file);
+      const start: AssetUploadStart = { wsId, postId, name: file.name, ...(sourcePath ? { sourcePath } : {}) };
+      ipcRenderer.postMessage(CHANNELS.uploadAsset, start, [port2]);
+    } catch (error) {
+      port2.close();
+      finish(() => reject(error));
+    }
   });
 }
 

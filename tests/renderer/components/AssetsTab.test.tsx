@@ -841,3 +841,43 @@ it("keeps delayed upload partial-success warnings after leaving Assets", async (
     "pic.png was added, but this post's modified time could not be updated.",
   ]);
 });
+
+describe("AssetsTab stalled upload batches", () => {
+  it.each(["assets.uploadStalled", "assets.uploadBusy"] as const)("stops after %s and reports every remaining file as not attempted", async (key) => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    mockUploadAsset.mockResolvedValueOnce({ asset: asset({ filename: "first.png" }) });
+    mockUploadAsset.mockRejectedValueOnce(new AssetUploadFailureError({ key }, true));
+    const view = await renderTab();
+    const files = ["first.png", "stalled.png", "later.png", "last.png"].map(makeFile);
+    await act(async () => { fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files } }); });
+    expect(mockUploadAsset.mock.calls.map(([, file]) => file.name)).toEqual(["first.png", "stalled.png"]);
+    const notice = view.getByRole("alert");
+    expect(notice.textContent).toContain("Added 1 asset.");
+    expect(notice.textContent).toContain("3 items could not be added:");
+    expect(notice.textContent).toContain("later.png: Not attempted while earlier file work is still settling.");
+    expect(notice.textContent).toContain("last.png: Not attempted while earlier file work is still settling.");
+    expect(notice.textContent).not.toContain("Added 3 assets.");
+  });
+
+  it("does not claim any additions when the first file stalls", async () => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    mockUploadAsset.mockRejectedValueOnce(new AssetUploadFailureError({ key: "assets.uploadStalled" }, true));
+    const view = await renderTab();
+    await act(async () => { fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [makeFile("stalled.png"), makeFile("later.png")] } }); });
+    expect(mockUploadAsset).toHaveBeenCalledOnce();
+    expect(view.getByRole("alert").textContent).toContain("2 items could not be added:");
+    expect(view.queryByText(/Added [0-9]+ assets?\./)).toBeNull();
+  });
+
+  it("continues after an ordinary unreadable source and counts the later addition", async () => {
+    mockListAssets.mockResolvedValue({ assets: [] });
+    mockUploadAsset.mockRejectedValueOnce(new AssetUploadFailureError({ key: "assets.sourceUnreadable" }));
+    mockUploadAsset.mockResolvedValueOnce({ asset: asset({ filename: "readable.png" }) });
+    const view = await renderTab();
+    await act(async () => { fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [makeFile("unreadable.png"), makeFile("readable.png")] } }); });
+    expect(mockUploadAsset.mock.calls.map(([, file]) => file.name)).toEqual(["unreadable.png", "readable.png"]);
+    expect(view.getByRole("alert").textContent).toContain("Added 1 asset.");
+    expect(view.getByRole("alert").textContent).toContain("1 item could not be added:");
+    expect(view.queryByText(/Not attempted while/)).toBeNull();
+  });
+});
