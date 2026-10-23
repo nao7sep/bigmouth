@@ -13,6 +13,8 @@ import path from "node:path";
 import { CHANNELS } from "@shared/ipc";
 import type { ImagingOptions } from "@shared/types";
 
+import * as logger from "@main/core/services/logger.js";
+
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
 const ai = vi.hoisted(() => ({
@@ -20,6 +22,7 @@ const ai = vi.hoisted(() => ({
   lastCall: null as null | { systemPrompt: string; userContent: string; schema: unknown; options: unknown },
   createProviderThrows: null as null | Error,
   roleCall: null as unknown,
+  context: null as unknown,
 }));
 
 vi.mock("@main/storageAccess.js", async () => {
@@ -42,14 +45,15 @@ vi.mock("electron", () => ({
 
 vi.mock("@main/core/services/logger.js", () => ({
   debug: () => {},
-  info: () => {},
+  info: vi.fn(),
   warn: () => {},
-  error: () => {},
+  error: vi.fn(),
   serializeError: (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) }),
 }));
 
 vi.mock("@main/core/ai/factory.js", () => ({
-  createProvider: (roleCall: unknown) => {
+  createProvider: (roleCall: unknown, context: unknown) => {
+    ai.context = context;
     ai.roleCall = roleCall;
     if (ai.createProviderThrows) throw ai.createProviderThrows;
     return {
@@ -103,6 +107,8 @@ function sendAbort(): void {
 }
 
 beforeEach(() => {
+  vi.mocked(logger.info).mockClear();
+  vi.mocked(logger.error).mockClear();
   fakeEvent = { sender: Object.assign(new EventEmitter(), { id: nextOwnerId++ }) };
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-imaging-"));
   process.env.BIGMOUTH_DATA_DIR = home;
@@ -113,6 +119,7 @@ beforeEach(() => {
   ai.lastCall = null;
   ai.createProviderThrows = null;
   ai.roleCall = null;
+  ai.context = null;
 
   const ws = createWorkspace("WS");
   wsId = ws.id;
@@ -275,6 +282,7 @@ describe("imaging generation IPC handler", () => {
     await expect(invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions())).rejects.toThrow(
       /imaging model failed/,
     );
+    expect(logger.error).toHaveBeenCalledWith("Imaging failed", expect.objectContaining({ operationId: "req-1", workspaceId: wsId, postId, error: expect.objectContaining({ message: "imaging model failed" }) }));
   });
 
   it("rethrows when the normalized output count does not match the requested count", async () => {
@@ -294,4 +302,30 @@ describe("imaging generation IPC handler", () => {
       /API key is not configured/,
     );
   });
+});
+
+it("logs correlated imaging summaries while sending full prompts and schema to the provider", async () => {
+  ai.generateJsonImpl = () => ({ items: ["PRIVATE_RESULT_1", "PRIVATE_RESULT_2", "PRIVATE_RESULT_3"] });
+  const result = await invoke(CHANNELS.generateImaging, wsId, postId, "PRIVATE_CONTENT", validOptions());
+  expect(result).toHaveLength(3);
+  expect(ai.lastCall?.userContent).toContain("PRIVATE_CONTENT");
+  expect(ai.lastCall?.schema).toBeDefined();
+  expect(ai.context).toEqual({ operationId: "req-1", workspaceId: wsId, postId, purpose: "imaging" });
+  const events = vi.mocked(logger.info).mock.calls.filter(([name]) => name === "imaging started" || name === "imaging completed");
+  expect(events.map(([name]) => name)).toEqual(["imaging started", "imaging completed"]);
+  for (const [, fields] of events) {
+    expect(fields).toMatchObject({ operationId: "req-1", workspace: wsId, postId });
+    for (const key of ["systemPrompt", "userContent", "frontMatter", "schema", "result"]) expect(fields).not.toHaveProperty(key);
+  }
+  expect(events[0][1]).toMatchObject({ contentLength: "PRIVATE_CONTENT".length, options: validOptions() });
+  expect(events[1][1]).toMatchObject({ itemCount: 3 });
+  expect(JSON.stringify(events)).not.toContain("PRIVATE_");
+});
+
+it("correlates imaging provider initialization diagnostics and masks echoed credentials", async () => {
+  process.env.ANTHROPIC_API_KEY = "sk-operation-secret";
+  ai.createProviderThrows = new Error("Initialization rejected sk-operation-secret");
+  await expect(invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions())).rejects.toThrow("Initialization rejected [REDACTED]");
+  expect(logger.error).toHaveBeenCalledWith("imaging provider init failed", expect.objectContaining({ operationId: "req-1", workspaceId: wsId, postId, error: expect.objectContaining({ message: "Initialization rejected [REDACTED]" }) }));
+  expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain("sk-operation-secret");
 });

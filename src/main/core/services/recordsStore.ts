@@ -1,48 +1,12 @@
 /** The records database (data-lifecycle-conventions, Records; logging-conventions). */
 
+import { RECORDS_SCHEMA, validateRecordsSchema } from "./recordsSchema.js";
 import fs from "node:fs";
 import path from "node:path";
+import type { RecordsHealth } from "@shared/records";
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS log_records (
-  id           INTEGER PRIMARY KEY,
-  session      TEXT NOT NULL,
-  time         TEXT NOT NULL,
-  level        TEXT NOT NULL,
-  message      TEXT NOT NULL,
-  workspace_id TEXT,
-  post_id      TEXT,
-  event        TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_log_records_session ON log_records (session);
-CREATE TABLE IF NOT EXISTS provider_calls (
-  id           INTEGER PRIMARY KEY,
-  session      TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  post_id      TEXT NOT NULL,
-  purpose      TEXT NOT NULL,
-  provider     TEXT NOT NULL,
-  started_at   TEXT NOT NULL,
-  finished_at  TEXT NOT NULL,
-  request      TEXT NOT NULL,
-  response     TEXT,
-  error        TEXT,
-  stopped      INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_provider_calls_session ON provider_calls (session);
-`;
-
-// A store from before stopped calls were told apart gains the column; its rows read as not stopped.
-// Older builds name their columns, so the added one leaves the format readable by them.
-function addStoppedColumn(db: DatabaseSync): void {
-  const columns = db.prepare("PRAGMA table_info(provider_calls)").all() as { name: string }[];
-  if (!columns.some((column) => column.name === "stopped")) {
-    db.exec("ALTER TABLE provider_calls ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
-  }
-}
 
 /** A log line as emitted: its envelope, and the whole JSON object it serializes to. */
 export type LogRecord = {
@@ -62,9 +26,11 @@ export type ProviderCallRecord = {
   workspaceId: string;
   postId: string;
   purpose: string;
+  operationId?: string;
   provider: string;
   startedAt: Date;
   finishedAt: Date;
+  elapsedMs?: number;
   request: unknown;
   response: unknown;
   error: unknown;
@@ -80,7 +46,28 @@ type OpenRecords = {
 
 let records: OpenRecords | null = null;
 // The console hears about a failing sink once, not on every entry.
-let failureReported = false;
+const failuresReported = new Set<string>();
+let health: RecordsHealth = { databaseGap: false, fallbackFailed: false, fallbackPath: null };
+let healthListener: ((value: RecordsHealth) => void) | null = null;
+
+export function onRecordsHealth(listener: ((value: RecordsHealth) => void) | null): void {
+  healthListener = listener;
+  notifyHealth();
+}
+
+export function recordsHealth(): RecordsHealth { return { ...health }; }
+
+function markGap(fallbackFailed = false): void {
+  const next = { databaseGap: true, fallbackFailed: health.fallbackFailed || fallbackFailed, fallbackPath: records?.fallbackPath ?? health.fallbackPath };
+  if (next.databaseGap === health.databaseGap && next.fallbackFailed === health.fallbackFailed && next.fallbackPath === health.fallbackPath) return;
+  health = next;
+  notifyHealth();
+}
+function notifyHealth(): void {
+  try { healthListener?.({ ...health }); }
+  catch (error) { reportFailure("records health notice could not be delivered", error); }
+}
+
 // Called after each entry the database stored; an entry that went to the
 // fallback file is not in the database, so it calls nothing.
 let storedListener: (() => void) | null = null;
@@ -100,8 +87,10 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     db = openSqliteStore("records", dbPath, (opened) => {
-      opened.exec(SCHEMA);
-      addStoppedColumn(opened);
+      opened.exec(RECORDS_SCHEMA);
+      // Experimental internal stores have no migration chain. A mismarked old
+      // shape is refused inside the creation transaction, leaving its rows alone.
+      validateRecordsSchema(opened);
     });
   } catch (err) {
     if (err instanceof NewerFormatError) newer = err;
@@ -113,6 +102,7 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
     db,
     fallbackPath: path.join(logsDir, `${formatForFilename(sessionStart)}.log`),
   };
+  if (!db) markGap();
   return newer;
 }
 
@@ -130,7 +120,7 @@ export function currentRecordsSession(): string | null {
   return records?.session ?? null;
 }
 
-/** Where this session's records are: the database, or the fallback file once the database failed. */
+/** The primary destination; recordsHealth names any per-entry fallback and retained gap. */
 export function currentRecordsPath(): string | null {
   if (!records) return null;
   return records.db ? records.dbPath : records.fallbackPath;
@@ -155,17 +145,19 @@ export function writeProviderCall(call: ProviderCallRecord): void {
   const response = call.response === undefined ? null : JSON.stringify(call.response);
   const error = call.error === undefined ? null : JSON.stringify(call.error);
   insertOrFallBack(
-    "INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request, response, error, stopped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [session, call.workspaceId, call.postId, call.purpose, call.provider, startedAt, finishedAt, request, response, error, call.stopped ? 1 : 0],
+    "INSERT INTO provider_calls (session, workspace_id, post_id, purpose, operation_id, provider, started_at, finished_at, elapsed_ms, request, response, error, stopped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [session, call.workspaceId, call.postId, call.purpose, call.operationId ?? null, call.provider, startedAt, finishedAt, call.elapsedMs ?? null, request, response, error, call.stopped ? 1 : 0],
     () => JSON.stringify({
       record: "provider-call",
       session,
       workspaceId: call.workspaceId,
       postId: call.postId,
       purpose: call.purpose,
+      operationId: call.operationId ?? null,
       provider: call.provider,
       startedAt,
       finishedAt,
+      elapsedMs: call.elapsedMs ?? null,
       request: call.request,
       response: call.response ?? null,
       error: call.error ?? null,
@@ -189,17 +181,19 @@ function insertOrFallBack(sql: string, values: (string | number | null)[], line:
       return;
     }
   }
+  markGap();
   try {
     fs.mkdirSync(path.dirname(open.fallbackPath), { recursive: true });
     fs.appendFileSync(open.fallbackPath, line() + "\n");
   } catch (err) {
+    markGap(true);
     reportFailure("records fallback file write failed", err);
     console.error(line());
   }
 }
 
 function reportFailure(what: string, err: unknown): void {
-  if (failureReported) return;
-  failureReported = true;
+  if (failuresReported.has(what)) return;
+  failuresReported.add(what);
   console.error(`[records] ${what}: ${err instanceof Error ? err.message : String(err)}`);
 }

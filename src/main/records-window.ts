@@ -1,6 +1,7 @@
 import { BrowserWindow, nativeTheme, screen } from "electron";
 import { join } from "node:path";
 
+import type { RecordsHealth } from "@shared/records";
 import { CHANNELS } from "@shared/ipc";
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from "@shared/layout";
 import { serializeError, warn } from "./core/services/logger.js";
@@ -48,6 +49,18 @@ export function buildRecordsWindowOptions(
 export function notifyRecordsChanged(): void {
   if (recordsWindow !== null && !recordsWindow.isDestroyed() && !recordsWindow.webContents.isDestroyed()) {
     recordsWindow.webContents.send(CHANNELS.recordsChanged);
+  }
+}
+
+export function notifyRecordSourcesChanged(): void {
+  if (recordsWindow && !recordsWindow.isDestroyed() && !recordsWindow.webContents.isDestroyed()) {
+    recordsWindow.webContents.send(CHANNELS.recordSourcesChanged);
+  }
+}
+
+export function notifyRecordsHealthChanged(health: RecordsHealth): void {
+  if (recordsWindow && !recordsWindow.isDestroyed() && !recordsWindow.webContents.isDestroyed()) {
+    recordsWindow.webContents.send(CHANNELS.recordsHealthChanged, health);
   }
 }
 

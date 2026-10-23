@@ -14,6 +14,7 @@
 
 /** What a provider call belongs to, kept on its record. */
 export type ProviderCallContext = {
+  operationId?: string;
   workspaceId: string;
   postId: string;
   purpose: "analysis" | "metadata" | "imaging";

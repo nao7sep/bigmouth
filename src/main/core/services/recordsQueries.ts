@@ -47,7 +47,7 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
   const pattern = likePattern(query.search);
   const parts: string[] = [];
   const params: SQLInputValue[] = [];
-  const table = (select: string, from: string, level: string, searched: string[]): void => {
+  const table = (kind: RecordKind, select: string, from: string, timeColumn: string, level: string, searched: string[]): void => {
     const where = ["1 = 1"];
     if (query.session !== null) {
       where.push("session = ?");
@@ -63,30 +63,38 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
       where.push(`(${searched.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(" OR ")})`);
       params.push(...searched.map(() => pattern));
     }
-    parts.push(`${select} FROM ${from} WHERE ${where.join(" AND ")}`);
+    if (query.after !== null) {
+      const { time, kind: cursorKind, id } = query.after;
+      if (kind === cursorKind) {
+        where.push(`(${timeColumn}, id) < (?, ?)`);
+        params.push(time, id);
+      } else {
+        // Kind sorts descending between time and id. At the cursor's time,
+        // a lower kind still belongs to the next page; a higher one does not.
+        where.push(`${timeColumn} ${kind < cursorKind ? "<=" : "<"} ?`);
+        params.push(time);
+      }
+    }
+    params.push(RECORDS_PAGE_SIZE + 1);
+    // Each ordered table contributes only one bounded page before the merge.
+    parts.push(`SELECT * FROM (${select} FROM ${from} WHERE ${where.join(" AND ")} ORDER BY ${timeColumn} DESC, id DESC LIMIT ?)`);
   };
   if (query.kind !== "provider-call") {
     table(
-      "SELECT 'log' AS kind, id, session, time, level, message AS title, NULL AS text, 0 AS stopped",
-      "log_records", "level", LOG_SEARCHED,
+      "log", "SELECT 'log' AS kind, id, session, time, level, message AS title, NULL AS text, 0 AS stopped",
+      "log_records", "time", "level", LOG_SEARCHED,
     );
   }
   if (query.kind !== "log") {
     table(
-      `SELECT 'provider-call' AS kind, id, session, started_at AS time, ${CALL_LEVEL} AS level,
+      "provider-call", `SELECT 'provider-call' AS kind, id, session, started_at AS time, ${CALL_LEVEL} AS level,
         provider || ' ' || purpose AS title, ${CALL_MODEL} AS text, stopped`,
-      "provider_calls", CALL_LEVEL, CALL_SEARCHED,
+      "provider_calls", "started_at", CALL_LEVEL, CALL_SEARCHED,
     );
-  }
-  let after = "";
-  if (query.after !== null) {
-    const { time, kind, id } = query.after;
-    after = "WHERE time < ? OR (time = ? AND (kind < ? OR (kind = ? AND id < ?)))";
-    params.push(time, time, kind, kind, id);
   }
   params.push(RECORDS_PAGE_SIZE + 1);
   const rows = db.prepare(
-    `SELECT * FROM (${parts.join(" UNION ALL ")}) ${after} ORDER BY time DESC, kind DESC, id DESC LIMIT ?`,
+    `SELECT * FROM (${parts.join(" UNION ALL ")}) ORDER BY time DESC, kind DESC, id DESC LIMIT ?`,
   ).all(...params) as unknown as (Omit<RecordSummary, "stopped"> & { stopped: number })[];
   const records = rows.slice(0, RECORDS_PAGE_SIZE).map((row) => ({ ...row, stopped: row.stopped === 1 }));
   return { records, more: rows.length > RECORDS_PAGE_SIZE };
@@ -108,8 +116,8 @@ export function readDetail(db: DatabaseSync, kind: RecordKind, id: number): Reco
     return (row as unknown as RecordDetail | undefined) ?? null;
   }
   const row = db.prepare(
-    `SELECT 'provider-call' AS kind, id, session, workspace_id AS workspaceId, post_id AS postId, purpose, provider,
-      started_at AS startedAt, finished_at AS finishedAt, request, response, error, stopped
+    `SELECT 'provider-call' AS kind, id, session, workspace_id AS workspaceId, post_id AS postId, purpose, operation_id AS operationId, provider,
+      started_at AS startedAt, finished_at AS finishedAt, elapsed_ms AS elapsedMs, request, response, error, stopped
       FROM provider_calls WHERE id = ?`,
   ).get(id) as (Omit<RecordDetail, "stopped"> & { stopped: number }) | undefined;
   return row ? ({ ...row, stopped: row.stopped === 1 } as RecordDetail) : null;

@@ -538,6 +538,8 @@
   "records.loading": "Protokoll wird geladen\u00a0…",
   "records.empty": "Keine Einträge entsprechen diesen Filtern.",
   "records.loadFailed": "Das Protokoll konnte nicht gelesen werden.",
+  "records.gapNotice": "In dieser Ansicht fehlen möglicherweise Protokolleinträge dieses Starts. Ersatzprotokoll: {path}",
+  "records.fallbackFailed": "Einige Protokolleinträge konnten weder in der Datenbank noch in der Ersatzdatei gespeichert werden.",
   "records.detailFailed": "Dieser Eintrag konnte nicht gelesen werden.",
   "records.noSelection": "Wählen Sie einen Eintrag aus, um alles zu sehen, was er enthält.",
   "records.resizeList": "Breite der Datensatzliste ändern",

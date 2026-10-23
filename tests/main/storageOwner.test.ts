@@ -29,6 +29,39 @@ class HeldWorker extends EventEmitter {
 
 afterEach(() => { vi.useRealTimers(); });
 
+describe("storage records notifications", () => {
+  it("retains records health and notifies listeners from worker events", async () => {
+    const worker = new HeldWorker();
+    const owner = new StorageOwner(() => worker as unknown as Worker);
+    const health = vi.fn();
+    const sources = vi.fn();
+    owner.onRecordsHealth(health);
+    owner.onRecordSourcesChanged(sources);
+    expect(owner.recordsHealth()).toEqual({ databaseGap: false, fallbackFailed: false, fallbackPath: null });
+    try {
+      const started = owner.run("getUiState", []);
+      const failure = { databaseGap: true, fallbackFailed: true, fallbackPath: "/fallback.jsonl" };
+      worker.emit("message", { event: "records-health", value: failure });
+      worker.emit("message", { event: "record-sources-changed" });
+      worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
+      await started;
+      expect(health).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(sources).toHaveBeenCalledExactlyOnceWith();
+      expect(owner.recordsHealth()).toEqual(failure);
+      // Neither a consumer nor a listener owns the retained health object.
+      owner.recordsHealth().databaseGap = false;
+      health.mock.calls[0][0].fallbackFailed = false;
+      expect(owner.recordsHealth()).toEqual(failure);
+      owner.onRecordsHealth(null);
+      owner.onRecordSourcesChanged(null);
+      worker.emit("message", { event: "records-health", value: failure });
+      worker.emit("message", { event: "record-sources-changed" });
+      expect(health).toHaveBeenCalledTimes(1);
+      expect(sources).toHaveBeenCalledTimes(1);
+    } finally { await owner.stop(); }
+  });
+});
+
 describe("storage mutation ownership", () => {
   it("retains an unconfirmed publication independently of the successful command result", async () => {
     const worker = new HeldWorker();

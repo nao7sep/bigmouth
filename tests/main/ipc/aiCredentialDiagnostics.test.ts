@@ -85,8 +85,8 @@ async function invoke(kind: "analysis" | "metadata" | "imaging"): Promise<unknow
     id: ++ownerId, once: () => {}, on: () => {}, isDestroyed: () => false,
     send: (_channel: string, frame: AnalysisStreamFrame) => { frames.push(frame); },
   } };
-  // A previous response may have been copied into the draft; input logs must mask
-  // it too, while the live request is unchanged.
+  // A previous response may have been copied into the draft; diagnostic records
+  // must protect it while the live request is unchanged.
   const draft = `Draft mentioning ${fixture.key}`;
   if (kind === "analysis") {
     await fixture.handlers.get(CHANNELS.analysisStreamStart)!(event, "req", { wsId: fixture.workspaceId, postId: "post", promptName: "Check", content: draft });
@@ -108,10 +108,10 @@ function logs(): Record<string, unknown>[] {
 
 function expectMaskedDiagnostics(): void {
   const stored = JSON.stringify(logs());
-  expect(stored).toContain("[REDACTED]");
   expect(stored).not.toContain(fixture.key);
   expect(output.join("\n")).not.toContain(fixture.key);
   expect(JSON.stringify(fixture.calls)).not.toContain(fixture.key);
+  expect(JSON.stringify(fixture.calls)).toContain("[REDACTED]");
   const [url, init] = fetchMock.mock.calls[0]!;
   expect(String(url)).toContain("custom.example.test");
   expect(new Headers(init!.headers).get("x-api-key")).toBe(fixture.key);
@@ -133,7 +133,7 @@ describe.each(["analysis", "metadata", "imaging"] as const)("%s credential diagn
     expectMaskedDiagnostics();
   });
 
-  it("masks echoed success logs without changing the generated output", async () => {
+  it("keeps success logs summary-only and masks provider records without changing output", async () => {
     const text = kind === "analysis" ? `Answer ${fixture.key}` : kind === "metadata"
       ? JSON.stringify({ title: `Title ${fixture.key}` })
       : JSON.stringify({ items: [`First ${fixture.key}`, "Second prompt", "Third prompt"] });
@@ -141,6 +141,11 @@ describe.each(["analysis", "metadata", "imaging"] as const)("%s credential diagn
     const result = await invoke(kind);
     expect(JSON.stringify(result)).toContain(fixture.key);
     expect(logs().some(line => String(line.message).endsWith("completed"))).toBe(true);
+    for (const line of logs()) {
+      expect(line).not.toHaveProperty("userContent");
+      expect(line).not.toHaveProperty("systemPrompt");
+      expect(line).not.toHaveProperty("result");
+    }
     expectMaskedDiagnostics();
   });
 });

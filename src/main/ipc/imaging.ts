@@ -33,7 +33,7 @@ export function registerImagingHandlers(): void {
       const cancel = new AbortController();
       const release = trackAiRequest(event.sender, requestId, () => cancel.abort());
       try {
-        return await generateImaging(wsId, postId, content, options, cancel.signal);
+        return await generateImaging(requestId, wsId, postId, content, options, cancel.signal);
       } finally {
         release();
       }
@@ -42,6 +42,7 @@ export function registerImagingHandlers(): void {
 }
 
 async function generateImaging(
+  operationId: string,
   wsId: string,
   postId: string,
   content: string,
@@ -77,26 +78,24 @@ async function generateImaging(
   const roleCall = (await authorizedRoleCall(ws, "imagingPrompts"));
   let provider;
   try {
-    provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "imaging" });
+    provider = createProvider(roleCall, { operationId, workspaceId: ws.id, postId, purpose: "imaging" });
   } catch (err) {
     const message = logAiFailure(
-      { kind: "imaging provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey },
+      { kind: "imaging provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey, extra: { operationId } },
       err,
     );
     throw new Error(message);
   }
 
   logInfo("imaging started", maskCredentials({
+    operationId,
     workspace: wsId,
     postId,
     options,
     mode: "structured",
     contentLength: postContent.length,
-    frontMatter: post.frontMatter,
     model: roleCall.model,
     thinking: roleCall.thinking ?? null,
-    systemPrompt,
-    userContent,
   }, [roleCall.apiKey]));
 
   try {
@@ -107,17 +106,17 @@ async function generateImaging(
     });
     const items = normalizeImagingOutput(raw, options.count);
     logInfo("imaging completed", maskCredentials({
+      operationId,
       workspace: wsId,
       postId,
       itemCount: items.length,
       mode: "structured",
-      result: raw,
     }, [roleCall.apiKey]));
     return items;
   } catch (err) {
     if (signal.aborted) {
       // The user stopped it, or its window went away: not a failure to report.
-      logInfo("imaging cancelled", maskCredentials({ workspace: wsId, postId }, [roleCall.apiKey]));
+      logInfo("imaging cancelled", maskCredentials({ operationId, workspace: wsId, postId }, [roleCall.apiKey]));
       throw new Error("Imaging was cancelled.");
     }
     const details = logAiFailure(
@@ -127,6 +126,7 @@ async function generateImaging(
         workspaceId: wsId,
         postId,
         extra: {
+          operationId,
           ...options,
           mode: "structured",
           maxDurationMs: GENERATION_MAX_MS,

@@ -140,21 +140,35 @@ describe("one row per path per session", () => {
     expect(rows(changed).map(text)).toEqual(["old!", "new!"]);
   });
 
-  it("gives a store from before sessions the session column and keeps its rows as earlier history", () => {
+  it("refuses a store from before sessions without changing its bytes, columns or earlier history", async () => {
     const file = path.join(root, "doc.md");
     const db = new DatabaseSync(storeFile());
     db.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
       content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL); PRAGMA user_version = 1`);
     db.prepare("INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, 'x', 3, '2026-01-01T00:00:00.000Z')")
       .run(file, Buffer.from("old"));
+    const columnsBefore = db.prepare("PRAGMA table_info(backups)").all();
+    const schemaBefore = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
     db.close();
-
-    record(file, Buffer.from("new"));
-    const all = rows(file);
-    expect(all.map((row) => [row.session_id, text(row)])).toEqual([[null, "old"], [all[1]!.session_id, "new"]]);
-    const check = new DatabaseSync(storeFile());
-    expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
-    check.close();
+    const bytesBefore = fs.readFileSync(storeFile());
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      record(file, Buffer.from("new"));
+      expect(drainBackups(5000)).toBe(true);
+      record(file, Buffer.from("still not recorded"));
+      expect(drainBackups(5000)).toBe(true);
+      closeBackupStore();
+      await vi.waitFor(() => expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1));
+      expect(fs.readFileSync(storeFile())).toEqual(bytesBefore);
+      const check = new DatabaseSync(storeFile());
+      try {
+        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+        expect(check.prepare("PRAGMA table_info(backups)").all()).toEqual(columnsBefore);
+        expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schemaBefore);
+        const kept = check.prepare("SELECT path, content FROM backups").all() as Array<{ path: string; content: Uint8Array }>;
+        expect(kept.map((row) => [row.path, Buffer.from(row.content).toString("utf8")])).toEqual([[file, "old"]]);
+      } finally { check.close(); }
+    } finally { warn.mockRestore(); }
   });
 });
 
@@ -339,6 +353,34 @@ describe("best effort", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it.each(["backups", "backup_parts"])("refuses a current-version %s table with a missing required column without changing history", async (incompatible) => {
+    const db = new DatabaseSync(storeFile());
+    db.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, session_id TEXT, path TEXT NOT NULL, content BLOB NOT NULL,
+      content_sha256 TEXT NOT NULL, ${incompatible === "backups" ? "" : "byte_size INTEGER NOT NULL,"} written_at_utc TEXT NOT NULL);
+      CREATE TABLE backup_parts (backup_id INTEGER NOT NULL, ${incompatible === "backup_parts" ? "" : "part INTEGER NOT NULL,"} content BLOB NOT NULL);
+      PRAGMA user_version = 2`);
+    db.prepare(`INSERT INTO backups (session_id, path, content, content_sha256, ${incompatible === "backups" ? "" : "byte_size,"} written_at_utc)
+      VALUES ('earlier', 'kept.md', ?, 'x', ${incompatible === "backups" ? "" : "3,"} '2026-01-01T00:00:00.000Z')`).run(Buffer.from("old"));
+    const schemaBefore = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
+    const historyBefore = db.prepare("SELECT * FROM backups").all();
+    db.close();
+    const bytesBefore = fs.readFileSync(storeFile());
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      record(path.join(root, "doc.md"), Buffer.from("not recorded"));
+      expect(drainBackups(5000)).toBe(true);
+      closeBackupStore();
+      await vi.waitFor(() => expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1));
+      expect(fs.readFileSync(storeFile())).toEqual(bytesBefore);
+      const check = new DatabaseSync(storeFile());
+      try {
+        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+        expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schemaBefore);
+        expect(check.prepare("SELECT * FROM backups").all()).toEqual(historyBefore);
+      } finally { check.close(); }
+    } finally { warn.mockRestore(); }
   });
 
   it("leaves a store a newer version wrote byte-identical and records nothing", () => {

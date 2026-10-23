@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 
 import { DIVIDER, RECORDS_DETAIL_MIN_WIDTH, RECORDS_LIST_WIDTH } from "@shared/layout";
-import type { RecordDetail, RecordSources, RecordsPage, RecordsQuery, RecordSummary } from "@shared/records";
+import type { RecordDetail, RecordsHealth, RecordSources, RecordsPage, RecordsQuery, RecordSummary } from "@shared/records";
 
 const api = vi.hoisted(() => ({
   readRecordsPage: vi.fn<(query: RecordsQuery) => Promise<RecordsPage>>(),
   readRecordDetail: vi.fn<(kind: string, id: number) => Promise<RecordDetail | null>>(),
   readRecordSources: vi.fn<() => Promise<RecordSources>>(),
+  getRecordsHealth: vi.fn<() => Promise<RecordsHealth>>(),
+  healthChanged: null as ((health: RecordsHealth) => void) | null,
+  sourcesChanged: null as (() => void) | null,
   updateUiState: vi.fn<(patch: Record<string, unknown>) => Promise<unknown>>(),
   reportProblem: vi.fn(),
   recordsChanged: null as (() => void) | null,
@@ -17,6 +20,15 @@ vi.mock("@renderer/api", () => ({
   readRecordsPage: api.readRecordsPage,
   readRecordDetail: api.readRecordDetail,
   readRecordSources: api.readRecordSources,
+  getRecordsHealth: api.getRecordsHealth,
+  onRecordsHealthChanged: (listener: (health: RecordsHealth) => void) => {
+    api.healthChanged = listener;
+    return () => { api.healthChanged = null; };
+  },
+  onRecordSourcesChanged: (listener: () => void) => {
+    api.sourcesChanged = listener;
+    return () => { api.sourcesChanged = null; };
+  },
   updateUiState: api.updateUiState,
   reportProblem: api.reportProblem,
   onRecordsChanged: (listener: () => void) => {
@@ -47,6 +59,7 @@ const callDetail: RecordDetail = {
   kind: "provider-call", id: 4, session: SESSION, workspaceId: "ws-1", postId: "post-1", purpose: "metadata",
   provider: "anthropic", startedAt: "2026-10-02T08:01:00.000Z", finishedAt: "2026-10-02T08:01:02.500Z",
   request: JSON.stringify({ headers: { "x-api-key": "sk-test" }, body: { model: "claude-x" } }),
+  elapsedMs: 2500,
   response: "null",
   error: JSON.stringify({ name: "Error", message: "quota" }),
   stopped: false,
@@ -76,6 +89,9 @@ class TestResizeObserver {
 const isScroll = (element: HTMLElement) => element.classList.contains("records-list");
 
 beforeEach(() => {
+  api.getRecordsHealth.mockReset().mockResolvedValue({ databaseGap: false, fallbackFailed: false, fallbackPath: null });
+  api.healthChanged = null;
+  api.sourcesChanged = null;
   api.readRecordsPage.mockReset().mockResolvedValue({ records: [call, line], more: false });
   api.readRecordDetail.mockReset().mockImplementation(async (kind) => (kind === "log" ? lineDetail : callDetail));
   api.readRecordSources.mockReset().mockResolvedValue({
@@ -391,7 +407,7 @@ describe("RecordsWindow", () => {
 
     expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
     expect(lastQuery()).toEqual({ session: null, kind: null, level: null, search: "", after: null });
-    expect(api.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(api.readRecordSources).toHaveBeenCalledOnce();
     expect(options()).toHaveLength(2);
     expect(document.body.textContent).not.toContain("Loading records…");
 
@@ -575,5 +591,77 @@ describe("RecordsWindow", () => {
     await mount();
     await click(options()[0]!);
     expect(document.body.textContent).toContain("This record could not be read.");
+  });
+});
+
+describe("Records health and sources", () => {
+  it("subscribes before the initial health read and retains an earlier gap when a stale getter settles", async () => {
+    const initial = deferred<RecordsHealth>();
+    api.getRecordsHealth.mockImplementationOnce(() => {
+      expect(api.healthChanged).not.toBeNull();
+      return initial.promise;
+    });
+    const view = await mount();
+    act(() => api.healthChanged!({ databaseGap: true, fallbackFailed: true, fallbackPath: "/logs/fallback.jsonl" }));
+    await act(async () => initial.resolve({ databaseGap: false, fallbackFailed: false, fallbackPath: null }));
+    const notice = view.getByRole("alert");
+    expect(notice.textContent).toContain("This view may omit records from this launch");
+    expect(notice.textContent).toContain("/logs/fallback.jsonl");
+    expect(notice.textContent).toContain("Some records could not be saved to the database or fallback file");
+    expect(notice.querySelector("button")).toBeNull();
+
+    vi.useFakeTimers();
+    api.readRecordsPage.mockResolvedValue({ records: [newer, call, line], more: false });
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(titles()).toContain("arrived while open");
+    expect(view.getByRole("alert")).toBe(notice);
+  });
+
+  it("reads a retained gap again after the Records window remounts", async () => {
+    const health = { databaseGap: true, fallbackFailed: false, fallbackPath: "/logs/retained.jsonl" };
+    api.getRecordsHealth.mockResolvedValue(health);
+    const first = await mount();
+    expect(first.getByRole("alert").textContent).toContain("/logs/retained.jsonl");
+    first.unmount();
+    expect(api.healthChanged).toBeNull();
+    const second = await mount();
+    expect(second.getByRole("alert").textContent).toContain("/logs/retained.jsonl");
+    expect(api.getRecordsHealth).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads sources on their own change signal while ordinary records only refresh the page", async () => {
+    await mount();
+    vi.useFakeTimers();
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
+    expect(api.readRecordSources).toHaveBeenCalledOnce();
+
+    const nextLaunch = "2026-10-03T08:00:00.000Z";
+    api.readRecordSources.mockResolvedValue({ currentSession: SESSION, sessions: [nextLaunch, SESSION], workspaces: [] });
+    await act(async () => api.sourcesChanged!());
+    expect(api.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(Array.from(selects()[2]!.options).map((option) => option.value)).toContain(nextLaunch);
+    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Records provider duration", () => {
+  it.each([[1250, "1.250"], [0, "0.000"]])("shows reported elapsed time %s independently of wall timestamps", async (elapsedMs, seconds) => {
+    api.readRecordDetail.mockResolvedValue({ ...callDetail, elapsedMs: elapsedMs as number, finishedAt: "2026-10-02T08:00:00.000Z" });
+    await mount();
+    await click(options()[0]!);
+    const body = document.querySelector(".records-detail-body")!.textContent!;
+    expect(body).toContain("Duration");
+    expect(body).toContain(seconds);
+    expect(body).not.toContain("-60.000");
+  });
+
+  it("omits the duration field when elapsed time is unknown", async () => {
+    api.readRecordDetail.mockResolvedValue({ ...callDetail, elapsedMs: null });
+    await mount();
+    await click(options()[0]!);
+    expect(document.querySelector(".records-detail-body")!.textContent).not.toContain("Duration");
   });
 });

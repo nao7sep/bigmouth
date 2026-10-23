@@ -28,8 +28,7 @@ if (parentPort === null) {
 }
 const port = parentPort;
 
-// Rows recorded before sessions keep a NULL session_id as earlier history. A
-// NULL never conflicts in the unique index, so each such row stays its own.
+// The unique index below keeps one saved version per path and session.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS backups (
   id             INTEGER PRIMARY KEY,
@@ -76,9 +75,9 @@ function close(): void {
   openFile = null;
 }
 
-// Opens the store, refusing one a newer build wrote before writing to it. A
-// store from before sessions gains the session_id column; its rows stay as
-// earlier history.
+// Refuse newer or incompatible existing stores without altering their history.
+// Schema creation and validation share one transaction so a rejected store
+// keeps its original tables, indexes and version.
 function open(file: string): DatabaseSync | null {
   if (openFile === file) return db;
   close();
@@ -97,10 +96,10 @@ function open(file: string): DatabaseSync | null {
     opened.exec("BEGIN IMMEDIATE");
     try {
       opened.exec(SCHEMA);
-      const columns = opened.prepare("PRAGMA table_info(backups)").all() as { name: string }[];
-      if (!columns.some((column) => column.name === "session_id")) opened.exec("ALTER TABLE backups ADD COLUMN session_id TEXT");
-      opened.exec(INDEXES);
       opened.exec(PARTS);
+      opened.prepare("SELECT id, session_id, path, content, content_sha256, byte_size, written_at_utc FROM backups LIMIT 0").all();
+      opened.prepare("SELECT backup_id, part, content FROM backup_parts LIMIT 0").all();
+      opened.exec(INDEXES);
       opened.exec(`PRAGMA user_version = ${FORMAT_VERSIONS.backups}`);
       opened.exec("COMMIT");
     } catch (error) {

@@ -34,6 +34,8 @@ describe("registerIpcHandlers", () => {
       CHANNELS.windowActivityChanged,
       CHANNELS.interfaceLanguageChanged,
       CHANNELS.recordsChanged,
+      CHANNELS.recordsHealthChanged,
+      CHANNELS.recordSourcesChanged,
       CHANNELS.storagePendingChanged,
       CHANNELS.durabilityUnconfirmed,
     ]);

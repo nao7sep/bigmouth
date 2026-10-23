@@ -318,13 +318,13 @@ function buildFromDisk(dataDir: string): {
       skipped.push({ fileName, reason: result.reason });
       continue;
     }
-    if (!insertUnique(map, result.entry)) {
+    if (!insertUnique(dataDir, map, result.entry)) {
       skipped.push({ fileName, reason: `duplicate post id ${result.entry.id}` });
     }
   }
   const duplicateSlugs = findDuplicateSlugGroups(map.values());
   for (const duplicate of duplicateSlugs) {
-    logWarn("duplicate post slug", { slug: duplicate.slug, fileNames: duplicate.fileNames });
+    logWarn("duplicate post slug", { dataDirectory: dataDir, slug: duplicate.slug, fileNames: duplicate.fileNames });
   }
   return { map, skipped, duplicateSlugs };
 }
@@ -380,13 +380,13 @@ function reconcile(
       map.delete(existingId);
       // Match rebuild semantics when an out-of-band edit changes this file's id
       // to one already owned by another file: keep the first row, never replace it.
-      insertUnique(map, result.entry);
+      insertUnique(dataDir, map, result.entry);
       changed = true;
       continue;
     }
     const result = tryEntryFromFile(dataDir, fileName);
     if (!("entry" in result)) noteUnreadable(fileName, result.newer);
-    else if (insertUnique(map, result.entry)) changed = true;
+    else if (insertUnique(dataDir, map, result.entry)) changed = true;
   }
 
   for (const fileName of known.keys()) {
@@ -414,14 +414,14 @@ function tryEntryFromFile(
     const post = readPost(path.join(postsDir(dataDir), fileName));
     if (!post.frontMatter.id) {
       const reason = "no id in its front matter";
-      logWarn("post file skipped", { fileName, reason });
+      logWarn("post file skipped", { dataDirectory: dataDir, fileName, reason });
       return { reason, newer: false };
     }
     // The id names the post's asset folder, so one outside the grammar (`..`,
     // `.`, a path) never becomes a row the app could delete or upload through.
     if (!isPostId(post.frontMatter.id)) {
       const reason = `invalid post id ${JSON.stringify(post.frontMatter.id)}`;
-      logWarn("post file skipped", { fileName, reason });
+      logWarn("post file skipped", { dataDirectory: dataDir, fileName, reason });
       return { reason, newer: false };
     }
     // A status outside the five reaches no list section, so an entry built from it
@@ -429,7 +429,7 @@ function tryEntryFromFile(
     // the count, invisible in the app.
     if (!isPostStatus(post.frontMatter.status)) {
       const reason = `unknown status ${JSON.stringify(post.frontMatter.status)}`;
-      logWarn("post file skipped", { fileName, reason });
+      logWarn("post file skipped", { dataDirectory: dataDir, fileName, reason });
       return { reason, newer: false };
     }
     observed.id = post.frontMatter.id;
@@ -438,7 +438,7 @@ function tryEntryFromFile(
     // `reason` is what the user is shown; the serialized error is what makes the
     // line diagnosable, and the two are not interchangeable.
     const reason = err instanceof Error ? err.message : String(err);
-    logWarn("post file skipped", { fileName, reason, error: serializeError(err) });
+    logWarn("post file skipped", { dataDirectory: dataDir, fileName, reason, error: serializeError(err) });
     return { reason, newer: err instanceof NewerFormatError };
   }
 }
@@ -449,10 +449,11 @@ function tryEntryFromFile(
  * Callers iterate files in sorted order, so the surviving file is deterministic.
  * Returns whether the entry was inserted.
  */
-function insertUnique(map: Map<string, PostIndexEntry>, entry: PostIndexEntry): boolean {
+function insertUnique(dataDir: string, map: Map<string, PostIndexEntry>, entry: PostIndexEntry): boolean {
   const existing = map.get(entry.id);
   if (existing) {
     logWarn("post file skipped: duplicate id", {
+      dataDirectory: dataDir,
       id: entry.id,
       kept: existing.fileName,
       ignored: entry.fileName,

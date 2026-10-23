@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +18,7 @@ import {
 } from "@main/core/services/postStore.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
 import { canonicalIndexJson } from "@main/core/services/postIndex.js";
+import * as logger from "@main/core/services/logger.js";
 import type { PostIndexEntry } from "@main/core/shared/types.js";
 
 let dataDir: string;
@@ -706,4 +707,32 @@ describe("after an interrupted publication", () => {
     expect(rebuildIndex(dataDir).skipped).toEqual([]);
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
   });
+});
+
+
+it("identifies the workspace root in skipped-file and duplicate warnings", () => {
+  const otherRoot = path.join(dataDir, "other-workspace");
+  initializeWorkspaceData(otherRoot);
+  const warnings = vi.spyOn(logger, "warn").mockImplementation(() => {});
+  try {
+    for (const root of [dataDir, otherRoot]) {
+      fs.writeFileSync(path.join(root, "posts", "bad.md"), "---\nid: [invalid]\n---\nBody");
+      for (const [fileName, id] of [["a.md", "same-id"], ["b.md", "same-id"], ["c.md", "other-id"]]) {
+        fs.writeFileSync(path.join(root, "posts", fileName), `---\nid: ${id}\nstatus: draft\nslug: shared-slug\n---\nBody`);
+      }
+      expect(rebuildIndex(root)).toMatchObject({ indexed: 2 });
+    }
+    for (const message of ["post file skipped", "post file skipped: duplicate id", "duplicate post slug"]) {
+      const events = warnings.mock.calls.filter(([name]) => name === message).map(([, data]) => data);
+      expect(events).toEqual([
+        expect.objectContaining({ dataDirectory: dataDir }),
+        expect.objectContaining({ dataDirectory: otherRoot }),
+      ]);
+    }
+    const duplicateIds = warnings.mock.calls.filter(([name]) => name === "post file skipped: duplicate id");
+    for (const [, data] of duplicateIds) expect(data).toMatchObject({ id: "same-id", kept: "a.md", ignored: "b.md" });
+  } finally {
+    warnings.mockRestore();
+    clearCache(otherRoot);
+  }
 });

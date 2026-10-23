@@ -3,12 +3,17 @@ import { CHANNELS, analysisStreamChannel, type AnalysisStreamFrame } from "@shar
 
 // Captured IPC registrations + a controllable fake provider stream. Hoisted so
 // the (hoisted) vi.mock factories below can close over them.
+import * as logger from "@main/core/services/logger.js";
+
 const ipc = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   listeners: new Map<string, (...args: unknown[]) => unknown>(),
 }));
 
 const provider = vi.hoisted(() => ({
+  context: null as unknown,
+  initError: null as null | Error,
+  lastCall: null as null | { systemPrompt: string; userContent: string },
   preflight: null as null | Promise<{ dataDirectory: string }>,
   onText: null as null | ((delta: string) => void),
   onThinking: null as null | ((delta: string) => void),
@@ -35,7 +40,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@main/ipc/context.js", () => ({
-  resolveWorkspace: () => provider.preflight ?? ({ dataDirectory: "/ws" }),
+  resolveWorkspace: () => provider.preflight ?? ({ id: "w", dataDirectory: "/ws" }),
 }));
 
 vi.mock("@main/core/services/postStore.js", () => ({
@@ -57,34 +62,39 @@ vi.mock("@main/core/ai/promptTemplates.js", () => ({
 }));
 
 vi.mock("@main/core/ai/factory.js", () => ({
-  createProvider: () => ({
-    generateJson: () => Promise.resolve({}),
-    generateTextStream: (
-      _sys: string,
-      _user: string,
-      onText: (delta: string) => void,
-      onThinking?: (delta: string) => void,
-    ) => {
-      provider.onText = onText;
-      provider.onThinking = onThinking ?? null;
-      provider.abort = vi.fn();
-      return {
-        abort: provider.abort,
-        finished: new Promise<string>((resolve, reject) => {
-          provider.resolveFinished = resolve;
-          provider.rejectFinished = reject;
-        }),
-      };
-    },
-  }),
+  createProvider: (_roleCall: unknown, context: unknown) => {
+    provider.context = context;
+    if (provider.initError) throw provider.initError;
+    return {
+      generateJson: () => Promise.resolve({}),
+      generateTextStream: (
+        _sys: string,
+        _user: string,
+        onText: (delta: string) => void,
+        onThinking?: (delta: string) => void,
+      ) => {
+        provider.lastCall = { systemPrompt: _sys, userContent: _user };
+        provider.onText = onText;
+        provider.onThinking = onThinking ?? null;
+        provider.abort = vi.fn();
+        return {
+          abort: provider.abort,
+          finished: new Promise<string>((resolve, reject) => {
+            provider.resolveFinished = resolve;
+            provider.rejectFinished = reject;
+          }),
+        };
+      },
+    };
+  },
 }));
 
 vi.mock("@main/core/services/logger.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("@main/core/services/logger.js")>(),
   debug: () => {},
-  info: () => {},
+  info: vi.fn(),
   warn: () => {},
-  error: () => {},
+  error: vi.fn(),
 }));
 
 const { registerAnalysisHandlers } = await import("@main/ipc/analysis.js");
@@ -133,6 +143,11 @@ let lastEvent: FakeEvent | null = null;
 let abort: (...args: unknown[]) => unknown;
 
 beforeEach(() => {
+  vi.mocked(logger.info).mockClear();
+  vi.mocked(logger.error).mockClear();
+  provider.context = null;
+  provider.initError = null;
+  provider.lastCall = null;
   ipc.handlers.clear();
   ipc.listeners.clear();
   provider.preflight = null;
@@ -309,6 +324,7 @@ describe("analysis stream handlers", () => {
 
     provider.rejectFinished!(new Error("provider exploded"));
     await tick();
+    expect(logger.error).toHaveBeenCalledWith("Analysis stream failed", expect.objectContaining({ operationId: "req-err", workspaceId: "w", postId: "p1" }));
 
     expect(framesFor(event, channel)).toEqual([{ type: "error", message: "provider exploded" }]);
   });
@@ -339,4 +355,28 @@ describe("analysis stream handlers", () => {
     expect(firstAbort).toHaveBeenCalledTimes(1);
     expect(secondAbort).not.toHaveBeenCalled();
   });
+});
+
+it("logs correlated analysis summaries without prompt or response payloads", async () => {
+  const event = makeEvent();
+  await start(event, "summary-operation", params);
+  provider.resolveFinished!("PRIVATE_RESULT");
+  await tick();
+  expect(provider.context).toEqual({ operationId: "summary-operation", workspaceId: "w", postId: "p1", purpose: "analysis" });
+  expect(provider.lastCall).toEqual({ systemPrompt: "sys", userContent: "user" });
+  const events = vi.mocked(logger.info).mock.calls.filter(([name]) => name.startsWith("analysis stream "));
+  expect(events.map(([name]) => name)).toEqual(["analysis stream started", "analysis stream completed"]);
+  for (const [, fields] of events) {
+    expect(fields).toMatchObject({ operationId: "summary-operation", workspace: "w", postId: "p1" });
+    for (const key of ["systemPrompt", "userContent", "frontMatter", "schema", "result"]) expect(fields).not.toHaveProperty(key);
+  }
+  expect(events[0][1]).toMatchObject({ contentLength: params.content.length, promptName: "P" });
+  expect(events[1][1]).toMatchObject({ resultLength: "PRIVATE_RESULT".length });
+  expect(JSON.stringify(events)).not.toContain("PRIVATE_RESULT");
+});
+
+it("keeps analysis initialization failure context and operation identity", async () => {
+  provider.initError = new Error("Initialization failed");
+  await expect(start(makeEvent(), "initialization-operation", params)).rejects.toThrow("Initialization failed");
+  expect(logger.error).toHaveBeenCalledWith("analysis provider init failed", expect.objectContaining({ operationId: "initialization-operation", workspaceId: "w", postId: "p1", error: expect.objectContaining({ message: "Initialization failed" }) }));
 });

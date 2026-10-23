@@ -37,7 +37,7 @@ import type {
 import type { PagedPostStatus } from "./postStatus";
 import type { InterfaceLanguage } from "./i18n/languages";
 import type { Message } from "./i18n/translate";
-import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "./records";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery, RecordsHealth } from "./records";
 
 /**
  * What a target rename did. `postsSkipped` names the post files it could not
@@ -86,6 +86,9 @@ export const CHANNELS = {
   readRecordDetail: "records:detail",
   readRecordSources: "records:sources",
   recordsChanged: "records:changed",
+  getRecordsHealth: "records:health",
+  recordsHealthChanged: "records:health-changed",
+  recordSourcesChanged: "records:sources-changed",
 
   getDurabilityUnconfirmed: "storage:durabilityUnconfirmed",
   durabilityUnconfirmed: "storage:durabilityWarning",
@@ -404,6 +407,9 @@ export interface BigMouthApi {
   readRecordsPage(query: RecordsQuery): Promise<RecordsPage>;
   readRecordDetail(kind: RecordKind, id: number): Promise<RecordDetail | null>;
   readRecordSources(): Promise<RecordSources>;
+  getRecordsHealth(): Promise<RecordsHealth>;
+  onRecordsHealthChanged(listener: (health: RecordsHealth) => void): () => void;
+  onRecordSourcesChanged(listener: () => void): () => void;
   /** A record was stored in the records database. */
   onRecordsChanged(listener: () => void): () => void;
 

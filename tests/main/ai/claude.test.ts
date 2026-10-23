@@ -120,6 +120,60 @@ describe("ClaudeProvider construction", () => {
 });
 
 describe("provider call records", () => {
+  it.each([
+    ["json", "success", "2026-10-23T00:00:00.000Z"],
+    ["json", "failure", "2026-10-25T00:00:00.000Z"],
+    ["text", "success", "2026-10-25T00:00:00.000Z"],
+    ["text", "failure", "2026-10-23T00:00:00.000Z"],
+  ] as const)("measures %s %s duration monotonically despite a wall clock jump to %s", async (route, outcome, finishedAt) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-24T00:00:00.000Z"));
+    const clock = vi.spyOn(performance, "now").mockReturnValue(500);
+    try {
+      const f = fakeStream();
+      sdk.stream.mockReturnValue(f.handle);
+      const provider = new ClaudeProvider("key", req(), CALL);
+      const pending = route === "json"
+        ? provider.generateJson("s", "u", { type: "object" })
+        : provider.generateTextStream("s", "u", () => {}).finished;
+      const settlement = outcome === "success"
+        ? expect(pending).resolves.toEqual(route === "json" ? {} : "answer")
+        : expect(pending).rejects.toThrow("socket closed");
+      vi.setSystemTime(new Date(finishedAt));
+      clock.mockReturnValue(1_734.5);
+      if (outcome === "success") f.resolveFinal(message({ text: "answer", parsed_output: {} }));
+      else f.rejectFinal(new Error("socket closed"));
+      await settlement;
+      expect(recorded.calls).toEqual([expect.objectContaining({
+        startedAt: new Date("2026-10-24T00:00:00.000Z"),
+        finishedAt: new Date(finishedAt), elapsedMs: 1_234.5,
+      })]);
+    } finally {
+      clock.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["json", "text"] as const)("records a synchronous %s stream creation failure once and stops every attempt timer", async (route) => {
+    vi.useFakeTimers();
+    try {
+      const failure = new Error("invalid SDK request using sk-secret");
+      sdk.stream.mockImplementation(() => { throw failure; });
+      const provider = new ClaudeProvider("sk-secret", req(), CALL);
+      const pending = route === "json"
+        ? provider.generateJson("s", "sk-secret", { type: "object" }, { maxDurationMs: 1_000 })
+        : provider.generateTextStream("s", "sk-secret", () => {}).finished;
+      await expect(pending).rejects.toBe(failure);
+      expect(sdk.stream).toHaveBeenCalledOnce();
+      expect(recorded.calls).toEqual([expect.objectContaining({
+        request: expect.objectContaining({ messages: [{ role: "user", content: "[REDACTED]" }] }),
+        elapsedMs: 0, stopped: false,
+        error: expect.objectContaining({ message: "invalid SDK request using [REDACTED]" }),
+      })]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("records each call with its context, the request sent and the message received", async () => {
     const reply = message({ parsed_output: { a: "b" } });
     const f = fakeStream();

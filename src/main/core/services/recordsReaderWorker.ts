@@ -7,6 +7,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 
 import { readRecords, type RecordsRead } from "./recordsQueries.ts";
+import { validateRecordsSchema } from "./recordsSchema.ts";
 import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
 export type RecordsReaderData = { databasePath: string; busyTimeoutMs: number };
@@ -36,6 +37,7 @@ function open(): DatabaseSync {
     if (version > FORMAT_VERSIONS.records) {
       throw new Error(`${databasePath} is in format ${version}, which this build cannot read; it was left unchanged.`);
     }
+    validateRecordsSchema(opened);
   } catch (error: unknown) {
     opened.close();
     throw error;

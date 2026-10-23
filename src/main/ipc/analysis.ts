@@ -16,6 +16,7 @@ import { trackAiRequest } from "./aiRequests.js";
 async function resolveAnalysisRequest(
   ws: Workspace,
   params: { postId?: string; promptName?: string; content?: string },
+  operationId: string,
 ) {
   const dir = ws.dataDirectory;
   const { postId, promptName, content } = params;
@@ -35,10 +36,10 @@ async function resolveAnalysisRequest(
   const roleCall = (await authorizedRoleCall(ws, "analysis"));
   let provider;
   try {
-    provider = createProvider(roleCall, { workspaceId: ws.id, postId, purpose: "analysis" });
+    provider = createProvider(roleCall, { operationId, workspaceId: ws.id, postId, purpose: "analysis" });
   } catch (err) {
     const message = logAiFailure(
-      { kind: "analysis provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey },
+      { kind: "analysis provider init", workspaceId: ws.id, postId, apiKey: roleCall.apiKey, extra: { operationId } },
       err,
     );
     throw new Error(message);
@@ -57,7 +58,7 @@ export function registerAnalysisHandlers(): void {
     const release = trackAiRequest(event.sender, requestId, () => { aborted = true; stream?.abort(); });
     try {
     const ws = (await resolveWorkspace(params.wsId));
-    const request = (await resolveAnalysisRequest(ws, params));
+    const request = (await resolveAnalysisRequest(ws, params, requestId));
     if (aborted) { release(); return; }
     const channel = analysisStreamChannel(requestId);
     const send = (frame: AnalysisStreamFrame): void => {
@@ -65,6 +66,7 @@ export function registerAnalysisHandlers(): void {
     };
 
     logInfo("analysis stream started", maskCredentials({
+      operationId: requestId,
       workspace: params.wsId,
       postId: request.postId,
       promptName: request.promptName,
@@ -73,8 +75,6 @@ export function registerAnalysisHandlers(): void {
       promptMode: request.promptMode,
       model: request.roleCall.model,
       thinking: request.roleCall.thinking ?? null,
-      systemPrompt: request.systemPrompt,
-      userContent: request.userContent,
     }, [request.roleCall.apiKey]));
 
     let wroteDelta = false;
@@ -86,7 +86,7 @@ export function registerAnalysisHandlers(): void {
         wroteDelta = true;
         // Per chunk: `debug` by the frequency rule, and the only record of how a
         // stream actually arrived when one stalls or ends early.
-        logDebug("analysis delta", maskCredentials({ requestId, length: delta.length }, [request.roleCall.apiKey]));
+        logDebug("analysis delta", maskCredentials({ operationId: requestId, length: delta.length }, [request.roleCall.apiKey]));
         send({ type: "delta", text: delta });
       },
       (delta) => {
@@ -104,10 +104,11 @@ export function registerAnalysisHandlers(): void {
         if (!wroteDelta && finalText) send({ type: "delta", text: finalText });
         send({ type: "done" });
         logInfo("analysis stream completed", maskCredentials({
+          operationId: requestId,
           workspace: params.wsId,
           postId: request.postId,
           wroteDelta,
-          result: finalText,
+          resultLength: finalText.length,
         }, [request.roleCall.apiKey]));
       })
       .catch((err: unknown) => {
@@ -120,6 +121,7 @@ export function registerAnalysisHandlers(): void {
             postId: request.postId,
             promptName: request.promptName,
             extra: {
+              operationId: requestId,
               contentSource: request.contentSource,
               contentLength: request.postContent.length,
               promptMode: request.promptMode,

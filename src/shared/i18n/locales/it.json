@@ -554,6 +554,8 @@
   "records.loading": "Caricamento del registro…",
   "records.empty": "Nessuna voce corrisponde a questi filtri.",
   "records.loadFailed": "Non è stato possibile leggere il registro.",
+  "records.gapNotice": "Questa vista potrebbe non mostrare alcune voci del registro di questo avvio. Registro alternativo: {path}",
+  "records.fallbackFailed": "Non è stato possibile salvare alcune voci del registro né nel database né nel file alternativo.",
   "records.detailFailed": "Non è stato possibile leggere questa voce.",
   "records.noSelection": "Seleziona una voce per vedere tutto ciò che contiene.",
   "records.resizeList": "Ridimensiona l’elenco dei record",

@@ -522,6 +522,8 @@
   "records.loading": "正在加载日志…",
   "records.empty": "没有符合这些筛选条件的条目。",
   "records.loadFailed": "无法读取日志。",
+  "records.gapNotice": "此视图可能未显示本次启动期间的部分日志。备用日志：{path}",
+  "records.fallbackFailed": "部分日志既无法保存到数据库，也无法保存到备用文件。",
   "records.detailFailed": "无法读取此条目。",
   "records.noSelection": "选择一个条目即可查看其全部内容。",
   "records.resizeList": "调整记录列表的宽度",

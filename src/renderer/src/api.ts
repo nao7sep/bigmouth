@@ -47,7 +47,7 @@ import {
 import { AssetUploadAdmissionError, AssetUploadFailureError } from "./util/assetUpload";
 import { type PagedPostStatus, FIRST_PAGES } from "@shared/postStatus";
 import { message, type Message } from "@shared/i18n/translate";
-import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery, RecordsHealth } from "@shared/records";
 
 // The renderer's single data seam. Every call forwards to the preload bridge
 // (`window.bigmouth`) over IPC. The active workspace id is tracked here and
@@ -551,3 +551,7 @@ function describeError(err: unknown, seen = new WeakSet<object>()): Record<strin
 export function getWorkspaceConfig(workspaceId?: string): Promise<WorkspaceConfigView> {
   return bridge().getWorkspaceConfig(requireWs(workspaceId));
 }
+
+export const getRecordsHealth = (): Promise<RecordsHealth> => bridge().getRecordsHealth();
+export const onRecordsHealthChanged = (listener: (health: RecordsHealth) => void): (() => void) => bridge().onRecordsHealthChanged(listener);
+export const onRecordSourcesChanged = (listener: () => void): (() => void) => bridge().onRecordSourcesChanged(listener);

@@ -48,7 +48,7 @@ import type {
   WorkspaceDeleteResult,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
-import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery, RecordsHealth } from "@shared/records";
 import type { Message } from "@shared/i18n/translate";
 
 // Per-window counter for AI request ids. Generated renderer-side so the renderer
@@ -178,6 +178,17 @@ const api = {
     ipcRenderer.invoke(CHANNELS.readRecordsPage, query) as Promise<RecordsPage>,
   readRecordDetail: (kind: RecordKind, id: number) =>
     ipcRenderer.invoke(CHANNELS.readRecordDetail, kind, id) as Promise<RecordDetail | null>,
+  getRecordsHealth: () => ipcRenderer.invoke(CHANNELS.getRecordsHealth) as Promise<RecordsHealth>,
+  onRecordsHealthChanged: (listener: (health: RecordsHealth) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, health: RecordsHealth) => listener(health);
+    ipcRenderer.on(CHANNELS.recordsHealthChanged, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.recordsHealthChanged, wrapped);
+  },
+  onRecordSourcesChanged: (listener: () => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on(CHANNELS.recordSourcesChanged, wrapped);
+    return () => ipcRenderer.removeListener(CHANNELS.recordSourcesChanged, wrapped);
+  },
   readRecordSources: () => ipcRenderer.invoke(CHANNELS.readRecordSources) as Promise<RecordSources>,
   onRecordsChanged: (listener: () => void) => {
     const wrapped = (): void => listener();

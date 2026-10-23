@@ -16,10 +16,14 @@ import {
   type RecordLevel,
   type RecordLevelFilter,
   type RecordSources,
+  type RecordsHealth,
   type RecordsQuery,
   type RecordSummary,
 } from "@shared/records";
 import {
+  getRecordsHealth,
+  onRecordsHealthChanged,
+  onRecordSourcesChanged,
   onRecordsChanged,
   readRecordDetail,
   readRecordSources,
@@ -38,7 +42,6 @@ import {
   LEVEL_LABELS,
   blockText,
   cursorAfter,
-  durationSeconds,
   logEventText,
   mergeNewestPage,
   purposeLabel,
@@ -91,6 +94,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const { composingRef, handlers: compositionHandlers } = useComposing();
   const [sources, setSources] = useState<RecordSources | null>(null);
   const [sourceReads, setSourceReads] = useState(0);
+  const [health, setHealth] = useState<RecordsHealth | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [searchText, setSearchText] = useState("");
   const [list, setList] = useState<ListState>({ status: "loading" });
@@ -143,6 +147,27 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     }, SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
   }, [searchText]);
+
+  useEffect(() => {
+    let active = true;
+    const receive = (next: RecordsHealth) => {
+      if (!active) return;
+      // A successful read cannot fill an earlier diagnostic gap. In particular,
+      // a stale initial getter must not erase a health event received first.
+      setHealth((current) => ({
+        databaseGap: Boolean(current?.databaseGap) || next.databaseGap,
+        fallbackFailed: Boolean(current?.fallbackFailed) || next.fallbackFailed,
+        fallbackPath: current?.fallbackPath ?? next.fallbackPath,
+      }));
+    };
+    const unsubscribe = onRecordsHealthChanged(receive);
+    getRecordsHealth().then(receive, (err: unknown) => {
+      if (active) reportProblem("renderer: records health read failed", err);
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
+
+  useEffect(() => onRecordSourcesChanged(() => setSourceReads((count) => count + 1)), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,7 +241,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       if (timer !== null || liveSuspended.current) return;
       timer = setTimeout(() => {
         timer = null;
-        setSourceReads((count) => count + 1);
         const scroll = scrollRef.current;
         if (scroll === null || atTop(scroll)) readNewest();
         else newestPending.current = true;
@@ -415,6 +439,12 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       style={{ "--records-list-width": `${listWidth}px` } as CSSProperties}
     >
       <section id="records-list-pane" className="records-list-pane" aria-label={t("records.title")}>
+        {health?.databaseGap && (
+          <p className="records-note records-note--error" role="alert">
+            {t("records.gapNotice", { path: health.fallbackPath ?? "" })}
+            {health.fallbackFailed && <> {t("records.fallbackFailed")}</>}
+          </p>
+        )}
         <div className="records-filters">
           <input
             type="search"
@@ -598,7 +628,7 @@ function RecordDetailView({
   } else {
     add(t("records.started"), time(record.startedAt));
     add(t("records.finished"), time(record.finishedAt));
-    add(t("records.duration"), secondsFormat.format(durationSeconds(record.startedAt, record.finishedAt)));
+    if (record.elapsedMs !== null) add(t("records.duration"), secondsFormat.format(record.elapsedMs / 1000));
     add(t("records.provider"), <code>{record.provider}</code>);
     const purpose = purposeLabel(record.purpose);
     add(t("records.purpose"), purpose === null ? <code>{record.purpose}</code> : t(purpose));

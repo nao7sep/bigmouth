@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   blockText,
   cursorAfter,
-  durationSeconds,
   logEventText,
   mergeNewestPage,
   purposeLabel,
@@ -71,10 +70,6 @@ describe("record formatting", () => {
   it("continues after the last row shown, and from the start when there is none", () => {
     expect(cursorAfter([b, a])).toEqual({ time: a.time, kind: "log", id: 1 });
     expect(cursorAfter([])).toBeNull();
-  });
-
-  it("measures a call's duration in seconds", () => {
-    expect(durationSeconds("2026-10-02T08:00:00.000Z", "2026-10-02T08:00:02.500Z")).toBe(2.5);
   });
 
   it("names the app's own purposes, and leaves any other to be shown as stored", () => {

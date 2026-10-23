@@ -59,10 +59,6 @@ export function logEventText(record: LogRecordDetail): string | null {
   return blockText(JSON.stringify(Object.fromEntries(rest)));
 }
 
-export function durationSeconds(startedAt: string, finishedAt: string): number {
-  return (Date.parse(finishedAt) - Date.parse(startedAt)) / 1000;
-}
-
 export const KIND_LABELS: Record<RecordKind, MessageKey> = {
   log: "records.kindLog",
   "provider-call": "records.kindProviderCall",

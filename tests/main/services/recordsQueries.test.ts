@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import {
   closeRecords,
@@ -212,5 +212,86 @@ describe("readDetail", () => {
     seed();
     expect(readDetail(reader(), "log", 999)).toBeNull();
     expect(readDetail(reader(), "provider-call", 999)).toBeNull();
+  });
+});
+
+describe("bounded records page merge", () => {
+  function everyPage(overrides: Partial<RecordsQuery> = {}) {
+    const records: import("@shared/records").RecordSummary[] = [];
+    let after: RecordsQuery["after"] = null;
+    for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
+      const page = readPage(reader(), query({ ...overrides, after }));
+      records.push(...page.records);
+      if (!page.more) return records;
+      const last = page.records.at(-1)!;
+      after = { time: last.time, kind: last.kind, id: last.id };
+    }
+    throw new Error("Fixture pagination did not finish");
+  }
+
+  it("traverses equal-time mixed kinds without duplicates or omissions across both cursor kinds", () => {
+    openRecords(dbPath, path.join(root, "logs"), LATER);
+    const time = "2026-10-02T08:00:01.000Z";
+    for (let i = 0; i < RECORDS_PAGE_SIZE + 5; i++) {
+      line(time, "info", `line ${i}`);
+      call(time, undefined, `model-${i}`);
+    }
+    const all = everyPage();
+    const expected = reader().prepare(`SELECT 'log' AS kind, id, time FROM log_records
+      UNION ALL SELECT 'provider-call' AS kind, id, started_at AS time FROM provider_calls
+      ORDER BY time DESC, kind DESC, id DESC`).all();
+    expect(all.map(({ kind, id, time }) => ({ kind, id, time }))).toEqual(expected);
+    expect(new Set(all.map(({ kind, id }) => `${kind}:${id}`)).size).toBe(2 * (RECORDS_PAGE_SIZE + 5));
+    for (const kind of ["log", "provider-call"] as const) {
+      expect(everyPage({ kind }).map(({ id }) => id)).toEqual(all.filter((row) => row.kind === kind).map(({ id }) => id));
+    }
+  });
+
+  it("applies session, level and escaped search before each branch limit", () => {
+    openRecords(dbPath, path.join(root, "logs"), EARLIER);
+    line("2026-10-01T08:00:01.000Z", "warn", "needle_50%");
+    call("2026-10-01T08:00:01.000Z", { message: "needle_50%" });
+    closeRecords();
+    openRecords(dbPath, path.join(root, "logs"), LATER);
+    for (let i = 0; i < RECORDS_PAGE_SIZE + 5; i++) {
+      line("2026-10-02T08:00:01.000Z", "info", `other ${i}`);
+      call("2026-10-02T08:00:01.000Z", undefined);
+    }
+    const page = readPage(reader(), query({ session: EARLIER.toISOString(), level: "attention", search: "needle_50%" }));
+    expect(page.more).toBe(false);
+    expect(page.records.map(({ kind, level }) => [kind, level])).toEqual([["provider-call", "error"], ["log", "warn"]]);
+    expect(readPage(reader(), query({ search: "needleX50x" })).records).toEqual([]);
+  });
+
+  it.each([null, "log", "provider-call"] as const)("uses ordered table indexes before branch limits for a %s cursor", (kind) => {
+    openRecords(dbPath, path.join(root, "logs"), LATER);
+    line("2026-10-02T08:00:01.000Z", "info", "one");
+    call("2026-10-02T08:00:01.000Z", undefined);
+    let executed!: { sql: string; params: SQLInputValue[] };
+    const database = reader();
+    const traced = {
+      prepare: (sql: string) => ({ all: (...params: SQLInputValue[]) => {
+        executed = { sql, params };
+        return database.prepare(sql).all(...params);
+      } }),
+    } as unknown as DatabaseSync;
+    for (const session of [null, LATER.toISOString()]) {
+      readPage(traced, query({ session, after: kind === null ? null : { kind, id: 2, time: "2026-10-02T08:00:01.000Z" } }));
+      const plan = database.prepare(`EXPLAIN QUERY PLAN ${executed.sql}`).all(...executed.params) as { id: number; parent: number; detail: string }[];
+      for (const table of ["log_records", "provider_calls"]) {
+        const index = `idx_${table}_${session === null ? "time" : "session_time"}`;
+        const access = plan.filter(({ detail }) => detail.includes(`${table} USING INDEX`));
+        expect(access).toHaveLength(1);
+        expect(access[0].detail).toContain(`USING INDEX ${index}`);
+        expect(access[0].detail.startsWith(kind === null && session === null ? "SCAN " : "SEARCH ")).toBe(true);
+      }
+      // The sole temporary ordering step is outside both limited table
+      // subqueries. It can sort their two 101-row candidates, not the tables.
+      expect(plan.filter(({ detail }) => detail.includes("TEMP B-TREE"))).toEqual([
+        expect.objectContaining({ parent: 0, detail: "USE TEMP B-TREE FOR ORDER BY" }),
+      ]);
+      expect(executed.sql.match(/ORDER BY (?:time|started_at) DESC, id DESC LIMIT \?/g)).toHaveLength(2);
+      expect(executed.params.filter((value) => value === RECORDS_PAGE_SIZE + 1)).toHaveLength(3);
+    }
   });
 });

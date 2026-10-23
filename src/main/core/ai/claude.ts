@@ -112,6 +112,7 @@ export class ClaudeProvider implements AiProvider {
    */
   private record(
     startedAt: Date,
+    elapsedMs: number,
     request: unknown,
     outcome: { response: Anthropic.Message } | { error: unknown } | { stopped: true },
   ): void {
@@ -122,6 +123,7 @@ export class ClaudeProvider implements AiProvider {
       provider: "anthropic",
       startedAt,
       finishedAt: utcNow(),
+      elapsedMs,
       request: maskCredentials(request, this.secrets),
       response: "response" in outcome ? maskCredentials(outcome.response, this.secrets) : undefined,
       error: error ? maskCredentials(serializeError(error), this.secrets) : undefined,
@@ -129,19 +131,20 @@ export class ClaudeProvider implements AiProvider {
     }).catch((error) => console.error("[bigmouth] Provider record could not reach storage", error));
   }
 
-  /** Settles `pending` after recording it; `stoppedByUser` tells a user's stop from a failure. */
+  /** Records synchronous and asynchronous attempt outcomes; only the caller's stop is a stop. */
   private async recorded(
-    startedAt: Date,
     capture: ReturnType<typeof requestCapture>,
-    pending: Promise<Anthropic.Message>,
+    attempt: () => Promise<Anthropic.Message>,
     stoppedByUser: () => boolean,
   ): Promise<Anthropic.Message> {
+    const startedAt = utcNow();
+    const started = performance.now();
     try {
-      const response = await pending;
-      this.record(startedAt, capture.request(), { response });
+      const response = await attempt();
+      this.record(startedAt, performance.now() - started, capture.request(), { response });
       return response;
     } catch (error) {
-      this.record(startedAt, capture.request(), stoppedByUser() ? { stopped: true } : { error });
+      this.record(startedAt, performance.now() - started, capture.request(), stoppedByUser() ? { stopped: true } : { error });
       throw error;
     }
   }
@@ -236,21 +239,21 @@ export class ClaudeProvider implements AiProvider {
   ): Promise<Anthropic.Message> {
     const watchdog = idleWatchdog();
     const capture = requestCapture(params);
-    const startedAt = utcNow();
-    const stream = this.client.messages.stream(params, {
-      middleware: capture.middleware,
-      signal: AbortSignal.any([watchdog.signal, outer]),
-    });
-    stream.on("text", watchdog.progress);
-    stream.on("thinking", watchdog.progress);
     try {
-      const pending = stream.finalMessage().catch((err: unknown) => {
-        // The SDK describes every aborted request as a user stop. Preserve the
-        // outer timeout's actual cause in the record before propagating it.
-        if (outer.aborted && !userSignal?.aborted) throw outer.reason;
-        throw err;
-      });
-      return await this.recorded(startedAt, capture, pending, () => userSignal?.aborted ?? false);
+      return await this.recorded(capture, async () => {
+        const stream = this.client.messages.stream(params, {
+          middleware: capture.middleware,
+          signal: AbortSignal.any([watchdog.signal, outer]),
+        });
+        stream.on("text", watchdog.progress);
+        stream.on("thinking", watchdog.progress);
+        return await stream.finalMessage().catch((err: unknown) => {
+          // The SDK describes every aborted request as a user stop. Preserve the
+          // outer timeout's actual cause in the record before propagating it.
+          if (outer.aborted && !userSignal?.aborted) throw outer.reason;
+          throw err;
+        });
+      }, () => userSignal?.aborted ?? false);
     } catch (err) {
       if (watchdog.tripped()) throw new Error(idleMessage("request"));
       throw err;
@@ -283,31 +286,29 @@ export class ClaudeProvider implements AiProvider {
       // finalMessage() pending for ever, and with it the caller's whole feature.
       const watchdog = idleWatchdog();
       const capture = requestCapture(params);
-      const startedAt = utcNow();
-      const stream = this.client.messages.stream(params, {
-        middleware: capture.middleware,
-        signal: watchdog.signal,
-      });
-      current = { stream, watchdog };
-
-      stream.on("text", (delta) => {
-        received = true;
-        watchdog.progress();
-        onText(delta);
-      });
-
-      // Only fires when thinking is adaptive (display "summarized"); with thinking off
-      // there is nothing to report and the callback is simply never called. Still
-      // counts as progress: a model can reason for a long time before its first
-      // answer token, and that is a working stream, not a stalled one.
-      stream.on("thinking", (delta) => {
-        received = true;
-        watchdog.progress();
-        onThinking?.(delta);
-      });
-
       try {
-        return await this.recorded(startedAt, capture, stream.finalMessage(), () => stop.signal.aborted);
+        return await this.recorded(capture, () => {
+          const stream = this.client.messages.stream(params, {
+            middleware: capture.middleware,
+            signal: watchdog.signal,
+          });
+          current = { stream, watchdog };
+
+          stream.on("text", (delta) => {
+            received = true;
+            watchdog.progress();
+            onText(delta);
+          });
+
+          // Reasoning is progress even when no callback displays it: a model
+          // can think for a long time before its first answer token.
+          stream.on("thinking", (delta) => {
+            received = true;
+            watchdog.progress();
+            onThinking?.(delta);
+          });
+          return stream.finalMessage();
+        }, () => stop.signal.aborted);
       } catch (err) {
         // The SDK reports the watchdog's abort the same way it reports the
         // user's, so say which one it was — otherwise a stall reads to the user

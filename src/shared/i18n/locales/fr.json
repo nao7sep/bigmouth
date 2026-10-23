@@ -554,6 +554,8 @@
   "records.loading": "Chargement du journal…",
   "records.empty": "Aucune entrée ne correspond à ces filtres.",
   "records.loadFailed": "Le journal n’a pas pu être lu.",
+  "records.gapNotice": "Cette vue peut ne pas afficher certaines entrées de journal de ce lancement. Journal de secours\u00a0: {path}",
+  "records.fallbackFailed": "Certaines entrées de journal n’ont pu être enregistrées ni dans la base de données ni dans le fichier de secours.",
   "records.detailFailed": "Cette entrée n’a pas pu être lue.",
   "records.noSelection": "Sélectionnez une entrée pour voir tout ce qu’elle contient.",
   "records.resizeList": "Redimensionner la liste des enregistrements",

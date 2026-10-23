@@ -2695,6 +2695,7 @@ select:is(.form-select, .prompt-select) {
 }
 
 .records-note {
+  overflow-wrap: anywhere;
   padding: 6px 18px 8px;
   color: var(--bm-text-faint);
   font-size: 13px;
@@ -2705,6 +2706,7 @@ select:is(.form-select, .prompt-select) {
 }
 
 .records-detail-pane > .records-note {
+  overflow-wrap: anywhere;
   padding: 24px 16px;
 }
 

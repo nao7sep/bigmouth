@@ -522,6 +522,8 @@
   "records.loading": "ログを読み込み中…",
   "records.empty": "条件に一致する項目はありません。",
   "records.loadFailed": "ログを読み込めませんでした。",
+  "records.gapNotice": "この画面には、今回の起動中のログが一部表示されていない可能性があります。代替ログ：{path}",
+  "records.fallbackFailed": "一部のログをデータベースにも代替ファイルにも保存できませんでした。",
   "records.detailFailed": "この項目を読み込めませんでした。",
   "records.noSelection": "項目を選択すると、その内容がすべて表示されます。",
   "records.resizeList": "レコード一覧の幅を変更",

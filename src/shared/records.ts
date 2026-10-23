@@ -72,9 +72,11 @@ export interface ProviderCallRecordDetail {
   workspaceId: string;
   postId: string;
   purpose: string;
+  operationId?: string | null;
   provider: string;
   startedAt: string;
   finishedAt: string;
+  elapsedMs: number | null;
   request: string;
   response: string | null;
   error: string | null;
@@ -89,4 +91,11 @@ export interface RecordSources {
   currentSession: string | null;
   sessions: string[];
   workspaces: { id: string; name: string }[];
+}
+
+// Sticky for the launch: later successful writes cannot fill an earlier diagnostic gap.
+export interface RecordsHealth {
+  databaseGap: boolean;
+  fallbackFailed: boolean;
+  fallbackPath: string | null;
 }

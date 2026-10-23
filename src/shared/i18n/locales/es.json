@@ -554,6 +554,8 @@
   "records.loading": "Cargando registros…",
   "records.empty": "Ningún registro coincide con estos filtros.",
   "records.loadFailed": "No se pudieron leer los registros.",
+  "records.gapNotice": "Es posible que esta vista omita registros de este inicio. Registro alternativo: {path}",
+  "records.fallbackFailed": "Algunos registros no se pudieron guardar ni en la base de datos ni en el archivo alternativo.",
   "records.detailFailed": "No se pudo leer este registro.",
   "records.noSelection": "Selecciona un registro para ver todo lo que contiene.",
   "records.resizeList": "Cambiar el ancho de la lista de registros",
