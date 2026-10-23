@@ -12,6 +12,7 @@ import {
   sanitizeFilename,
   safeResolveUnder,
   assetDir,
+  assetPath,
   visitRecordedHashes,
   type AssetMeta,
   type AssetSourceMetadata,
@@ -82,6 +83,15 @@ describe("assetDir", () => {
   });
 });
 
+describe("assetPath", () => {
+  it("refuses filenames that are not a single component", () => {
+    for (const name of ["", ".", "..", "a/b", "a\\b", "a\u0000b"]) {
+      expect(() => assetPath(dataDir, POST, name)).toThrow(/invalid asset filename/i);
+    }
+    expect(() => assetPath(dataDir, "..", "a.txt")).toThrow(/invalid post id/i);
+  });
+});
+
 describe("sanitizeFilename", () => {
   it("strips path components and disallowed characters", () => {
     expect(sanitizeFilename("../../etc/passwd")).toBe("passwd");
@@ -98,7 +108,7 @@ describe("installAsset / listAssets / deleteAsset", () => {
     install(dataDir, POST, "blocked.png", Buffer.from("abc"), recorded);
     install(dataDir, POST, "accessible.png", Buffer.from("abc"), meta("accessible.png"));
     const blocked = path.join(assetDir(dataDir, POST), "blocked.png");
-    // A modified time other than the recorded one makes the listing read the file.
+    // Change its fingerprint so the observation must read the file again.
     fs.utimesSync(blocked, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
     const open = fs.openSync;
     const fail = vi.spyOn(fs, "openSync").mockImplementation((file, flags, mode) => {
@@ -106,13 +116,49 @@ describe("installAsset / listAssets / deleteAsset", () => {
       return open(file, flags, mode);
     });
     try {
-      expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ filename: "blocked.png", size: 3 });
+      expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["accessible.png"]);
       install(dataDir, POST, "new.png", Buffer.from("new"), meta("new.png"));
       expect(() => deleteAsset(dataDir, POST, "accessible.png")).not.toThrow();
       expect(fs.existsSync(path.join(assetDir(dataDir, POST), "accessible.png"))).toBe(false);
       expect(fs.existsSync(blocked)).toBe(true);
     } finally { fail.mockRestore(); }
     expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ ...recorded, contentHash: sha("abc") });
+  });
+
+  it("omits a sibling whose stat fails and retains its recorded facts through another upload", () => {
+    install(dataDir, POST, "blocked.png", Buffer.from("abc"), { ...meta("blocked.png"), width: 12 });
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    const blocked = path.join(assetDir(dataDir, POST), "blocked.png");
+    const stat = fs.statSync;
+    const failed = vi.spyOn(fs, "statSync").mockImplementation((...args: Parameters<typeof fs.statSync>) => {
+      if (String(args[0]) === blocked) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return stat(...args);
+    });
+    try {
+      expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+      install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"));
+    } finally { failed.mockRestore(); }
+    expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "blocked.png")).toEqual({ ...meta("blocked.png"), width: 12, contentHash: sha("abc") });
+  });
+
+  it("omits directories without hiding healthy files", () => {
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    fs.mkdirSync(path.join(assetDir(dataDir, POST), "folder.png"));
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+  });
+
+  // File symlinks require elevated privileges or developer mode on Windows.
+  it.skipIf(process.platform === "win32")("omits a dangling sibling and keeps its upload facts through sibling writes", () => {
+    install(dataDir, POST, "broken.png", Buffer.from("abc"), { ...meta("broken.png"), width: 12 });
+    install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+    const broken = path.join(assetDir(dataDir, POST), "broken.png");
+    fs.unlinkSync(broken);
+    fs.symlinkSync(path.join(dataDir, "missing"), broken);
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+    install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"));
+    fs.unlinkSync(broken);
+    fs.writeFileSync(broken, "abc");
+    expect(listAssets(dataDir, POST).assets.find((a) => a.filename === "broken.png")).toEqual({ ...meta("broken.png"), width: 12, contentHash: sha("abc") });
   });
 
   it("keeps upload facts when identical bytes are copied to a new file identity", () => {
@@ -238,8 +284,9 @@ describe("installing a staged upload", () => {
     expect(fs.statSync(path.join(assetDir(dataDir, POST), "a.png")).mode & 0o777).toBe(0o666 & ~process.umask());
   });
 
-  it("treats the same bytes under the same name as no change, without reading the installed file", () => {
+  it("treats previously observed unchanged bytes under the same name as no change without rereading", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    listAssets(dataDir, POST);
     const file = path.join(assetDir(dataDir, POST), "a.png");
     const upload = stage(Buffer.from("abc"));
     const opened = vi.spyOn(fs, "openSync");
@@ -274,18 +321,28 @@ describe("installing a staged upload", () => {
 describe("an asset's recorded hash", () => {
   const file = () => path.join(assetDir(dataDir, POST), "a.png");
 
-  it("is trusted without reading the file while its size and modified time are the recorded ones", () => {
-    // The source's time, in whole milliseconds, so the test can put it back exactly.
+  it("verifies the first observation even when the recorded size and modified time match", () => {
     const mtime = new Date("2021-03-04T05:06:07.000Z");
     install(dataDir, POST, "a.png", Buffer.from("abc"), { ...meta("a.png"), width: 4, height: 5 }, { mode: 0o644, atime: mtime, mtime });
-    // Different bytes of the same size, with the recorded time put back: only a
-    // read could tell, and the listing does not read.
     fs.writeFileSync(file(), "xyz");
     fs.utimesSync(file(), mtime, mtime);
     const opened = vi.spyOn(fs, "openSync");
     try {
-      expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5, contentHash: sha("abc") }]);
-      expect(opened.mock.calls.some(([target]) => String(target) === file())).toBe(false);
+      expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("xyz") }]);
+      expect(opened.mock.calls.some(([target]) => String(target) === file())).toBe(true);
+    } finally { opened.mockRestore(); }
+  });
+
+  it("reuses unchanged observations and rehashes external edits before retaining upload facts", () => {
+    install(dataDir, POST, "a.png", Buffer.from("abc"), { ...meta("a.png"), width: 4 });
+    const opened = vi.spyOn(fs, "openSync");
+    try {
+      expect(listAssets(dataDir, POST).assets[0].uploadedAt).toBe(meta("a.png").uploadedAt);
+      listAssets(dataDir, POST);
+      expect(opened.mock.calls.filter(([target, flags]) => String(target) === file() && flags === "r")).toHaveLength(1);
+      fs.writeFileSync(file(), "replacement");
+      expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 11, contentHash: sha("replacement") }]);
+      expect(opened.mock.calls.filter(([target, flags]) => String(target) === file() && flags === "r")).toHaveLength(2);
     } finally { opened.mockRestore(); }
   });
 
@@ -295,7 +352,7 @@ describe("an asset's recorded hash", () => {
     fs.utimesSync(file(), moved, moved);
     expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 4, height: 5, contentHash: sha("abc") }]);
 
-    // The next write records the new time, so the file is trusted again without a read.
+    // A sibling write keeps the current observed time in the record.
     install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
     const record = JSON.parse(fs.readFileSync(path.join(assetDir(dataDir, POST), "meta.json"), "utf8")).assets[0];
     expect(record.mtimeMs).toBe(moved.getTime());
@@ -331,6 +388,49 @@ describe("hashes for thumbnails", () => {
       { filename: "found.mov", size: 12 },
       { filename: "found.png", size: 3, contentHash: sha("abc") },
     ]);
+  });
+
+  it("hashes a newly discovered unchanged image only once without writing a sidecar", () => {
+    const dir = assetDir(dataDir, POST);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "found.png");
+    fs.writeFileSync(file, "abc");
+    const opened = vi.spyOn(fs, "openSync");
+    try {
+      listAssets(dataDir, POST);
+      listAssets(dataDir, POST);
+      expect(opened.mock.calls.filter(([target]) => String(target) === file)).toHaveLength(1);
+      expect(fs.existsSync(path.join(dir, "meta.json"))).toBe(false);
+      fs.writeFileSync(file, "edited");
+      expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "found.png", size: 6, contentHash: sha("edited") }]);
+      expect(opened.mock.calls.filter(([target, flags]) => String(target) === file && flags === "r")).toHaveLength(2);
+      expect(fs.existsSync(path.join(dir, "meta.json"))).toBe(false);
+    } finally { opened.mockRestore(); }
+  });
+
+  it("does not cache a hash when the file changes while it is being read", () => {
+    const dir = assetDir(dataDir, POST);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "changing.png");
+    fs.writeFileSync(file, "abc");
+    const read = fs.readSync;
+    let mutated = false;
+    const intercepted = vi.spyOn(fs, "readSync").mockImplementation((...args: Parameters<typeof fs.readSync>) => {
+      const count = read(...args);
+      if (!mutated) {
+        mutated = true;
+        fs.utimesSync(file, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
+      }
+      return count;
+    });
+    try { listAssets(dataDir, POST); }
+    finally { intercepted.mockRestore(); }
+    const opened = vi.spyOn(fs, "openSync");
+    try {
+      listAssets(dataDir, POST);
+      listAssets(dataDir, POST);
+      expect(opened.mock.calls.filter(([target]) => String(target) === file)).toHaveLength(1);
+    } finally { opened.mockRestore(); }
   });
 
   it("records whether an image is animated with its other details", () => {
@@ -515,8 +615,8 @@ describe("listAssets self-heals against the files on disk", () => {
 
     expect(listAssets(dataDir, POST).assets[0]).toEqual({ filename: "a.png", size: 3, contentHash: sha("abc") });
 
-    // The next upload and the next delete write the list back to meta.json,
-    // with an image's hash, so it is not read again to list it.
+    // The next upload and the next delete write the observed list back to
+    // meta.json, including the image's hash without inventing an upload time.
     install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
     const afterUpload = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf-8")).assets as AssetMeta[];
     expect(afterUpload.find((a) => a.filename === "a.png")).toEqual({ filename: "a.png", size: 3, contentHash: sha("abc"), mtimeMs: expect.any(Number) });
@@ -632,5 +732,105 @@ describe("asset metadata format version", () => {
 
     expect(fs.readFileSync(metaFile(), "utf-8")).toBe(body);
     expect(fs.readdirSync(assetDir(dataDir, POST)).sort()).toEqual(["a.png", "meta.json"]);
+  });
+});
+
+describe("asset symbolic-link boundaries", () => {
+  it("allows a post directory linked to another folder inside the selected workspace", () => {
+    const shared = path.join(dataDir, "shared-assets");
+    fs.mkdirSync(shared);
+    fs.mkdirSync(path.join(dataDir, "assets"));
+    fs.symlinkSync(shared, path.join(dataDir, "assets", POST), process.platform === "win32" ? "junction" : "dir");
+    install(dataDir, POST, "image.png", Buffer.from("abc"), meta("image.png"));
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("image.png"), contentHash: sha("abc") }]);
+    expect(fs.readFileSync(path.join(shared, "image.png"), "utf8")).toBe("abc");
+    deleteAsset(dataDir, POST, "image.png");
+    expect(fs.existsSync(path.join(shared, "image.png"))).toBe(false);
+    expect(fs.lstatSync(path.join(dataDir, "assets", POST)).isSymbolicLink()).toBe(true);
+    expect(fs.statSync(shared).isDirectory()).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("allows contained file links while preserving the selected workspace boundary", () => {
+    const source = path.join(dataDir, "shared.png");
+    fs.writeFileSync(source, "abc");
+    const dir = assetDir(dataDir, POST);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.symlinkSync(source, path.join(dir, "linked.png"));
+    expect(assetPath(dataDir, POST, "linked.png")).toBe(path.join(dir, "linked.png"));
+    expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "linked.png", size: 3, contentHash: sha("abc") }]);
+    expect(install(dataDir, POST, "linked.png", Buffer.from("abc"), meta("linked.png")).changed).toBe(false);
+    deleteAsset(dataDir, POST, "linked.png");
+    expect(fs.readFileSync(source, "utf8")).toBe("abc");
+  });
+
+  it("allows a selected workspace root that is itself a link", () => {
+    const real = path.join(dataDir, "real-workspace");
+    const linked = path.join(dataDir, "linked-workspace");
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, linked, process.platform === "win32" ? "junction" : "dir");
+    const dir = assetDir(linked, POST);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "found.png"), "abc");
+    expect(assetPath(linked, POST, "found.png")).toBe(path.join(dir, "found.png"));
+    expect(listAssets(linked, POST).assets).toEqual([{ filename: "found.png", size: 3, contentHash: sha("abc") }]);
+  });
+
+  // POSIX file symlinks are unprivileged; Windows requires developer mode or elevation.
+  it.skipIf(process.platform === "win32")("omits escaping asset links and refuses reads and mutations through their resolved paths", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-outside-"));
+    try {
+      const target = path.join(outside, "file.png");
+      fs.writeFileSync(target, "outside");
+      install(dataDir, POST, "healthy.txt", Buffer.from("ok"), meta("healthy.txt", 2));
+      install(dataDir, POST, "linked.png", Buffer.from("old"), { ...meta("linked.png"), width: 12 });
+      const dir = assetDir(dataDir, POST);
+      fs.unlinkSync(path.join(dir, "linked.png"));
+      fs.symlinkSync(target, path.join(dir, "linked.png"));
+      expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["healthy.txt"]);
+      expect(() => assetPath(dataDir, POST, "linked.png")).toThrow(/escape/i);
+      expect(() => install(dataDir, POST, "linked.png", Buffer.from("new"), meta("linked.png"))).toThrow(/escape/i);
+      expect(() => deleteAsset(dataDir, POST, "linked.png")).toThrow(/escape/i);
+      install(dataDir, POST, "sibling.txt", Buffer.from("new"), meta("sibling.txt"));
+      const records = JSON.parse(fs.readFileSync(path.join(dir, "meta.json"), "utf8")).assets as AssetMeta[];
+      expect(records.find((asset) => asset.filename === "linked.png")).toMatchObject({ ...meta("linked.png"), width: 12, contentHash: sha("old") });
+      expect(fs.readFileSync(target, "utf8")).toBe("outside");
+    } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+  });
+
+  it.each(["assets", "post"])("refuses an escaping %s directory before accessing outside assets", (boundary) => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-outside-"));
+    try {
+      fs.writeFileSync(path.join(outside, "keep.txt"), "outside");
+      const link = boundary === "assets" ? path.join(dataDir, "assets") : path.join(dataDir, "assets", POST);
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      fs.symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+      expect(() => assetDir(dataDir, POST)).toThrow(/escape/i);
+      expect(() => listAssets(dataDir, POST)).toThrow(/escape/i);
+      expect(() => install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"))).toThrow(/escape/i);
+      expect(() => deleteAsset(dataDir, POST, "keep.txt")).toThrow(/escape/i);
+      expect(fs.readdirSync(outside)).toEqual(["keep.txt"]);
+      expect(fs.readFileSync(path.join(outside, "keep.txt"), "utf8")).toBe("outside");
+    } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+  });
+
+  it.skipIf(process.platform === "win32")("refuses an escaping metadata sidecar before reading or replacing it", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-outside-"));
+    try {
+      const target = path.join(outside, "meta.json");
+      fs.writeFileSync(target, "outside");
+      const dir = assetDir(dataDir, POST);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "keep.txt"), "keep");
+      fs.symlinkSync(target, path.join(dir, "meta.json"));
+      const read = vi.spyOn(fs, "readFileSync");
+      try {
+        expect(() => listAssets(dataDir, POST)).toThrow(/escape/i);
+        expect(() => install(dataDir, POST, "new.txt", Buffer.from("new"), meta("new.txt"))).toThrow(/escape/i);
+        expect(() => deleteAsset(dataDir, POST, "keep.txt")).toThrow(/escape/i);
+        expect(read.mock.calls.some(([file]) => String(file) === target)).toBe(false);
+      } finally { read.mockRestore(); }
+      expect(fs.readFileSync(target, "utf8")).toBe("outside");
+      expect(fs.readFileSync(path.join(dir, "keep.txt"), "utf8")).toBe("keep");
+    } finally { fs.rmSync(outside, { recursive: true, force: true }); }
   });
 });

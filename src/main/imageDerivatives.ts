@@ -38,7 +38,7 @@ import path from "node:path";
 
 import type { ImageDerivativeKind } from "@shared/ipc";
 import type { Metadata, Sharp, SharpOptions } from "sharp";
-import { visitRecordedHashes } from "./core/services/assetStore.js";
+import { safeResolveUnder, visitRecordedHashes } from "./core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, serializeError } from "./core/services/logger.js";
 
 export type { ImageDerivativeKind } from "@shared/ipc";
@@ -147,11 +147,15 @@ export type DerivativeOutcome =
  * carried, and the thumbnail from the display image, so the original is decoded
  * once; `withoutEnlargement` keeps a small picture its own size.
  */
-export async function generateDerivatives(sourcePath: string, expectedHash: string, dir: string): Promise<DerivativeOutcome> {
+export async function generateDerivatives(sourcePath: string, expectedHash: string, dir: string, workspaceRoot = path.dirname(sourcePath)): Promise<DerivativeOutcome> {
   let display: Buffer;
   let thumb: Buffer;
   try {
     const sharp = await loadSharp();
+    // Recheck after loading sharp: the registered path may have changed since
+    // listing. Node lacks descriptor-relative resolve-beneath, so a hostile
+    // concurrent replacement between this check and open is still possible.
+    safeResolveUnder(workspaceRoot, path.relative(workspaceRoot, sourcePath));
     const original = await fsp.readFile(sourcePath);
     const actual = createHash("sha256").update(original).digest("hex");
     if (actual !== expectedHash) return { kind: "changed", actual };
@@ -199,6 +203,7 @@ async function writeInPlace(dir: string, name: string, data: Buffer): Promise<vo
 interface Source {
   workspaceId: string;
   filePath: string;
+  workspaceRoot: string;
 }
 
 async function isFile(filePath: string): Promise<boolean> {
@@ -234,8 +239,8 @@ export class ImageDerivatives {
   ) {}
 
   /** Records that the asset at `filePath` holds the bytes `hash` names. */
-  register(hash: string, workspaceId: string, filePath: string): void {
-    if (isContentHash(hash)) this.sources.set(hash, { workspaceId, filePath });
+  register(hash: string, workspaceId: string, filePath: string, workspaceRoot: string): void {
+    if (isContentHash(hash)) this.sources.set(hash, { workspaceId, filePath, workspaceRoot });
   }
 
   /** Stops serving the assets of a workspace that was removed from the registry. */
@@ -285,7 +290,7 @@ export class ImageDerivatives {
       await isFile(path.join(this.dir, derivativeName(hash, "thumb")))) return true;
     const source = this.sources.get(hash);
     if (!source) return false;
-    const outcome = await this.generate(source.filePath, hash, this.dir);
+    const outcome = await this.generate(source.filePath, hash, this.dir, source.workspaceRoot);
     switch (outcome.kind) {
       case "generated":
         return true;

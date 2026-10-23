@@ -232,7 +232,7 @@ describe("ImageDerivatives", () => {
     const cache = new ImageDerivatives(thumbnails, generate);
     fs.mkdirSync(thumbnails);
     fs.writeFileSync(path.join(thumbnails, derivativeName(a, "thumb")), "t");
-    cache.register(a, "ws", "/a.png");
+    cache.register(a, "ws", path.join(root, "a.png"), root);
     expect(await cache.resolve(a, "thumb")).toBe(path.join(thumbnails, derivativeName(a, "thumb")));
     expect(generate).not.toHaveBeenCalled();
   });
@@ -240,7 +240,7 @@ describe("ImageDerivatives", () => {
   it("makes one image at a time, however many are asked for, and each once", async () => {
     const { generate, runs, mostAtOnce } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
-    for (const hash of [a, b, c]) cache.register(hash, "ws", `/${hash}.png`);
+    for (const hash of [a, b, c]) cache.register(hash, "ws", path.join(root, `${hash}.png`), root);
 
     const asked = [cache.resolve(a, "thumb"), cache.resolve(a, "display"), cache.resolve(b, "thumb"), cache.resolve(c, "display")];
     await until(() => runs.length === 1);
@@ -266,7 +266,7 @@ describe("ImageDerivatives", () => {
   it("does not try a failed image again this session, and logs it once", async () => {
     const { generate, runs } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
-    cache.register(a, "ws", "/a.png");
+    cache.register(a, "ws", path.join(root, "a.png"), root);
     const first = cache.resolve(a, "thumb");
     await until(() => runs.length === 1);
     runs[0].settle({ kind: "failed", error: new Error("VipsJpeg: premature end of JPEG image") });
@@ -276,7 +276,7 @@ describe("ImageDerivatives", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     // A later session, a new cache, tries again.
     const later = new ImageDerivatives(thumbnails, generate);
-    later.register(a, "ws", "/a.png");
+    later.register(a, "ws", path.join(root, "a.png"), root);
     void later.resolve(a, "thumb");
     await until(() => runs.length === 2);
   });
@@ -284,7 +284,7 @@ describe("ImageDerivatives", () => {
   it("serves nothing for an animated image and does not decode it again", async () => {
     const { generate, runs } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
-    cache.register(a, "ws", "/a.gif");
+    cache.register(a, "ws", path.join(root, "a.gif"), root);
     const first = cache.resolve(a, "thumb");
     await until(() => runs.length === 1);
     runs[0].settle({ kind: "animated" });
@@ -296,7 +296,7 @@ describe("ImageDerivatives", () => {
   it("forgets a hash whose file changed, until a listing registers it again", async () => {
     const { generate, runs } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
-    cache.register(a, "ws", "/a.png");
+    cache.register(a, "ws", path.join(root, "a.png"), root);
     const first = cache.resolve(a, "thumb");
     await until(() => runs.length === 1);
     runs[0].settle({ kind: "changed", actual: b });
@@ -308,8 +308,8 @@ describe("ImageDerivatives", () => {
 
   it("stops serving a removed workspace's images", () => {
     const cache = new ImageDerivatives(thumbnails, controlledGenerator().generate);
-    cache.register(a, "ws1", "/a.png");
-    cache.register(b, "ws2", "/b.png");
+    cache.register(a, "ws1", path.join(root, "a.png"), root);
+    cache.register(b, "ws2", path.join(root, "b.png"), root);
     cache.forgetWorkspace("ws1");
     expect([cache.isRegistered(a), cache.isRegistered(b)]).toEqual([false, true]);
   });
@@ -317,9 +317,43 @@ describe("ImageDerivatives", () => {
   it("generates the real derivatives of a registered image", async () => {
     const bytes = await photo(800, 600);
     const cache = new ImageDerivatives(thumbnails);
-    cache.register(sha(bytes), "ws", write("photo.jpg", bytes));
+    cache.register(sha(bytes), "ws", write("photo.jpg", bytes), root);
     const file = await cache.resolve(sha(bytes), "thumb");
     expect((await sharp(file!).metadata()).width).toBe(THUMB_EDGE);
+  });
+
+  it.skipIf(process.platform === "win32")("generates contained linked images using the registered workspace root", async () => {
+    const bytes = await photo(80, 60);
+    const shared = write("shared.jpg", bytes);
+    const assets = path.join(root, "assets", "post1");
+    fs.mkdirSync(assets, { recursive: true });
+    const source = path.join(assets, "linked.jpg");
+    fs.symlinkSync(shared, source);
+    const cache = new ImageDerivatives(thumbnails);
+    cache.register(sha(bytes), "ws", source, root);
+    expect(await cache.resolve(sha(bytes), "thumb")).toBe(path.join(thumbnails, derivativeName(sha(bytes), "thumb")));
+  });
+
+  it.skipIf(process.platform === "win32")("refuses an asset replaced with an outside link after registration before reading it", async () => {
+    const bytes = await photo(80, 60);
+    const source = write("registered.jpg", bytes);
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-outside-derivative-"));
+    const outside = path.join(outsideDir, "outside.jpg");
+    fs.writeFileSync(outside, bytes);
+    const cache = new ImageDerivatives(thumbnails);
+    cache.register(sha(bytes), "ws", source, root);
+    fs.unlinkSync(source);
+    fs.symlinkSync(outside, source);
+    const read = vi.spyOn(fsp, "readFile");
+    try {
+      expect(await cache.resolve(sha(bytes), "thumb")).toBeNull();
+      expect(read.mock.calls.some(([file]) => String(file) === source || String(file) === outside)).toBe(false);
+      expect(cacheFiles()).toEqual([]);
+      expect(fs.readFileSync(outside)).toEqual(bytes);
+    } finally {
+      read.mockRestore();
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("refuses a damaged image with no derivative and does not read it again", async () => {
@@ -327,7 +361,7 @@ describe("ImageDerivatives", () => {
     const file = write("damaged.png", damaged);
     const generate = vi.fn(generateDerivatives);
     const cache = new ImageDerivatives(thumbnails, generate);
-    cache.register(sha(damaged), "ws", file);
+    cache.register(sha(damaged), "ws", file, root);
     expect(await cache.resolve(sha(damaged), "thumb")).toBeNull();
     expect(await cache.resolve(sha(damaged), "display")).toBeNull();
     expect(generate).toHaveBeenCalledTimes(1);
@@ -350,7 +384,7 @@ describe("sweeping the cache", () => {
 
   it("removes derivatives no asset names and older formats, and keeps the rest", async () => {
     const cache = new ImageDerivatives(thumbnails, controlledGenerator().generate);
-    cache.register(registered, "ws", "/r.png");
+    cache.register(registered, "ws", path.join(root, "r.png"), root);
     for (const hash of [kept, registered, unused]) {
       cacheFile(derivativeName(hash, "thumb"));
       cacheFile(derivativeName(hash, "display"));

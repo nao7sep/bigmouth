@@ -18,9 +18,8 @@ import { carriedMessage, carryingText } from "@shared/i18n/carriedMessage";
 import { utcNow, formatUtcIso } from "../core/shared/timestamps.js";
 import { getPost } from "../storageAccess.js";
 import {
-  assetDir,
+  assetPath,
   sanitizeFilename,
-  safeResolveUnder,
   stagingDir,
 } from "../core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, error as logError, serializeError } from "../core/services/logger.js";
@@ -109,7 +108,7 @@ function registerImage(wsId: string, dir: string, postId: string, asset: AssetMe
   const cache = imageDerivatives();
   if (!cache || !asset.contentHash || !isImageAssetFilename(asset.filename)) return null;
   try {
-    cache.register(asset.contentHash, wsId, safeResolveUnder(assetDir(dir, postId), asset.filename));
+    cache.register(asset.contentHash, wsId, assetPath(dir, postId, asset.filename), dir);
     return asset.contentHash;
   } catch {
     return null;
@@ -232,7 +231,7 @@ export function registerAssetHandlers(): void {
 
     let filePath: string;
     try {
-      filePath = safeResolveUnder(assetDir(dir, pid), fn);
+      filePath = assetPath(dir, pid, fn);
     } catch {
       throw new Error("Invalid path");
     }

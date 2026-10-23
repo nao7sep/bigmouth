@@ -28,6 +28,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import {
   assetFilenameKey,
   isImageAssetFilename,
@@ -86,12 +87,12 @@ const STAGED_NAME = /^[A-Za-z0-9_-]+\.part$/;
 
 /** Where uploads into this workspace are staged before they are installed. */
 export function stagingDir(dataDir: string): string {
-  return path.join(dataDir, STAGING_DIR);
+  return safeResolveUnder(dataDir, STAGING_DIR);
 }
 
 function stagedPath(dataDir: string, name: string): string {
   if (!STAGED_NAME.test(name)) throw new Error(`Invalid staged upload name ${JSON.stringify(name)}`);
-  return path.join(stagingDir(dataDir), name);
+  return safeResolveUnder(stagingDir(dataDir), name);
 }
 
 /**
@@ -140,6 +141,41 @@ function contentHash(filePath: string): string {
   } finally { fs.closeSync(fd); }
 }
 
+// An observation is at most roughly 1 KiB including its path. Budgeting one
+// entry per MiB of physical memory keeps the cache near 1/1024 of memory.
+const HASH_OBSERVATION_LIMIT = Math.max(1, Math.floor(os.totalmem() / 1024 / 1024));
+const hashObservations = new Map<string, { fingerprint: string; hash: string }>();
+
+function fingerprint(stat: fs.Stats): string {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(":");
+}
+
+function regularFileStat(filePath: string): fs.Stats {
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) throw new Error("Asset is not a regular file");
+  return stat;
+}
+
+/** Hash once per observed file identity and content metadata, with bounded LRU retention. */
+function observedHash(filePath: string, stat: fs.Stats): string {
+  const key = path.resolve(filePath);
+  const version = fingerprint(stat);
+  const cached = hashObservations.get(key);
+  hashObservations.delete(key);
+  if (cached?.fingerprint === version) {
+    hashObservations.set(key, cached);
+    return cached.hash;
+  }
+  const hash = contentHash(filePath);
+  if (fingerprint(regularFileStat(filePath)) === version) {
+    hashObservations.set(key, { fingerprint: version, hash });
+    if (hashObservations.size > HASH_OBSERVATION_LIMIT) {
+      hashObservations.delete(hashObservations.keys().next().value!);
+    }
+  }
+  return hash;
+}
+
 /**
  * The attached file was installed or removed, but `meta.json` could not be
  * written after it: the change to the file stands, and only its record is
@@ -162,7 +198,16 @@ export class AssetRecordError extends Error {
  */
 export function assetDir(dataDir: string, postId: string): string {
   if (!isPostId(postId)) throw new Error(`Invalid post id ${JSON.stringify(postId)}`);
-  return safeResolveUnder(path.join(dataDir, "assets"), postId);
+  return safeResolveUnder(dataDir, "assets", postId);
+}
+
+/** Resolves one attachment name, allowing links only inside the selected workspace. */
+export function assetPath(dataDir: string, postId: string, filename: string): string {
+  if (!isPostId(postId)) throw new Error(`Invalid post id ${JSON.stringify(postId)}`);
+  if (!filename || filename === "." || filename === ".." || /[/\\\u0000]/.test(filename)) {
+    throw new Error(`Invalid asset filename ${JSON.stringify(filename)}`);
+  }
+  return safeResolveUnder(dataDir, "assets", postId, filename);
 }
 
 function ensureAssetDir(dataDir: string, postId: string): string {
@@ -183,7 +228,7 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  * a missing `meta.json` next to real files is recovered, never an error.
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
-  const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId));
+  const { assets, movedAside } = reconcileAssets(assetDir(dataDir, postId), dataDir);
   const listed = assets.map(details);
   return movedAside ? { assets: listed, movedAside } : { assets: listed };
 }
@@ -222,8 +267,8 @@ function details({ mtimeMs: _mtime, ...asset }: RecordedAsset): AssetMeta {
  * nothing is written, the asset keeps its place and recorded upload time, and
  * `changed` is false, so the post was not edited. The staged file is then left
  * for its owner, the upload, to remove. Whether the bytes are the same is
- * decided by hash, from the asset's verified record, without reading the file
- * again unless no hash was ever recorded for it.
+ * decided by hash, verified on the first observation and reused while the
+ * file's observation fingerprint stays unchanged.
  */
 export function installAsset(
   dataDir: string,
@@ -241,11 +286,11 @@ export function installAsset(
 
   const fromPath = stagedPath(dataDir, staged.name);
   const dir = ensureAssetDir(dataDir, postId);
-  const { assets: siblings, records, refusal } = reconcileAssets(dir);
+  const { assets: siblings, records, refusal } = reconcileAssets(dir, dataDir);
   if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
-  const destPath = safeResolveUnder(dir, finalName);
-  const metaPath = path.join(dir, META_FILENAME);
+  const destPath = assetPath(dataDir, postId, finalName);
+  const metaPath = assetPath(dataDir, postId, META_FILENAME);
   const finalMeta: AssetMeta = { ...meta, filename: finalName, size: staged.size, contentHash: staged.sha256 };
   const existing = records.filter((a) => a.filename !== finalName);
   const current = siblings.find((a) => a.filename === finalName);
@@ -332,9 +377,9 @@ function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): str
 
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
   const dir = assetDir(dataDir, postId);
-  const filePath = safeResolveUnder(dir, filename);
-  const metaPath = path.join(dir, META_FILENAME);
-  const { assets, records, refusal } = reconcileAssets(dir);
+  const filePath = assetPath(dataDir, postId, filename);
+  const metaPath = assetPath(dataDir, postId, META_FILENAME);
+  const { assets, records, refusal } = reconcileAssets(dir, dataDir);
   if (refusal) throw refusal;
   const remaining = records.filter((a) => a.filename !== filename);
 
@@ -346,7 +391,9 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
   try {
     if (remaining.length === 0) {
       if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
-      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+      // A contained directory link belongs to the workspace's layout; deleting
+      // its last attachment leaves the link and its target directory in place.
+      if (fs.existsSync(dir) && !fs.lstatSync(dir).isSymbolicLink() && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
     } else {
       writeAssetMeta(metaPath, remaining);
     }
@@ -366,7 +413,7 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
  * read at all, is not used, and `refusal` is what every write to this folder
  * raises, so the file stays exactly as it is.
  */
-function reconcileAssets(dir: string): {
+function reconcileAssets(dir: string, dataDir: string): {
   assets: RecordedAsset[];
   records: RecordedAsset[];
   refusal: Error | null;
@@ -376,64 +423,53 @@ function reconcileAssets(dir: string): {
 
   const onDisk = new Set(fs.readdirSync(dir).filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, refusal, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
+  const { cached, refusal, movedAside } = readAssetMeta(safeResolveUnder(dataDir, path.relative(dataDir, dir), META_FILENAME));
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
   const accountedFor = new Set<string>();
   for (const entry of cached) {
-    if (onDisk.has(entry.filename)) {
-      // A replacement can commit before its sidecar, and a file can be replaced
-      // outside the app. A row whose hash no longer matches describes different
-      // bytes; unknown upload facts are safer than invented continuity.
-      const filePath = path.join(dir, entry.filename);
+    if (!onDisk.has(entry.filename)) continue;
+    accountedFor.add(entry.filename);
+    try {
+      const filePath = assetPath(dataDir, path.basename(dir), entry.filename);
       const checked = checkRecordedHash(filePath, entry);
-      const asset = checked.kind === "verified" ? checked.record : checked.kind === "changed" ? checked.projection : projectAssetFile(dir, entry.filename);
+      const asset = checked.kind === "verified" ? checked.record : checked.kind === "changed" ? checked.projection : projectAssetFile(dataDir, dir, entry.filename);
       result.push(asset);
-      // An unreadable file does not prove its bytes changed. Hide its details
-      // until verification succeeds, but retain the facts through sibling writes.
-      records.push(checked.kind === "unreadable" ? entry : asset);
-      accountedFor.add(entry.filename);
+      records.push(asset);
+    } catch (error) {
+      // A failed observation says nothing about the upload's facts. Keep them
+      // through sibling writes while omitting this inaccessible attachment.
+      records.push(entry);
+      logWarn("asset could not be listed", { path: path.resolve(dir, entry.filename), error: serializeError(error) });
     }
   }
   for (const filename of [...onDisk].sort()) {
     if (accountedFor.has(filename)) continue;
-    const asset = projectAssetFile(dir, filename);
-    result.push(asset);
-    records.push(asset);
+    try {
+      const asset = projectAssetFile(dataDir, dir, filename);
+      result.push(asset);
+      records.push(asset);
+    } catch (error) {
+      logWarn("asset could not be listed", { path: path.resolve(dir, filename), error: serializeError(error) });
+    }
   }
   return { assets: result, records, refusal, movedAside };
 }
 
 /**
- * Whether a recorded hash still describes the file. It is trusted without reading
- * the file while the file's size and modified time are the ones recorded with it,
- * and recomputed, reading the file in chunks, when either differs, which catches
- * a replacement in BigMouth or an edit from Finder or git. A replacement of the
- * same size within the filesystem's modified-time resolution is not caught; that
- * is accepted, as by the tools that use the same check. A recomputed hash that
- * matches gives the record the current modified time, which the next write of
- * `meta.json` keeps, so a checkout that only moved the time is read once more
- * at most. One that differs becomes the file's new record: its size and hash,
- * with no upload facts.
+ * Verifies recorded upload facts against the observed bytes. The first
+ * observation hashes the file; subsequent unchanged observations reuse the
+ * bounded cache. A changed hash has no continuity with the old upload facts.
  */
 function checkRecordedHash(filePath: string, entry: RecordedAsset):
   | { kind: "verified"; record: RecordedAsset }
   | { kind: "changed"; projection: RecordedAsset }
-  | { kind: "unverifiable" }
-  | { kind: "unreadable" } {
+  | { kind: "unverifiable" } {
+  const stat = regularFileStat(filePath);
   if (entry.contentHash === undefined) return { kind: "unverifiable" };
-  try {
-    // Taken before hashing: a change during the read leaves a newer time than
-    // the one recorded here, so it is hashed again next time.
-    const stat = fs.statSync(filePath);
-    if (entry.mtimeMs === stat.mtimeMs && entry.size === stat.size) return { kind: "verified", record: entry };
-    const actual = contentHash(filePath);
-    if (actual === entry.contentHash) return { kind: "verified", record: { ...entry, mtimeMs: stat.mtimeMs } };
-    return { kind: "changed", projection: { filename: entry.filename, size: stat.size, contentHash: actual, mtimeMs: stat.mtimeMs } };
-  } catch (error) {
-    logWarn("asset details could not be verified; upload facts left unknown", { path: filePath, error: serializeError(error) });
-    return { kind: "unreadable" };
-  }
+  const actual = observedHash(filePath, stat);
+  if (actual === entry.contentHash) return { kind: "verified", record: { ...entry, mtimeMs: stat.mtimeMs } };
+  return { kind: "changed", projection: { filename: entry.filename, size: stat.size, contentHash: actual, mtimeMs: stat.mtimeMs } };
 }
 
 /**
@@ -520,17 +556,17 @@ function isAssetMeta(value: unknown): value is RecordedAsset {
  * because none was recorded — the file's modified time is when it was last
  * written, which a copy or a git checkout resets, so it is not taken for one
  * (content-lifecycle-conventions: a missing time is not made up). The next
- * upload or delete writes this entry to `meta.json` as it is, hash included, so
- * an image added from Finder is read whole at each listing only until then;
- * other files are not hashed here, since nothing needs their hash. A hash that
- * cannot be taken leaves the image without one; it then shows its file tile.
+ * upload or delete writes this entry to `meta.json` as it is, hash included.
+ * Listing itself never writes a sidecar. Unchanged images reuse the bounded
+ * observation cache; other files are not hashed, since nothing needs their hash.
+ * An unreadable image is omitted until it can be observed again.
  */
-function projectAssetFile(dir: string, filename: string): RecordedAsset {
-  const filePath = path.join(dir, filename);
-  const stat = fs.statSync(filePath);
+function projectAssetFile(dataDir: string, dir: string, filename: string): RecordedAsset {
+  const filePath = assetPath(dataDir, path.basename(dir), filename);
+  const stat = regularFileStat(filePath);
   if (!isImageAssetFilename(filename)) return { filename, size: stat.size };
-  const hash = hashIfReadable(filePath);
-  return hash === null ? { filename, size: stat.size } : { filename, size: stat.size, contentHash: hash, mtimeMs: stat.mtimeMs };
+  const hash = observedHash(filePath, stat);
+  return { filename, size: stat.size, contentHash: hash, mtimeMs: stat.mtimeMs };
 }
 
 /**
@@ -545,7 +581,7 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
   await fsp.access(dataDir);
   let posts: string[];
   try {
-    posts = await fsp.readdir(path.join(dataDir, "assets"));
+    posts = await fsp.readdir(safeResolveUnder(dataDir, "assets"));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
     throw err;
@@ -554,7 +590,7 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
     if (!isPostId(postId)) continue;
     let text: string;
     try {
-      text = await fsp.readFile(path.join(dataDir, "assets", postId, META_FILENAME), "utf8");
+      text = await fsp.readFile(assetPath(dataDir, postId, META_FILENAME), "utf8");
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "ENOTDIR") continue;
@@ -580,7 +616,26 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
   if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
     throw new Error("Path escape detected");
   }
+  // Check existing ancestors too: a missing leaf beneath a linked directory
+  // would otherwise escape on creation. Workspace roots themselves may be links.
+  const canonicalRoot = realExistingPath(rootResolved);
+  const canonicalTarget = realExistingPath(resolved);
+  if (canonicalTarget !== canonicalRoot && !canonicalTarget.startsWith(canonicalRoot + path.sep)) {
+    throw new Error("Asset symbolic link escapes its containing directory");
+  }
   return resolved;
+}
+
+function realExistingPath(filePath: string): string {
+  try { return fs.realpathSync(filePath); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // A dangling link is not a missing destination that we may create through.
+    if (fs.lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink()) throw error;
+    const parent = path.dirname(filePath);
+    if (parent === filePath) throw error;
+    return path.join(realExistingPath(parent), path.basename(filePath));
+  }
 }
 
 function writeAssetMeta(metaPath: string, assets: RecordedAsset[]): void {

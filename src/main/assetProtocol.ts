@@ -7,7 +7,7 @@ import { protocol } from "electron";
 
 import { ASSET_SCHEME } from "@shared/ipc";
 import { getWorkspace } from "./storageAccess.js";
-import { assetDir, safeResolveUnder } from "./core/services/assetStore.js";
+import { assetPath } from "./core/services/assetStore.js";
 import { error as logError, serializeError } from "./core/services/logger.js";
 import { isPostId } from "./core/shared/filenames.js";
 import { imageDerivatives, type ImageDerivativeKind } from "./imageDerivatives.js";
@@ -174,7 +174,7 @@ async function serveAsset(request: Request, segments: string[]): Promise<Respons
 
   let filePath: string;
   try {
-    filePath = safeResolveUnder(assetDir(ws.dataDirectory, postId), fn);
+    filePath = assetPath(ws.dataDirectory, postId, fn);
   } catch {
     return notFound();
   }
