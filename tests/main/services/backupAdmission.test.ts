@@ -172,6 +172,48 @@ describe("BackupAdmission", () => {
     expect(release.mock.calls.map(([write]) => write.kind === "record-file" && write.fd)).toEqual([1, 3, 2]);
   });
 
+  it("runs each entry's zero-argument release callback in discard order", () => {
+    const { queue, release, complete } = admission();
+    const released: string[] = [];
+    const activeReleased = vi.fn(() => { released.push("active"); });
+    const supersededReleased = vi.fn(() => { released.push("superseded"); });
+    const latestReleased = vi.fn(() => { released.push("latest"); });
+    queue.offer(record("active"), activeReleased);
+    queue.offer(record("pending"), supersededReleased);
+    queue.offer(record("pending", new Uint8Array([2])), latestReleased);
+    expect(released).toEqual(["superseded"]);
+    complete(0);
+    queue.reap();
+    expect(released).toEqual(["superseded", "active"]);
+    queue.retired();
+    expect(released).toEqual(["superseded", "active", "latest"]);
+    for (const callback of [activeReleased, supersededReleased, latestReleased]) {
+      expect(callback).toHaveBeenCalledExactlyOnceWith();
+    }
+    expect(release).not.toHaveBeenCalled();
+    expect(queue.isIdle).toBe(true);
+  });
+
+  it("uses the entry's zero-argument callback when its ownership budget rejects it", () => {
+    const { queue, release } = admission({ bytes: 1, descriptors: 0 });
+    const custom = vi.fn();
+    queue.offer(file("rejected", 10), custom);
+    expect(custom).toHaveBeenCalledExactlyOnceWith();
+    expect(release).not.toHaveBeenCalled();
+    expect(queue.isIdle).toBe(true);
+  });
+
+  it("passes the owned byte snapshot to the default release after admitted completion", () => {
+    const { queue, issued, release, complete } = admission();
+    const submitted = record("active");
+    queue.offer(submitted);
+    complete(0);
+    queue.reap();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release.mock.calls[0][0]).toBe(issued[0].write);
+    expect(release.mock.calls[0][0]).not.toBe(submitted);
+  });
+
   it("returns false for a held request with a zero drain bound", () => {
     const { queue, issued, release } = admission();
     queue.offer(record("held"));

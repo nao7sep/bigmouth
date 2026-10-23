@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 import {
   setActiveWorkspace,
+  getStoragePending,
   runAnalysisStream,
   listPosts,
   listPostPage,
@@ -641,4 +642,14 @@ it("requests only the named archive page with workspace, offset and limit", asyn
   expect(listPostPageBridge).toHaveBeenCalledExactlyOnceWith("current", "published", 3, 50);
   await listPostPage("retired", 4, 20, "other");
   expect(listPostPageBridge).toHaveBeenLastCalledWith("other", "retired", 4, 20);
+});
+
+it("forwards the explicit pending-storage scope without substituting the active workspace", async () => {
+  const pending = vi.fn().mockResolvedValue(false);
+  installBridge({ getStoragePending: pending });
+  setActiveWorkspace("active");
+  await getStoragePending();
+  await getStoragePending(null);
+  await getStoragePending("originating-workspace");
+  expect(pending.mock.calls).toEqual([[undefined], [null], ["originating-workspace"]]);
 });

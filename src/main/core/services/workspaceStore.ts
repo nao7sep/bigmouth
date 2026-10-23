@@ -75,7 +75,10 @@ function parseAppConfig(source: Record<string, unknown>, filePath: string): AppC
   }
   for (let index = 0; index < workspaces.length; index += 1) {
     for (let other = index + 1; other < workspaces.length; other += 1) {
-      if (sameDirectory(workspaces[index].dataDirectory, workspaces[other].dataDirectory)) {
+      // Registry startup must not probe external roots: one unavailable disk
+      // must not block app-local settings. The root coordinator resolves physical
+      // aliases before any workspace write; parsing rejects lexical duplicates.
+      if (expandWorkspacePath(workspaces[index].dataDirectory) === expandWorkspacePath(workspaces[other].dataDirectory)) {
         reject(
           `workspaces ${JSON.stringify(workspaces[index].name)} and ${JSON.stringify(workspaces[other].name)} name the same folder`,
         );
@@ -223,8 +226,8 @@ function assertCreatable(dir: string): void {
   );
 }
 
-function assertNoWorkspaceOverlap(dir: string): void {
-  for (const workspace of ensureLoaded().workspaces) {
+function assertNoWorkspaceOverlap(dir: string, registered: Workspace[]): void {
+  for (const workspace of registered) {
     if (containsDirectory(workspace.dataDirectory, dir)) {
       throw new Error(`That folder is inside workspace "${workspace.name}".`);
     }
@@ -234,9 +237,9 @@ function assertNoWorkspaceOverlap(dir: string): void {
   }
 }
 
-function findWorkspaceByDirectory(dir: string): Workspace | undefined {
+function findWorkspaceByDirectory(dir: string, registered: Workspace[]): Workspace | undefined {
   const normalized = expandWorkspacePath(dir);
-  return ensureLoaded().workspaces.find((workspace) =>
+  return registered.find((workspace) =>
     sameDirectory(workspace.dataDirectory, normalized),
   );
 }
@@ -246,8 +249,8 @@ function findWorkspaceByDirectory(dir: string): Workspace | undefined {
  * returns when nothing stops it. One gate for a chosen location and the default
  * one, so both refuse for the same reasons in the same words.
  */
-function assertCanCreateAt(dir: string): void {
-  const existing = findWorkspaceByDirectory(dir);
+function assertCanCreateAt(dir: string, registered: Workspace[]): void {
+  const existing = findWorkspaceByDirectory(dir, registered);
   if (existing) {
     throw new Error(`That folder is already registered as workspace "${existing.name}".`);
   }
@@ -262,7 +265,7 @@ function assertCanCreateAt(dir: string): void {
     }
     assertCreatable(dir);
   }
-  assertNoWorkspaceOverlap(dir);
+  assertNoWorkspaceOverlap(dir, registered);
 }
 
 /**
@@ -274,12 +277,12 @@ export function suggestWorkspaceLocation(): string {
   return getDefaultWorkspaceDirectory();
 }
 
-export function createWorkspace(name: string, dataDirectory?: string): Workspace {
+/** Prepares one external workspace against the caller's registry snapshot. */
+export function prepareWorkspace(name: string, dataDirectory: string, registered: Workspace[]): Workspace {
   name = name.trim();
   if (!name) throw new Error("Workspace name is required");
-  const config = ensureLoaded();
-  const dir = dataDirectory ? expandWorkspacePath(dataDirectory) : suggestWorkspaceLocation();
-  assertCanCreateAt(dir);
+  const dir = expandWorkspacePath(dataDirectory);
+  assertCanCreateAt(dir, registered);
 
   const workspace: Workspace = { id: nanoid(), name, dataDirectory: dir };
 
@@ -301,22 +304,20 @@ export function createWorkspace(name: string, dataDirectory?: string): Workspace
     );
   }
 
-  writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
-
   return workspace;
 }
 
-export function openWorkspace(dataDirectory: string, name?: string): Workspace {
-  const config = ensureLoaded();
+/** Inspects an external folder without changing the app-local registry. */
+export function prepareExistingWorkspace(dataDirectory: string, registered: Workspace[], name?: string): Workspace {
   const dir = expandWorkspacePath(dataDirectory);
-  const existing = findWorkspaceByDirectory(dir);
+  const existing = findWorkspaceByDirectory(dir, registered);
   if (existing) {
     return existing;
   }
   if (!isWorkspaceDirectory(dir)) {
     throw new Error(carryingText(message("workspaces.notAWorkspace", { path: dir })));
   }
-  assertNoWorkspaceOverlap(dir);
+  assertNoWorkspaceOverlap(dir, registered);
 
   const workspace: Workspace = {
     id: nanoid(),
@@ -324,8 +325,28 @@ export function openWorkspace(dataDirectory: string, name?: string): Workspace {
     dataDirectory: dir,
   };
 
+  return workspace;
+}
+
+/**
+ * Publishes a prepared entry into the latest app-local registry without probing
+ * workspace files. The caller serializes preparations and enforces root identity.
+ */
+export function registerPreparedWorkspace(workspace: Workspace): Workspace {
+  const config = ensureLoaded();
+  const existing = config.workspaces.find((entry) => entry.id === workspace.id);
+  if (existing) return existing;
   writeAppConfig({ ...config, workspaces: [...config.workspaces, workspace] });
   return workspace;
+}
+
+export function createWorkspace(name: string, dataDirectory?: string): Workspace {
+  const registered = ensureLoaded().workspaces;
+  return registerPreparedWorkspace(prepareWorkspace(name, dataDirectory || suggestWorkspaceLocation(), registered));
+}
+
+export function openWorkspace(dataDirectory: string, name?: string): Workspace {
+  return registerPreparedWorkspace(prepareExistingWorkspace(dataDirectory, ensureLoaded().workspaces, name));
 }
 
 /**

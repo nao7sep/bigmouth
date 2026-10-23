@@ -21,7 +21,11 @@ await import("../../src/preload/index.js");
 it("carries pending storage settlement through the bridge and releases its subscription", async () => {
   const api = electron.api!;
   expect(await api.getStoragePending()).toBe(true);
-  expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.getStoragePending);
+  expect(electron.invoke).toHaveBeenCalledWith(CHANNELS.getStoragePending, undefined);
+  await api.getStoragePending(null);
+  expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getStoragePending, null);
+  await api.getStoragePending("workspace-a");
+  expect(electron.invoke).toHaveBeenLastCalledWith(CHANNELS.getStoragePending, "workspace-a");
   const listener = vi.fn();
   const dispose = api.onStoragePendingChanged(listener);
   const callback = electron.listeners.get(CHANNELS.storagePendingChanged)!;

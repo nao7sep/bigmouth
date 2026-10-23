@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { message } from "@shared/i18n/translate";
-const bridge = vi.hoisted(() => ({ get: vi.fn<() => Promise<boolean>>(), durability: vi.fn<() => Promise<boolean>>().mockResolvedValue(false), durabilityListeners: new Set<() => void>(), listeners: new Set<(pending: boolean) => void>() }));
+const bridge = vi.hoisted(() => ({ get: vi.fn<(workspaceId?: string | null) => Promise<boolean>>(), durability: vi.fn<() => Promise<boolean>>().mockResolvedValue(false), durabilityListeners: new Set<() => void>(), listeners: new Set<(pending: boolean) => void>() }));
 vi.mock("@renderer/api", () => ({
   getStoragePending: bridge.get,
   getDurabilityUnconfirmed: bridge.durability,
@@ -9,7 +9,7 @@ vi.mock("@renderer/api", () => ({
   onStoragePendingChanged: (listener: (pending: boolean) => void) => { bridge.listeners.add(listener); return () => bridge.listeners.delete(listener); },
   reportProblem: vi.fn(),
 }));
-import { StoragePendingNotice, StoragePendingProvider, StoragePendingResults, useStorageResultReporter } from "@renderer/StoragePending";
+import { StoragePendingNotice, StoragePendingProvider, StoragePendingResults, StoragePendingScope, useStoragePending, useStoragePendingFor, useStorageResultReporter } from "@renderer/StoragePending";
 afterEach(() => { cleanup(); bridge.listeners.clear(); bridge.get.mockReset(); bridge.durability.mockReset().mockResolvedValue(false); bridge.durabilityListeners.clear(); });
 function Reporter() {
   const report = useStorageResultReporter();
@@ -18,15 +18,15 @@ function Reporter() {
 describe("storage settlement ownership", () => {
   it("subscribes before the initial read and ignores its stale result after an event", async () => {
     let initial!: (pending: boolean) => void;
-    bridge.get.mockImplementation(() => {
+    bridge.get.mockImplementationOnce(() => {
       expect(bridge.listeners.size).toBe(1);
       return new Promise((resolve) => { initial = resolve; });
-    });
+    }).mockResolvedValueOnce(true).mockResolvedValue(false);
     const view = render(<StoragePendingProvider><StoragePendingNotice /></StoragePendingProvider>);
-    act(() => { for (const listener of bridge.listeners) listener(true); });
+    await act(async () => { for (const listener of bridge.listeners) listener(false); });
     await act(async () => { initial(false); });
     expect(view.getByRole("status").textContent).toContain("You can leave this view");
-    act(() => { for (const listener of bridge.listeners) listener(false); });
+    await act(async () => { for (const listener of bridge.listeners) listener(true); });
     expect(view.queryByRole("status")).toBeNull();
     view.unmount();
     expect(bridge.listeners.size).toBe(0);
@@ -60,4 +60,44 @@ it("shows the retained durability notice when the window opens after publication
   const view = render(<StoragePendingProvider><StoragePendingNotice /></StoragePendingProvider>);
   await act(async () => { await Promise.resolve(); });
   expect(view.getByRole("status").textContent).toContain("Changes were saved");
+});
+
+function ScopedPending({ name }: { name: string }) {
+  const pending = useStoragePending();
+  return <button disabled={pending}>{name}</button>;
+}
+
+it("isolates pending workspace A from B and local workspace management", async () => {
+  bridge.get.mockImplementation(async (workspaceId) => workspaceId === "a");
+  const view = render(<StoragePendingProvider>
+    <ScopedPending name="Local" />
+    <StoragePendingScope workspaceId="a"><ScopedPending name="A" /></StoragePendingScope>
+    <StoragePendingScope workspaceId="b"><ScopedPending name="B" /></StoragePendingScope>
+  </StoragePendingProvider>);
+  await act(async () => { await Promise.resolve(); });
+  expect((view.getByRole("button", { name: "A" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((view.getByRole("button", { name: "B" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((view.getByRole("button", { name: "Local" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(bridge.get).toHaveBeenCalledWith(null);
+  expect(bridge.get).toHaveBeenCalledWith("a");
+  expect(bridge.get).toHaveBeenCalledWith("b");
+});
+
+it("resets on scope change and rejects stale scope and invalidation replies", async () => {
+  const answers: Array<{ scope: string | null | undefined; resolve: (value: boolean) => void }> = [];
+  bridge.get.mockImplementation((scope) => new Promise(resolve => { answers.push({ scope, resolve }); }));
+  function Pending({ workspaceId }: { workspaceId: string }) {
+    return <output data-testid="pending">{String(useStoragePendingFor(workspaceId))}</output>;
+  }
+  const view = render(<Pending workspaceId="a" />);
+  await act(async () => { answers[0]!.resolve(true); });
+  expect(view.getByTestId("pending").textContent).toBe("true");
+  act(() => { for (const listener of bridge.listeners) listener(true); });
+  view.rerender(<Pending workspaceId="b" />);
+  expect(view.getByTestId("pending").textContent).toBe("false");
+  await act(async () => { answers[1]!.resolve(true); });
+  expect(view.getByTestId("pending").textContent).toBe("false");
+  act(() => { for (const listener of bridge.listeners) listener(false); });
+  await act(async () => { answers[3]!.resolve(false); answers[2]!.resolve(true); });
+  expect(view.getByTestId("pending").textContent).toBe("false");
 });

@@ -1,25 +1,61 @@
 import { onDurabilityUnconfirmed } from "./core/shared/publication.js";
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData, type MessagePort } from "node:worker_threads";
 import { listWorkspaces, onWorkspaceRegistryChanged } from "./core/services/workspaceStore.js";
 import { storageTasks } from "./storageTasks.js";
 import { setContentSaveListener } from "./core/services/postStore.js";
 import { onRecordStored, onRecordsHealth } from "./core/services/recordsStore.js";
-import { useBackupRecorderModule } from "./core/services/backupStore.js";
-import { serializeError } from "./core/services/logger.js";
+import { configureBackupRelay, isBackupRelayIdle, useBackupRecorderModule } from "./core/services/backupStore.js";
+import { serializeError, setLogSink } from "./core/services/logger.js";
 import { WORKER_ENTRIES } from "./builtEntries.js";
 import type { StorageRequest, StorageReply, StorageFlushRequest, StorageFinishRequest } from "./storageOwner.js";
 
 const port = parentPort!;
+export interface StorageWorkerData {
+  workspace: boolean;
+  backupPort: MessagePort;
+  backupLimits: { bytes: number; descriptors: number };
+  logBudget: Int32Array;
+}
+const options = workerData as StorageWorkerData | undefined;
+if (options?.backupPort) configureBackupRelay(options.backupPort, options.backupLimits);
+if (options?.workspace) {
+  let reportedGap = false;
+  setLogSink((record) => {
+    const bytes = 1024 + record.event.length * 2;
+    let available = Atomics.load(options.logBudget, 0);
+    while (available >= bytes) {
+      const previous = Atomics.compareExchange(options.logBudget, 0, available, available - bytes);
+      if (previous === available) {
+        try { port.postMessage({ event: "forward-log", record, bytes } satisfies StorageReply); return; }
+        catch { Atomics.add(options.logBudget, 0, bytes); }
+        break;
+      }
+      available = previous;
+    }
+    if (!reportedGap) {
+      reportedGap = true;
+      try { port.postMessage({ event: "forward-log-gap" } satisfies StorageReply); }
+      catch { /* The console still receives the original immutable event. */ }
+    }
+    console.error(record.event);
+  });
+}
 // electron-vite builds the backup recorder as its own entry beside this one.
 const here = import.meta.url;
 if (here && !here.endsWith(".ts")) useBackupRecorderModule(new URL(`./${WORKER_ENTRIES.backup}.js`, here));
 function apply(request: StorageRequest) {
-  const value = (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
+  const value = request.name === "canRetireWorkspace"
+    ? storageTasks.canRetireWorkspace() && isBackupRelayIdle()
+    : (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
   port.postMessage({ id: request.id, ok: true, value } satisfies StorageReply);
   return value;
 }
 setContentSaveListener((value) => {
   const event = value.kind === "save-failed" ? { ...value, error: serializeError(value.error) } : value;
+  if (options?.workspace) {
+    port.postMessage({ event: "content-save", value: { ...event, wsId: "" } } satisfies StorageReply);
+    return;
+  }
   // The registry is already cached by workspace resolution; aliases receive the
   // same physical save with their own identity, without another file read.
   for (const workspace of listWorkspaces()) {

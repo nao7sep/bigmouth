@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, createWorkspace, openWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, openWorkspace, prepareWorkspace, prepareExistingWorkspace, registerPreparedWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
@@ -106,7 +106,22 @@ describe("an unreadable registry names itself", () => {
     expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
   });
 
-  it("rejects duplicate physical directories without rewriting the registry", () => {
+  it("rejects duplicate normalized absolute paths without rewriting the registry", () => {
+    const dir = tempDir("identity-real");
+    const raw = JSON.stringify({
+      formatVersion: 1,
+      workspaces: [
+        { id: "one", name: "A", dataDirectory: dir },
+        { id: "two", name: "B", dataDirectory: path.join(dir, "child", "..") + path.sep },
+      ],
+    });
+    const reload = withRegistry(raw);
+
+    expect(unreadable(reload).detail).toMatch(/name the same folder/);
+    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
+  });
+
+  it("loads registered physical aliases without probing either external root", () => {
     const real = tempDir("identity-real");
     const linkParent = tempDir("identity-link");
     const link = path.join(linkParent, "same-folder");
@@ -119,9 +134,13 @@ describe("an unreadable registry names itself", () => {
       ],
     });
     const reload = withRegistry(raw);
-
-    expect(unreadable(reload).detail).toMatch(/name the same folder/);
-    expect(fs.readFileSync(path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json"), "utf8")).toBe(raw);
+    const probes = [vi.spyOn(fs, "existsSync"), vi.spyOn(fs, "statSync"), vi.spyOn(fs, "readFileSync"), vi.spyOn(fs.realpathSync, "native")];
+    try {
+      expect(reload()).toMatchObject({ workspaces: [{ id: "one" }, { id: "two" }] });
+      for (const probe of probes) {
+        expect(probe.mock.calls.filter(([input]) => [real, link].some((root) => String(input) === root || String(input).startsWith(root + path.sep)))).toEqual([]);
+      }
+    } finally { for (const probe of probes) probe.mockRestore(); }
   });
 });
 
@@ -613,5 +632,67 @@ describe("workspace registry format version", () => {
     initializeWorkspaceData(dir);
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ formatVersion: 1 }));
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
+  });
+});
+
+
+describe("preparing external workspaces separately from registry publication", () => {
+  const registry = () => path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
+
+  it("prepares a new workspace without registry or key IO, then registers against the latest state", () => {
+    const existing = createWorkspace("Before", tempDir("registered"));
+    writeApiKey(getApiKeysPath(), existing.id, "anthropic", "sk-existing");
+    const registryBefore = fs.readFileSync(registry(), "utf8");
+    const keysBefore = fs.readFileSync(getApiKeysPath(), "utf8");
+    const destination = path.join(tempDir("prepared-parent"), "workspace");
+    const read = vi.spyOn(fs, "readFileSync");
+    let prepared!: ReturnType<typeof prepareWorkspace>;
+    try {
+      prepared = prepareWorkspace("  Prepared  ", destination, [...listWorkspaces()]);
+      expect(read.mock.calls.some(([input]) => [registry(), getApiKeysPath()].includes(String(input)))).toBe(false);
+    } finally { read.mockRestore(); }
+    expect(prepared.name).toBe("Prepared");
+    expect(prepared.dataDirectory).toBe(destination);
+    expect(fs.statSync(path.join(destination, "posts")).isDirectory()).toBe(true);
+    expect(fs.statSync(path.join(destination, "assets")).isDirectory()).toBe(true);
+    expect(getWorkspace(prepared.id)).toBeUndefined();
+    expect(fs.readFileSync(registry(), "utf8")).toBe(registryBefore);
+    expect(fs.readFileSync(getApiKeysPath(), "utf8")).toBe(keysBefore);
+
+    updateWorkspace(existing.id, { name: "Changed after preparation" });
+    expect(registerPreparedWorkspace(prepared)).toEqual(prepared);
+    expect(listWorkspaces()).toEqual([{ ...existing, name: "Changed after preparation" }, prepared]);
+    const committed = fs.readFileSync(registry(), "utf8");
+    expect(registerPreparedWorkspace(prepared)).toEqual(prepared);
+    expect(listWorkspaces()).toHaveLength(2);
+    expect(fs.readFileSync(registry(), "utf8")).toBe(committed);
+  });
+
+  it("prepares an existing folder without publishing and registration never probes its files", () => {
+    const destination = tempDir("prepared-existing");
+    initializeWorkspaceData(destination);
+    const before = fs.readFileSync(registry(), "utf8");
+    const prepared = prepareExistingWorkspace(destination, [], "  Existing  ");
+    expect(prepared.name).toBe("Existing");
+    expect(listWorkspaces()).toEqual([]);
+    expect(fs.readFileSync(registry(), "utf8")).toBe(before);
+    const probes = [vi.spyOn(fs, "existsSync"), vi.spyOn(fs, "statSync"), vi.spyOn(fs, "readFileSync"), vi.spyOn(fs.realpathSync, "native")];
+    try {
+      expect(registerPreparedWorkspace(prepared)).toEqual(prepared);
+      for (const probe of probes) {
+        expect(probe.mock.calls.filter(([input]) => String(input) === destination || String(input).startsWith(destination + path.sep))).toEqual([]);
+      }
+    } finally { for (const probe of probes) probe.mockRestore(); }
+    expect(listWorkspaces()).toEqual([prepared]);
+  });
+
+  it("uses the supplied registry snapshot for physical matches and overlap checks", () => {
+    const destination = tempDir("prepared-snapshot");
+    initializeWorkspaceData(destination);
+    const existing = { id: "snapshot-id", name: "Snapshot", dataDirectory: destination };
+    expect(prepareExistingWorkspace(destination + path.sep, [existing], "Ignored")).toBe(existing);
+    expect(() => prepareWorkspace("Duplicate", destination, [existing])).toThrow(/already registered/);
+    expect(() => prepareWorkspace("Nested", path.join(destination, "nested"), [existing])).toThrow(/inside workspace "Snapshot"/);
+    expect(listWorkspaces()).toEqual([]);
   });
 });

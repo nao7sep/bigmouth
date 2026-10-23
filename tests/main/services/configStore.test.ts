@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as storagePaths from "@main/core/services/storagePaths.js";
 import * as storeFormat from "@main/core/shared/storeFormat.js";
 import * as logger from "@main/core/services/logger.js";
 import fs from "node:fs";
@@ -22,6 +23,12 @@ import {
   saveSettings,
   getAnthropicSettingsForClient,
   getRoleCall,
+  getRoleConfig,
+  getAnthropicConfigForClient,
+  saveAnthropicConfig,
+  getAnthropicKeyState,
+  resolveAnthropicKey,
+  saveAnthropicKey,
   saveAnthropicSettings,
   effectiveConfig,
   getConfigNotice,
@@ -626,4 +633,74 @@ it("can repair duplicated rows by removing every target or resetting analysis pr
   expect(getTargets(dataDir)).toEqual([]);
   expect(getAnalysisPrompts(dataDir)).toEqual(DEFAULT_ANALYSIS_PROMPTS);
   expect(setsIn(path.join(dataDir, "config.json"))).toEqual({});
+});
+
+describe("independent Anthropic config and key operations", () => {
+  it("reads and saves workspace config without consulting the app-local key path", () => {
+    const keyPath = vi.spyOn(storagePaths, "getApiKeysPath").mockImplementation(() => { throw new Error("key storage unavailable"); });
+    const read = vi.spyOn(storeFormat, "readJsonStore");
+    try {
+      const defaults = defaultAnthropicSettings();
+      const input = { ...defaults, endpoint: " https://proxy.example ", models: { ...defaults.models, analysis: " claude-haiku-4-5 " }, thinking: { ...defaults.thinking, analysis: "off" } };
+      const saved = saveAnthropicConfig(dataDir, input);
+      expect(saved).toEqual({ ...input, endpoint: "https://proxy.example", models: { ...input.models, analysis: "claude-haiku-4-5" } });
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(1);
+      expect(getAnthropicConfigForClient(dataDir)).toEqual(saved);
+      expect(getRoleConfig(dataDir, "analysis")).toEqual({ endpoint: "https://proxy.example", model: "claude-haiku-4-5", thinking: "off" });
+      expect(saved).not.toHaveProperty("hasApiKey");
+      expect(saved).not.toHaveProperty("usingEnvKey");
+      expect(saved).not.toHaveProperty("keyNotice");
+      expect(keyPath).not.toHaveBeenCalled();
+    } finally { read.mockRestore(); keyPath.mockRestore(); }
+  });
+
+  it("resolves and saves app-local keys independently of unreadable workspace config", () => {
+    fs.writeFileSync(path.join(dataDir, "config.json"), "{ not json");
+    const read = vi.spyOn(storeFormat, "readJsonStore");
+    try {
+      expect(getAnthropicKeyState(ws.id)).toEqual({ hasApiKey: false, usingEnvKey: false, keyNotice: null });
+      expect(saveAnthropicKey(ws.id, " stored-secret ")).toBeNull();
+      expect(resolveAnthropicKey(ws.id)).toBe("stored-secret");
+      expect(saveAnthropicKey(ws.id, "  ")).toBeNull();
+      process.env.ANTHROPIC_API_KEY = " environment-secret ";
+      expect(resolveAnthropicKey(ws.id)).toBe("environment-secret");
+      expect(getAnthropicKeyState(ws.id)).toEqual({ hasApiKey: true, usingEnvKey: true, keyNotice: null });
+      delete process.env.ANTHROPIC_API_KEY;
+      expect(resolveAnthropicKey(ws.id)).toBe("stored-secret");
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(0);
+    } finally { read.mockRestore(); }
+  });
+
+  it("keeps key publication first and leaves workspace config unchanged when the key cannot save", () => {
+    saveAnthropicConfig(dataDir, { ...defaultAnthropicSettings(), endpoint: "https://existing.example" });
+    const file = path.join(dataDir, "config.json");
+    const before = fs.readFileSync(file, "utf8");
+    fs.mkdirSync(getApiKeysPath());
+    const read = vi.spyOn(storeFormat, "readJsonStore");
+    try {
+      expect(() => saveAnthropicSettings(ws, { ...defaultAnthropicSettings(), endpoint: "https://new.example", apiKey: "new-secret" })).toThrow();
+      expect(read.mock.calls.filter(([kind]) => kind === "workspaceConfig")).toHaveLength(0);
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+    } finally { read.mockRestore(); }
+  });
+
+  it("returns the preserved key-file path from the app-local key save", () => {
+    const file = getApiKeysPath();
+    fs.writeFileSync(file, "{ damaged key file");
+    const moved = saveAnthropicKey(ws.id, "replacement-secret");
+    expect(moved).not.toBeNull();
+    expect(fs.readFileSync(moved!, "utf8")).toBe("{ damaged key file");
+    expect(resolveAnthropicKey(ws.id)).toBe("replacement-secret");
+  });
+
+  it("preserves the moved-aside key notice in the composed settings save", () => {
+    const file = getApiKeysPath();
+    fs.writeFileSync(file, "{ damaged again");
+    const view = saveAnthropicSettings(ws, { ...defaultAnthropicSettings(), apiKey: "second-secret" });
+    expect(view.keyNotice?.key).toBe("settings.keyFileMovedAside");
+    const preservedPath = view.keyNotice?.values?.path as string;
+    expect(fs.readFileSync(preservedPath, "utf8")).toBe("{ damaged again");
+    expect(resolveAnthropicKey(ws.id)).toBe("second-secret");
+    expect(view.hasApiKey).toBe(true);
+  });
 });

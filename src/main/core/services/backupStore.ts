@@ -19,7 +19,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import { BackupAdmission } from "./backupAdmission.js";
-import { Worker } from "node:worker_threads";
+import { Worker, type MessagePort } from "node:worker_threads";
+import { BackupRelay, type BackupRelayRequest } from "./backupRelay.js";
 import { getBackupsDbPath } from "./storagePaths.js";
 import { formatUtcIso } from "../shared/timestamps.js";
 import { warn as logWarn, serializeError } from "./logger.js";
@@ -51,6 +52,37 @@ interface Recorder { worker: Worker; queue: BackupAdmission }
 let recorder: Recorder | null = null;
 let recorderFailed = false;
 let retirement: Promise<void> | null = null;
+let shuttingDown = false;
+
+let relay: BackupRelay | null = null;
+
+/** Configure an originating storage worker before it captures any writes. */
+export function configureBackupRelay(port: MessagePort, limits: { bytes: number; descriptors: number }): void {
+  if (relay || recorder || retirement) throw new Error("Backup delivery is already configured or active");
+  relay = new BackupRelay(port, limits, (message, error) => logWarn(message, error === undefined ? undefined : { error: serializeError(error) }));
+}
+
+/** Resolve only after this origin no longer owns a broker lease or queued version. */
+export function backupRelayIdle(): Promise<void> { return relay?.idle() ?? Promise.resolve(); }
+export function isBackupRelayIdle(): boolean { return relay?.isIdle ?? true; }
+
+/** Seal production admission after origins have finished issuing their final saves. */
+export function beginBackupShutdown(): void { shuttingDown = true; }
+
+/** Attach one origin to this process's sole broker, sharing its existing admission budget. */
+export function attachBackupRelay(port: MessagePort): void {
+  port.on("message", ({ write, release: signal }: BackupRelayRequest) => {
+    const acknowledge = () => { Atomics.store(signal, 0, 1); Atomics.notify(signal, 0); };
+    if (shuttingDown) { acknowledge(); return; }
+    try {
+      offer({ ...write, file: getBackupsDbPath(), sessionId: SESSION_ID, partSize }, acknowledge);
+    } catch (error) {
+      // No broker entry acquired the lease when central destination resolution failed.
+      acknowledge();
+      logWarn("backup relay could not capture a saved version", { error: serializeError(error) });
+    }
+  });
+}
 
 function release(write: BackupWrite): void {
   if (write.kind === "record-file") {
@@ -106,17 +138,19 @@ function ensureRecorder(): Recorder | null {
   return recorder;
 }
 
-function offer(write: BackupWrite): void {
+function offer(write: BackupWrite, onRelease?: () => void): void {
+  if (shuttingDown) { if (onRelease) onRelease(); else release(write); return; }
+  if (relay) { relay.offer(write); return; }
   const owner = ensureRecorder();
-  if (!owner) { release(write); return; }
-  try { owner.queue.offer(write); }
+  if (!owner) { if (onRelease) onRelease(); else release(write); return; }
+  try { owner.queue.offer(write, onRelease); }
   catch (error) { disable(owner, error); }
 }
 
 /** Records exact published bytes; never waits for recording or throws to the primary save. */
 export function record(absolutePath: string, bytes: Uint8Array): void {
   try {
-    offer({ kind: "record", file: getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
+    offer({ kind: "record", file: relay ? "" : getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
       bytes, writtenAt: new Date().toISOString(), partSize });
   } catch (error) {
     logWarn("backup store: failed to capture a write", { file: absolutePath, error: serializeError(error) });
@@ -126,7 +160,7 @@ export function record(absolutePath: string, bytes: Uint8Array): void {
 /** Consumes a pinned installed-file descriptor; only its opening thread closes it after acknowledgement. */
 export function recordFile(absolutePath: string, fd: number, sha256: string, size: number): void {
   try {
-    offer({ kind: "record-file", file: getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
+    offer({ kind: "record-file", file: relay ? "" : getBackupsDbPath(), sessionId: SESSION_ID, path: absolutePath,
       fd, sha256, size, writtenAt: new Date().toISOString(), partSize });
   } catch (error) {
     try { fs.closeSync(fd); } catch { /* Capture never acquired ownership. */ }
@@ -148,10 +182,11 @@ function settle(boundMs: number, close: boolean): boolean {
 }
 
 /** Waits within one overall bound for admitted writes, including those still pending locally. */
-export function drainBackups(boundMs: number): boolean { return settle(boundMs, false); }
+export function drainBackups(boundMs: number): boolean { return relay ? relay.drain(boundMs) : settle(boundMs, false); }
 
 /** Drops pending work at OS shutdown; retains active handles until the worker actually exits. */
 export function stopBackups(boundMs: number): Promise<void> {
+  if (relay) return relay.stop(boundMs);
   const owner = recorder;
   if (!owner) return retirement ?? Promise.resolve();
   if (boundMs > 0) settle(boundMs, true);
@@ -162,4 +197,4 @@ export function stopBackups(boundMs: number): Promise<void> {
 }
 
 /** Test roots may change only after outstanding writes and the database have closed. */
-export function closeBackupStore(): void { settle(5000, true); }
+export function closeBackupStore(): void { if (relay) relay.drain(5000); else settle(5000, true); }

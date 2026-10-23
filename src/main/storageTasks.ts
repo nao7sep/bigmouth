@@ -21,7 +21,27 @@ import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import type { AssetDeleteResult, AssetUploadResult, AssetUnsavedStep } from "@shared/ipc";
 import { projectIndexEntry } from "./core/services/postFile.js";
 
+let selectedDirectory: string | null = null;
+
+function selectWorkspaceDirectory(input: string): string {
+  let existing = path.resolve(input);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      selectedDirectory = path.join(fs.realpathSync.native(existing), ...missing);
+      return selectedDirectory;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = path.dirname(existing);
+      if (parent === existing) throw error;
+      missing.unshift(path.basename(existing));
+      existing = parent;
+    }
+  }
+}
+
 function workspaceDir(id: string): string {
+  if (selectedDirectory !== null) return selectedDirectory;
   const workspace = workspaceStore.getWorkspace(id);
   if (!workspace) throw new Error("Workspace not found");
   return workspace.dataDirectory;
@@ -49,6 +69,17 @@ function mutationResult(post: ReturnType<typeof postStore.updatePost>) {
 const sweptWorkspaces = new Set<string>();
 
 export const storageTasks = {
+  selectWorkspaceDirectory,
+  canRetireWorkspace: () => !postStore.hasPendingEdits(),
+  prepareWorkspace: workspaceStore.prepareWorkspace,
+  prepareExistingWorkspace: workspaceStore.prepareExistingWorkspace,
+  registerPreparedWorkspace: workspaceStore.registerPreparedWorkspace,
+  getRoleConfig: configStore.getRoleConfig,
+  getAnthropicConfigForClient: configStore.getAnthropicConfigForClient,
+  saveAnthropicConfig: configStore.saveAnthropicConfig,
+  getAnthropicKeyState: configStore.getAnthropicKeyState,
+  resolveAnthropicKey: configStore.resolveAnthropicKey,
+  saveAnthropicKey: configStore.saveAnthropicKey,
   /** `documentsDirectory` is the OS's Documents folder, which only the main process can ask Electron for. */
   initialize(documentsDirectory?: string) {
     if (documentsDirectory) setDocumentsDirectory(documentsDirectory);

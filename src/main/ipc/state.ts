@@ -16,7 +16,10 @@ export function registerStateHandlers(): void {
   ipcMain.handle(CHANNELS.getDurabilityUnconfirmed, () => durabilityUnconfirmed() || storageOwner.durabilityUnconfirmed());
   onDurabilityUnconfirmed(reportDurability);
   storageOwner.onDurabilityUnconfirmed(reportDurability);
-  ipcMain.handle(CHANNELS.getStoragePending, () => storageOwner.storagePending());
+  ipcMain.handle(CHANNELS.getStoragePending, (_event, workspaceId?: unknown) => {
+    if (workspaceId !== undefined && workspaceId !== null && typeof workspaceId !== "string") throw new Error("Invalid workspace identity");
+    return storageOwner.storagePendingFor(workspaceId ?? null);
+  });
   storageOwner.onStoragePending((pending) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.webContents.isDestroyed()) window.webContents.send(CHANNELS.storagePendingChanged, pending);

@@ -1,16 +1,24 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StoragePendingContext, StoragePendingProvider, StoragePendingResults, StoragePendingScope } from "@renderer/StoragePending";
 import { ConfirmProvider, useConfirm, type ConfirmOptions } from "@renderer/components/ConfirmHost";
 
+const pendingQuery = vi.hoisted(() => ({ pending: new Map<string | null, boolean>(), listeners: new Set<(pending: boolean) => void>() }));
 vi.mock("@renderer/api", () => ({
-  getStoragePending: vi.fn().mockResolvedValue(false),
+  getStoragePending: vi.fn(async (workspaceId?: string | null) => pendingQuery.pending.get(workspaceId ?? null) ?? false),
   getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
   onDurabilityUnconfirmed: vi.fn(() => () => {}),
-  onStoragePendingChanged: vi.fn(() => () => {}),
+  onStoragePendingChanged: (listener: (pending: boolean) => void) => { pendingQuery.listeners.add(listener); return () => { pendingQuery.listeners.delete(listener); }; },
   reportProblem: vi.fn(),
 }));
-afterEach(cleanup);
+beforeEach(() => { pendingQuery.pending.clear(); });
+afterEach(() => { cleanup(); pendingQuery.listeners.clear(); });
+async function setPending(workspaceId: string | null, pending: boolean) {
+  await act(async () => {
+    pendingQuery.pending.set(workspaceId, pending);
+    for (const listener of pendingQuery.listeners) listener(pending);
+  });
+}
 
 // A trivial consumer: clicking "ask" opens a confirm and reports its resolution.
 function Harness({
@@ -127,6 +135,7 @@ it("lets a pending action leave without its late settlement closing the successo
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.getByText("First?")).toBeTruthy();
   view.rerender(contents(true));
+  await setPending(null, true);
   // Queue the successor first, then deliver two close events before React
   // adopts the next head. The stale second callback must not consume it.
   fireEvent.click(screen.getAllByText("ask")[1]);
@@ -155,6 +164,7 @@ it("reports a departed action failure without applying it to the successor dialo
   fireEvent.click(screen.getAllByText("ask")[0]);
   fireEvent.click(screen.getByRole("button", { name: "Yes" }));
   view.rerender(surface(true));
+  await setPending(null, true);
   fireEvent.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
   fireEvent.click(screen.getAllByText("ask")[1]);
   await act(async () => { reject(new Error("store unavailable")); });
@@ -171,4 +181,42 @@ it("keeps a pure discard confirmation available while storage is pending", async
   fireEvent.click(screen.getByText("ask"));
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   await waitFor(() => expect(onResult).toHaveBeenCalledWith(true));
+});
+
+it("retains the submitted confirmation's workspace after that view leaves", async () => {
+  let settle!: () => void;
+  const firstResult = vi.fn();
+  const onConfirm = vi.fn(() => new Promise<void>(resolve => { settle = resolve; }));
+  const content = (workspaceId: string) => <ConfirmProvider>
+    <StoragePendingScope workspaceId={workspaceId}>
+      <Harness onResult={firstResult} options={{ message: "Scoped action?", onConfirm }} />
+    </StoragePendingScope>
+  </ConfirmProvider>;
+  const view = render(content("a"));
+  await act(async () => { await Promise.resolve(); });
+  fireEvent.click(view.getByText("ask"));
+  fireEvent.click(view.getByRole("button", { name: "Yes" }));
+  view.rerender(content("b"));
+  await setPending("a", true);
+  const close = view.getAllByRole("button", { name: "Close" }).at(-1) as HTMLButtonElement;
+  expect(close.disabled).toBe(false);
+  fireEvent.click(close);
+  await waitFor(() => expect(firstResult).toHaveBeenCalledWith(false));
+  await act(async () => { settle(); });
+  expect(view.queryByRole("dialog")).toBeNull();
+});
+
+it("keeps a workspace B confirmation usable while unrelated A is pending", async () => {
+  pendingQuery.pending.set("a", true);
+  const onConfirm = vi.fn(async () => {});
+  const view = render(<ConfirmProvider><StoragePendingScope workspaceId="b">
+    <Harness onResult={vi.fn()} options={{ onConfirm }} />
+  </StoragePendingScope></ConfirmProvider>);
+  await act(async () => { await Promise.resolve(); });
+  fireEvent.click(view.getByText("ask"));
+  await act(async () => { await Promise.resolve(); });
+  const confirm = view.getByRole("button", { name: "Yes" }) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(false);
+  await act(async () => { fireEvent.click(confirm); });
+  expect(onConfirm).toHaveBeenCalledOnce();
 });

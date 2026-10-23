@@ -54,6 +54,7 @@ vi.mock("@renderer/WorkspaceSession", async () => {
             onMouseDown={props.onStartLeftDrag} onWidthChange={props.onLeftWidthChange} onCommitWidth={props.onLeftWidthCommit} />
           <PaneDivider label="Tools divider" width={props.rightWidth} min={RIGHT_MIN} max={RIGHT_MAX} sign={-1}
             onMouseDown={props.onStartRightDrag} onWidthChange={props.onRightWidthChange} onCommitWidth={props.onRightWidthCommit} />
+          <PendingScopeProbe testId="session-pending" />
           <span data-testid="session-ws">{props.workspace.id}</span>
           <span data-testid="session-ws-name">{props.workspace.name}</span>
           <button
@@ -89,6 +90,7 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     initialLoadError?: { key: string } | null;
   }) => (
     <div data-testid="ws-modal" data-dismissable={String(props.dismissable)} data-load-error={props.initialLoadError?.key ?? ""}>
+      <PendingScopeProbe testId="workspace-pending" />
       <span data-testid="ws-modal-reload">{props.reloadVersion}</span>
       <span data-testid="ws-modal-active">{props.activeWorkspaceId ?? "none"}</span>
       <button
@@ -145,6 +147,7 @@ vi.mock("@renderer/components/SetupModal", () => ({
     onFinish: (ws: Workspace) => void | Promise<void>;
   }) => (
     <div data-testid="setup">
+      <PendingScopeProbe testId="setup-pending" />
       <span data-testid="setup-ws">{props.workspace.id}</span>
       <button data-testid="setup-finish" onClick={() => void props.onFinish(props.workspace)}>
         finish
@@ -154,10 +157,10 @@ vi.mock("@renderer/components/SetupModal", () => ({
 }));
 
 import { App as AppContent } from "@renderer/App";
-import { StoragePendingProvider } from "@renderer/StoragePending";
+import { StoragePendingProvider, useStoragePending } from "@renderer/StoragePending";
 // Match production ownership while keeping the heavy confirm child mocked.
 function App() { return <StoragePendingProvider><AppContent /></StoragePendingProvider>; }
-import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
+import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState, getStoragePending } from "@renderer/api";
 
 const mockList = vi.mocked(listWorkspaces);
 const mockSetActive = vi.mocked(setActiveWorkspace);
@@ -191,6 +194,7 @@ beforeEach(() => {
   mockGetUiState.mockResolvedValue(uiState(""));
   // Default: one workspace is registered, so a launch is not a first run.
   mockList.mockResolvedValue([WS1]);
+  vi.mocked(getStoragePending).mockReset().mockResolvedValue(false);
   mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "light", systemLanguage: "en" });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
@@ -706,4 +710,29 @@ describe("App keyboard pane widths", () => {
     expect(view.getByRole("alert").textContent).toContain("current width is still in use");
     expect(view.getByRole("alert").textContent).not.toContain("KEY-PANE-SENTINEL");
   });
+});
+
+function PendingScopeProbe({ testId }: { testId: string }) {
+  return <span data-testid={testId}>{String(useStoragePending())}</span>;
+}
+
+it("scopes the active workspace and leaves the workspace picker local when switching away from pending A", async () => {
+  mockGetUiState.mockResolvedValue(uiState("ws1"));
+  vi.mocked(getStoragePending).mockImplementation(async (workspaceId) => workspaceId === "ws1");
+  const view = await renderApp();
+  expect(view.getByTestId("session-pending").textContent).toBe("true");
+  fireEvent.click(view.getByTestId("session-switch"));
+  expect(view.getByTestId("workspace-pending").textContent).toBe("false");
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-select")); });
+  expect(view.getByTestId("session-ws").textContent).toBe("ws2");
+  expect(view.getByTestId("session-pending").textContent).toBe("false");
+  expect(view.queryByText(/You can leave this view/)).toBeNull();
+});
+
+it("scopes first-run setup to the newly created workspace", async () => {
+  vi.mocked(getStoragePending).mockImplementation(async (workspaceId) => workspaceId === "ws9");
+  const view = await renderApp();
+  await act(async () => { fireEvent.click(view.getByTestId("ws-modal-created-first")); });
+  expect(view.getByTestId("setup-pending").textContent).toBe("true");
+  expect(vi.mocked(getStoragePending)).toHaveBeenCalledWith("ws9");
 });
