@@ -39,9 +39,10 @@ function observations(dataDir: string): Map<string, SourceObservation> {
   if (!files) { files = new Map(); sources.set(dataDir, files); }
   return files;
 }
-// A write supplied a projection, not a read observation. Reparse only this file at refresh.
-function observeEntry(dataDir: string, entry: PostIndexEntry): void {
-  observations(dataDir).set(entry.fileName, { version: null, id: entry.id });
+// A published descriptor can supply its own source observation. Without one,
+// invalidate changed projections; an unchanged row retains its previous proof.
+function observeEntry(dataDir: string, entry: PostIndexEntry, version: string | null): void {
+  observations(dataDir).set(entry.fileName, { version, id: entry.id });
 }
 // Workspaces whose index.json is left as it is while their index is loaded: a
 // newer build wrote it, or it could not be read. Their index lives in memory only.
@@ -87,11 +88,12 @@ export function countByStatus(dataDir: string, status: PostStatus): number {
  * Inserts or updates a row. No-ops (and skips the disk write) when the entry is
  * byte-for-byte identical to the stored one.
  */
-export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
+export function upsertEntry(dataDir: string, entry: PostIndexEntry, version?: string | null): void {
   const map = state(dataDir);
-  observeEntry(dataDir, entry);
   const existing = map.get(entry.id);
-  if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) return;
+  const unchanged = existing && canonicalEntryJson(existing) === canonicalEntryJson(entry);
+  if (version !== undefined || !unchanged) observeEntry(dataDir, entry, version ?? null);
+  if (unchanged) return;
   map.set(entry.id, entry);
   persist(dataDir, map);
 }
@@ -101,11 +103,11 @@ export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
  * target rename, clearing a deleted source) must not rewrite the whole file
  * once per post.
  */
-export function upsertEntries(dataDir: string, entries: readonly PostIndexEntry[]): void {
+export function upsertEntries(dataDir: string, entries: readonly { entry: PostIndexEntry; version: string | null }[]): void {
   const map = state(dataDir);
   let changed = false;
-  for (const entry of entries) {
-    observeEntry(dataDir, entry);
+  for (const { entry, version } of entries) {
+    observeEntry(dataDir, entry, version);
     const existing = map.get(entry.id);
     if (existing && canonicalEntryJson(existing) === canonicalEntryJson(entry)) continue;
     map.set(entry.id, entry);

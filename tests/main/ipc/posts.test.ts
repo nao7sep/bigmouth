@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { CHANNELS, type PostContentSavedEvent, type PostUpdate } from "@shared/ipc";
 import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
-import type { Post, PostListResponse, PostMutationResult, PostStatus, Target } from "@shared/types";
+import type { Post, PostPageResponse, PostListResponse, PostMutationResult, PostStatus, Target } from "@shared/types";
 
 const publication = vi.hoisted(() => ({ summaryUnavailable: false, afterMutation: null as null | (() => void) }));
 
@@ -648,4 +648,56 @@ describe("mutation summaries belong to the published result", () => {
     if (operation === "status") return invoke(CHANNELS.changePostStatus, wsId, id, "verified");
     return invoke(CHANNELS.setPostLocked, wsId, id, true);
   }
+});
+
+describe("listPostPage", () => {
+  it.each(["discarded", "published", "retired"] as const)("reads and returns only the requested %s page", async (status) => {
+    for (let i = 0; i < 3; i++) await invoke(CHANNELS.changePostStatus, wsId, await createDraft(), status);
+    await createDraft();
+    const access = await import("@main/storageAccess.js");
+    const refresh = vi.spyOn(access, "refreshIndex");
+    const list = vi.spyOn(access, "listByStatus");
+    const count = vi.spyOn(access, "countByStatus");
+    try {
+      const page = await invoke<PostPageResponse>(CHANNELS.listPostPage, wsId, status, 1, 1);
+      expect(page.posts).toHaveLength(1);
+      expect(page.posts[0].frontMatter.status).toBe(status);
+      expect(page.total).toBe(3);
+      expect(page.offset).toBe(1);
+      expect(Object.keys(page).sort()).toEqual(["offset", "posts", "total"]);
+      expect(refresh).toHaveBeenCalledExactlyOnceWith(dataDir);
+      expect(list).toHaveBeenCalledExactlyOnceWith(dataDir, status, { offset: 1, limit: 1 });
+      expect(count).toHaveBeenCalledExactlyOnceWith(dataDir, status);
+    } finally { refresh.mockRestore(); list.mockRestore(); count.mockRestore(); }
+  });
+
+  it("clamps negative offsets and uses the settings limit", async () => {
+    const access = await import("@main/storageAccess.js");
+    const list = vi.spyOn(access, "listByStatus");
+    try {
+      const page = await invoke<PostPageResponse>(CHANNELS.listPostPage, wsId, "published", -4, 0);
+      expect(page.offset).toBe(0);
+      expect(list).toHaveBeenCalledExactlyOnceWith(dataDir, "published", { offset: 0, limit: 50 });
+    } finally { list.mockRestore(); }
+  });
+
+  it("rejects nonpaged or invalid statuses before reading posts", async () => {
+    const access = await import("@main/storageAccess.js");
+    const refresh = vi.spyOn(access, "refreshIndex");
+    try {
+      for (const status of ["draft", "verified", "unknown", null]) {
+        await expect(invoke(CHANNELS.listPostPage, wsId, status, 0, 1)).rejects.toThrow("Invalid paged post status");
+      }
+      expect(refresh).not.toHaveBeenCalled();
+    } finally { refresh.mockRestore(); }
+  });
+
+  it("includes unreadable files in the page response without changing them", async () => {
+    const broken = path.join(dataDir, "posts", "20260101-000000-utc-broken.md");
+    const bytes = "---\nid: [unclosed\n---\nbody\n";
+    fs.writeFileSync(broken, bytes);
+    const page = await invoke<PostPageResponse>(CHANNELS.listPostPage, wsId, "retired", 0, 1);
+    expect(page.unreadable).toEqual([{ path: broken, newer: false }]);
+    expect(fs.readFileSync(broken, "utf8")).toBe(bytes);
+  });
 });

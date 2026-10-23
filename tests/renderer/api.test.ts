@@ -4,6 +4,7 @@ import {
   setActiveWorkspace,
   runAnalysisStream,
   listPosts,
+  listPostPage,
   listWorkspaces,
   createWorkspace,
   addExistingWorkspace,
@@ -629,4 +630,15 @@ it("keeps saved, failed and refused events with copied post ids inside the subsc
   expect(gotRefused).toHaveBeenCalledExactlyOnceWith(refusedEvent);
   off.forEach((stop) => stop());
   expect(unsubscribe).toHaveBeenCalledTimes(3);
+});
+
+it("requests only the named archive page with workspace, offset and limit", async () => {
+  const page = { posts: [], total: 7, offset: 3 };
+  const listPostPageBridge = vi.fn().mockResolvedValue(page);
+  installBridge({ listPostPage: listPostPageBridge });
+  setActiveWorkspace("current");
+  await expect(listPostPage("published", 3)).resolves.toEqual(page);
+  expect(listPostPageBridge).toHaveBeenCalledExactlyOnceWith("current", "published", 3, 50);
+  await listPostPage("retired", 4, 20, "other");
+  expect(listPostPageBridge).toHaveBeenLastCalledWith("other", "retired", 4, 20);
 });

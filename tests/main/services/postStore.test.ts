@@ -1240,3 +1240,66 @@ describe("one author baseline per pending edit buffer", () => {
     expect(getPost(dataDir, id)?.frontMatter.title).toBe("Authored title");
   });
 });
+
+describe("published source observations", () => {
+  it("avoids another post parse or index publication when refreshing its own change", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const read = vi.spyOn(fs, "readFileSync");
+    const rename = vi.spyOn(fs, "renameSync");
+    try {
+      updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } });
+      expect(read.mock.calls.filter(([file]) => file === post.filePath)).toHaveLength(1);
+      const reads = read.mock.calls.length;
+      const publications = rename.mock.calls.length;
+      refreshIndex(dataDir);
+      expect(read.mock.calls).toHaveLength(reads);
+      expect(rename.mock.calls).toHaveLength(publications);
+      expect(listByStatus(dataDir, "draft")[0].frontMatter.title).toBe("inside");
+    } finally { read.mockRestore(); rename.mockRestore(); }
+  });
+
+  it("does not certify an external atomic replacement as its own published projection", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const external = path.join(dataDir, "outside.tmp");
+    fs.writeFileSync(external, fs.readFileSync(post.filePath, "utf8").replace("status: draft", "status: draft\ntitle: outside\nlocked: true"));
+    const rename = fs.renameSync;
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      rename(from, to);
+      if (to === post.filePath) rename(external, to);
+    });
+    try { updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } }); }
+    finally { spy.mockRestore(); }
+    refreshIndex(dataDir);
+    expect(listByStatus(dataDir, "draft")[0].frontMatter).toMatchObject({ title: "outside", locked: true });
+  });
+
+  it("declines a same-size in-place edit that preserves mtime during publication", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const rename = fs.renameSync;
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      rename(from, to);
+      if (to === post.filePath) {
+        const stat = fs.statSync(to);
+        const written = fs.readFileSync(to, "utf8");
+        fs.writeFileSync(to, written.replace("title: inside", "title: beyond"));
+        fs.utimesSync(to, stat.atime, stat.mtime);
+      }
+    });
+    try { updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } }); }
+    finally { spy.mockRestore(); }
+    refreshIndex(dataDir);
+    expect(listByStatus(dataDir, "draft")[0].frontMatter.title).toBe("beyond");
+  });
+
+  it("leaves a successful write conservatively unobserved when descriptor observation fails", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    const fstat = vi.spyOn(fs, "fstatSync").mockImplementation(() => { throw new Error("observation unavailable"); });
+    try { expect(updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } })?.frontMatter.title).toBe("inside"); }
+    finally { fstat.mockRestore(); }
+    const read = vi.spyOn(fs, "readFileSync");
+    try {
+      refreshIndex(dataDir);
+      expect(read.mock.calls.some(([file]) => file === post.filePath)).toBe(true);
+    } finally { read.mockRestore(); }
+  });
+});

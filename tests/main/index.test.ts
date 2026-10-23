@@ -230,6 +230,10 @@ beforeAll(async () => {
  * returns the same post-store instance index.ts flushes at quit.
  */
 async function bootApp(): Promise<PostStore> {
+  // Repeated boots in one test must retire the old recorder before resetting
+  // its module owner; otherwise its queued writes race deletion of this root.
+  const previousBackup = await import("@main/core/services/backupStore.js");
+  previousBackup.stopBackups(5000);
   vi.resetModules();
   appHandlers.clear();
   windowHandlers.clear();

@@ -6,6 +6,7 @@ import type {
   PostFrontMatter,
   Post,
   PostListResponse,
+  PostPageResponse,
   PostMutationResult,
   PostSummary,
   Settings,
@@ -27,6 +28,7 @@ const activationListeners = vi.hoisted(() => new Set<() => void>());
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   listPosts: vi.fn(),
+  listPostPage: vi.fn(),
   createPost: vi.fn(),
   getWorkspaceConfig: vi.fn(),
   getPost: vi.fn(),
@@ -250,9 +252,10 @@ vi.mock("@renderer/components/ShortcutsModal", () => ({
 vi.mock("@renderer/components/AboutModal", () => ({ AboutModal: modalMock("about-modal") }));
 
 import { WorkspaceSession, type WorkspaceSessionHandle } from "@renderer/WorkspaceSession";
-import { listPosts, createPost, getWorkspaceConfig, getPost, openRecordsWindow } from "@renderer/api";
+import { listPosts, listPostPage, createPost, getWorkspaceConfig, getPost, openRecordsWindow } from "@renderer/api";
 
 const mockListPosts = vi.mocked(listPosts);
+const mockListPostPage = vi.mocked(listPostPage);
 const mockCreatePost = vi.mocked(createPost);
 const mockGetWorkspaceConfig = vi.mocked(getWorkspaceConfig);
 const mockOpenRecords = vi.mocked(openRecordsWindow);
@@ -360,6 +363,7 @@ async function mountLoaded(ref?: React.Ref<WorkspaceSessionHandle>) {
 beforeEach(() => {
   anyModalOpen = false;
   mockListPosts.mockReset().mockResolvedValue(LIST);
+  mockListPostPage.mockReset().mockResolvedValue(LIST.published);
   mockGetPost.mockReset().mockResolvedValue(POST_A);
   mockCreatePost.mockReset().mockResolvedValue(POST_B_CREATED);
   mockGetWorkspaceConfig.mockReset().mockResolvedValue({ targets: TARGETS, settings: SETTINGS, notice: null });
@@ -850,18 +854,20 @@ describe("WorkspaceSession load more / log", () => {
     const { getByTestId } = await mountLoaded();
     await act(async () => { fireEvent.click(getByTestId("left-select-a")); });
     mockListPosts.mockClear();
-    let answer!: (response: PostListResponse) => void;
-    mockListPosts.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    mockListPostPage.mockClear();
+    let answer!: (response: PostPageResponse) => void;
+    mockListPostPage.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
     try {
       act(() => {
         fireEvent.click(getByTestId("left-more-pub"));
         fireEvent.click(getByTestId("left-more-pub"));
       });
-      expect(mockListPosts).toHaveBeenCalledTimes(1);
+      expect(mockListPostPage).toHaveBeenCalledTimes(1);
+      expect(mockListPosts).not.toHaveBeenCalled();
       act(() => { fireEvent.click(getByTestId("center-published")); });
     } finally {
       await act(async () => {
-        answer({ ...LIST, published: { posts: [summary("p2", "published")], total: 3, offset: 1 } });
+        answer({ posts: [summary("p2", "published")], total: 3, offset: 1 });
       });
     }
     expect(getByTestId("left-published").textContent).toBe("a,p1");
@@ -872,12 +878,11 @@ describe("WorkspaceSession load more / log", () => {
   it("loads the next published page, appending it", async () => {
     const { getByTestId } = await mountLoaded();
     mockListPosts.mockClear();
-    const page2: PostListResponse = {
-      ...LIST,
-      published: { posts: [summary("p2", "published", { publishedAtUtc: "2026-01-15T00:00:00.000Z" })], total: 3, offset: 1 },
-      discarded: { posts: [summary("x9", "discarded")], total: 4, offset: 0 },
+    mockListPostPage.mockClear();
+    const page2: PostPageResponse = {
+      posts: [summary("p2", "published", { publishedAtUtc: "2026-01-15T00:00:00.000Z" })], total: 3, offset: 1,
     };
-    mockListPosts.mockResolvedValue(page2);
+    mockListPostPage.mockResolvedValue(page2);
     await act(async () => {
       fireEvent.click(getByTestId("left-more-pub"));
       await Promise.resolve();
@@ -885,15 +890,18 @@ describe("WorkspaceSession load more / log", () => {
     // Appended: original page plus the next; the other paged sections untouched.
     expect(getByTestId("left-published").textContent).toBe("p1,p2");
     expect(getByTestId("left-discarded").textContent).toBe("x1");
-    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, published: 1 }, 25, WS.id);
+    expect(mockListPostPage).toHaveBeenCalledExactlyOnceWith("published", 1, 25, WS.id);
+    expect(mockListPosts).not.toHaveBeenCalled();
+    expect(getByTestId("left-drafts").textContent).toBe("a,b");
+    expect(getByTestId("left-verified").textContent).toBe("c");
   });
 
   it("loads the next discarded page from its own offset", async () => {
     const { getByTestId } = await mountLoaded();
     mockListPosts.mockClear();
-    mockListPosts.mockResolvedValue({
-      ...LIST,
-      discarded: { posts: [summary("x2", "discarded", { discardedAtUtc: "2026-01-01T00:00:00.000Z" })], total: 4, offset: 1 },
+    mockListPostPage.mockClear();
+    mockListPostPage.mockResolvedValue({
+      posts: [summary("x2", "discarded", { discardedAtUtc: "2026-01-01T00:00:00.000Z" })], total: 4, offset: 1,
     });
     await act(async () => {
       fireEvent.click(getByTestId("left-more-disc"));
@@ -901,12 +909,13 @@ describe("WorkspaceSession load more / log", () => {
     });
     expect(getByTestId("left-discarded").textContent).toBe("x1,x2");
     expect(getByTestId("left-published").textContent).toBe("p1");
-    expect(mockListPosts).toHaveBeenCalledWith({ ...FIRST, discarded: 1 }, 25, WS.id);
+    expect(mockListPostPage).toHaveBeenCalledExactlyOnceWith("discarded", 1, 25, WS.id);
+    expect(mockListPosts).not.toHaveBeenCalled();
   });
 
   it("surfaces a load-more failure", async () => {
     const { getByTestId, getByText } = await mountLoaded();
-    mockListPosts.mockRejectedValue(new Error("more failed"));
+    mockListPostPage.mockRejectedValue(new Error("more failed"));
     await act(async () => {
       fireEvent.click(getByTestId("left-more-ret"));
       await Promise.resolve();
@@ -969,7 +978,7 @@ describe("WorkspaceSession reread on activation", () => {
 
   it("keeps as many published posts loaded as were shown", async () => {
     const { getByTestId } = await mountLoaded();
-    mockListPosts.mockResolvedValueOnce({ ...LIST, published: { posts: [summary("p2", "published")], total: 3, offset: 1 } });
+    mockListPostPage.mockResolvedValueOnce({ posts: [summary("p2", "published")], total: 3, offset: 1 });
     await act(async () => {
       fireEvent.click(getByTestId("left-more-pub"));
       await Promise.resolve();

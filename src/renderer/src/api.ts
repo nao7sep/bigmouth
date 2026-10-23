@@ -6,6 +6,7 @@ import type {
   PostStatus,
   PostMutationResult,
   PostListResponse,
+  PostPageResponse,
   AnalysisPrompt,
   Settings,
   Target,
@@ -44,7 +45,7 @@ import {
   type TargetRenameResult,
 } from "@shared/ipc";
 import { AssetUploadAdmissionError, AssetUploadFailureError } from "./util/assetUpload";
-import { FIRST_PAGES } from "@shared/postStatus";
+import { type PagedPostStatus, FIRST_PAGES } from "@shared/postStatus";
 import { message, type Message } from "@shared/i18n/translate";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from "@shared/records";
 
@@ -155,6 +156,10 @@ export function saveAppSettings(settings: Partial<AppSettings>): Promise<AppSett
 }
 
 // --- Posts ---
+
+export function listPostPage(status: PagedPostStatus, offset: number, limit = 50, workspaceId?: string): Promise<PostPageResponse> {
+  return bridge().listPostPage(requireWs(workspaceId), status, offset, limit);
+}
 
 export function listPosts(offsets: PostListOffsets = FIRST_PAGES, limit = 50, workspaceId?: string): Promise<PostListResponse> {
   return bridge().listPosts(requireWs(workspaceId), offsets, limit);

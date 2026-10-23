@@ -197,6 +197,9 @@ export interface UnreadablePostFile {
   newer: boolean;
 }
 
+/** One requested archive page and any unreadable post files. */
+export type PostPageResponse = PostListSection & { unreadable?: UnreadablePostFile[] };
+
 /** The Posts list: one section per status, and the post files it could not read. */
 export type PostListResponse = Record<PostStatus, PostListSection> & { unreadable?: UnreadablePostFile[] };
 

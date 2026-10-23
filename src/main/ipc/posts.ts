@@ -7,7 +7,7 @@ import {
   type PostMetadataRefusedEvent,
   type PostUpdate,
 } from "@shared/ipc";
-import type { EditablePostMetadata, PostListResponse, PostStatus } from "@shared/types";
+import type { EditablePostMetadata, PostPageResponse, PostListResponse, PostStatus } from "@shared/types";
 import {
   refreshIndex,
   listByStatus,
@@ -178,6 +178,22 @@ export function registerPostHandlers(): void {
       ),
     });
 
+    return response;
+  });
+
+  ipcMain.handle(CHANNELS.listPostPage, async (_event, wsId: string, status: unknown, requestedOffset: unknown, limit: number) => {
+    const dir = (await resolveWorkspace(wsId)).dataDirectory;
+    if (!isPostStatus(status) || !isPagedPostStatus(status)) throw new Error("Invalid paged post status");
+    const lim = limit || (await getSettings(dir)).postsPerLoad;
+    const unreadable = await refreshIndex(dir);
+    const offset = typeof requestedOffset === "number" ? Math.max(0, requestedOffset) : 0;
+    const response: PostPageResponse = {
+      posts: await listByStatus(dir, status, { offset, limit: lim }),
+      total: await countByStatus(dir, status),
+      offset,
+      ...(unreadable.length > 0 ? { unreadable } : {}),
+    };
+    info("post page listed", { workspace: wsId, status, returned: response.posts.length, total: response.total });
     return response;
   });
 

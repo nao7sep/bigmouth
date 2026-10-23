@@ -24,6 +24,7 @@ import type {
   PostDeleteResult,
   PostIndexEntry,
   PostListResponse,
+  PostPageResponse,
   PostMutationResult,
   PostStatus,
   Settings,
@@ -106,6 +107,7 @@ export const CHANNELS = {
 
   // Posts
   listPosts: "post:list",
+  listPostPage: "post:page",
   getPost: "post:get",
   createPost: "post:create",
   updatePost: "post:update",
@@ -424,6 +426,7 @@ export interface BigMouthApi {
   /** Every section: the whole of each unpaged one, and a page of `limit` posts
    *  from each paged one's offset. */
   listPosts(wsId: string, offsets: PostListOffsets, limit: number): Promise<PostListResponse>;
+  listPostPage(wsId: string, status: PagedPostStatus, offset: number, limit: number): Promise<PostPageResponse>;
   getPost(wsId: string, id: string): Promise<Post>;
   createPost(wsId: string, target: string, language: string, sourceId?: string): Promise<Post>;
   updatePost(wsId: string, id: string, updates: PostUpdate): Promise<PostMutationResult>;

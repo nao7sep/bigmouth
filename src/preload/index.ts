@@ -1,3 +1,4 @@
+import type { PagedPostStatus } from "@shared/postStatus";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
@@ -36,6 +37,7 @@ import type {
   Post,
   PostDeleteResult,
   PostListResponse,
+  PostPageResponse,
   PostMutationResult,
   PostStatus,
   Settings,
@@ -213,6 +215,8 @@ const api = {
   },
 
   // --- Posts ---
+  listPostPage: (wsId: string, status: PagedPostStatus, offset: number, limit: number) =>
+    ipcRenderer.invoke(CHANNELS.listPostPage, wsId, status, offset, limit) as Promise<PostPageResponse>,
   listPosts: (wsId: string, offsets: PostListOffsets, limit: number) =>
     ipcRenderer.invoke(CHANNELS.listPosts, wsId, offsets, limit) as Promise<PostListResponse>,
   getPost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.getPost, wsId, id) as Promise<Post>,

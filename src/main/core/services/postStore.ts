@@ -469,8 +469,8 @@ export function createPost(
   const fileName = postFileName(now, id);
   const filePath = path.join(postsDir(dataDir), fileName);
 
-  writePost(filePath, frontMatter, "");
-  index.upsertEntry(dataDir, projectIndexEntry(frontMatter, fileName, ""));
+  const version = writePost(filePath, frontMatter, "");
+  index.upsertEntry(dataDir, projectIndexEntry(frontMatter, fileName, ""), version);
 
   return { frontMatter, content: "", filePath };
 }
@@ -526,10 +526,11 @@ function rewritePost(
   } else if (pending && written !== onFile) {
     fm.updatedAtUtc = formatUtcIso(pending.editedAt);
   }
+  let version: string | null | undefined;
   if (serializePost(onDisk.frontMatter, onDisk.content) !== serializePost(fm, post.content)) {
-    writePost(post.filePath, fm, post.content);
+    version = writePost(post.filePath, fm, post.content, true);
   }
-  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
+  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content), version);
 
   if (writesPending) clearPending(dataDir, id);
   return post;
@@ -739,7 +740,7 @@ function rewriteMatchingPosts(
   rewrite: (fm: PostFrontMatter) => void,
   continueAfterWriteFailure = false,
 ): BulkRewriteResult {
-  const rewritten: PostIndexEntry[] = [];
+  const rewritten: { entry: PostIndexEntry; version: string | null }[] = [];
   const skipped: SkippedPostFile[] = [];
   // Cleanup has already reported unreadable known referrers before refreshing.
   // An unrelated unreadable file must not make an otherwise complete deletion
@@ -791,8 +792,8 @@ function rewriteMatchingPosts(
         continue;
       }
       try {
-        writePost(filePath, post.frontMatter, post.content);
-        rewritten.push(projected);
+        const version = writePost(filePath, post.frontMatter, post.content);
+        rewritten.push({ entry: projected, version });
       } catch (error) {
         if (!continueAfterWriteFailure) throw error;
         logWarn("post cleanup rewrite failed", { fileName, error: serializeError(error) });

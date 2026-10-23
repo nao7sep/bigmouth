@@ -30,6 +30,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { confirmPublication, flushStagedFile, flushPublishedPath } from "./publication.js";
+import { versionFromStat } from "./fileVersion.js";
 import { nanoid } from "nanoid";
 import { record } from "../services/backupStore.js";
 
@@ -39,12 +40,18 @@ import { record } from "../services/backupStore.js";
  * (content-lifecycle-conventions: a write that changes nothing is skipped).
  */
 export function writeFileAtomic(filePath: string, content: string | Buffer, mode?: number): boolean {
-  if (holdsBytes(filePath, content)) {
+  return writeAtomic(filePath, content, mode).changed;
+}
+
+interface WriteOptions { knownChanged?: boolean; observe?: boolean }
+
+function writeAtomic(filePath: string, content: string | Buffer, mode?: number, options: WriteOptions = {}): { changed: boolean; version: string | null } {
+  if (!options.knownChanged && holdsBytes(filePath, content)) {
     if (mode !== undefined) {
       fs.chmodSync(filePath, mode);
       confirmPublication(filePath, flushPublishedPath(filePath));
     }
-    return false;
+    return { changed: false, version: null };
   }
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
@@ -56,14 +63,18 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
   let created = false;
   let fd: number | undefined;
   let bytesConfirmed = false;
+  let stagedStat: fs.BigIntStats | undefined;
   try {
-    fd = fs.openSync(tempPath, "wx", 0o600);
+    fd = fs.openSync(tempPath, options.observe ? "wx+" : "wx", 0o600);
     created = true;
     fs.writeFileSync(fd, content);
     fs.fchmodSync(fd, mode ?? keptMode ?? (0o666 & ~process.umask()));
     bytesConfirmed = flushStagedFile(fd);
-    fs.closeSync(fd);
-    fd = undefined;
+    // The descriptor stays bound to our inode across publication. A path stat
+    // after rename alone could accidentally certify an external replacement.
+    if (options.observe) {
+      try { stagedStat = fs.fstatSync(fd, { bigint: true }); } catch { /* Optional derived observation. */ }
+    }
     fs.renameSync(tempPath, filePath);
   } catch (err) {
     // A write that fails removes its own temp (storage-path-conventions).
@@ -71,8 +82,33 @@ export function writeFileAtomic(filePath: string, content: string | Buffer, mode
     try { if (created) fs.rmSync(tempPath, { force: true }); } catch { /* Preserve the save failure. */ }
     throw err;
   }
+  let version: string | null = null;
+  try {
+    if (stagedStat) version = publishedVersion(fd, stagedStat, content);
+  } catch { /* Publication succeeded; an unavailable observation only invalidates the cache. */ }
+  finally {
+    try { fs.closeSync(fd); } catch { bytesConfirmed = false; }
+  }
   confirmPublication(filePath, bytesConfirmed);
-  return true;
+  return { changed: true, version };
+}
+
+/** Verify the owned inode when rename changed its fingerprint. A path stat
+ * cannot distinguish our bytes from an external replacement or in-place edit. */
+function publishedVersion(fd: number, staged: fs.BigIntStats, content: string | Buffer): string | null {
+  const before = fs.fstatSync(fd, { bigint: true });
+  if (versionFromStat(before) === versionFromStat(staged)) return versionFromStat(before);
+  const bytes = typeof content === "string" ? Buffer.from(content, "utf8") : content;
+  if (before.size !== BigInt(bytes.length)) return null;
+  const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, bytes.length));
+  let offset = 0;
+  while (offset < bytes.length) {
+    const length = fs.readSync(fd, chunk, 0, Math.min(chunk.length, bytes.length - offset), offset);
+    if (length === 0 || !chunk.subarray(0, length).equals(bytes.subarray(offset, offset + length))) return null;
+    offset += length;
+  }
+  const after = fs.fstatSync(fd, { bigint: true });
+  return versionFromStat(before) === versionFromStat(after) ? versionFromStat(after) : null;
 }
 
 /**
@@ -107,9 +143,12 @@ export function existingMode(filePath: string): number | undefined {
  * `bytes` buffer we just wrote — never a re-read of the file, which could capture a concurrent writer's
  * content instead of what this call wrote. The record is best-effort and silent; it never throws back
  * into this write and never affects the save's success (see backupStore).
+ * Returns an observation of the published inode, or null without a usable proof.
+ * A caller that already compared authoritative content may skip the byte reread.
  */
-export function writeManagedText(filePath: string, text: string): void {
+export function writeManagedText(filePath: string, text: string, options?: WriteOptions): string | null {
   const bytes = Buffer.from(text, "utf8");
-  if (!writeFileAtomic(filePath, bytes)) return;
-  record(filePath, bytes);
+  const result = writeAtomic(filePath, bytes, undefined, options);
+  if (result.changed) record(filePath, bytes);
+  return result.version;
 }

@@ -9,6 +9,7 @@ import {
 import type { CSSProperties, MouseEventHandler, RefObject } from "react";
 import {
   listPosts,
+  listPostPage,
   createPost,
   getPost,
   getWorkspaceConfig,
@@ -280,37 +281,29 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       [flushPendingChanges]
     );
 
-    // Each paged section is paginated on its own. One fetch returns a page of
-    // each, so `append` names which section is growing: its page is appended
-    // and the other paged sections are left as they are (their first pages in
-    // the same response are ignored). Sections that load whole are always
-    // replaced.
+    // Appending reads only the requested archive section; full refreshes keep
+    // their existing all-status projection.
     const loadPosts = useCallback(
       async (append?: PagedPostStatus) => {
         if (append && pageRequestsRef.current.has(append)) return;
         const request = ++listRequestRef.current;
         if (append) pageRequestsRef.current.set(append, request);
         const version = listVersionRef.current;
-        const offsets = append
-          ? { ...FIRST_PAGES, [append]: listsRef.current[append].posts.length }
-          : FIRST_PAGES;
         try {
-          const data = await listPosts(offsets, pubBatchSize, workspace.id);
+          if (append) {
+            const page = await listPostPage(append, listsRef.current[append].posts.length, pubBatchSize, workspace.id);
+            if (!mounted.current || request !== listRequestRef.current || version !== listVersionRef.current) return;
+            listVersionRef.current += 1;
+            setUnreadablePosts(page.unreadable ?? []);
+            const current = listsRef.current;
+            commitLists({ ...current, [append]: { posts: [...current[append].posts, ...page.posts], total: page.total } });
+            return;
+          }
+          const data = await listPosts(FIRST_PAGES, pubBatchSize, workspace.id);
           if (!mounted.current || request !== listRequestRef.current || version !== listVersionRef.current) return;
-
           listVersionRef.current += 1;
           setUnreadablePosts(data.unreadable ?? []);
-          const fresh = listsFromResponse(data);
-          if (append) {
-            const current = listsRef.current;
-            for (const status of PAGED_POST_STATUSES) {
-              fresh[status] =
-                status === append
-                  ? { posts: [...current[status].posts, ...data[status].posts], total: data[status].total }
-                  : current[status];
-            }
-          }
-          commitLists(fresh);
+          commitLists(listsFromResponse(data));
         } finally {
           if (append && pageRequestsRef.current.get(append) === request) pageRequestsRef.current.delete(append);
         }
