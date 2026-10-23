@@ -22,7 +22,7 @@ export function xWeightedCount(text: string): number {
 /**
  * Extracts prose paragraphs from markdown text, excluding:
  * - Fenced code blocks (``` or ~~~)
- * - Headings (ATX # and setext ===)
+ * - Headings (ATX # and setext === or ---)
  * - List items (unordered and ordered)
  * - Table rows (|...|)
  * - Horizontal rules (---, ***, ___)
@@ -85,6 +85,14 @@ export function extractParagraphs(text: string): string[] {
       // A shorter or different fence inside a block is just code.
     }
     if (openFence !== null) continue;
+
+    // A setext underline makes all preceding consecutive prose lines a
+    // heading. Drop those lines instead of flushing them as a paragraph. A
+    // blank line has already flushed prose, so a later --- stays a rule.
+    if (currentParagraph.length > 0 && /^ {0,3}(?:=+|-+)[ \t]*$/.test(structuralLine)) {
+      currentParagraph = [];
+      continue;
+    }
 
     // Skip non-prose lines
     if (

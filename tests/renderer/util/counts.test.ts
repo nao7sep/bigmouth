@@ -138,10 +138,33 @@ describe("code fences", () => {
   });
 });
 
-describe("setext underlines", () => {
-  it("excludes an underline of any length, not just three or more", () => {
-    // CommonMark allows a single `=`, and it was counted as prose.
-    expect(extractParagraphs("Title\n==\n\nbody")).toEqual(["Title", "body"]);
-    expect(extractParagraphs("Title\n=\n\nbody")).toEqual(["Title", "body"]);
+describe("setext headings", () => {
+  it.each(["=", "==", "===", "=====", "-", "--", "---", "-----"])(
+    "excludes the heading text and its %s underline",
+    (underline) => {
+      expect(extractParagraphs(`Title\n${underline}\n\nbody`)).toEqual(["body"]);
+      expect(extractParagraphs(`Title\n${underline}\nbody`)).toEqual(["body"]);
+    },
+  );
+
+  it("excludes multiline heading text", () => {
+    expect(extractParagraphs("First heading line\nsecond heading line\n==\n\nbody")).toEqual(["body"]);
+    expect(extractParagraphs("First heading line\nsecond heading line\n--\n\nbody")).toEqual(["body"]);
+  });
+
+  it("keeps prose separated from a thematic break by a blank line", () => {
+    expect(extractParagraphs("before\n\n---\n\nafter")).toEqual(["before", "after"]);
+  });
+
+  it("does not treat an underline in a fenced block as a heading", () => {
+    expect(extractParagraphs("before\n```\nTitle\n---\n```\nafter")).toEqual(["before", "after"]);
+  });
+
+  it("allows up to three spaces and CRLF on a setext underline", () => {
+    expect(extractParagraphs("Title\r\n   -- \t\r\n\r\nbody")).toEqual(["body"]);
+  });
+
+  it("does not turn a four-space indented underline into a heading", () => {
+    expect(extractParagraphs("Title\n    --\n\nbody")).toEqual(["Title --", "body"]);
   });
 });
