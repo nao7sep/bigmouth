@@ -147,7 +147,9 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         reportedRefusalRef.current = refused;
         reportMetadataRefusal(postId, refused);
       }
-      const unsaved = admissionsRef.current > 0 || refused;
+      // A running generation is a paid call whose result is not stored yet, so
+      // it keeps the tab, like a pending or refused edit.
+      const unsaved = admissionsRef.current > 0 || refused || generationLockRef.current;
       if (unsaved !== reportedUnsavedRef.current) {
         reportedUnsavedRef.current = unsaved;
         onUnsavedChangeRef.current?.(unsaved);
@@ -304,6 +306,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const runGeneration = async (key: string) => {
       if (generationLockRef.current) return;
       generationLockRef.current = true;
+      syncRefusalReport();
       const controller = new AbortController();
       generationAbortRef.current = controller;
       const atStart = { ...fieldsRef.current };
@@ -325,6 +328,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         if (generationAbortRef.current === controller) generationAbortRef.current = null;
         setGenerating((prev) => ({ ...prev, [key]: false }));
         generationLockRef.current = false;
+        syncRefusalReport();
       }
     };
 
@@ -349,6 +353,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
     const generateAll = async () => {
       if (locked || !content.trim() || generationLockRef.current) return;
       generationLockRef.current = true;
+      syncRefusalReport();
       clearGenError();
       const controller = new AbortController();
       generationAbortRef.current = controller;
@@ -388,6 +393,7 @@ export const MetadataTab = forwardRef<MetadataTabHandle, MetadataTabProps>(
         if (generationAbortRef.current === controller) generationAbortRef.current = null;
         setGeneratingAll(false);
         generationLockRef.current = false;
+        syncRefusalReport();
       }
     };
 

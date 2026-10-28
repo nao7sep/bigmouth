@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { createRef } from "react";
 import { DEFAULT_CONTENT_FONT, type PostFrontMatter } from "@shared/types";
 import { RightPane } from "@renderer/components/RightPane";
 import type { MetadataTabHandle } from "@renderer/components/MetadataTab";
-import { queuePostMetadata } from "@renderer/api";
+import { generateMetadataField, queuePostMetadata } from "@renderer/api";
 
 vi.mock("@renderer/components/AnalysisTab", () => ({ AnalysisTab: () => null }));
 vi.mock("@renderer/components/ImagingTab", () => ({ ImagingTab: () => null }));
@@ -70,6 +70,20 @@ describe("RightPane metadata rescue lifetime", () => {
     expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
     expect(view.queryByRole("textbox", { name: "Title" })).toBeNull();
     expect(view.onTabChange).toHaveBeenCalledWith("Analysis");
+  });
+
+  it("keeps Metadata while a generation runs, so its result is stored once the target drops metadata", async () => {
+    let answer!: (value: string) => void;
+    vi.mocked(generateMetadataField).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    mockQueue.mockResolvedValue(null);
+    const view = mountMetadata();
+    const title = view.getByRole("textbox", { name: "Title" });
+    await act(async () => { fireEvent.click(within(title.closest(".meta-field") as HTMLElement).getByRole("button", { name: "Generate" })); });
+    view.refresh(false);
+    expect(view.getByRole("tab", { name: "Metadata" })).toBeTruthy();
+    await act(async () => { answer("Generated title"); });
+    expect(mockQueue).toHaveBeenCalledWith("p1", { title: "Generated title" }, "w1");
+    expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
   });
 
   it("ignores an old admission settlement after navigating away and back to a fresh post mount", async () => {
