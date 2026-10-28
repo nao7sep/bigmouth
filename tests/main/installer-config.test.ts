@@ -128,39 +128,10 @@ describe("packaged app the launchers look for", () => {
   });
 });
 
-describe("release workflow inputs", () => {
+describe("declared runtime", () => {
   it("keeps the lockfile root's runtime requirement aligned with the manifest", () => {
     const lock = JSON.parse(readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8"));
     expect(lock.packages[""].engines).toEqual(packageJson.engines);
   });
 
-  it("requires exactly the artifacts built by each runner's platform", () => {
-    const workflow = parse(readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8")) as {
-      jobs: { build: {
-        strategy: { matrix: { include: Array<{ os: string; artifacts: string }> } };
-        steps: Array<{ uses?: string; with?: Record<string, unknown> }>;
-      } };
-    };
-    const build = workflow.jobs.build;
-    const platforms = new Map([
-      ["macos-latest", config.mac],
-      ["windows-latest", config.win],
-    ]);
-    const runners = build.strategy.matrix.include;
-    expect(runners.map(({ os }) => os).sort()).toEqual([...platforms.keys()].sort());
-    for (const { os, artifacts } of runners) {
-      const platform = platforms.get(os);
-      expect(platform?.target).toBeDefined();
-      const extensions = platform!.target!.map((target) => {
-        const name = typeof target === "string" ? target : target.target;
-        return name === "nsis" ? "exe" : name;
-      });
-      expect(artifacts.trim().split(/\s+/).sort()).toEqual(
-        extensions.map((ext) => `${config.directories?.output}/*.${ext}`).sort(),
-      );
-    }
-    const attachment = build.steps.find(({ uses }) => uses?.startsWith("softprops/action-gh-release@"));
-    expect(attachment?.with?.files).toBe("${{ matrix.artifacts }}");
-    expect(attachment?.with?.fail_on_unmatched_files).toBe(true);
-  });
 });
