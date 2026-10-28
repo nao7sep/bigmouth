@@ -49,7 +49,6 @@ function Invoke-Native {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
 $appName = "BigMouth"
 $outDir = "dist"
 $exePath = Join-Path $repoDir "$outDir/win-unpacked/$appName.exe"
@@ -67,7 +66,6 @@ try {
     # Windows locks the packaged executable while it runs, so replacement must
     # happen before cleaning the package directory.
     Write-Step "Replacing any existing $appName runtime"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", $appName)
 
     # Remove stale output so a build that fails to emit a file can't be masked by
@@ -92,10 +90,8 @@ try {
         throw "Packaging did not produce $appName.exe under $outDir/win-unpacked/."
     }
 
-    # GUI app: launch non-blocking via Start-Process.
     Write-Step "Launching the packaged app"
-    Start-Process -FilePath $exePath | Out-Null
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", $exePath, "30000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "launch-exe", $exePath, $appName)
 }
 catch {
     Write-Host ""

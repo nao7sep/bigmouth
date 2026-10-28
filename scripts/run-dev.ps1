@@ -49,7 +49,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $appName = "BigMouth"
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
+$appPid = $null
 # The renderer dev server's fixed endpoint. The electron-vite config owns it;
 # a test keeps this copy equal to it.
 $rendererHost = "127.0.0.1"
@@ -64,7 +64,6 @@ try {
     Set-Location $repoDir
 
     Write-Step "Replacing any existing $appName runtime"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", $appName)
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", $rendererHost, $rendererPort)
 
@@ -80,7 +79,8 @@ try {
     Write-Step "Starting $appName in development mode"
     $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "dev") -NoNewWindow -PassThru
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $rendererUrl, "60000")
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", (Join-Path $repoDir "node_modules/electron/dist/electron.exe"), "60000")
+    $appPid = & node $runtimeHelper record-wrapped $devProcess.Id (Join-Path $repoDir "node_modules/electron/dist/electron.exe") $appName
+    if ($LASTEXITCODE -ne 0) { throw "$appName did not start." }
     Write-Step "$appName is ready at $rendererUrl"
     $devProcess.WaitForExit()
     if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
@@ -93,11 +93,9 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    & node $runtimeHelper is-owner $runtimeToken *> $null
-    if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken $appName *> $null
-        Read-Host "Press Enter to close" | Out-Null
-    }
+    # Closing this launcher closes the app it started, unless a later launcher has replaced it.
+    if ($appPid) { & node $runtimeHelper stop-if-recorded $appPid $appName *> $null }
+    Read-Host "Press Enter to close" | Out-Null
 }
 
 exit $scriptExitCode
