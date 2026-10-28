@@ -235,12 +235,6 @@ const api = {
   },
 
   // --- UI state (state.json) ---
-  getDurabilityUnconfirmed: () => ipcRenderer.invoke(CHANNELS.getDurabilityUnconfirmed) as Promise<boolean>,
-  onDurabilityUnconfirmed: (listener: () => void) => {
-    const callback = () => listener();
-    ipcRenderer.on(CHANNELS.durabilityUnconfirmed, callback);
-    return () => ipcRenderer.removeListener(CHANNELS.durabilityUnconfirmed, callback);
-  },
   getStoragePending: () => ipcRenderer.invoke(CHANNELS.getStoragePending) as Promise<boolean>,
   onStoragePendingChanged: (listener: (pending: boolean) => void) => {
     const callback = (_event: unknown, pending: unknown) => { if (typeof pending === "boolean") listener(pending); };

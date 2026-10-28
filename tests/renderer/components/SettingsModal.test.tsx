@@ -15,8 +15,6 @@ import { settingsFieldErrors } from "@shared/settingsValidation";
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   getStoragePending: vi.fn().mockResolvedValue(false),
-  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
-  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   saveAppSettings: vi.fn(),

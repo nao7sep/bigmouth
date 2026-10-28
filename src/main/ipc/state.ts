@@ -1,4 +1,3 @@
-import { durabilityUnconfirmed, onDurabilityUnconfirmed } from "../core/shared/publication.js";
 import { BrowserWindow, ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
@@ -8,14 +7,6 @@ import { storageOwner } from "../storageOwner.js";
 import { info } from "../core/services/logger.js";
 
 export function registerStateHandlers(): void {
-  const reportDurability = () => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.webContents.isDestroyed()) window.webContents.send(CHANNELS.durabilityUnconfirmed);
-    }
-  };
-  ipcMain.handle(CHANNELS.getDurabilityUnconfirmed, () => durabilityUnconfirmed() || storageOwner.durabilityUnconfirmed());
-  onDurabilityUnconfirmed(reportDurability);
-  storageOwner.onDurabilityUnconfirmed(reportDurability);
   ipcMain.handle(CHANNELS.getStoragePending, () => storageOwner.storagePending());
   storageOwner.onStoragePending((pending) => {
     for (const window of BrowserWindow.getAllWindows()) {

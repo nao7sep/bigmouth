@@ -36,7 +36,6 @@ describe("registerIpcHandlers", () => {
       CHANNELS.recordsChanged,
       CHANNELS.recordsHealthChanged,
       CHANNELS.storagePendingChanged,
-      CHANNELS.durabilityUnconfirmed,
     ]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {

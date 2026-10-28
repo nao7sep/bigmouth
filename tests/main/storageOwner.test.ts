@@ -56,21 +56,6 @@ describe("storage records notifications", () => {
 });
 
 describe("storage mutation ownership", () => {
-  it("retains an unconfirmed publication independently of the successful command result", async () => {
-    const worker = new HeldWorker();
-    const owner = new StorageOwner(() => worker as unknown as Worker);
-    const notice = vi.fn();
-    owner.onDurabilityUnconfirmed(notice);
-    try {
-      const result = owner.run("updateUiState", [{ zoomLevel: 1 }]);
-      worker.emit("message", { event: "durability-unconfirmed" });
-      worker.emit("message", { id: worker.requests[0].id, ok: true, value: { zoomLevel: 1 } });
-      expect((await result).zoomLevel).toBe(1);
-      expect(owner.durabilityUnconfirmed()).toBe(true);
-      expect(notice).toHaveBeenCalledTimes(1);
-    } finally { await owner.stop(); }
-  });
-
   it("ends the caller wait while retaining the actual mutation claim until it settles", async () => {
     vi.useFakeTimers();
     const worker = new HeldWorker();

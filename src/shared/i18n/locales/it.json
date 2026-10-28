@@ -65,7 +65,6 @@
   "store.unreadable": "BigMouth non è riuscito a leggere {path}, quindi il file non è stato modificato. Ripara o sposta il file, poi riprova.",
   "app.storageChangeFailed": "Non è stato possibile salvare la modifica. Controllala prima di riprovare.",
   "app.storagePending": "La modifica è ancora in fase di salvataggio. Puoi lasciare questa schermata. Attendi il completamento prima di riprovare.",
-  "app.durabilityUnconfirmed": "Le modifiche sono state salvate, ma non è stato possibile confermare la protezione in caso di interruzione di corrente.",
   "app.uiStateLoadFailed": "Non è stato possibile caricare le preferenze dell’interfaccia salvate e l’ultimo spazio di lavoro. Per questo avvio si usano i valori predefiniti.",
   "app.workspacesLoadFailed": "Non è stato possibile caricare gli spazi di lavoro. Lo spazio di lavoro memorizzato non è cambiato; riprova.",
   "app.activeWorkspaceSaveFailed": "Questo spazio di lavoro è aperto, ma non è stato possibile memorizzarlo per il prossimo avvio.",

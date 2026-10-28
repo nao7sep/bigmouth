@@ -65,7 +65,6 @@
   "store.unreadable": "O BigMouth não conseguiu ler {path}, então o arquivo não foi alterado. Repare ou mova o arquivo e tente novamente.",
   "app.storageChangeFailed": "Não foi possível salvar a alteração. Revise-a antes de tentar novamente.",
   "app.storagePending": "Esta alteração ainda está sendo salva. Você pode sair desta tela. Aguarde a conclusão antes de tentar novamente.",
-  "app.durabilityUnconfirmed": "As alterações foram salvas, mas não foi possível confirmar a proteção em caso de falta de energia.",
   "app.uiStateLoadFailed": "Não foi possível carregar as preferências de interface salvas e o último espaço de trabalho. Os padrões estão em uso nesta inicialização.",
   "app.workspacesLoadFailed": "Não foi possível carregar os espaços de trabalho. O espaço de trabalho lembrado não mudou; tente novamente.",
   "app.activeWorkspaceSaveFailed": "Este espaço de trabalho está aberto, mas não foi possível lembrá-lo para a próxima inicialização.",

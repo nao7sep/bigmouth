@@ -9,8 +9,6 @@ const pendingBridge = vi.hoisted(() => ({ listeners: new Set<(pending: boolean) 
 // the save, and what a skip leaves unwritten, can be asserted directly.
 vi.mock("@renderer/api", () => ({
   getStoragePending: vi.fn(async () => false),
-  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
-  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: (listener: (pending: boolean) => void) => {
     pendingBridge.listeners.add(listener);
     return () => pendingBridge.listeners.delete(listener);

@@ -65,7 +65,6 @@
   "store.unreadable": "BigMouth n’a pas pu lire {path}\u00a0; le fichier n’a donc pas été modifié. Réparez ou déplacez le fichier, puis réessayez.",
   "app.storageChangeFailed": "La modification n’a pas pu être enregistrée. Vérifiez-la avant de réessayer.",
   "app.storagePending": "Cette modification est encore en cours d’enregistrement. Vous pouvez quitter cette vue. Attendez la fin avant de réessayer.",
-  "app.durabilityUnconfirmed": "Les modifications ont été enregistrées, mais la protection en cas de coupure de courant n’a pas pu être confirmée.",
   "app.uiStateLoadFailed": "Les préférences d’interface enregistrées et le dernier espace de travail n’ont pas pu être chargés. Les valeurs par défaut s’appliquent pour ce lancement.",
   "app.workspacesLoadFailed": "Les espaces de travail n’ont pas pu être chargés. L’espace de travail mémorisé est inchangé\u00a0; réessayez.",
   "app.activeWorkspaceSaveFailed": "Cet espace de travail est ouvert, mais il n’a pas pu être mémorisé pour le prochain lancement.",

@@ -25,7 +25,6 @@
  * All public functions take a dataDir parameter (the workspace data directory).
  */
 
-import { createDirectory, flushStagedFile, confirmPublication } from "../shared/publication.js";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -36,7 +35,7 @@ import {
   isReservedAssetName,
   sanitizeAssetFilename,
 } from "@shared/assetNames";
-import { existingMode, writeManagedText } from "../shared/atomicWrite.js";
+import { existingMode, flushStagedFile, writeManagedText } from "../shared/atomicWrite.js";
 import { createHash } from "node:crypto";
 import { recordFile } from "./backupStore.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
@@ -213,7 +212,7 @@ export function assetPath(dataDir: string, postId: string, filename: string): st
 
 function ensureAssetDir(dataDir: string, postId: string): string {
   const dir = assetDir(dataDir, postId);
-  createDirectory(dir);
+  fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
@@ -308,14 +307,12 @@ export function installAsset(
   // list on the next read. The stage was written private; it
   // takes the replaced file's mode, or the ordinary one, before it is published.
   const stage = fs.openSync(fromPath, "r+");
-  let bytesConfirmed: boolean;
   try {
     fs.fchmodSync(stage, existingMode(destPath) ?? (0o666 & ~process.umask()));
     if (source) keepSourceMetadata(fromPath, source);
-    bytesConfirmed = flushStagedFile(stage);
+    flushStagedFile(stage);
   } finally { fs.closeSync(stage); }
   fs.renameSync(fromPath, destPath);
-  confirmPublication(destPath, bytesConfirmed, path.dirname(fromPath));
   // The descriptor is taken before anything else can reach the new file, so the
   // backup reads the bytes installed here even if the asset is replaced or
   // deleted before the recorder gets to it.

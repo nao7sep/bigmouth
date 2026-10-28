@@ -10,8 +10,6 @@ import { message } from "@shared/i18n/translate";
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   getStoragePending: vi.fn().mockResolvedValue(false),
-  getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
-  onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   listWorkspaces: vi.fn(),

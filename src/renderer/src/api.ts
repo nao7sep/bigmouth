@@ -123,8 +123,6 @@ export function pickWorkspaceDirectory(purpose: "workspace" | "create", initialD
 }
 
 /** At least one published change lacked stable-storage confirmation this launch. */
-export function getDurabilityUnconfirmed(): Promise<boolean> { return bridge().getDurabilityUnconfirmed(); }
-export function onDurabilityUnconfirmed(listener: () => void): () => void { return bridge().onDurabilityUnconfirmed(listener); }
 /** A started user mutation exceeded its normal wait and still owns its result. */
 export function getStoragePending(): Promise<boolean> { return bridge().getStoragePending(); }
 export function onStoragePendingChanged(listener: (pending: boolean) => void): () => void {

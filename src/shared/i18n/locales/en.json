@@ -65,7 +65,6 @@
   "store.unreadable": "BigMouth could not read {path}, so the file was left unchanged. Repair or move it, then try again.",
   "app.storageChangeFailed": "The change could not be saved. Review it before trying again.",
   "app.storagePending": "This change is still being saved. You can leave this view. Wait for it to finish before trying again.",
-  "app.durabilityUnconfirmed": "Changes were saved, but protection against power loss could not be confirmed.",
   "app.uiStateLoadFailed": "The saved interface preferences and last workspace could not be loaded. Defaults are in use for this launch.",
   "app.workspacesLoadFailed": "Workspaces could not be loaded. The remembered workspace is unchanged; try again.",
   "app.activeWorkspaceSaveFailed": "This workspace is open, but it could not be remembered for the next launch.",

@@ -32,7 +32,6 @@ export type StorageReply =
   | { event: "content-save"; value: WorkspaceContentSaveEvent }
   | { event: "record-stored" }
   | { event: "records-health"; value: RecordsHealth }
-  | { event: "durability-unconfirmed" }
   | { event: "flush-settled" }
   // The worker could not read a request it was sent, so it never ran it.
   | { event: "request-unreadable" };
@@ -93,8 +92,6 @@ export class StorageOwner {
   private pendingListener: ((pending: boolean) => void) | null = null;
   private contentListener: ((event: WorkspaceContentSaveEvent) => void) | null = null;
   private flushSettled: (() => void) | null = null;
-  private durabilityListener: (() => void) | null = null;
-  private unconfirmedDurability = false;
   private recordsHealthValue: RecordsHealth = { databaseGap: false, fallbackFailed: false, fallbackPath: null };
   private recordsHealthListener: ((health: RecordsHealth) => void) | null = null;
   private recordListener: (() => void) | null = null;
@@ -111,8 +108,6 @@ export class StorageOwner {
   onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
 
   onContentSave(listener: ((event: WorkspaceContentSaveEvent) => void) | null): void { this.contentListener = listener; }
-  durabilityUnconfirmed(): boolean { return this.unconfirmedDurability; }
-  onDurabilityUnconfirmed(listener: (() => void) | null): void { this.durabilityListener = listener; }
   recordsHealth(): RecordsHealth { return { ...this.recordsHealthValue }; }
   onRecordsHealth(listener: ((health: RecordsHealth) => void) | null): void { this.recordsHealthListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
@@ -356,8 +351,7 @@ export class StorageOwner {
 
   private receive(reply: StorageReply): void {
     if ("event" in reply) {
-      if (reply.event === "durability-unconfirmed") { this.unconfirmedDurability = true; this.durabilityListener?.(); }
-      else if (reply.event === "records-health") {
+      if (reply.event === "records-health") {
         this.recordsHealthValue = reply.value;
         this.recordsHealthListener?.({ ...reply.value });
       }

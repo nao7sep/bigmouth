@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { getStoragePending, onStoragePendingChanged, getDurabilityUnconfirmed, onDurabilityUnconfirmed, reportProblem } from "./api";
+import { getStoragePending, onStoragePendingChanged, reportProblem } from "./api";
 import { OperationalResult } from "./components/OperationalResult";
 import { ListedMessageView, type ListedMessage } from "./components/NamedItems";
 import { useI18n } from "./i18n/I18nContext";
@@ -10,21 +10,12 @@ import type { Message } from "@shared/i18n/translate";
 type ResultReporter = (message: Message | ListedMessage, severity?: "warning" | "error") => void;
 type StorageResult = { id: number; listed: ListedMessage; severity: "warning" | "error" };
 export const StoragePendingContext = createContext(false);
-const DurabilityContext = createContext(false);
 const StorageResultContext = createContext<ResultReporter>(() => {});
 const StorageResultsContext = createContext<{ results: StorageResult[]; dismiss: (id: number) => void }>({ results: [], dismiss: () => {} });
 
 /** A slow started change still belongs to storage until its actual result arrives. */
 export function StoragePendingProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
-  const [unconfirmed, setUnconfirmed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    const off = onDurabilityUnconfirmed(() => { if (active) setUnconfirmed(true); });
-    void getDurabilityUnconfirmed().then(value => { if (active && value) setUnconfirmed(true); })
-      .catch(error => reportProblem("renderer: durability status could not be read", error));
-    return () => { active = false; off(); };
-  }, []);
 
   // A departed editor cannot present a later failure. Keep only those outcomes
   // in the app shell until dismissed; this is no retry or durable job owner.
@@ -51,9 +42,7 @@ export function StoragePendingProvider({ children }: { children: ReactNode }) {
   }, []);
   return <StoragePendingContext.Provider value={pending}>
     <StorageResultContext.Provider value={report}>
-      <DurabilityContext.Provider value={unconfirmed}>
-        <StorageResultsContext.Provider value={{ results, dismiss }}>{children}</StorageResultsContext.Provider>
-      </DurabilityContext.Provider>
+      <StorageResultsContext.Provider value={{ results, dismiss }}>{children}</StorageResultsContext.Provider>
     </StorageResultContext.Provider>
   </StoragePendingContext.Provider>;
 }
@@ -63,12 +52,8 @@ export function useStorageResultReporter(): ResultReporter { return useContext(S
 
 export function StoragePendingNotice({ className = "modal-result" }: { className?: string }) {
   const pending = useStoragePending();
-  const unconfirmed = useContext(DurabilityContext);
   const { t } = useI18n();
-  return <>
-    {pending && <OperationalResult severity="warning" className={className}>{t("app.storagePending")}</OperationalResult>}
-    {unconfirmed && <OperationalResult severity="warning" className={className}>{t("app.durabilityUnconfirmed")}</OperationalResult>}
-  </>;
+  return pending ? <OperationalResult severity="warning" className={className}>{t("app.storagePending")}</OperationalResult> : null;
 }
 
 export function StoragePendingResults() {
