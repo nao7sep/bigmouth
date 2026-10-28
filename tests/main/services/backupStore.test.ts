@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot, getStateJsonPath } from "@main/core/services/storagePaths.js";
 import { writeManagedText } from "@main/core/shared/atomicWrite.js";
-import { closeBackupStore, drainBackups, record, recordFile, stopBackups } from "@main/core/services/backupStore.js";
+import { record, recordFile, stopBackups } from "@main/core/services/backupStore.js";
 import * as logger from "@main/core/services/logger.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
@@ -41,9 +41,32 @@ function storeFile(): string {
   return path.join(getAppRoot(), "backups.sqlite3");
 }
 
+/** Settles the recorder: everything it was handed is applied and its store file released. */
+function settleBackups(): void {
+  expect(stopBackups(Infinity)).toBe(true);
+}
+
+/**
+ * Spies on warnings; `until` resolves once one matching `pattern` arrived, checking those already
+ * logged first. A warning the recorder sends reaches this thread as a message after its writes settle.
+ */
+function watchWarnings() {
+  const waiting: { pattern: RegExp; resolve: () => void }[] = [];
+  const spy = vi.spyOn(logger, "warn").mockImplementation((message: string) => {
+    for (const waiter of waiting.filter(({ pattern }) => pattern.test(message))) {
+      waiting.splice(waiting.indexOf(waiter), 1);
+      waiter.resolve();
+    }
+  });
+  const until = (pattern: RegExp): Promise<void> => spy.mock.calls.some(([message]) => pattern.test(message))
+    ? Promise.resolve()
+    : new Promise((resolve) => { waiting.push({ pattern, resolve }); });
+  return { spy, until };
+}
+
 /** Every row for a path, oldest first, once the recorder has applied what it was handed. */
 function rows(forPath: string): Row[] {
-  expect(drainBackups(5000)).toBe(true);
+  settleBackups();
   if (!fs.existsSync(storeFile())) return [];
   const db = new DatabaseSync(storeFile());
   try {
@@ -62,12 +85,12 @@ beforeEach(() => {
   process.env.BIGMOUTH_DATA_DIR = root;
   initAppDir();
   // initAppDir records the new registry; each test starts from an empty store.
-  closeBackupStore();
+  settleBackups();
   for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(storeFile() + suffix, { force: true });
 });
 
 afterEach(() => {
-  // closeBackupStore() runs in the shared teardown (tests/main/setup.ts) before this.
+  // The recorder is settled in the shared teardown (tests/main/setup.ts) before this.
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(root, { recursive: true, force: true });
@@ -127,7 +150,7 @@ describe("one row per path per session", () => {
     record(same, Buffer.from("seed"));
     rows(same);
     // Turn this session's rows into an earlier session's.
-    closeBackupStore();
+    settleBackups();
     const db = new DatabaseSync(storeFile());
     db.exec("UPDATE backups SET session_id = 'earlier'");
     db.prepare("INSERT INTO backups (session_id, path, content, content_sha256, byte_size, written_at_utc) VALUES ('earlier', ?, ?, ?, 4, '2026-01-01T00:00:00.000Z')")
@@ -151,14 +174,15 @@ describe("one row per path per session", () => {
     const schemaBefore = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
     db.close();
     const bytesBefore = fs.readFileSync(storeFile());
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { spy: warn, until: warned } = watchWarnings();
     try {
       record(file, Buffer.from("new"));
-      expect(drainBackups(5000)).toBe(true);
+      settleBackups();
       record(file, Buffer.from("still not recorded"));
-      expect(drainBackups(5000)).toBe(true);
-      closeBackupStore();
-      await vi.waitFor(() => expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1));
+      settleBackups();
+      settleBackups();
+      await warned(/could not be opened/);
+      expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1);
       expect(fs.readFileSync(storeFile())).toEqual(bytesBefore);
       const check = new DatabaseSync(storeFile());
       try {
@@ -178,7 +202,7 @@ describe("a file recorded from disk", () => {
   /** Holds the store's write lock, so a hand-off waits until `release` while the test acts. */
   const holdStore = () => {
     record(path.join(root, "opens-the-store.md"), Buffer.from("opens the store"));
-    expect(drainBackups(5000)).toBe(true);
+    settleBackups();
     const locker = new DatabaseSync(storeFile());
     locker.exec("BEGIN EXCLUSIVE");
     return () => { locker.exec("COMMIT"); locker.close(); };
@@ -213,7 +237,7 @@ describe("a file recorded from disk", () => {
   });
 
   it("records nothing when the installed file is rewritten in place before the recorder reads it", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { spy: warn, until: warned } = watchWarnings();
     const file = path.join(root, "photo.bin");
     const original = Buffer.from("the installed bytes");
     fs.writeFileSync(file, original);
@@ -224,10 +248,8 @@ describe("a file recorded from disk", () => {
     } finally { release(); }
     try {
       expect(rows(file)).toEqual([]);
-      // The warning reaches this thread as a message once the wait above ends.
-      await vi.waitFor(() => {
-        expect(warn.mock.calls.filter(([message]) => /changed on disk before it was recorded/.test(message))).toHaveLength(1);
-      });
+      await warned(/changed on disk before it was recorded/);
+      expect(warn.mock.calls.filter(([message]) => /changed on disk before it was recorded/.test(message))).toHaveLength(1);
     } finally { warn.mockRestore(); }
   });
 
@@ -255,7 +277,6 @@ describe("never holds up the save", () => {
         record(file, Buffer.from("while locked"));
         expect(wait).not.toHaveBeenCalled();
       } finally { wait.mockRestore(); }
-      expect(drainBackups(100)).toBe(false);
     } finally {
       locker.exec("COMMIT");
       locker.close();
@@ -263,16 +284,16 @@ describe("never holds up the save", () => {
     expect(rows(file).map(text)).toEqual(["while locked"]);
   });
 
-  it("gives pending writes a bound at quit", () => {
+  it("applies pending writes within its bound at quit", () => {
     const file = path.join(root, "doc.md");
     record(file, Buffer.from("drained at quit"));
-    stopBackups(5000);
+    expect(stopBackups(5000)).toBe(true);
     expect(rows(file).map(text)).toEqual(["drained at quit"]);
   });
 
   it("does not wait for pending writes at OS session end", () => {
     record(path.join(root, "doc.md"), Buffer.from("pending"));
-    expect(drainBackups(5000)).toBe(true);
+    settleBackups();
     const wait = vi.spyOn(Atomics, "wait");
     try {
       stopBackups(0);
@@ -286,17 +307,15 @@ describe("never holds up the save", () => {
 describe("best effort", () => {
   it("disables recording for the session with one warn when the store cannot open, and never throws", async () => {
     fs.mkdirSync(storeFile());
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { spy: warn, until: warned } = watchWarnings();
     try {
       const file = path.join(root, "doc.md");
       writeManagedText(file, "saved anyway");
       writeManagedText(file, "saved again");
-      expect(drainBackups(5000)).toBe(true);
+      settleBackups();
       expect(fs.readFileSync(file, "utf8")).toBe("saved again");
-      // The warning reaches this thread as a message once the wait above ends.
-      await vi.waitFor(() => {
-        expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1);
-      });
+      await warned(/could not be opened/);
+      expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
@@ -313,12 +332,13 @@ describe("best effort", () => {
     const historyBefore = db.prepare("SELECT * FROM backups").all();
     db.close();
     const bytesBefore = fs.readFileSync(storeFile());
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { spy: warn, until: warned } = watchWarnings();
     try {
       record(path.join(root, "doc.md"), Buffer.from("not recorded"));
-      expect(drainBackups(5000)).toBe(true);
-      closeBackupStore();
-      await vi.waitFor(() => expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1));
+      settleBackups();
+      settleBackups();
+      await warned(/could not be opened/);
+      expect(warn.mock.calls.filter(([message]) => /could not be opened/.test(message))).toHaveLength(1);
       expect(fs.readFileSync(storeFile())).toEqual(bytesBefore);
       const check = new DatabaseSync(storeFile());
       try {
@@ -335,8 +355,8 @@ describe("best effort", () => {
     db.close();
     const before = fs.readFileSync(storeFile());
     record(path.join(root, "doc.md"), Buffer.from("not recorded"));
-    expect(drainBackups(5000)).toBe(true);
-    closeBackupStore();
+    settleBackups();
+    settleBackups();
     expect(fs.readFileSync(storeFile()).equals(before)).toBe(true);
   });
 });

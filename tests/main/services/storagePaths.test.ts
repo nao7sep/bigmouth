@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
-import { closeBackupStore } from "@main/core/services/backupStore.js";
+import { stopBackups } from "@main/core/services/backupStore.js";
 import {
   getApiKeysPath,
   getAppRoot,
@@ -31,7 +31,7 @@ const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
 let fakeHome: string;
 
 function removeTestTree(tree: string): void {
-  closeBackupStore();
+  stopBackups(Infinity);
   fs.rmSync(tree, { recursive: true, force: true });
 }
 

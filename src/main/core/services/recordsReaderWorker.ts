@@ -26,8 +26,7 @@ const port = parentPort;
 const { databasePath, busyTimeoutMs } = workerData as RecordsReaderData;
 let db: DatabaseSync | null = null;
 
-// A lock the writer holds is waited on for the bounded time the reader passes,
-// well inside its own read timeout. A database a newer build wrote is not read
+// A lock the writer holds is waited on for the time the reader passes. A database a newer build wrote is not read
 // (store-recovery-conventions); one without its version is this build's format.
 function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true });

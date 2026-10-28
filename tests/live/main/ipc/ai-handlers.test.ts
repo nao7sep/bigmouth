@@ -22,7 +22,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-import { closeBackupStore } from "@main/core/services/backupStore.js";
+import { stopBackups } from "@main/core/services/backupStore.js";
 import { IMAGING_LITERALNESS, IMAGING_MOODS, IMAGING_PEOPLE, IMAGING_RELATIONS, IMAGING_STYLES } from "@main/core/ai/imaging.js";
 import { createPost, updatePost } from "@main/core/services/postStore.js";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
@@ -126,7 +126,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  closeBackupStore();
+  stopBackups(Infinity);
   if (savedDataRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = savedDataRoot;
   if (home) fs.rmSync(home, { recursive: true, force: true });

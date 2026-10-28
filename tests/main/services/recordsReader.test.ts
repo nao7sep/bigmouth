@@ -1,5 +1,5 @@
-// The records reader: reads run on a worker thread of their own, and a read
-// that does not answer in time is rejected and its thread abandoned.
+// The records reader: reads run on one worker thread of their own, awaited
+// without a bound.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
@@ -9,7 +9,6 @@ import { DatabaseSync } from "node:sqlite";
 import { Worker } from "node:worker_threads";
 
 import {
-  RECORDS_READ_TIMEOUT_MS,
   closeRecordsReader,
   initRecordsReader,
   readRecords,
@@ -45,7 +44,7 @@ beforeEach(() => {
 async function disposeReaderFixture(): Promise<void> {
   closeRecordsReader();
   // close is intentionally nonblocking in the app. The fixture owns actual
-  // worker exit, including threads abandoned by earlier timeouts or failures.
+  // worker exit, including threads an earlier close let go.
   await Promise.all(terminations.map(({ exit }) => exit));
   closeRecords();
   fs.rmSync(root, { recursive: true, force: true });
@@ -58,7 +57,7 @@ afterEach(async () => {
 });
 
 describe("records reader", () => {
-  it("joins current and already-abandoned readers before disposing the database", async () => {
+  it("joins current and already-closed readers before disposing the database", async () => {
     await readRecords({ op: "sessions" });
     closeRecordsReader();
     initRecordsReader(dbPath);
@@ -91,15 +90,13 @@ describe("records reader", () => {
     expect((await readRecords({ op: "page", query })).records).toHaveLength(1);
   });
 
-  it("gives up on a read that does not answer in time, and the next read starts afresh", async () => {
+  it("answers reads in order on the one thread it keeps", async () => {
     line("kept");
-    vi.useFakeTimers();
-    const waiting = readRecords({ op: "page", query });
-    vi.advanceTimersByTime(RECORDS_READ_TIMEOUT_MS);
-    await expect(waiting).rejects.toThrow(/did not answer/);
-
-    vi.useRealTimers();
-    expect((await readRecords({ op: "page", query })).records).toHaveLength(1);
+    const first = readRecords({ op: "sessions" });
+    const second = readRecords({ op: "page", query });
+    expect(await first).toHaveLength(1);
+    expect((await second).records).toHaveLength(1);
+    expect(terminations).toEqual([]);
   });
 
   it("rejects what is still waiting when it closes, and reads nothing after", async () => {

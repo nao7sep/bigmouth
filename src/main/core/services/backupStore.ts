@@ -11,8 +11,8 @@
  * copy of the exact bytes written and returns; `recordFile` queues an installed attachment the app never
  * held whole, to be read from disk. One write is in flight at a time, and a newer save of a path replaces
  * its pending version. Failures are the thread's to report: one warn,
- * never a failed save. At an ordinary quit the pending writes get a short bound; at OS session end they
- * are skipped.
+ * never a failed save. At an ordinary quit the pending writes draw on the exit deadline; at OS session
+ * end they are skipped.
  *
  * SQLite binding: Node's built-in `node:sqlite`, which needs no native rebuild against Electron's Node ABI.
  */
@@ -38,6 +38,7 @@ export function useBackupRecorderModule(url: URL): void {
 }
 
 interface Recorder { worker: Worker; queue: BackupAdmission }
+// One recorder for the storage worker's lifetime, started at the first protected write.
 let recorder: Recorder | null = null;
 // The recorder failing to start or dying is reported once; recording then stays off.
 let recorderFailed = false;
@@ -48,12 +49,20 @@ function release(write: BackupWrite): void {
   }
 }
 
-function disable(owner: Recorder, error: unknown): void {
-  if (recorder !== owner) return;
+// Lets the recorder go: what it has not been handed is dropped, and its exit is no longer news.
+// Its messages still arrive, so a warning it sent before going is logged.
+function letGo(owner: Recorder): void {
   recorder = null;
-  recorderFailed = true;
+  for (const event of ["exit", "error", "messageerror"]) owner.worker.removeAllListeners(event);
   owner.queue.abandonPending();
   void owner.worker.terminate();
+}
+
+function disable(error: unknown): void {
+  const owner = recorder;
+  if (!owner) return;
+  recorderFailed = true;
+  letGo(owner);
   logWarn("backup recorder stopped; recording disabled for this session", { error: serializeError(error) });
 }
 
@@ -69,16 +78,14 @@ function ensureRecorder(): Recorder | null {
         write.kind === "record" ? [write.bytes.buffer as ArrayBuffer] : []),
       release,
     );
-    const created = { worker, queue };
     worker.on("message", (notice: BackupWorkerNotice) => {
       if (notice.kind === "warn") logWarn(notice.text, notice.fields);
-      else if (recorder === created) queue.settled();
+      else queue.settled();
     });
-    const lost = (error: unknown) => disable(created, error);
-    worker.on("messageerror", lost);
-    worker.on("error", lost);
-    worker.on("exit", (code) => lost(new Error(`The backup recorder exited with code ${code}.`)));
-    recorder = created;
+    worker.on("messageerror", disable);
+    worker.on("error", disable);
+    worker.on("exit", (code) => disable(new Error(`The backup recorder exited with code ${code}.`)));
+    recorder = { worker, queue };
   } catch (error) {
     recorderFailed = true;
     logWarn("backup recorder could not start; recording disabled for this session", { error: serializeError(error) });
@@ -90,7 +97,7 @@ function offer(write: BackupWrite): void {
   const owner = ensureRecorder();
   if (!owner) { release(write); return; }
   try { owner.queue.offer(write); }
-  catch (error) { release(write); disable(owner, error); }
+  catch (error) { release(write); disable(error); }
 }
 
 /**
@@ -124,42 +131,22 @@ export function recordFile(absolutePath: string, fd: number, sha256: string, siz
   }
 }
 
-// Hands over every pending write, asks the recorder to answer once all are applied, and waits up to `boundMs`.
-function settle(kind: "drain" | "close", boundMs: number): boolean {
+/**
+ * Ends recording for the process: the pending writes get `boundMs` to be applied and the store file
+ * released (0 skips them, as at OS session end), then the recorder is let go without waiting.
+ * Returns whether every pending write was applied.
+ */
+export function stopBackups(boundMs: number): boolean {
   const owner = recorder;
   if (!owner) return true;
+  let applied = false;
   try {
-    owner.queue.flush();
-    const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
-    owner.worker.postMessage({ kind, signal } satisfies BackupWorkerRequest);
-    return Atomics.wait(signal, 0, 0, boundMs) !== "timed-out";
-  } catch (error) { disable(owner, error); return false; }
-}
-
-/** Waits up to `boundMs` for the writes already captured; true when all were applied. */
-export function drainBackups(boundMs: number): boolean {
-  return settle("drain", boundMs);
-}
-
-/**
- * Ends recording for the process: the pending writes get `boundMs` (0 skips them, as at OS session
- * end), then the recorder is let go without waiting.
- */
-export function stopBackups(boundMs: number): void {
-  const owner = recorder;
-  if (!owner) return;
-  // Closing the store with the drain releases its file before the thread goes.
-  if (boundMs > 0) settle("close", boundMs);
-  recorder = null;
-  owner.queue.abandonPending();
-  void owner.worker.terminate();
-}
-
-/**
- * Applies the pending writes and releases the store file, keeping the recorder for the next write.
- * For tests that relocate the storage root between cases; the next write opens the store under the
- * current root.
- */
-export function closeBackupStore(): void {
-  settle("close", 5000);
+    if (boundMs > 0) {
+      owner.queue.flush();
+      const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+      owner.worker.postMessage({ kind: "close", signal } satisfies BackupWorkerRequest);
+      applied = Atomics.wait(signal, 0, 0, boundMs) !== "timed-out";
+    }
+  } finally { letGo(owner); }
+  return applied;
 }

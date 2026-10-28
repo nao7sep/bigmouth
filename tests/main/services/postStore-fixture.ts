@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
-import { closeBackupStore } from "@main/core/services/backupStore.js";
+import { stopBackups } from "@main/core/services/backupStore.js";
 
 let nextFixture = 1;
 
@@ -22,12 +22,12 @@ export async function createPostStoreFixture() {
         store.setContentSaveListener(null);
         store.flushAllPendingEdits();
         store.clearCache(dataDir);
-        closeBackupStore();
+        stopBackups(Infinity);
         fs.rmSync(dataDir, { recursive: true, force: true });
       },
     };
   } catch (error) {
-    closeBackupStore();
+    stopBackups(Infinity);
     fs.rmSync(dataDir, { recursive: true, force: true });
     throw error;
   }

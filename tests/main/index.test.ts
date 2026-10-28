@@ -238,8 +238,8 @@ beforeAll(async () => {
   try {
     await bootApp();
   } finally {
-    const { closeBackupStore } = await import("@main/core/services/backupStore.js");
-    closeBackupStore();
+    const { stopBackups } = await import("@main/core/services/backupStore.js");
+    stopBackups(Infinity);
     if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
     else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
     dataDir = savedData;
@@ -256,7 +256,7 @@ async function bootApp(): Promise<PostStore> {
   // Repeated boots in one test must retire the old recorder before resetting
   // its module owner; otherwise its queued writes race deletion of this root.
   const previousBackup = await import("@main/core/services/backupStore.js");
-  previousBackup.stopBackups(5000);
+  previousBackup.stopBackups(Infinity);
   vi.resetModules();
   appHandlers.clear();
   windowHandlers.clear();
@@ -346,8 +346,8 @@ afterEach(async () => {
   // vi.resetModules() gives this file a fresh backup-store singleton, distinct
   // from the one closed by tests/main/setup.ts. Close the active instance before
   // removing its throwaway BIGMOUTH_DATA_DIR (Windows keeps the SQLite file locked).
-  const { closeBackupStore } = await import("@main/core/services/backupStore.js");
-  closeBackupStore();
+  const { stopBackups } = await import("@main/core/services/backupStore.js");
+  stopBackups(Infinity);
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });

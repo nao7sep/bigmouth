@@ -19,8 +19,8 @@ export type BackupWrite =
 
 export type BackupWorkerRequest =
   | BackupWrite
-  // Answered through `signal` once every earlier write is applied; "close" also releases the store file.
-  | { kind: "drain" | "close"; signal: Int32Array };
+  // Answered through `signal` once every earlier write is applied and the store file released.
+  | { kind: "close"; signal: Int32Array };
 
 export type BackupWorkerNotice = { kind: "warn"; text: string; fields: Record<string, unknown> } | { kind: "settled" };
 
@@ -194,8 +194,8 @@ port.on("messageerror", (error) => {
   port.postMessage({ kind: "settled" } satisfies BackupWorkerNotice);
 });
 port.on("message", (request: BackupWorkerRequest) => {
-  if ("signal" in request) {
-    if (request.kind === "close") close();
+  if (request.kind === "close") {
+    close();
     Atomics.store(request.signal, 0, 1);
     Atomics.notify(request.signal, 0);
     return;

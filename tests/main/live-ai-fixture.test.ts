@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { createLiveWorkspace } from "../live/main/ipc/ai-fixture.js";
-import { closeBackupStore } from "@main/core/services/backupStore.js";
+import { stopBackups } from "@main/core/services/backupStore.js";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { createPost } from "@main/core/services/postStore.js";
 
@@ -19,7 +19,7 @@ it("keeps the live handler workspace and posts inside the disposable fixture roo
     expect(path.relative(root, post.filePath)).toBe(path.join("workspace", "posts", path.basename(post.filePath)));
     expect(fs.existsSync(post.filePath)).toBe(true);
   } finally {
-    closeBackupStore();
+    stopBackups(Infinity);
     if (originalRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
     else process.env.BIGMOUTH_DATA_DIR = originalRoot;
     fs.rmSync(root, { recursive: true, force: true });

@@ -15,7 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach } from "vitest";
-import { closeBackupStore } from "@main/core/services/backupStore.js";
+import { stopBackups } from "@main/core/services/backupStore.js";
 
 const SAVED_HOME = process.env.HOME;
 const SAVED_USERPROFILE = process.env.USERPROFILE;
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  closeBackupStore();
+  stopBackups(Infinity);
   restore("HOME", SAVED_HOME);
   restore("USERPROFILE", SAVED_USERPROFILE);
   if (testHome !== null) fs.rmSync(testHome, { recursive: true, force: true });

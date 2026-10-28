@@ -1,8 +1,9 @@
 /**
- * The records window's reads of records.sqlite3, run on a worker thread with a
- * read-only connection of its own (PLAYBOOK, Own the work in flight; Bound
- * every external wait). A read that does not answer in time is rejected, and
- * the thread it ran on is abandoned so the next read starts on a fresh one.
+ * The records window's reads of records.sqlite3, run on one worker thread with a
+ * read-only connection of its own for the process lifetime: node:sqlite has
+ * only a synchronous API. Reads are answered in order and awaited without a
+ * bound, since local storage gets no timeout (transaction-and-external-effect-
+ * conventions); each reply is routed to its read by id.
  */
 
 import { Worker } from "node:worker_threads";
@@ -11,20 +12,15 @@ import { WORKER_ENTRIES } from "../../builtEntries.js";
 import type { RecordsRead, RecordsReadResults } from "./recordsQueries.js";
 import type { RecordsReaderData, RecordsReaderRequest, RecordsReaderResponse } from "./recordsReaderWorker.js";
 
-export const RECORDS_READ_TIMEOUT_MS = 10_000;
-
 /**
- * How long the reader's connection waits on a lock the writer holds. Well
- * inside the read timeout, so a lock that outlasts it fails the read with
- * SQLite's own busy error on a thread that stays usable, instead of the read
- * timing out and the thread being abandoned.
+ * How long the reader's connection waits on a lock the writer holds before the
+ * read fails with SQLite's own busy error.
  */
-export const RECORDS_BUSY_TIMEOUT_MS = RECORDS_READ_TIMEOUT_MS / 5;
+export const RECORDS_BUSY_TIMEOUT_MS = 2000;
 
 type Pending = {
   resolve: (value: never) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
 };
 
 let databasePath: string | null = null;
@@ -36,10 +32,15 @@ export function initRecordsReader(path: string): void {
   databasePath = path;
 }
 
-/** Rejects every read still waiting and lets the thread go. Called at quit. */
+/** Rejects every read still waiting and lets the thread go without waiting. Called at quit. */
 export function closeRecordsReader(): void {
-  abandon(new Error("The records reader closed."));
+  const current = worker;
+  worker = null;
   databasePath = null;
+  // Its exit is no longer this reader's news.
+  current?.removeAllListeners();
+  failPending(new Error("The records reader closed."));
+  void current?.terminate();
 }
 
 export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsReadResults[R["op"]]> {
@@ -47,15 +48,12 @@ export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsRead
   const path = databasePath;
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    const timer = setTimeout(
-      () => abandon(new Error(`The records read did not answer within ${RECORDS_READ_TIMEOUT_MS} ms.`)),
-      RECORDS_READ_TIMEOUT_MS,
-    );
-    pending.set(id, { resolve: resolve as (value: never) => void, reject, timer });
+    pending.set(id, { resolve: resolve as (value: never) => void, reject });
     try {
       ensureWorker(path).postMessage({ id, read } satisfies RecordsReaderRequest);
     } catch (error: unknown) {
-      abandon(error instanceof Error ? error : new Error(String(error)));
+      pending.delete(id);
+      reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
 }
@@ -73,28 +71,21 @@ function ensureWorker(path: string): Worker {
     const read = pending.get(response.id);
     if (read === undefined) return;
     pending.delete(response.id);
-    clearTimeout(read.timer);
     if (response.ok) read.resolve(response.value as never);
     else read.reject(new Error(response.error));
   });
-  created.on("error", (error: Error) => {
-    if (worker === created) abandon(error);
-  });
+  created.on("error", (error: Error) => failPending(error));
+  // A thread that died answers nothing more; the next read opens its own.
   created.on("exit", (code) => {
-    if (worker === created) abandon(new Error(`The records reader exited with code ${code}.`));
+    worker = null;
+    failPending(new Error(`The records reader exited with code ${code}.`));
   });
   worker = created;
   return created;
 }
 
-function abandon(error: Error): void {
-  const current = worker;
-  worker = null;
+function failPending(error: Error): void {
   const waiting = [...pending.values()];
   pending.clear();
-  for (const read of waiting) {
-    clearTimeout(read.timer);
-    read.reject(error);
-  }
-  void current?.terminate();
+  for (const read of waiting) read.reject(error);
 }
