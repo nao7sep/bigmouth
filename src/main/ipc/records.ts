@@ -13,7 +13,7 @@ import { error as logError, serializeError } from "../core/services/logger.js";
 import { readRecords } from "../core/services/recordsReader.js";
 import { currentRecordsSession, listWorkspaces } from "../storageAccess.js";
 import { storageOwner } from "../storageOwner.js";
-import { openRecordsWindow, notifyRecordSourcesChanged, notifyRecordsHealthChanged } from "../records-window.js";
+import { openRecordsWindow, notifyRecordsHealthChanged } from "../records-window.js";
 
 function assertRecordKind(value: unknown): asserts value is RecordKind {
   if (!RECORD_KINDS.includes(value as RecordKind)) {
@@ -58,12 +58,7 @@ async function logged<T>(channel: string, read: () => Promise<T>): Promise<T> {
 
 export function registerRecordsHandlers(): void {
   storageOwner.onRecordsHealth(notifyRecordsHealthChanged);
-  storageOwner.onRecordSourcesChanged(notifyRecordSourcesChanged);
   ipcMain.handle(CHANNELS.getRecordsHealth, () => storageOwner.recordsHealth());
-  // Earlier launches cannot gain records during this single-instance launch.
-  // Keep a successful history read; a failure remains retryable.
-  let history: Promise<string[]> | null = null;
-  const sessions = () => history ??= readRecords({ op: "sessions" }).catch((error) => { history = null; throw error; });
   ipcMain.handle(CHANNELS.openRecordsWindow, async () => {
     try {
       await openRecordsWindow();
@@ -91,7 +86,7 @@ export function registerRecordsHandlers(): void {
   ipcMain.handle(CHANNELS.readRecordSources, async () =>
     logged(CHANNELS.readRecordSources, async (): Promise<RecordSources> => {
       const [currentSession, earlierSessions, workspaces] = await Promise.all([
-        currentRecordsSession(), sessions(), listWorkspaces(),
+        currentRecordsSession(), readRecords({ op: "sessions" }), listWorkspaces(),
       ]);
       return {
         currentSession,

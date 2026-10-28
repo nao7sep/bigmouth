@@ -227,11 +227,6 @@ const api = {
     ipcRenderer.on(CHANNELS.recordsHealthChanged, wrapped);
     return () => ipcRenderer.removeListener(CHANNELS.recordsHealthChanged, wrapped);
   },
-  onRecordSourcesChanged: (listener: () => void) => {
-    const wrapped = () => listener();
-    ipcRenderer.on(CHANNELS.recordSourcesChanged, wrapped);
-    return () => ipcRenderer.removeListener(CHANNELS.recordSourcesChanged, wrapped);
-  },
   readRecordSources: () => ipcRenderer.invoke(CHANNELS.readRecordSources) as Promise<RecordSources>,
   onRecordsChanged: (listener: () => void) => {
     const wrapped = (): void => listener();

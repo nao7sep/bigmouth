@@ -16,9 +16,7 @@ const state = vi.hoisted(() => ({
   workspaceName: "Blog",
   health: { databaseGap: false, fallbackFailed: false, fallbackPath: null } as RecordsHealth,
   healthListener: null as ((health: RecordsHealth) => void) | null,
-  sourcesListener: null as (() => void) | null,
   healthNotifications: [] as RecordsHealth[],
-  sourcesNotifications: 0,
 }));
 
 vi.mock("@main/storageAccess.js", async () => {
@@ -46,12 +44,10 @@ vi.mock("@main/core/services/workspaceStore.js", () => ({
 vi.mock("@main/records-window.js", () => ({
   openRecordsWindow: async () => { state.opened++; },
   notifyRecordsHealthChanged: (health: RecordsHealth) => state.healthNotifications.push(health),
-  notifyRecordSourcesChanged: () => { state.sourcesNotifications++; },
 }));
 vi.mock("@main/storageOwner.js", () => ({ storageOwner: {
   recordsHealth: () => state.health,
   onRecordsHealth: (listener: (health: RecordsHealth) => void) => { state.healthListener = listener; },
-  onRecordSourcesChanged: (listener: () => void) => { state.sourcesListener = listener; },
 } }));
 vi.mock("@main/core/services/logger.js", () => ({
   error: (...args: unknown[]) => state.logged.push(args),
@@ -73,7 +69,6 @@ beforeEach(() => {
   state.workspaceName = "Blog";
   state.health = { databaseGap: false, fallbackFailed: false, fallbackPath: null };
   state.healthNotifications.length = 0;
-  state.sourcesNotifications = 0;
   registerRecordsHandlers();
 });
 
@@ -119,7 +114,7 @@ describe("records IPC", () => {
     });
   });
 
-  it("retains session history while refreshing workspace names on each sources read", async () => {
+  it("includes earlier launches and refreshes workspace names on each sources read", async () => {
     state.sessions = ["2026-10-01T08:00:00.000Z"];
     await expect(invoke(CHANNELS.readRecordSources)).resolves.toEqual({
       currentSession: "2026-10-02T08:00:00.000Z",
@@ -130,26 +125,14 @@ describe("records IPC", () => {
     await expect(invoke(CHANNELS.readRecordSources)).resolves.toMatchObject({
       workspaces: [{ id: "ws-1", name: "Renamed blog" }],
     });
-    expect(state.reads).toEqual([{ op: "sessions" }]);
     expect(state.logged).toEqual([]);
   });
 
-  it("retries session history after a failed query", async () => {
-    state.readFailure = new Error("SQLITE_BUSY");
-    await expect(invoke(CHANNELS.readRecordSources)).rejects.toThrow("SQLITE_BUSY");
-    state.readFailure = null;
-    await expect(invoke(CHANNELS.readRecordSources)).resolves.toMatchObject({ sessions: state.sessions });
-    await invoke(CHANNELS.readRecordSources);
-    expect(state.reads).toEqual([{ op: "sessions" }, { op: "sessions" }]);
-  });
-
-  it("returns retained records health and relays health and source changes", async () => {
+  it("returns retained records health and relays health changes", async () => {
     state.health = { databaseGap: true, fallbackFailed: false, fallbackPath: "/fallback.jsonl" };
     expect(await invoke(CHANNELS.getRecordsHealth)).toEqual(state.health);
     state.healthListener!(state.health);
-    state.sourcesListener!();
     expect(state.healthNotifications).toEqual([state.health]);
-    expect(state.sourcesNotifications).toBe(1);
     expect(state.reads).toEqual([]);
   });
 

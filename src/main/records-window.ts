@@ -52,12 +52,6 @@ export function notifyRecordsChanged(): void {
   }
 }
 
-export function notifyRecordSourcesChanged(): void {
-  if (recordsWindow && !recordsWindow.isDestroyed() && !recordsWindow.webContents.isDestroyed()) {
-    recordsWindow.webContents.send(CHANNELS.recordSourcesChanged);
-  }
-}
-
 export function notifyRecordsHealthChanged(health: RecordsHealth): void {
   if (recordsWindow && !recordsWindow.isDestroyed() && !recordsWindow.webContents.isDestroyed()) {
     recordsWindow.webContents.send(CHANNELS.recordsHealthChanged, health);

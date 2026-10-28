@@ -10,7 +10,6 @@ const api = vi.hoisted(() => ({
   readRecordSources: vi.fn<() => Promise<RecordSources>>(),
   getRecordsHealth: vi.fn<() => Promise<RecordsHealth>>(),
   healthChanged: null as ((health: RecordsHealth) => void) | null,
-  sourcesChanged: null as (() => void) | null,
   updateUiState: vi.fn<(patch: Record<string, unknown>) => Promise<unknown>>(),
   reportProblem: vi.fn(),
   recordsChanged: null as (() => void) | null,
@@ -24,10 +23,6 @@ vi.mock("@renderer/api", () => ({
   onRecordsHealthChanged: (listener: (health: RecordsHealth) => void) => {
     api.healthChanged = listener;
     return () => { api.healthChanged = null; };
-  },
-  onRecordSourcesChanged: (listener: () => void) => {
-    api.sourcesChanged = listener;
-    return () => { api.sourcesChanged = null; };
   },
   updateUiState: api.updateUiState,
   reportProblem: api.reportProblem,
@@ -91,7 +86,6 @@ const isScroll = (element: HTMLElement) => element.classList.contains("records-l
 beforeEach(() => {
   api.getRecordsHealth.mockReset().mockResolvedValue({ databaseGap: false, fallbackFailed: false, fallbackPath: null });
   api.healthChanged = null;
-  api.sourcesChanged = null;
   api.readRecordsPage.mockReset().mockResolvedValue({ records: [call, line], more: false });
   api.readRecordDetail.mockReset().mockImplementation(async (kind) => (kind === "log" ? lineDetail : callDetail));
   api.readRecordSources.mockReset().mockResolvedValue({
@@ -407,7 +401,7 @@ describe("RecordsWindow", () => {
 
     expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
     expect(lastQuery()).toEqual({ session: null, kind: null, level: null, search: "", after: null });
-    expect(api.readRecordSources).toHaveBeenCalledOnce();
+    expect(api.readRecordSources).toHaveBeenCalledTimes(2);
     expect(options()).toHaveLength(2);
     expect(document.body.textContent).not.toContain("Loading records…");
 
@@ -594,7 +588,7 @@ describe("RecordsWindow", () => {
   });
 });
 
-describe("Records health and sources", () => {
+describe("Records health", () => {
   it("subscribes before the initial health read and retains an earlier gap when a stale getter settles", async () => {
     const initial = deferred<RecordsHealth>();
     api.getRecordsHealth.mockImplementationOnce(() => {
@@ -630,21 +624,6 @@ describe("Records health and sources", () => {
     expect(api.getRecordsHealth).toHaveBeenCalledTimes(2);
   });
 
-  it("reads sources on their own change signal while ordinary records only refresh the page", async () => {
-    await mount();
-    vi.useFakeTimers();
-    await signal();
-    await act(async () => vi.advanceTimersByTime(1000));
-    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
-    expect(api.readRecordSources).toHaveBeenCalledOnce();
-
-    const nextLaunch = "2026-10-03T08:00:00.000Z";
-    api.readRecordSources.mockResolvedValue({ currentSession: SESSION, sessions: [nextLaunch, SESSION], workspaces: [] });
-    await act(async () => api.sourcesChanged!());
-    expect(api.readRecordSources).toHaveBeenCalledTimes(2);
-    expect(Array.from(selects()[2]!.options).map((option) => option.value)).toContain(nextLaunch);
-    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe("Records provider duration", () => {

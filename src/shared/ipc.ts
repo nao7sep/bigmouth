@@ -88,7 +88,6 @@ export const CHANNELS = {
   recordsChanged: "records:changed",
   getRecordsHealth: "records:health",
   recordsHealthChanged: "records:health-changed",
-  recordSourcesChanged: "records:sources-changed",
 
   getDurabilityUnconfirmed: "storage:durabilityUnconfirmed",
   durabilityUnconfirmed: "storage:durabilityWarning",
@@ -416,7 +415,6 @@ export interface BigMouthApi {
   readRecordSources(): Promise<RecordSources>;
   getRecordsHealth(): Promise<RecordsHealth>;
   onRecordsHealthChanged(listener: (health: RecordsHealth) => void): () => void;
-  onRecordSourcesChanged(listener: () => void): () => void;
   /** A record was stored in the records database. */
   onRecordsChanged(listener: () => void): () => void;
 

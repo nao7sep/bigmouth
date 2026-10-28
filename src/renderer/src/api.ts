@@ -559,4 +559,3 @@ export function getWorkspaceConfig(workspaceId?: string): Promise<WorkspaceConfi
 
 export const getRecordsHealth = (): Promise<RecordsHealth> => bridge().getRecordsHealth();
 export const onRecordsHealthChanged = (listener: (health: RecordsHealth) => void): (() => void) => bridge().onRecordsHealthChanged(listener);
-export const onRecordSourcesChanged = (listener: () => void): (() => void) => bridge().onRecordSourcesChanged(listener);

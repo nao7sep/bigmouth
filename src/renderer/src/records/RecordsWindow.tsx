@@ -23,7 +23,6 @@ import {
 import {
   getRecordsHealth,
   onRecordsHealthChanged,
-  onRecordSourcesChanged,
   onRecordsChanged,
   readRecordDetail,
   readRecordSources,
@@ -167,8 +166,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     return () => { active = false; unsubscribe(); };
   }, []);
 
-  useEffect(() => onRecordSourcesChanged(() => setSourceReads((count) => count + 1)), []);
-
   useEffect(() => {
     let cancelled = false;
     readRecordSources().then(
@@ -241,6 +238,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       if (timer !== null || liveSuspended.current) return;
       timer = setTimeout(() => {
         timer = null;
+        setSourceReads((count) => count + 1);
         const scroll = scrollRef.current;
         if (scroll === null || atTop(scroll)) readNewest();
         else newestPending.current = true;

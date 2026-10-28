@@ -117,9 +117,6 @@ export function initAppDir(): AppConfig {
   return appConfig;
 }
 
-let registryListener: (() => void) | null = null;
-export function onWorkspaceRegistryChanged(listener: (() => void) | null): void { registryListener = listener; }
-
 function writeAppConfig(next = ensureLoaded()): void {
   // recorded: workspaces.json is the durable workspace REGISTRY — the map from workspace id to its
   // on-disk dataDirectory. Losing it strands every externally-linked workspace even when the workspace
@@ -127,7 +124,6 @@ function writeAppConfig(next = ensureLoaded()): void {
   writeManagedText(getWorkspacesJsonPath(), jsonStoreText("workspaces", { workspaces: next.workspaces }));
   // Publish only committed registry state, so a refused save remains retryable.
   appConfig = next;
-  registryListener?.();
 }
 
 function ensureLoaded(): AppConfig {

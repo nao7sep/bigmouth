@@ -319,7 +319,6 @@ class StorageFleet {
     return { ...local, databaseGap: local.databaseGap || this.forwardingGap, fallbackFailed: local.fallbackFailed || this.forwardingGap };
   }
   onRecordStored(listener: (() => void) | null): void { this.local.onRecordStored(listener); }
-  onRecordSourcesChanged(listener: (() => void) | null): void { this.local.onRecordSourcesChanged(listener); }
 
   async flushAsync(boundMs: number): Promise<StorageFlushOutcome> {
     const deadline = performance.now() + boundMs;

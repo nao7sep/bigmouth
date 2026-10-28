@@ -263,10 +263,8 @@ describe("storage fleet notifications", () => {
     await h.fleet.run("getPost", [ROOT_A, "a"]);
     const health = vi.fn();
     const stored = vi.fn();
-    const sources = vi.fn();
     h.fleet.onRecordsHealth(health);
     h.fleet.onRecordStored(stored);
-    h.fleet.onRecordSourcesChanged(sources);
     const record = { time: "2026-10-23T00:00:00.000Z", level: "warn", message: "workspace warning", workspaceId: "a", postId: null, event: '{"message":"workspace warning"}' };
     h.workerAt(ROOT_A).emit("message", { event: "forward-log", record, bytes: 32 });
     const log = await h.request((request) => request.name === "log");
@@ -277,9 +275,7 @@ describe("storage fleet notifications", () => {
     expect(h.fleet.recordsHealth()).toEqual({ databaseGap: true, fallbackFailed: true, fallbackPath: "/fallback.jsonl" });
     expect(health).toHaveBeenLastCalledWith(h.fleet.recordsHealth());
     h.workers[0]!.emit("message", { event: "record-stored" });
-    h.workers[0]!.emit("message", { event: "record-sources-changed" });
     expect(stored).toHaveBeenCalledOnce();
-    expect(sources).toHaveBeenCalledOnce();
   });
 });
 
