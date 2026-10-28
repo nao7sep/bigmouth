@@ -12,14 +12,15 @@ import { parentPort } from "node:worker_threads";
 import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
 
 export type BackupWrite =
-  | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string; partSize: number }
-  // A file the app installed without holding its bytes: `fd` is open on the installed copy and its
-  // originating owner keeps it open until acknowledgement. `sha256` and `size` are what the app copied.
-  | { kind: "record-file"; file: string; sessionId: string; path: string; fd: number; sha256: string; size: number; writtenAt: string; partSize: number };
+  | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string }
+  // A file the app installed without holding its bytes: `fd` is open on the installed copy, and the
+  // thread that opened it closes it once this thread has read it. `sha256` and `size` are what the app copied.
+  | { kind: "record-file"; file: string; sessionId: string; path: string; fd: number; sha256: string; size: number; writtenAt: string };
 
 export type BackupWorkerRequest =
-  | (BackupWrite & { signal: Int32Array })
-  | { kind: "close"; signal: Int32Array };
+  | BackupWrite
+  // Answered through `signal` once every earlier write is applied; "close" also releases the store file.
+  | { kind: "drain" | "close"; signal: Int32Array };
 
 export type BackupWorkerNotice = { kind: "warn"; text: string; fields: Record<string, unknown> } | { kind: "settled" };
 
@@ -38,17 +39,6 @@ CREATE TABLE IF NOT EXISTS backups (
   content_sha256 TEXT NOT NULL,
   byte_size      INTEGER NOT NULL,
   written_at_utc TEXT NOT NULL
-);
-`;
-// A file larger than the part size is kept in parts: its row holds the path, session, size and
-// hash of the whole file with empty content, and its parts joined in order are its exact bytes.
-// SQLite holds at most about 1 GB in one value, and an attachment can be any size.
-const PARTS = `
-CREATE TABLE IF NOT EXISTS backup_parts (
-  backup_id INTEGER NOT NULL,
-  part      INTEGER NOT NULL,
-  content   BLOB NOT NULL,
-  PRIMARY KEY (backup_id, part)
 );
 `;
 const INDEXES = `
@@ -96,9 +86,7 @@ function open(file: string): DatabaseSync | null {
     opened.exec("BEGIN IMMEDIATE");
     try {
       opened.exec(SCHEMA);
-      opened.exec(PARTS);
       opened.prepare("SELECT id, session_id, path, content, content_sha256, byte_size, written_at_utc FROM backups LIMIT 0").all();
-      opened.prepare("SELECT backup_id, part, content FROM backup_parts LIMIT 0").all();
       opened.exec(INDEXES);
       opened.exec(`PRAGMA user_version = ${FORMAT_VERSIONS.backups}`);
       opened.exec("COMMIT");
@@ -122,8 +110,7 @@ type Recorded = { path: string; sessionId: string; writtenAt: string };
 
 // One row per path per session: the session's first save of a path inserts it,
 // unless it equals the path's latest row from an earlier session, and later
-// saves replace its content, a large file's parts with it in one transaction.
-// Returns the row to write, or null when this content is already recorded.
+// saves replace its content. Returns the row to write, or null when this content is already recorded.
 function rowFor(store: DatabaseSync, request: Recorded, hash: string): { id: number | null } | null {
   const own = store
     .prepare("SELECT id, content_sha256 AS h FROM backups WHERE path = ? AND session_id = ?")
@@ -138,31 +125,17 @@ function rowFor(store: DatabaseSync, request: Recorded, hash: string): { id: num
   return { id: own?.id ?? null };
 }
 
-// Writes the session's row for the path inside the caller's transaction, dropping any parts an
-// earlier save in the session left, and returns its id.
-function writeRow(store: DatabaseSync, request: Recorded, row: { id: number | null }, content: Uint8Array, hash: string, size: number): number {
+// Writes the session's row for the path: one value holds the whole file.
+function writeRow(store: DatabaseSync, request: Recorded, row: { id: number | null }, content: Uint8Array, hash: string): void {
   if (row.id !== null) {
     store
       .prepare("UPDATE backups SET content = ?, content_sha256 = ?, byte_size = ?, written_at_utc = ? WHERE id = ?")
-      .run(content, hash, size, request.writtenAt, row.id);
-    store.prepare("DELETE FROM backup_parts WHERE backup_id = ?").run(row.id);
-    return row.id;
+      .run(content, hash, content.byteLength, request.writtenAt, row.id);
+    return;
   }
-  const inserted = store
+  store
     .prepare("INSERT INTO backups (session_id, path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(request.sessionId, request.path, content, hash, size, request.writtenAt);
-  return Number(inserted.lastInsertRowid);
-}
-
-function transaction(store: DatabaseSync, work: () => void): void {
-  store.exec("BEGIN IMMEDIATE");
-  try {
-    work();
-    store.exec("COMMIT");
-  } catch (error) {
-    try { store.exec("ROLLBACK"); } catch { /* Preserve the original diagnostic. */ }
-    throw error;
-  }
+    .run(request.sessionId, request.path, content, hash, content.byteLength, request.writtenAt);
 }
 
 function record(request: Extract<BackupWorkerRequest, { kind: "record" }>): void {
@@ -173,15 +146,7 @@ function record(request: Extract<BackupWorkerRequest, { kind: "record" }>): void
     const hash = createHash("sha256").update(bytes).digest("hex");
     const row = rowFor(store, request, hash);
     if (!row) return;
-    const parted = bytes.byteLength > request.partSize;
-    transaction(store, () => {
-      const id = writeRow(store, request, row, parted ? new Uint8Array(0) : bytes, hash, bytes.byteLength);
-      if (!parted) return;
-      const insertPart = store.prepare("INSERT INTO backup_parts (backup_id, part, content) VALUES (?, ?, ?)");
-      for (let part = 0, offset = 0; offset < bytes.byteLength; part += 1, offset += request.partSize) {
-        insertPart.run(id, part, bytes.subarray(offset, offset + request.partSize));
-      }
-    });
+    writeRow(store, request, row, bytes, hash);
   } catch (error) {
     warn("backup store: failed to record a write", { file: request.path, error: describe(error) });
   }
@@ -203,55 +168,39 @@ function readAt(fd: number, buffer: Buffer, length: number, position: number): n
 
 // A file recorded from disk rather than from bytes in hand (data-backup-conventions): the
 // installed copy is read through the descriptor the app opened before handing it over, so a
-// later replace or delete of the path cannot change what is read, in parts no larger than the
-// part size, so a file of any size holds one part in memory. Its row and parts are written in one
-// transaction that commits only when the bytes read hash to what the app copied; a copy edited in
-// place meanwhile records nothing.
+// later replace or delete of the path cannot change what is read. It is recorded only when the
+// bytes read hash to what the app copied; a copy edited in place meanwhile records nothing.
 function recordFile(request: Extract<BackupWorkerRequest, { kind: "record-file" }>): void {
   try {
     const store = open(request.file);
     if (!store) return;
     const row = rowFor(store, request, request.sha256);
     if (!row) return;
-    const parted = request.size > request.partSize;
-    const buffer = Buffer.allocUnsafe(Math.min(request.size, request.partSize));
-    const hash = createHash("sha256");
-    transaction(store, () => {
-      if (!parted) {
-        const count = readAt(request.fd, buffer, request.size, 0);
-        const bytes = buffer.subarray(0, count);
-        if (count !== request.size || hash.update(bytes).digest("hex") !== request.sha256) throw new ChangedFileError();
-        writeRow(store, request, row, bytes, request.sha256, request.size);
-        return;
-      }
-      const id = writeRow(store, request, row, new Uint8Array(0), request.sha256, request.size);
-      const insertPart = store.prepare("INSERT INTO backup_parts (backup_id, part, content) VALUES (?, ?, ?)");
-      for (let part = 0, offset = 0; offset < request.size; part += 1, offset += request.partSize) {
-        const length = Math.min(request.partSize, request.size - offset);
-        const count = readAt(request.fd, buffer, length, offset);
-        if (count !== length) throw new ChangedFileError();
-        const bytes = buffer.subarray(0, count);
-        hash.update(bytes);
-        insertPart.run(id, part, bytes);
-      }
-      if (hash.digest("hex") !== request.sha256) throw new ChangedFileError();
-    });
+    const buffer = Buffer.allocUnsafe(request.size);
+    const count = readAt(request.fd, buffer, request.size, 0);
+    const bytes = buffer.subarray(0, count);
+    if (count !== request.size || createHash("sha256").update(bytes).digest("hex") !== request.sha256) throw new ChangedFileError();
+    writeRow(store, request, row, bytes, request.sha256);
   } catch (error) {
     if (error instanceof ChangedFileError) warn("backup store: an attachment changed on disk before it was recorded; nothing recorded", { file: request.path });
     else warn("backup store: failed to record a write", { file: request.path, error: describe(error) });
   }
 }
 
-// The origin closes descriptors only after this acknowledgement or physical exit.
-port.on("messageerror", (error) => { throw error; });
+// A request that could not be read never reaches its record; it is reported, and a file's
+// descriptor in it stays open until the process ends.
+port.on("messageerror", (error) => {
+  warn("backup store: a write could not be handed to the recorder", { error: describe(error) });
+  port.postMessage({ kind: "settled" } satisfies BackupWorkerNotice);
+});
 port.on("message", (request: BackupWorkerRequest) => {
-  try {
-    if (request.kind === "record") record(request);
-    else if (request.kind === "record-file") recordFile(request);
-    else close();
-  } finally {
+  if ("signal" in request) {
+    if (request.kind === "close") close();
     Atomics.store(request.signal, 0, 1);
     Atomics.notify(request.signal, 0);
-    port.postMessage({ kind: "settled" } satisfies BackupWorkerNotice);
+    return;
   }
+  if (request.kind === "record") record(request);
+  else recordFile(request);
+  port.postMessage({ kind: "settled" } satisfies BackupWorkerNotice);
 });

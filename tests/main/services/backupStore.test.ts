@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot, getStateJsonPath } from "@main/core/services/storagePaths.js";
 import { writeManagedText } from "@main/core/shared/atomicWrite.js";
-import { closeBackupStore, drainBackups, record, recordFile, stopBackups, useBackupPartSize } from "@main/core/services/backupStore.js";
+import { closeBackupStore, drainBackups, record, recordFile, stopBackups } from "@main/core/services/backupStore.js";
 import * as logger from "@main/core/services/logger.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
@@ -172,47 +172,9 @@ describe("one row per path per session", () => {
   });
 });
 
-describe("files larger than one value", () => {
-  afterEach(() => useBackupPartSize(8 * 1024 * 1024));
-
-  it("keeps a large file in parts that join to its exact bytes, and replaces them on a later save", () => {
-    useBackupPartSize(4);
-    const file = path.join(root, "big.bin");
-    const first = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    record(file, first);
-    const [row] = rows(file);
-    expect(Buffer.from(row!.content).byteLength).toBe(0);
-    expect(row!.byte_size).toBe(10);
-    expect(row!.content_sha256).toBe(createHash("sha256").update(first).digest("hex"));
-    const parts = () => {
-      const db = new DatabaseSync(storeFile());
-      try {
-        return db.prepare("SELECT part, content FROM backup_parts WHERE backup_id = ? ORDER BY part").all(row!.id) as { part: number; content: Uint8Array }[];
-      } finally { db.close(); }
-    };
-    expect(Buffer.concat(parts().map((part) => Buffer.from(part.content))).equals(first)).toBe(true);
-    expect(parts().map((part) => part.part)).toEqual([0, 1, 2]);
-
-    // A later save in the session that fits one value drops the parts.
-    record(file, Buffer.from("tiny"));
-    const [after] = rows(file);
-    expect(Buffer.from(after!.content).toString()).toBe("tiny");
-    expect(parts()).toEqual([]);
-  });
-});
-
 // An installed attachment the app never held whole is read from disk by the recorder.
 describe("a file recorded from disk", () => {
-  afterEach(() => useBackupPartSize(8 * 1024 * 1024));
-
   const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-  const partsOf = (id: number) => {
-    const db = new DatabaseSync(storeFile());
-    try {
-      return (db.prepare("SELECT content FROM backup_parts WHERE backup_id = ? ORDER BY part").all(id) as { content: Uint8Array }[])
-        .map((part) => Buffer.from(part.content));
-    } finally { db.close(); }
-  };
   /** Holds the store's write lock, so a hand-off waits until `release` while the test acts. */
   const holdStore = () => {
     record(path.join(root, "opens-the-store.md"), Buffer.from("opens the store"));
@@ -222,32 +184,18 @@ describe("a file recorded from disk", () => {
     return () => { locker.exec("COMMIT"); locker.close(); };
   };
 
-  it("keeps a file larger than a part in parts that join to its exact bytes", () => {
-    useBackupPartSize(4);
+  it("keeps the file's exact bytes in one value", () => {
     const file = path.join(root, "photo.bin");
-    const bytes = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const bytes = Buffer.from("an attachment");
     fs.writeFileSync(file, bytes);
     recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
     const [row] = rows(file);
-    expect(row!.byte_size).toBe(10);
+    expect(row!.byte_size).toBe(bytes.length);
     expect(row!.content_sha256).toBe(sha(bytes));
-    expect(Buffer.from(row!.content).byteLength).toBe(0);
-    expect(partsOf(row!.id).map((part) => part.length)).toEqual([4, 4, 2]);
-    expect(Buffer.concat(partsOf(row!.id)).equals(bytes)).toBe(true);
-  });
-
-  it("keeps a file no larger than a part in one value", () => {
-    const file = path.join(root, "small.bin");
-    const bytes = Buffer.from("small attachment");
-    fs.writeFileSync(file, bytes);
-    recordFile(file, fs.openSync(file, "r"), sha(bytes), bytes.length);
-    const [row] = rows(file);
     expect(Buffer.from(row!.content).equals(bytes)).toBe(true);
-    expect(partsOf(row!.id)).toEqual([]);
   });
 
   it("records the bytes installed even when the file is replaced and deleted before the recorder reads it", () => {
-    useBackupPartSize(4);
     const file = path.join(root, "photo.bin");
     const original = Buffer.from("the installed bytes");
     fs.writeFileSync(file, original);
@@ -261,7 +209,7 @@ describe("a file recorded from disk", () => {
     } finally { release(); }
     const [row] = rows(file);
     expect(row!.content_sha256).toBe(sha(original));
-    expect(Buffer.concat(partsOf(row!.id)).equals(original)).toBe(true);
+    expect(Buffer.from(row!.content).equals(original)).toBe(true);
   });
 
   it("records nothing when the installed file is rewritten in place before the recorder reads it", async () => {
@@ -315,21 +263,20 @@ describe("never holds up the save", () => {
     expect(rows(file).map(text)).toEqual(["while locked"]);
   });
 
-  it("gives pending writes a bound at quit", async () => {
+  it("gives pending writes a bound at quit", () => {
     const file = path.join(root, "doc.md");
     record(file, Buffer.from("drained at quit"));
-    await stopBackups(5000);
+    stopBackups(5000);
     expect(rows(file).map(text)).toEqual(["drained at quit"]);
   });
 
-  it("does not wait for pending writes at OS session end", async () => {
+  it("does not wait for pending writes at OS session end", () => {
     record(path.join(root, "doc.md"), Buffer.from("pending"));
     expect(drainBackups(5000)).toBe(true);
     const wait = vi.spyOn(Atomics, "wait");
     try {
-      const retired = stopBackups(0);
+      stopBackups(0);
       expect(wait).not.toHaveBeenCalled();
-      await retired;
     } finally {
       wait.mockRestore();
     }
@@ -355,14 +302,13 @@ describe("best effort", () => {
     }
   });
 
-  it.each(["backups", "backup_parts"])("refuses a current-version %s table with a missing required column without changing history", async (incompatible) => {
+  it("refuses a current-version backups table with a missing required column without changing history", async () => {
     const db = new DatabaseSync(storeFile());
     db.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, session_id TEXT, path TEXT NOT NULL, content BLOB NOT NULL,
-      content_sha256 TEXT NOT NULL, ${incompatible === "backups" ? "" : "byte_size INTEGER NOT NULL,"} written_at_utc TEXT NOT NULL);
-      CREATE TABLE backup_parts (backup_id INTEGER NOT NULL, ${incompatible === "backup_parts" ? "" : "part INTEGER NOT NULL,"} content BLOB NOT NULL);
+      content_sha256 TEXT NOT NULL, written_at_utc TEXT NOT NULL);
       PRAGMA user_version = 2`);
-    db.prepare(`INSERT INTO backups (session_id, path, content, content_sha256, ${incompatible === "backups" ? "" : "byte_size,"} written_at_utc)
-      VALUES ('earlier', 'kept.md', ?, 'x', ${incompatible === "backups" ? "" : "3,"} '2026-01-01T00:00:00.000Z')`).run(Buffer.from("old"));
+    db.prepare(`INSERT INTO backups (session_id, path, content, content_sha256, written_at_utc)
+      VALUES ('earlier', 'kept.md', ?, 'x', '2026-01-01T00:00:00.000Z')`).run(Buffer.from("old"));
     const schemaBefore = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
     const historyBefore = db.prepare("SELECT * FROM backups").all();
     db.close();

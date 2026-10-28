@@ -34,7 +34,7 @@ onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies Stora
 // A request that could not be read is said to be, so the owner fails it rather
 // than waiting for a reply that cannot come.
 port.on("messageerror", () => port.postMessage({ event: "request-unreadable" } satisfies StorageReply));
-port.on("message", async (request: StorageRequest | StorageFlushRequest | StorageFinishRequest) => {
+port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinishRequest) => {
   if ("finish" in request) {
     try {
       for (const queued of request.queued) {
@@ -47,7 +47,7 @@ port.on("message", async (request: StorageRequest | StorageFlushRequest | Storag
       // typed while the quit question was open, get one more write attempt
       // within the finish bound; a quit flush already held the debounce.
       try { storageTasks.flush(); }
-      finally { await storageTasks.finish(request.backupBoundMs); }
+      finally { storageTasks.finish(request.backupBoundMs); }
     }
     finally {
       request.port.postMessage({ finished: true });

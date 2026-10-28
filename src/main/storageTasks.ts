@@ -63,8 +63,8 @@ export const storageTasks = {
     return postStore.flushAllPendingEdits();
   },
   /** Ends storage for the process; pending backup writes get `backupBoundMs`, 0 at OS session end. */
-  async finish(backupBoundMs: number) {
-    try { await stopBackups(backupBoundMs); }
+  finish(backupBoundMs: number) {
+    try { stopBackups(backupBoundMs); }
     finally { closeLogger(); }
   },
   log(record: recordsStore.LogRecord) {
