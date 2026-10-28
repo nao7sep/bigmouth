@@ -39,15 +39,20 @@ describe("InterfaceLanguageRoot", () => {
     // The page's lang as it stood when the new text first reached the DOM: the
     // two change in one commit, so CJK text never shows under another lang.
     const langWithText: string[] = [];
+    let shown!: () => void;
+    const japaneseShown = new Promise<void>((resolve) => { shown = resolve; });
     const observer = new MutationObserver(() => {
-      if (document.body.textContent?.includes("キャンセル")) langWithText.push(document.documentElement.lang);
+      if (!document.body.textContent?.includes("キャンセル")) return;
+      langWithText.push(document.documentElement.lang);
+      shown();
     });
     observer.observe(document.body, { subtree: true, childList: true, characterData: true });
 
     act(() => listener!({ language: "ja", locale: "ja-JP" }));
     // The current language stays until the new catalogue has loaded.
     expect(getByText("Abbrechen")).toBeTruthy();
-    await vi.waitFor(() => expect(getByText("キャンセル")).toBeTruthy());
+    await japaneseShown;
+    expect(getByText("キャンセル")).toBeTruthy();
     observer.disconnect();
     expect(langWithText[0]).toBe("ja");
     expect(document.documentElement.lang).toBe("ja");

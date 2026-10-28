@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { CHANNELS, analysisStreamChannel, type AnalysisStreamFrame } from "@shared/ipc";
 
@@ -100,7 +101,9 @@ vi.mock("@main/core/services/logger.js", async (importOriginal) => ({
 const { registerAnalysisHandlers } = await import("@main/ipc/analysis.js");
 const { registerAiRequestHandlers } = await import("@main/ipc/aiRequests.js");
 
-const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+// The next turn of the event loop, by which every promise already settled has
+// run its handlers; no clock is involved.
+const tick = (): Promise<void> => setImmediate();
 
 let nextSenderId = 1;
 

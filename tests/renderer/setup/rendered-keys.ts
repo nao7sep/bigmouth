@@ -1,7 +1,12 @@
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { createElement } from "react";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render } from "@testing-library/react";
 import { ENGLISH } from "@shared/i18n/catalogues";
+
+// Testing Library's waitFor and findBy poll the DOM for the state a test needs.
+// Their own one-second bound is turned off, as the runner's is: tests carry no
+// timeouts. The largest delay a timer takes stands for no bound.
+configure({ asyncUtilTimeout: 2 ** 31 - 1 });
 
 // React DOM, Testing Library and jsdom each pay a one-time cost on their first
 // render, query and event in a file. Paid here, it stays out of the first

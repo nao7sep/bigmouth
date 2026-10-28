@@ -59,6 +59,10 @@ export default defineConfig({
         test: {
           name: "main",
           environment: "node",
+          // Tests carry no timeouts (tests-folder-conventions): a test waits for
+          // the event it needs, and a slow one that passes has passed.
+          testTimeout: 0,
+          hookTimeout: 0,
           // Everything the renderer project does not take, so a test in a new folder — or at the
           // root of tests/ — runs under Node instead of matching no project and never running at
           // all. Naming the folders here instead let a file outside them be type-checked, look
@@ -85,6 +89,8 @@ export default defineConfig({
         test: {
           name: "renderer",
           environment: "jsdom",
+          testTimeout: 0,
+          hookTimeout: 0,
           include: ["tests/renderer/**/*.test.{ts,tsx}"],
           // Every spec that renders the interface also fails if a catalogue key
           // reaches the screen untranslated.

@@ -915,8 +915,8 @@ describe("single app-process ownership", () => {
     await quit();
     expect(shell.exits).toEqual([0]);
     closeStorage();
-    // Nothing is shown, so there is no event to wait for: let every pending
-    // continuation of the failed startup run before checking.
+    // Nothing is shown, so there is no event to wait for: the next turn of the
+    // event loop lets every pending continuation of the failed startup run.
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(shell.dialogs).toEqual([]);

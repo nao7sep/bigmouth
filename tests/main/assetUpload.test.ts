@@ -163,7 +163,7 @@ describe("receiveUpload", () => {
     expect(peakBuffers).toBeLessThan(24 * 1024 * 1024);
     expect(peakRss).toBeLessThan(64 * 1024 * 1024);
     await received.staging.discard();
-  }, 60_000);
+  });
 
   it("removes the stage when the renderer cannot read the file to its end", async () => {
     const { port1, port2 } = new MessageChannel();

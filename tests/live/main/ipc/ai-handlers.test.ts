@@ -61,7 +61,6 @@ const JA_METADATA = {
     "毎朝三十分の散歩を三ヶ月続けた記録。体調の変化よりも、考えが整理される時間として役に立った話。",
 };
 
-const ANALYSIS_TIMEOUT_MS = 4 * 60_000;
 const FIELDS: MetadataField[] = ["title", "slug", "tags", "metaDescription"];
 // One request spanning both rules, so a single call shows the split holding
 // rather than each side passing in isolation.
@@ -190,17 +189,14 @@ describe("the live AI handlers", () => {
 
   it("streams an analysis to completion", async () => {
     const frames: AnalysisStreamFrame[] = [];
-    const finished = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`No final frame after ${ANALYSIS_TIMEOUT_MS} ms.`)), ANALYSIS_TIMEOUT_MS);
+    // The provider's own idle watchdog ends a stream that goes quiet with an error frame.
+    const finished = new Promise<void>((resolve) => {
       const sender = {
         ...ownerWindow,
         isDestroyed: () => false,
         send: (_channel: string, frame: AnalysisStreamFrame) => {
           frames.push(frame);
-          if (frame.type === "done" || frame.type === "error") {
-            clearTimeout(timer);
-            resolve();
-          }
+          if (frame.type === "done" || frame.type === "error") resolve();
         },
       };
       // The streaming handler answers through event.sender, so it gets a real event.

@@ -15,7 +15,6 @@ import os from "node:os";
 import path from "node:path";
 import { MessageChannel } from "node:worker_threads";
 import { createHash } from "node:crypto";
-import { setImmediate as nextTurn } from "node:timers/promises";
 import {
   ASSET_UPLOAD_SLICE_BYTES,
   CHANNELS,
@@ -449,7 +448,6 @@ describe("uploadAsset", () => {
       expect(reply).toBeNull();
       // The closed caller has already returned; cleanup still owns started I/O.
       await discarded.promise;
-      await nextTurn();
       expect(staged()).toEqual([]);
     } finally { discard.mockRestore(); }
   });

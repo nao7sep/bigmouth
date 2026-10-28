@@ -5,8 +5,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const recorded = vi.hoisted(() => [] as Record<string, unknown>[]);
+// Woken by each record written; see onlyRecord.
+const recordWaiters = vi.hoisted(() => [] as (() => void)[]);
 vi.mock("@main/storageAccess.js", () => ({
-  writeProviderCall: async (call: Record<string, unknown>) => { recorded.push(call); },
+  writeProviderCall: async (call: Record<string, unknown>) => { recorded.push(call); for (const wake of recordWaiters.splice(0)) wake(); },
 }));
 
 import { ClaudeProvider } from "@main/core/ai/claude.js";
@@ -49,7 +51,8 @@ function provider(): ClaudeProvider {
 
 /** The one record the call left, once its write has been handed over. */
 async function onlyRecord(): Promise<Record<string, unknown>> {
-  await vi.waitFor(() => expect(recorded).toHaveLength(1));
+  while (recorded.length === 0) await new Promise<void>((resolve) => { recordWaiters.push(resolve); });
+  expect(recorded).toHaveLength(1);
   return recorded[0]!;
 }
 
@@ -106,9 +109,10 @@ describe("call outcomes in provider-call records", () => {
       });
       return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
     });
-    let received = false;
-    const call = provider().generateTextStream("sys", "usr", () => { received = true; });
-    await vi.waitFor(() => expect(received).toBe(true));
+    let received!: () => void;
+    const firstText = new Promise<void>((resolve) => { received = resolve; });
+    const call = provider().generateTextStream("sys", "usr", () => received());
+    await firstText;
     call.abort();
     await expect(call.finished).rejects.toThrow();
 

@@ -1,6 +1,7 @@
 // The preload's half of an upload: it streams the picked file over its own port,
 // reading each slice only when main asks for it, and settles with main's answer.
 
+import { setImmediate } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ASSET_UPLOAD_SLICE_BYTES, CHANNELS, type AssetUploadFromMain, type AssetUploadToMain, type BigMouthApi } from "@shared/ipc";
 
@@ -46,8 +47,8 @@ describe("preload asset upload", () => {
     expect(main.channel).toBe(CHANNELS.uploadAsset);
     expect(main.start).toEqual({ wsId: "w1", postId: "p1", name: "clip.bin", sourcePath: "/Users/me/clip.bin" });
 
-    // Nothing is read until main asks.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Nothing is read until main asks, even once everything already started has run.
+    await setImmediate();
     expect(slice).not.toHaveBeenCalled();
 
     main.reply({ type: "next" });

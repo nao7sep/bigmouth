@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 
@@ -42,12 +43,12 @@ function page(posts: Sections, totals: Partial<Record<PostStatus, number>> = {},
   ) as Record<PostStatus, PostListSection>;
 }
 
-// The mocked listPosts settles within the current macrotask, so one macrotask
-// boundary inside act lets every resulting update land: a wait on that
+// The mocked listPosts settles within the current turn of the event loop, so
+// the next turn inside act lets every resulting update land: a wait on that
 // condition, not on the clock.
 function settled(): Promise<void> {
   return act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setImmediate();
   });
 }
 

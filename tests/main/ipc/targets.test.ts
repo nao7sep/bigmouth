@@ -171,15 +171,19 @@ describe("targets IPC handlers", () => {
     const { storageTasks } = await import("@main/storageTasks.js");
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
+    let rewritten!: () => void;
+    const postsRewritten = new Promise<void>((resolve) => { rewritten = resolve; });
     const spy = vi.spyOn(access, "renameTarget").mockImplementation(async (...args) => {
       const result = storageTasks.renameTarget(...args);
+      rewritten();
       await held;
       return result;
     });
     let rename: Promise<unknown> | undefined;
     try {
       rename = invoke(CHANNELS.renameTarget, wsId, "Blog", "Journal");
-      await vi.waitFor(() => expect(getPost(dir, post.frontMatter.id)!.frontMatter.target).toBe("Journal"));
+      await postsRewritten;
+      expect(getPost(dir, post.frontMatter.id)!.frontMatter.target).toBe("Journal");
       await invoke(CHANNELS.saveTargets, wsId, [target("Journal"), target("News")]);
       release();
       await rename;

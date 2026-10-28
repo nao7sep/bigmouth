@@ -147,15 +147,18 @@ describe("imaging generation IPC handler", () => {
   // stop the renderer waiting for it.
   it.each(["abort", "reload"])("cancels the paid call on renderer %s", async (cause) => {
     let signal: AbortSignal | undefined;
+    let called!: () => void;
+    const providerCalled = new Promise<void>((resolve) => { called = resolve; });
     ai.generateJsonImpl = (_s, _u, _schema, opts) => {
       signal = (opts as { signal?: AbortSignal }).signal;
+      called();
       return new Promise((_resolve, reject) => {
         signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
       });
     };
 
     const pending = invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions());
-    await vi.waitFor(() => expect(signal).toBeDefined());
+    await providerCalled;
     if (cause === "abort") sendAbort();
     else fakeEvent.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
 

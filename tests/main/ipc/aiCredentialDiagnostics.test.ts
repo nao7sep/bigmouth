@@ -80,16 +80,21 @@ function response(text: string): Response {
 
 async function invoke(kind: "analysis" | "metadata" | "imaging"): Promise<unknown> {
   const frames: AnalysisStreamFrame[] = [];
+  let ended!: () => void;
+  const lastFrame = new Promise<void>((resolve) => { ended = resolve; });
   const event = { sender: {
     id: ++ownerId, once: () => {}, on: () => {}, isDestroyed: () => false,
-    send: (_channel: string, frame: AnalysisStreamFrame) => { frames.push(frame); },
+    send: (_channel: string, frame: AnalysisStreamFrame) => {
+      frames.push(frame);
+      if (frame.type === "done" || frame.type === "error") ended();
+    },
   } };
   // A previous response may have been copied into the draft; diagnostic records
   // must protect it while the live request is unchanged.
   const draft = `Draft mentioning ${fixture.key}`;
   if (kind === "analysis") {
     await fixture.handlers.get(CHANNELS.analysisStreamStart)!(event, "req", { wsId: fixture.workspaceId, postId: "post", promptName: "Check", content: draft });
-    await vi.waitFor(() => expect(frames.some(frame => frame.type === "done" || frame.type === "error")).toBe(true));
+    await lastFrame;
     return frames;
   }
   if (kind === "metadata") return fixture.handlers.get(CHANNELS.generateMetadata)!(event, "req", fixture.workspaceId, "post", ["title"], draft);

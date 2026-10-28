@@ -14,6 +14,8 @@ export default defineConfig({
     exclude: configDefaults.exclude,
     setupFiles: ["tests/main/setup.ts"],
     fileParallelism: false,
-    testTimeout: 5 * 60_000,
+    // Tests carry no timeouts; the provider's own deadlines bound each call.
+    testTimeout: 0,
+    hookTimeout: 0,
   },
 });
