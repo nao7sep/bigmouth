@@ -34,7 +34,6 @@ export function AnalysisTab({
   // the loading state renders; the run guard must already see the pending read.
   const promptsLoadingRef = useRef(true);
   const [promptsError, setPromptsError] = useState<Message | null>(null);
-  const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
   // Load prompts on mount and after Settings updates them
@@ -70,7 +69,6 @@ export function AnalysisTab({
 
   // Reset state and cancel any in-flight analysis when post changes
   useEffect(() => {
-    runIdRef.current++;
     abortRef.current?.abort();
     abortRef.current = null;
     setResult(null);
@@ -95,7 +93,6 @@ export function AnalysisTab({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    const myId = ++runIdRef.current;
     setLoading(true);
     setError(null);
     setResult("");
@@ -103,18 +100,18 @@ export function AnalysisTab({
     try {
       await runAnalysisStream(postId, selectedPrompt, content, {
         signal: controller.signal,
+        // A newer run, another post or leaving aborts this one's signal.
         onChunk: (delta) => {
-          if (runIdRef.current !== myId) return;
+          if (controller.signal.aborted) return;
           setResult((prev) => (prev ?? "") + delta);
         },
         onThinking: (delta) => {
-          if (runIdRef.current !== myId) return;
+          if (controller.signal.aborted) return;
           setThinking((prev) => (prev ?? "") + delta);
         },
       });
     } catch (err) {
       if (controller.signal.aborted) return;
-      if (runIdRef.current !== myId) return;
       setError(presentFailure(
         message("analysis.runFailed"),
         "renderer: analysis run failed",
@@ -122,10 +119,11 @@ export function AnalysisTab({
         { postId, prompt: selectedPrompt },
       ));
     } finally {
+      // Still this run's, as after Stop: a newer run or another post owns the state otherwise.
       if (abortRef.current === controller) {
         abortRef.current = null;
+        setLoading(false);
       }
-      if (runIdRef.current === myId) setLoading(false);
     }
   };
 

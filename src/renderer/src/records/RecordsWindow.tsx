@@ -103,8 +103,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const [listIntent, setListIntent] = useState(initialListWidth);
   const [shellWidth, setShellWidth] = useState<number | null>(null);
   const listGeneration = useRef(0);
-  // The busy claim for the next page (PLAYBOOK, Own the work in flight).
-  const fetchingMore = useRef(false);
   // The filters the current list was read for, for the live reads below.
   const filtersRef = useRef(filters);
   // New records arrived while the list was scrolled away from the top.
@@ -187,7 +185,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   useEffect(() => {
     filtersRef.current = filters;
     const generation = ++listGeneration.current;
-    fetchingMore.current = false;
     newestPending.current = false;
     setList({ status: "loading" });
     readRecordsPage({ ...filters, after: null }).then(
@@ -278,24 +275,24 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   // Loading more: composite-control-conventions, Integration Points. A failed
   // page is read again when the end is reached again.
   const loadMore = (): void => {
-    if (list.status !== "ready" || !list.more || fetchingMore.current) return;
-    fetchingMore.current = true;
+    if (list.status !== "ready" || !list.more || list.loadingMore) return;
     const generation = listGeneration.current;
+    const after = cursorAfter(list.records);
     setList((current) => (current.status === "ready" ? { ...current, loadingMore: true, moreFailed: false } : current));
-    readRecordsPage({ ...filters, after: cursorAfter(list.records) }).then(
+    readRecordsPage({ ...filters, after }).then(
       (page) => {
         if (generation !== listGeneration.current) return;
-        fetchingMore.current = false;
         liveSuspended.current = false;
+        // The page continues the list from where it was read; one read twice for
+        // the same end, as by two scroll events before the list re-rendered, joins once.
         setList((current) =>
-          current.status === "ready"
+          current.status === "ready" && JSON.stringify(cursorAfter(current.records)) === JSON.stringify(after)
             ? { ...current, records: [...current.records, ...page.records], more: page.more, loadingMore: false }
             : current,
         );
       },
       (err: unknown) => {
         if (generation !== listGeneration.current) return;
-        fetchingMore.current = false;
         liveSuspended.current = true;
         reportProblem("renderer: records read failed", err);
         setList((current) => (current.status === "ready" ? { ...current, loadingMore: false, moreFailed: true } : current));

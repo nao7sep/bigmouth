@@ -68,7 +68,6 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
   const [items, setItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Message | null>(null);
-  const runIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const {
     copiedKey,
@@ -79,7 +78,6 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
   } = useCopyFeedback();
 
   useEffect(() => {
-    runIdRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
     setItems([]);
@@ -109,7 +107,6 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    const myId = ++runIdRef.current;
 
     // The earlier prompts stay until a new set arrives: a failed or stopped run
     // leaves them as they were.
@@ -119,11 +116,11 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
 
     try {
       const nextItems = await generateImaging(postId, content, options, controller.signal);
-      if (runIdRef.current !== myId) return;
+      // A newer run, another post or leaving aborts this one's signal.
+      if (controller.signal.aborted) return;
       setItems(nextItems);
     } catch (err) {
       if (controller.signal.aborted) return;
-      if (runIdRef.current !== myId) return;
       setError(presentFailure(
         message("imaging.failed"),
         "renderer: imaging generation failed",
@@ -131,10 +128,9 @@ export function ImagingTab({ postId, content }: ImagingTabProps) {
         { postId },
       ));
     } finally {
+      // Still this run's, as after Stop: a newer run or another post owns the state otherwise.
       if (abortRef.current === controller) {
         abortRef.current = null;
-      }
-      if (runIdRef.current === myId) {
         setLoading(false);
       }
     }

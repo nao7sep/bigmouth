@@ -13,7 +13,10 @@ import vm from "node:vm";
 import { EventEmitter, once } from "node:events";
 import { MessageChannel } from "node:worker_threads";
 
-import { receiveUpload, StagingFile, UploadLifetime, type UploadPort } from "@main/assetUpload.js";
+import { abortOnClose, receiveUpload as receiveWith, StagingFile, type UploadPort } from "@main/assetUpload.js";
+
+/** Receives with the cancellation handleUpload gives an upload: its port's close. */
+const receiveUpload = (port: UploadPort, dir: string) => receiveWith(port, dir, abortOnClose(port));
 import { ASSET_UPLOAD_SLICE_BYTES, type AssetUploadFromMain } from "@shared/ipc";
 import { mainEnd, playRenderer, slicesOf } from "./uploadStream.js";
 
@@ -47,10 +50,10 @@ class ControlledPort extends EventEmitter implements UploadPort {
 describe("receiveUpload", () => {
   it("observes a close before staging starts", async () => {
     const port = new ControlledPort();
-    const lifetime = new UploadLifetime(port);
+    const signal = abortOnClose(port);
     port.close();
     const create = vi.spyOn(StagingFile, "create");
-    expect(await receiveUpload(port, staging, lifetime)).toEqual({ kind: "abandoned" });
+    expect(await receiveWith(port, staging, signal)).toEqual({ kind: "abandoned" });
     expect(create).not.toHaveBeenCalled();
     expect(staged()).toEqual([]);
   });

@@ -128,8 +128,9 @@ async function bootstrap(): Promise<void> {
   exiting.signal.throwIfAborted();
   await openMainWindow();
   // Unused thumbnails are cleared once a launch, after the opening work has
-  // settled, so the sweep's reads never compete with startup. Nothing waits on
-  // it, and a failure only leaves files for the next launch.
+  // settled, so the sweep's reads never compete with startup; the sweep then
+  // takes its turn in the derivative queue. Nothing waits on it, and a failure
+  // only leaves files for the next launch.
   setTimeout(() => {
     void listWorkspaces()
       .then((workspaces) => sweepImageDerivatives(derivatives, workspaces))

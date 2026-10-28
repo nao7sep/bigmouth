@@ -28,21 +28,22 @@ async function isFile(filePath: string): Promise<boolean> {
 
 /**
  * The derivative cache of this process: which hashes may be asked for, and the
- * queue that makes their derivatives.
+ * one queue that makes their derivatives.
  *
  * Only hashes main has seen among the assets it listed or installed for the
  * window are served or generated, each tied to the file that holds those bytes,
  * so the window cannot have an arbitrary file read or decoded by naming a hash.
- * Generation runs one image at a time, whatever the number of images asked for,
- * since each one can take a large share of memory and the CPU (libvips already
- * uses several threads for one image). An image that failed, or turned out to be
- * animated, is not tried again this session, so a damaged file is not read at
- * every request; the next launch tries it again.
+ * Every command — registering, forgetting, serving, generating and sweeping —
+ * takes its turn in the queue, so generation runs one image at a time, whatever
+ * the number of images asked for, since each one can take a large share of
+ * memory and the CPU (libvips already uses several threads for one image), and a
+ * repeated request finds the files the earlier one made. An image that failed,
+ * or turned out to be animated, is not tried again this session, so a damaged
+ * file is not read at every request; the next launch tries it again.
  */
 export class ImageDerivatives {
   private readonly sources = new Map<string, Source>();
   private readonly unavailable = new Set<string>();
-  private readonly pending = new Map<string, Promise<boolean>>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -50,18 +51,23 @@ export class ImageDerivatives {
     private readonly generate: typeof generateDerivatives = generateDerivatives,
   ) {}
 
+  /** Runs `command` after every command before it. */
+  private enqueue<T>(command: () => T | Promise<T>): Promise<T> {
+    const run = this.queue.then(command);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   /** Records that the asset at `filePath` holds the bytes `hash` names. */
   register(hash: string, workspaceId: string, filePath: string): void {
-    if (isContentHash(hash)) this.sources.set(hash, { workspaceId, filePath });
+    if (isContentHash(hash)) void this.enqueue(() => { this.sources.set(hash, { workspaceId, filePath }); });
   }
 
   /** Stops serving the assets of a workspace that was removed from the registry. */
   forgetWorkspace(workspaceId: string): void {
-    for (const [hash, source] of this.sources) if (source.workspaceId === workspaceId) this.sources.delete(hash);
-  }
-
-  isRegistered(hash: string): boolean {
-    return this.sources.has(hash);
+    void this.enqueue(() => {
+      for (const [hash, source] of this.sources) if (source.workspaceId === workspaceId) this.sources.delete(hash);
+    });
   }
 
   /**
@@ -69,32 +75,30 @@ export class ImageDerivatives {
    * or null when the hash is not a registered asset's or no derivative can be
    * made of it.
    */
-  async resolve(hash: string, kind: ImageDerivativeKind): Promise<string | null> {
-    if (!isContentHash(hash) || !this.sources.has(hash)) return null;
-    const file = path.join(this.dir, derivativeName(hash, kind));
-    if (await isFile(file)) return file;
-    if (!(await this.ensure(hash))) return null;
-    return (await isFile(file)) ? file : null;
+  resolve(hash: string, kind: ImageDerivativeKind): Promise<string | null> {
+    if (!isContentHash(hash)) return Promise.resolve(null);
+    return this.enqueue(async () => {
+      if (!this.sources.has(hash)) return null;
+      const file = path.join(this.dir, derivativeName(hash, kind));
+      if (await isFile(file)) return file;
+      return (await this.ensure(hash)) && (await isFile(file)) ? file : null;
+    });
   }
 
   /** Starts making a newly added image's derivatives, so its card has one when it is shown. */
   prepare(hash: string): void {
-    void this.ensure(hash);
+    void this.enqueue(() => this.ensure(hash));
   }
 
-  /** Whether both derivatives of `hash` exist, making them in turn if needed. Never rejects. */
-  private ensure(hash: string): Promise<boolean> {
-    if (this.unavailable.has(hash)) return Promise.resolve(false);
-    const running = this.pending.get(hash);
-    if (running) return running;
-    const run = this.queue.then(() => this.generateNow(hash)).catch((error: unknown) => {
+  /** Whether both derivatives of `hash` exist, making them if needed. Runs in the queue; never rejects. */
+  private async ensure(hash: string): Promise<boolean> {
+    if (this.unavailable.has(hash)) return false;
+    try {
+      return await this.generateNow(hash);
+    } catch (error: unknown) {
       logWarn("image derivatives could not be made", { hash, error: serializeError(error) });
       return false;
-    });
-    this.queue = run;
-    this.pending.set(hash, run);
-    void run.finally(() => this.pending.delete(hash));
-    return run;
+    }
   }
 
   private async generateNow(hash: string): Promise<boolean> {
@@ -112,7 +116,7 @@ export class ImageDerivatives {
       case "changed":
         // The file was replaced since it was listed: its next listing records
         // the new hash, and the old one names nothing here any more.
-        if (this.sources.get(hash) === source) this.sources.delete(hash);
+        this.sources.delete(hash);
         logInfo("image changed before its derivatives were made", { path: source.filePath });
         return false;
       case "failed":
@@ -127,37 +131,35 @@ export class ImageDerivatives {
 
   /**
    * Removes the derivatives no asset names: those of a hash outside `referenced`
-   * and not registered this session, and those of an older format version. A
-   * file written since `startedAt` is kept, so one made during the sweep stays,
-   * and so is a temporary file this launch may still be writing. Returns how
-   * many files it removed.
+   * and not registered this session, those of an older format version, and
+   * temporary files an interrupted generation left. It takes its turn in the
+   * queue, so nothing is being made meanwhile. Returns how many files it removed.
    */
-  async sweep(referenced: ReadonlySet<string>, startedAt: number): Promise<number> {
-    let names: string[];
-    try {
-      names = await fsp.readdir(this.dir);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
-      throw err;
-    }
-    const launchedAt = Date.now() - process.uptime() * 1000;
-    let removed = 0;
-    for (const name of names) {
-      const parsed = parseDerivativeName(name);
-      const temporary = TEMPORARY_NAME.test(name);
-      if (!parsed && !temporary) continue;
-      if (parsed && parsed.version === DERIVATIVE_VERSION && (referenced.has(parsed.hash) || this.sources.has(parsed.hash))) continue;
-      const file = path.join(this.dir, name);
+  sweep(referenced: ReadonlySet<string>): Promise<number> {
+    return this.enqueue(async () => {
+      let names: string[];
       try {
-        const stat = await fsp.lstat(file);
-        if (!stat.isFile() || stat.mtimeMs >= (temporary ? launchedAt : startedAt)) continue;
-        await fsp.rm(file, { force: true });
-        removed += 1;
+        names = await fsp.readdir(this.dir);
       } catch (err) {
-        logWarn("image derivative could not be removed", { path: file, error: serializeError(err) });
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+        throw err;
       }
-    }
-    return removed;
+      let removed = 0;
+      for (const name of names) {
+        const parsed = parseDerivativeName(name);
+        if (!parsed && !TEMPORARY_NAME.test(name)) continue;
+        if (parsed && parsed.version === DERIVATIVE_VERSION && (referenced.has(parsed.hash) || this.sources.has(parsed.hash))) continue;
+        const file = path.join(this.dir, name);
+        try {
+          if (!(await fsp.lstat(file)).isFile()) continue;
+          await fsp.rm(file, { force: true });
+          removed += 1;
+        } catch (err) {
+          logWarn("image derivative could not be removed", { path: file, error: serializeError(err) });
+        }
+      }
+      return removed;
+    });
   }
 }
 
@@ -185,7 +187,6 @@ export async function sweepImageDerivatives(
   cache: ImageDerivatives,
   workspaces: readonly { dataDirectory: string }[],
 ): Promise<number> {
-  const startedAt = Date.now();
   const referenced = new Set<string>();
   for (const workspace of workspaces) {
     try {
@@ -198,7 +199,7 @@ export async function sweepImageDerivatives(
       return 0;
     }
   }
-  const removed = await cache.sweep(referenced, startedAt);
+  const removed = await cache.sweep(referenced);
   if (removed > 0) logInfo("unused image derivatives removed", { removed });
   return removed;
 }

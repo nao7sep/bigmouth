@@ -348,16 +348,15 @@ describe("RecordsWindow", () => {
     expect(listbox().getAttribute("aria-activedescendant")).toBe(options()[1]!.id);
   });
 
-  it("makes one request for two scroll events together", async () => {
-    api.readRecordsPage.mockResolvedValueOnce({ records: [call, line], more: true });
-    api.readRecordsPage.mockReturnValueOnce(new Promise<RecordsPage>(() => {}));
+  it("joins a page once when two scroll events together read it twice", async () => {
+    api.readRecordsPage.mockResolvedValueOnce({ records: [call], more: true });
+    api.readRecordsPage.mockResolvedValue({ records: [line], more: false });
     await mount();
 
     await scrollTo(800, 2);
 
-    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
-    expect(options()).toHaveLength(2);
-    expect(document.body.textContent).toContain("Loading records…");
+    expect(api.readRecordsPage).toHaveBeenCalledTimes(3);
+    expect(titles()).toEqual(["anthropic metadata", "post save failed"]);
   });
 
   it("reads the next page by itself while a page does not fill the list", async () => {

@@ -120,10 +120,9 @@ async function configureZoom(window: BrowserWindow): Promise<void> {
           window.setMinimumSize(minimum.width, minimum.height);
         }
       }
-      const level = window.webContents.getZoomLevel();
-      const savedLevel = (await getUiState()).zoomLevel;
-      if (window.isDestroyed() || window.webContents.getZoomLevel() !== level) return;
-      if (level !== savedLevel) (await updateUiState({ zoomLevel: level }));
+      // One command with the current level; the storage owner merges it into
+      // the UI state and writes only a change.
+      await updateUiState({ zoomLevel: window.webContents.getZoomLevel() });
     } catch (error) {
       warn("window zoom or minimum could not be updated", { error: serializeError(error) });
     }

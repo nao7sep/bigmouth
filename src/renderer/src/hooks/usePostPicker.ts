@@ -28,7 +28,7 @@ export function usePostPicker(
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Message | null>(null);
-  const loadingMoreRef = useRef(false);
+  // The picker list's latest-request token: a newer read supersedes an older one.
   const generationRef = useRef(0);
 
   const keep = (posts: PostSummary[]) =>
@@ -36,7 +36,6 @@ export function usePostPicker(
 
   useEffect(() => {
     const generation = ++generationRef.current;
-    loadingMoreRef.current = true;
     setLoading(true);
     setLoadingMore(false);
     setError(null);
@@ -56,7 +55,6 @@ export function usePostPicker(
       })
       .finally(() => {
         if (generation !== generationRef.current) return;
-        loadingMoreRef.current = false;
         setLoading(false);
       });
     return () => { generationRef.current += 1; };
@@ -65,17 +63,16 @@ export function usePostPicker(
   const canLoadMore = PAGED_POST_STATUSES.some((status) => offsets[status] < totals[status]);
 
   const loadMore = () => {
-    if (loadingMoreRef.current || !canLoadMore) {
+    if (loadingMore || !canLoadMore) {
       return;
     }
 
-    loadingMoreRef.current = true;
     setLoadingMore(true);
     setError(null);
     // One fetch advances every paged section from its own offset, so the
     // combined picker list keeps growing past the first page.
     const requested = offsets;
-    const generation = generationRef.current;
+    const generation = ++generationRef.current;
 
     listPosts(requested, batchSize)
       .then((data) => {
@@ -95,7 +92,6 @@ export function usePostPicker(
       })
       .finally(() => {
         if (generation !== generationRef.current) return;
-        loadingMoreRef.current = false;
         setLoadingMore(false);
       });
   };

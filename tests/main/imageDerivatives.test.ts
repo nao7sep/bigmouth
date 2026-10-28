@@ -199,10 +199,12 @@ function controlledGenerator() {
   const runs: { hash: string; settle: (outcome: DerivativeOutcome) => void }[] = [];
   let running = 0;
   let mostAtOnce = 0;
+  const waiting: (() => void)[] = [];
   const generate = vi.fn((_source: string, hash: string, dir: string) => {
     running += 1;
     mostAtOnce = Math.max(mostAtOnce, running);
     return new Promise<DerivativeOutcome>((resolve) => {
+      for (const wake of waiting.splice(0)) wake();
       runs.push({
         hash,
         settle: (outcome) => {
@@ -217,12 +219,12 @@ function controlledGenerator() {
       });
     });
   });
-  return { generate, runs, mostAtOnce: () => mostAtOnce };
+  /** Resolves once `count` generations have started, checking those already started first. */
+  const started = async (count: number) => {
+    while (runs.length < count) await new Promise<void>((resolve) => { waiting.push(resolve); });
+  };
+  return { generate, runs, started, mostAtOnce: () => mostAtOnce };
 }
-
-const until = async (condition: () => boolean) => {
-  while (!condition()) await new Promise((resolve) => setTimeout(resolve, 1));
-};
 
 describe("ImageDerivatives", () => {
   const a = "a".repeat(64);
@@ -248,16 +250,16 @@ describe("ImageDerivatives", () => {
   });
 
   it("makes one image at a time, however many are asked for, and each once", async () => {
-    const { generate, runs, mostAtOnce } = controlledGenerator();
+    const { generate, runs, started, mostAtOnce } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
     for (const hash of [a, b, c]) cache.register(hash, "ws", path.join(root, `${hash}.png`));
 
     const asked = [cache.resolve(a, "thumb"), cache.resolve(a, "display"), cache.resolve(b, "thumb"), cache.resolve(c, "display")];
-    await until(() => runs.length === 1);
+    await started(1);
     runs[0].settle({ kind: "generated" });
-    await until(() => runs.length === 2);
+    await started(2);
     runs[1].settle({ kind: "generated" });
-    await until(() => runs.length === 3);
+    await started(3);
     runs[2].settle({ kind: "generated" });
 
     const served = await Promise.all(asked);
@@ -267,18 +269,17 @@ describe("ImageDerivatives", () => {
       derivativeName(b, "thumb"),
       derivativeName(c, "display"),
     ]);
-    // The queue order follows whichever file checks finish first, which the OS
-    // decides; what holds is one image at a time, each made once.
-    expect(runs.map((run) => run.hash).sort()).toEqual([a, b, c]);
+    // Requests take their turns in order, and a repeated one finds the files.
+    expect(runs.map((run) => run.hash)).toEqual([a, b, c]);
     expect(mostAtOnce()).toBe(1);
   });
 
   it("does not try a failed image again this session, and logs it once", async () => {
-    const { generate, runs } = controlledGenerator();
+    const { generate, runs, started } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
     cache.register(a, "ws", path.join(root, "a.png"));
     const first = cache.resolve(a, "thumb");
-    await until(() => runs.length === 1);
+    await started(1);
     runs[0].settle({ kind: "failed", error: new Error("VipsJpeg: premature end of JPEG image") });
     expect(await first).toBeNull();
     expect(await cache.resolve(a, "display")).toBeNull();
@@ -288,15 +289,15 @@ describe("ImageDerivatives", () => {
     const later = new ImageDerivatives(thumbnails, generate);
     later.register(a, "ws", path.join(root, "a.png"));
     void later.resolve(a, "thumb");
-    await until(() => runs.length === 2);
+    await started(2);
   });
 
   it("serves nothing for an animated image and does not decode it again", async () => {
-    const { generate, runs } = controlledGenerator();
+    const { generate, runs, started } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
     cache.register(a, "ws", path.join(root, "a.gif"));
     const first = cache.resolve(a, "thumb");
-    await until(() => runs.length === 1);
+    await started(1);
     runs[0].settle({ kind: "animated" });
     expect(await first).toBeNull();
     expect(await cache.resolve(a, "thumb")).toBeNull();
@@ -304,24 +305,29 @@ describe("ImageDerivatives", () => {
   });
 
   it("forgets a hash whose file changed, until a listing registers it again", async () => {
-    const { generate, runs } = controlledGenerator();
+    const { generate, runs, started } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
     cache.register(a, "ws", path.join(root, "a.png"));
     const first = cache.resolve(a, "thumb");
-    await until(() => runs.length === 1);
+    await started(1);
     runs[0].settle({ kind: "changed", actual: b });
     expect(await first).toBeNull();
-    expect(cache.isRegistered(a)).toBe(false);
+    // Unregistered now: not served even once its derivative exists.
+    fs.mkdirSync(thumbnails, { recursive: true });
+    fs.writeFileSync(path.join(thumbnails, derivativeName(a, "thumb")), "t");
     expect(await cache.resolve(a, "thumb")).toBeNull();
     expect(generate).toHaveBeenCalledTimes(1);
   });
 
-  it("stops serving a removed workspace's images", () => {
+  it("stops serving a removed workspace's images", async () => {
     const cache = new ImageDerivatives(thumbnails, controlledGenerator().generate);
+    fs.mkdirSync(thumbnails);
+    for (const hash of [a, b]) fs.writeFileSync(path.join(thumbnails, derivativeName(hash, "thumb")), "t");
     cache.register(a, "ws1", path.join(root, "a.png"));
     cache.register(b, "ws2", path.join(root, "b.png"));
     cache.forgetWorkspace("ws1");
-    expect([cache.isRegistered(a), cache.isRegistered(b)]).toEqual([false, true]);
+    expect(await cache.resolve(a, "thumb")).toBeNull();
+    expect(await cache.resolve(b, "thumb")).toBe(path.join(thumbnails, derivativeName(b, "thumb")));
   });
 
   it("generates the real derivatives of a registered image", async () => {
@@ -361,16 +367,12 @@ describe("sweeping the cache", () => {
   const kept = "1".repeat(64);
   const registered = "2".repeat(64);
   const unused = "3".repeat(64);
-  const old = new Date("2020-01-01T00:00:00Z");
-
-  function cacheFile(name: string, mtime = old): void {
+  function cacheFile(name: string): void {
     fs.mkdirSync(thumbnails, { recursive: true });
-    const file = path.join(thumbnails, name);
-    fs.writeFileSync(file, "x");
-    fs.utimesSync(file, mtime, mtime);
+    fs.writeFileSync(path.join(thumbnails, name), "x");
   }
 
-  it("removes derivatives no asset names and older formats, and keeps the rest", async () => {
+  it("removes derivatives no asset names, older formats and leftover temporary files, and keeps the rest", async () => {
     const cache = new ImageDerivatives(thumbnails, controlledGenerator().generate);
     cache.register(registered, "ws", path.join(root, "r.png"));
     for (const hash of [kept, registered, unused]) {
@@ -380,22 +382,19 @@ describe("sweeping the cache", () => {
     cacheFile(`${kept}-v0-thumb.webp`);
     cacheFile(`${unused}-v1-thumb.webp.0f8e-4c.tmp`);
     cacheFile("someone-elses-file.txt");
-    const fresh = "4".repeat(64);
-    cacheFile(derivativeName(fresh, "thumb"), new Date(Date.now() + 60_000));
 
-    expect(await cache.sweep(new Set([kept]), Date.now())).toBe(4);
+    expect(await cache.sweep(new Set([kept]))).toBe(4);
     expect(cacheFiles()).toEqual([
       derivativeName(kept, "display"),
       derivativeName(kept, "thumb"),
       derivativeName(registered, "display"),
       derivativeName(registered, "thumb"),
-      derivativeName(fresh, "thumb"),
       "someone-elses-file.txt",
     ].sort());
   });
 
   it("does nothing without a cache folder", async () => {
-    expect(await new ImageDerivatives(thumbnails).sweep(new Set(), Date.now())).toBe(0);
+    expect(await new ImageDerivatives(thumbnails).sweep(new Set())).toBe(0);
   });
 
   function workspaceWith(name: string, records: Record<string, unknown[]>): string {

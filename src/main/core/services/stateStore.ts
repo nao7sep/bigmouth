@@ -130,7 +130,10 @@ export function getUiState(): UiState {
  */
 export function updateUiState(patch: Partial<UiState>): UiState {
   if (!stateJsonPath) throw new Error("stateStore not initialized — call initStateStore() first");
-  const next = normalizeUiState({ ...ensureLoaded(), ...patch });
+  const current = ensureLoaded();
+  const next = normalizeUiState({ ...current, ...patch });
+  // Window events send the zoom level whether or not it changed.
+  if (JSON.stringify(next) === JSON.stringify(current)) return current;
   uiState = next;
   if (!writable) return next;
   // not recorded: state.json is volatile state and nothing else (pane widths, zoom,

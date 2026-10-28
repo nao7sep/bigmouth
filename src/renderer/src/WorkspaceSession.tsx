@@ -227,11 +227,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
       }
     }, [workspace.id, adoptSelectedPost]);
     const listsRef = useRef<PostLists>(lists);
-    // Counts the app's own writes to the lists, so a background reread that was
-    // out while one happened knows it is older and is dropped.
-    const listVersionRef = useRef(0);
+    // The lists' latest-request token: every read of the lists and every write
+    // the app makes to them advances it, so a read that was out meanwhile knows
+    // it is older and is dropped.
     const listRequestRef = useRef(0);
-    const pageRequestsRef = useRef(new Map<PagedPostStatus, number>());
 
     // Eagerly, because the next mutation may land before React re-renders.
     const commitLists = useCallback((next: PostLists) => {
@@ -285,28 +284,19 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     // their existing all-status projection.
     const loadPosts = useCallback(
       async (append?: PagedPostStatus) => {
-        if (append && pageRequestsRef.current.has(append)) return;
         const request = ++listRequestRef.current;
-        if (append) pageRequestsRef.current.set(append, request);
-        const version = listVersionRef.current;
-        try {
-          if (append) {
-            const page = await listPostPage(append, listsRef.current[append].posts.length, pubBatchSize, workspace.id);
-            if (!mounted.current || request !== listRequestRef.current || version !== listVersionRef.current) return;
-            listVersionRef.current += 1;
-            setUnreadablePosts(page.unreadable ?? []);
-            const current = listsRef.current;
-            commitLists({ ...current, [append]: { posts: [...current[append].posts, ...page.posts], total: page.total } });
-            return;
-          }
-          const data = await listPosts(FIRST_PAGES, pubBatchSize, workspace.id);
-          if (!mounted.current || request !== listRequestRef.current || version !== listVersionRef.current) return;
-          listVersionRef.current += 1;
-          setUnreadablePosts(data.unreadable ?? []);
-          commitLists(listsFromResponse(data));
-        } finally {
-          if (append && pageRequestsRef.current.get(append) === request) pageRequestsRef.current.delete(append);
+        if (append) {
+          const page = await listPostPage(append, listsRef.current[append].posts.length, pubBatchSize, workspace.id);
+          if (!mounted.current || request !== listRequestRef.current) return;
+          setUnreadablePosts(page.unreadable ?? []);
+          const current = listsRef.current;
+          commitLists({ ...current, [append]: { posts: [...current[append].posts, ...page.posts], total: page.total } });
+          return;
         }
+        const data = await listPosts(FIRST_PAGES, pubBatchSize, workspace.id);
+        if (!mounted.current || request !== listRequestRef.current) return;
+        setUnreadablePosts(data.unreadable ?? []);
+        commitLists(listsFromResponse(data));
       },
       [pubBatchSize, commitLists, workspace.id]
     );
@@ -319,11 +309,10 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
      */
     const refreshPosts = useCallback(async () => {
       const request = ++listRequestRef.current;
-      const version = listVersionRef.current;
       const shown = (status: PagedPostStatus) => Math.max(pubBatchSize, listsRef.current[status].posts.length);
       const data = await listPosts(FIRST_PAGES, Math.max(...PAGED_POST_STATUSES.map(shown)), workspace.id);
       // The app changed the lists while this read was out: they are newer.
-      if (!mounted.current || request !== listRequestRef.current || listVersionRef.current !== version) return;
+      if (!mounted.current || request !== listRequestRef.current) return;
       setUnreadablePosts(data.unreadable ?? []);
 
       const fresh = listsFromResponse(data);
@@ -335,7 +324,6 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     useEffect(() => () => {
       listRequestRef.current += 1;
-      pageRequestsRef.current.clear();
     }, [pubBatchSize]);
 
     // The window coming back to the front is when edits made elsewhere matter.
@@ -535,7 +523,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
 
     const handlePostDeleted = useCallback((deletedId: string, result: PostDeleteResult) => {
       if (!mounted.current) return false;
-      listVersionRef.current += 1;
+      listRequestRef.current += 1;
       if (result.cleanupIncomplete) setDeleteWarning(true);
       // Drop only the deleted post from the back stack (it can't be navigated to
       // anymore), keeping the rest so Back still works through the other posts.
@@ -578,7 +566,7 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
             ? currentPostRef.current.frontMatter.status
             : null;
 
-        listVersionRef.current += 1;
+        listRequestRef.current += 1;
         commitLists(applyPostMutationToLists(listsRef.current, summary, status, openPostStatus));
       },
       [commitLists],

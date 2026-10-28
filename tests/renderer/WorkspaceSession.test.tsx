@@ -850,7 +850,7 @@ describe("WorkspaceSession modals", () => {
 });
 
 describe("WorkspaceSession load more / log", () => {
-  it("claims a page before waiting and drops it when a newer post mutation changes its basis", async () => {
+  it("drops a page read when a newer post mutation changes its basis", async () => {
     const { getByTestId } = await mountLoaded();
     await act(async () => { fireEvent.click(getByTestId("left-select-a")); });
     mockListPosts.mockClear();
@@ -858,10 +858,7 @@ describe("WorkspaceSession load more / log", () => {
     let answer!: (response: PostPageResponse) => void;
     mockListPostPage.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
     try {
-      act(() => {
-        fireEvent.click(getByTestId("left-more-pub"));
-        fireEvent.click(getByTestId("left-more-pub"));
-      });
+      act(() => { fireEvent.click(getByTestId("left-more-pub")); });
       expect(mockListPostPage).toHaveBeenCalledTimes(1);
       expect(mockListPosts).not.toHaveBeenCalled();
       act(() => { fireEvent.click(getByTestId("center-published")); });

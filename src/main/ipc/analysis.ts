@@ -52,13 +52,15 @@ export function registerAnalysisHandlers(): void {
   // this, so no early frame is missed. Validation throws (rejecting the invoke);
   // otherwise the stream is started and frames are pushed async on the channel.
   ipcMain.handle(CHANNELS.analysisStreamStart, async (event, requestId: string, params: AnalysisStreamParams) => {
-    let aborted = false;
-    let stream: ReturnType<ReturnType<typeof createProvider>["generateTextStream"]> | null = null;
-    const release = trackAiRequest(event.sender, requestId, () => { aborted = true; stream?.abort(); });
+    // Registered before the first await, so a Stop sent during preparation
+    // is never lost; a stream started later stops with it.
+    const cancel = new AbortController();
+    const { signal } = cancel;
+    const release = trackAiRequest(event.sender, requestId, () => cancel.abort());
     try {
     const ws = (await resolveWorkspace(params.wsId));
     const request = (await resolveAnalysisRequest(ws, params, requestId));
-    if (aborted) { release(); return; }
+    if (signal.aborted) { release(); return; }
     const channel = analysisStreamChannel(requestId);
     const send = (frame: AnalysisStreamFrame): void => {
       if (!event.sender.isDestroyed()) event.sender.send(channel, frame);
@@ -77,11 +79,11 @@ export function registerAnalysisHandlers(): void {
     }, [request.roleCall.apiKey]));
 
     let wroteDelta = false;
-    stream = request.provider.generateTextStream(
+    const stream = request.provider.generateTextStream(
       request.systemPrompt,
       request.userContent,
       (delta) => {
-        if (aborted || delta.length === 0) return;
+        if (signal.aborted || delta.length === 0) return;
         wroteDelta = true;
         // Per chunk: `debug` by the frequency rule, and the only record of how a
         // stream actually arrived when one stalls or ends early.
@@ -91,14 +93,15 @@ export function registerAnalysisHandlers(): void {
       (delta) => {
         // Reasoning, not answer — deliberately not counted as wroteDelta, so a run that
         // only ever thinks still takes the no-output path below.
-        if (aborted || delta.length === 0) return;
+        if (signal.aborted || delta.length === 0) return;
         send({ type: "thinking", text: delta });
       },
     );
+    signal.addEventListener("abort", () => stream.abort(), { once: true });
 
     void stream.finished
       .then((finalText) => {
-        if (aborted) return;
+        if (signal.aborted) return;
         // Robustness: a provider that produced text without incremental events.
         if (!wroteDelta && finalText) send({ type: "delta", text: finalText });
         send({ type: "done" });
@@ -111,7 +114,7 @@ export function registerAnalysisHandlers(): void {
         }, [request.roleCall.apiKey]));
       })
       .catch((err: unknown) => {
-        if (aborted) return;
+        if (signal.aborted) return;
         const message = logAiFailure(
           {
             kind: "Analysis stream",

@@ -97,27 +97,14 @@ export interface UploadPort {
 }
 
 /**
- * Watches an upload's port for closure from before its first await, so an
- * upload whose window already went away creates no stage and waits for nothing.
+ * The upload's cancellation: aborted when its port closes. Called before the
+ * upload's first await, so an upload whose window already went away creates no
+ * stage and waits for nothing.
  */
-export class UploadLifetime {
-  private closed = false;
-  private readonly listeners = new Set<() => void>();
-
-  constructor(port: UploadPort) {
-    port.on("close", () => {
-      this.closed = true;
-      for (const listener of this.listeners) listener();
-      this.listeners.clear();
-    });
-  }
-
-  get abandoned(): boolean { return this.closed; }
-
-  onAbandoned(listener: () => void): void {
-    if (this.closed) listener();
-    else this.listeners.add(listener);
-  }
+export function abortOnClose(port: UploadPort): AbortSignal {
+  const controller = new AbortController();
+  port.on("close", () => controller.abort());
+  return controller.signal;
 }
 
 export type ReceivedUpload =
@@ -146,16 +133,16 @@ function typeOf(message: unknown): unknown {
  * then owns the staged file and must discard it after installing), or when the
  * upload cannot finish, with the staged file already removed.
  */
-export async function receiveUpload(port: UploadPort, stagingDir: string, lifetime = new UploadLifetime(port)): Promise<ReceivedUpload> {
-  if (lifetime.abandoned) return { kind: "abandoned" };
+export async function receiveUpload(port: UploadPort, stagingDir: string, signal: AbortSignal): Promise<ReceivedUpload> {
+  if (signal.aborted) return { kind: "abandoned" };
   let staging: StagingFile;
   try {
     staging = await StagingFile.create(stagingDir);
   } catch (error) {
-    if (lifetime.abandoned) return { kind: "abandoned" };
+    if (signal.aborted) return { kind: "abandoned" };
     return { kind: "write-failed", problem: workspaceWriteProblem(error) ?? "failed", error };
   }
-  if (lifetime.abandoned) {
+  if (signal.aborted) {
     await staging.discard();
     return { kind: "abandoned" };
   }
@@ -199,7 +186,7 @@ export async function receiveUpload(port: UploadPort, stagingDir: string, lifeti
           stop({ kind: "abandoned" });
       }
     });
-    lifetime.onAbandoned(() => stop({ kind: "abandoned" }));
+    signal.addEventListener("abort", () => stop({ kind: "abandoned" }), { once: true });
     port.start();
     for (let credit = 0; credit < ASSET_UPLOAD_SLICES_IN_FLIGHT; credit += 1) port.postMessage({ type: "next" });
   });

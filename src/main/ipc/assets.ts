@@ -26,7 +26,7 @@ import { info as logInfo, warn as logWarn, error as logError, serializeError } f
 import { resolveWorkspace } from "./context.js";
 import { listAssets, installAsset, deleteAsset, readSourceMetadata, fileExists } from "../storageAccess.js";
 import { isPostId } from "../core/shared/filenames.js";
-import { receiveUpload, UploadLifetime, type UploadPort } from "../assetUpload.js";
+import { abortOnClose, receiveUpload, type UploadPort } from "../assetUpload.js";
 import { imageDerivatives, readImageFacts } from "../imageDerivatives.js";
 
 // Identifier validation (defense against path traversal). postId is a nanoid;
@@ -121,18 +121,18 @@ function registerImage(wsId: string, dir: string, postId: string, asset: AssetMe
  * the staged file is removed once the upload settles; an installed one has
  * already been renamed away.
  */
-async function upload(port: UploadPort, start: AssetUploadStart, lifetime: UploadLifetime): Promise<AssetUploadResult | null> {
+async function upload(port: UploadPort, start: AssetUploadStart, signal: AbortSignal): Promise<AssetUploadResult | null> {
   const { wsId, postId } = start;
   const dir = (await resolveWorkspace(wsId)).dataDirectory;
-  if (lifetime.abandoned) return null;
+  if (signal.aborted) return null;
   const filename = sanitizeFilename(start.name);
   if (isReservedAssetName(filename)) return { ok: false, admission: { code: "reserved-name", filename } };
   const post = await getPost(dir, postId);
-  if (lifetime.abandoned) return null;
+  if (signal.aborted) return null;
   if (!post) return { ok: false, admission: { code: "post-missing" } };
   if (post.frontMatter.locked === true) return { ok: false, admission: { code: "post-locked" } };
 
-  const received = await receiveUpload(port, stagingDir(dir), lifetime);
+  const received = await receiveUpload(port, stagingDir(dir), signal);
   switch (received.kind) {
     case "abandoned":
       logWarn("asset upload abandoned", { workspace: wsId, postId, filename });
@@ -149,11 +149,11 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
   try {
     const image = isImageAssetFilename(filename);
     const hasMetadata = image && (await carriesMetadata(staging.path));
-    if (lifetime.abandoned) return null;
+    if (signal.aborted) return null;
     // Its dimensions and frame count come from the image's header, read by sharp
     // without decoding the picture; a file sharp cannot read records neither.
     const facts = image ? await readImageFacts(staging.path) : null;
-    if (lifetime.abandoned) return null;
+    if (signal.aborted) return null;
     const meta = {
       filename,
       size: staged.size,
@@ -163,7 +163,7 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
     };
     // The post's lock is checked again at publication, inside the storage task.
     const sourceMetadata = await readSourceMetadata(start.sourcePath, staged.size);
-    if (lifetime.abandoned) return null;
+    if (signal.aborted) return null;
     const result = await installAsset(dir, postId, filename, staged, meta, sourceMetadata);
     if (result.ok) {
       logInfo("asset uploaded", { workspace: wsId, postId, filename: result.asset.filename, size: staged.size, hasMetadata });
@@ -185,11 +185,11 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
  */
 export async function handleUpload(port: UploadPort & { close(): void }, raw: unknown): Promise<void> {
   // Observe a closed window before registry lookup or stage creation can await.
-  const lifetime = new UploadLifetime(port);
+  const signal = abortOnClose(port);
   let reply: AssetUploadFromMain | null;
   try {
     port.start();
-    const result = await upload(port, readUploadStart(raw), lifetime);
+    const result = await upload(port, readUploadStart(raw), signal);
     reply = result && { type: "result", result };
   } catch (err) {
     const { wsId, postId } = (raw !== null && typeof raw === "object" ? raw : {}) as { wsId?: unknown; postId?: unknown };

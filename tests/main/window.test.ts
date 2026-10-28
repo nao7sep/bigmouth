@@ -252,8 +252,10 @@ describe("zoom shortcuts", () => {
 
     press({ key: "=", meta: modifier === "meta", control: modifier === "control" });
     expect(vi.getTimerCount()).toBe(1);
+    const before = zoom.saved.length;
     await vi.runOnlyPendingTimersAsync();
-    await vi.waitFor(() => expect(zoom.saved).toEqual([1]));
+    // The read-back sends the new level as one command for storage to merge.
+    expect(zoom.saved.slice(before)).toEqual([1]);
   });
 
   it("ignores the modifier with a key that is not a zoom key", async () => {
