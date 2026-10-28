@@ -98,7 +98,7 @@ export class ClaudeProvider implements AiProvider {
     this.secrets = [apiKey];
     // Every call here is paid, so the SDK never retries on its own: the app's
     // retryPolicy is the only loop, and each attempt is recorded.
-    // Approval names one destination; a redirect must not disclose its key or document elsewhere.
+    // The key and the document go only to the configured endpoint, never to a host it redirects to.
     this.client = new Anthropic({ apiKey, baseURL: request.endpoint, maxRetries: 0, fetchOptions: { redirect: "error" } });
     this.request = request;
     this.call = call;
