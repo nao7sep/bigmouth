@@ -248,11 +248,11 @@ describe("image derivatives", () => {
     const { assets } = await invoke<AssetListing>(CHANNELS.listAssets, wsId, id);
     expect(assets.find((a) => a.filename === "pic.png")?.contentHash).toBe(sha(PNG_1x1));
     expect(derivatives.current!.register.mock.calls).toEqual([
-      [sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png"), dataDir],
+      [sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png")],
     ]);
   });
 
-  it.skipIf(process.platform === "win32")("registers contained linked images and omits escaping links", async () => {
+  it.skipIf(process.platform === "win32")("lists and registers linked images, including links leaving the workspace", async () => {
     const id = await createDraft();
     const dir = assetDir(dataDir, id);
     fs.mkdirSync(dir, { recursive: true });
@@ -264,9 +264,9 @@ describe("image derivatives", () => {
       fs.symlinkSync(shared, path.join(dir, "contained.png"));
       fs.symlinkSync(outside, path.join(dir, "outside.png"));
       const listing = await invoke<AssetListing>(CHANNELS.listAssets, wsId, id);
-      expect(listing.assets.map((asset) => asset.filename)).toEqual(["contained.png"]);
-      expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(dir, "contained.png"), dataDir);
-      expect(fs.readFileSync(outside)).toEqual(PNG_1x1);
+      expect(listing.assets.map((asset) => asset.filename)).toEqual(["contained.png", "outside.png"]);
+      expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(dir, "contained.png"));
+      expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(dir, "outside.png"));
     } finally { fs.rmSync(outside, { force: true }); }
   });
 
@@ -274,7 +274,7 @@ describe("image derivatives", () => {
     const id = await createDraft();
     const added = await invokeUpload(id, upload("pic.png", PNG_1x1));
     expect(added.contentHash).toBe(sha(PNG_1x1));
-    expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png"), dataDir);
+    expect(derivatives.current!.register).toHaveBeenCalledWith(sha(PNG_1x1), wsId, path.join(assetDir(dataDir, id), "pic.png"));
     expect(derivatives.current!.prepare).toHaveBeenCalledWith(sha(PNG_1x1));
   });
 

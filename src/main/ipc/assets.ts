@@ -111,7 +111,7 @@ function registerImage(wsId: string, dir: string, postId: string, asset: AssetMe
   const cache = imageDerivatives();
   if (!cache || !asset.contentHash || !isImageAssetFilename(asset.filename)) return null;
   try {
-    cache.register(asset.contentHash, wsId, assetPath(dir, postId, asset.filename), dir);
+    cache.register(asset.contentHash, wsId, assetPath(dir, postId, asset.filename));
     return asset.contentHash;
   } catch {
     return null;

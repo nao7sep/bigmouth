@@ -143,7 +143,7 @@ describe("asset protocol handler", () => {
 });
 
 describe("workspace link boundaries", () => {
-  it.skipIf(process.platform === "win32")("serves contained file links and refuses links outside the selected workspace", async () => {
+  it.skipIf(process.platform === "win32")("serves file links, including links leaving the workspace", async () => {
     const dir = assetDir(wsDataDir, POST_ID);
     const contained = path.join(wsDataDir, "shared.png");
     const outside = path.join(home, "outside.png");
@@ -154,8 +154,9 @@ describe("workspace link boundaries", () => {
     const response = await serve(assetUrl(wsId, POST_ID, "contained.png"));
     expect(response.status).toBe(200);
     expect(await bytes(response)).toEqual(Buffer.from("inside"));
-    expect((await serve(assetUrl(wsId, POST_ID, "outside.png"))).status).toBe(404);
-    expect(fs.readFileSync(outside, "utf8")).toBe("outside");
+    const linked = await serve(assetUrl(wsId, POST_ID, "outside.png"));
+    expect(linked.status).toBe(200);
+    expect(await bytes(linked)).toEqual(Buffer.from("outside"));
   });
 
   it("serves a post asset directory linked elsewhere inside the workspace", async () => {
@@ -268,7 +269,7 @@ describe("thumbnails and display images", () => {
 
   it("makes a registered image's derivatives on first request and serves them as immutable WebP", async () => {
     const cache = configureImageDerivatives(thumbnails);
-    cache.register(hash, wsId, path.join(assetDir(wsDataDir, POST_ID), "photo.jpg"), wsDataDir);
+    cache.register(hash, wsId, path.join(assetDir(wsDataDir, POST_ID), "photo.jpg"));
 
     const thumb = await serve(imageDerivativeUrl("thumb", hash));
     expect(thumb.status).toBe(200);
@@ -290,7 +291,7 @@ describe("thumbnails and display images", () => {
     const brokenHash = createHash("sha256").update(broken).digest("hex");
     const file = path.join(assetDir(wsDataDir, POST_ID), "broken.png");
     fs.writeFileSync(file, broken);
-    cache.register(brokenHash, wsId, file, wsDataDir);
+    cache.register(brokenHash, wsId, file);
     expect((await serve(imageDerivativeUrl("thumb", brokenHash))).status).toBe(404);
   });
 });

@@ -5,7 +5,6 @@ import path from "node:path";
 
 import type { ImageDerivativeKind } from "@shared/ipc";
 import type { Metadata, Sharp, SharpOptions } from "sharp";
-import { safeResolveUnder } from "./core/services/assetStore.js";
 
 export type { ImageDerivativeKind } from "@shared/ipc";
 
@@ -113,15 +112,11 @@ export async function generateDerivatives(
   sourcePath: string,
   expectedHash: string,
   dir: string,
-  workspaceRoot = path.dirname(sourcePath),
 ): Promise<DerivativeOutcome> {
   const display = path.join(dir, `${derivativeName(expectedHash, "display")}.${randomUUID()}.tmp`);
   const thumb = path.join(dir, `${derivativeName(expectedHash, "thumb")}.${randomUUID()}.tmp`);
   try {
     const sharp = await loadSharp();
-    // Recheck after loading sharp: the registered path may have changed since
-    // listing.
-    safeResolveUnder(workspaceRoot, path.relative(workspaceRoot, sourcePath));
     const actual = await hashFile(sourcePath);
     if (actual !== expectedHash) return { kind: "changed", actual };
     const image = sharp(sourcePath);

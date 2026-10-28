@@ -16,7 +16,6 @@ const TEMPORARY_NAME = /^[0-9a-f]{64}-v\d+-(?:thumb|display)\.webp\.[0-9a-f-]+\.
 interface Source {
   workspaceId: string;
   filePath: string;
-  workspaceRoot: string;
 }
 
 async function isFile(filePath: string): Promise<boolean> {
@@ -52,8 +51,8 @@ export class ImageDerivatives {
   ) {}
 
   /** Records that the asset at `filePath` holds the bytes `hash` names. */
-  register(hash: string, workspaceId: string, filePath: string, workspaceRoot: string): void {
-    if (isContentHash(hash)) this.sources.set(hash, { workspaceId, filePath, workspaceRoot });
+  register(hash: string, workspaceId: string, filePath: string): void {
+    if (isContentHash(hash)) this.sources.set(hash, { workspaceId, filePath });
   }
 
   /** Stops serving the assets of a workspace that was removed from the registry. */
@@ -103,7 +102,7 @@ export class ImageDerivatives {
       await isFile(path.join(this.dir, derivativeName(hash, "thumb")))) return true;
     const source = this.sources.get(hash);
     if (!source) return false;
-    const outcome = await this.generate(source.filePath, hash, this.dir, source.workspaceRoot);
+    const outcome = await this.generate(source.filePath, hash, this.dir);
     switch (outcome.kind) {
       case "generated":
         return true;
