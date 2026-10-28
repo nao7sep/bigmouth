@@ -88,14 +88,3 @@ describe("RightPane metadata rescue lifetime", () => {
     expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
   });
 });
-
-it.each(["post", "workspace"])("drops the retained hidden instance when its %s changes", async (change) => {
-  mockQueue.mockResolvedValue(null);
-  const view = mountMetadata();
-  const title = view.getByRole("textbox", { name: "Title" });
-  view.refresh(false);
-  expect(title.isConnected).toBe(true);
-  view.refresh(false, false, change === "post" ? "p2" : "p1", change === "workspace" ? "w2" : "w1");
-  expect(title.isConnected).toBe(false);
-  expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
-});

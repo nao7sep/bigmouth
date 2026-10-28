@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnalysisTab } from "./AnalysisTab";
 import { ImagingTab } from "./ImagingTab";
 import { AssetsTab } from "./AssetsTab";
@@ -79,13 +79,6 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
   // Pending or refused edits keep their copy/edit rescue surface available if
   // an external target change removes its ordinary metadata requirement.
   const showMetadata = Boolean(target?.requiresMetadata) || (unsavedMetadata?.owner === metadataOwner && unsavedMetadata.unsaved);
-  // Keep this post's admitted raw values and refusal subscription alive after
-  // its target drops metadata; held delivery can still refuse them later.
-  const [retainedMetadataOwner, setRetainedMetadataOwner] = useState<typeof metadataOwner | null>(null);
-  const mountMetadata = showMetadata || retainedMetadataOwner === metadataOwner;
-  useLayoutEffect(() => {
-    if (showMetadata) setRetainedMetadataOwner(metadataOwner);
-  }, [showMetadata, metadataOwner]);
 
   const visibleTabs: RightTab[] = showMetadata
     ? [...RIGHT_TABS]
@@ -169,10 +162,9 @@ export const RightPane = forwardRef<RightPaneHandle, RightPaneProps>(function Ri
             />
           )}
         </div>
-        {mountMetadata && (
+        {showMetadata && (
           <div
-            {...(showMetadata ? getPanelProps("Metadata") : {})}
-            hidden={!showMetadata}
+            {...getPanelProps("Metadata")}
             className={effectiveTab === "Metadata" ? "" : "tab-hidden"}
           >
             {loading || !frontMatter ? (

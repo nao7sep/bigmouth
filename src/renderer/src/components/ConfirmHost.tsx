@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { presentFailure } from "../util/presentFailure";
 import { message, type Message } from "@shared/i18n/translate";
-import { useStorageResultReporter } from "../StorageResults";
 
 export interface ConfirmOptions {
   title?: string;
@@ -37,7 +36,6 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
  * is therefore the topmost layer in the modal stack and paints on top.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
-  const reportStorageResult = useStorageResultReporter();
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Message | null>(null);
@@ -102,15 +100,15 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         // The action failed: keep the dialog open, surface the reason, and clear
         // busy so the user can retry or cancel. The promise stays unsettled.
-        const stillShown = queueRef.current[0] === request;
-        const failure = presentFailure(request.failureMessage ?? message(stillShown ? "confirm.failed" : "app.storageChangeFailed"), "renderer: confirmed action failed", err);
-        if (!stillShown) { reportStorageResult(failure); return; }
+        const failure = presentFailure(request.failureMessage ?? message("confirm.failed"), "renderer: confirmed action failed", err);
+        // The host was torn down meanwhile and settled every dialog; nothing shows this one.
+        if (queueRef.current[0] !== request) return;
         setError(failure);
         setBusy(false);
         runningRef.current = false;
       }
     })();
-  }, [head, dequeue, reportStorageResult]);
+  }, [head, dequeue]);
 
   const handleCancel = useCallback(() => {
     const request = head;
