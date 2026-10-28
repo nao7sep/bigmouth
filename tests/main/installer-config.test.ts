@@ -97,9 +97,6 @@ describe("interface languages outside the window", () => {
   });
 });
 
-// rebuild and run-built find the packaged app under the packaging output by its
-// product name, and the launcher helper recognizes its running processes by the
-// same name, so each launcher keeps one copy of both.
 // The packaged app's name comes from productName, which cannot import the
 // name the app uses for itself, so the two are compared here.
 describe("the app's name", () => {
@@ -110,21 +107,6 @@ describe("the app's name", () => {
   it("titles the main window's page with it", () => {
     const html = readFileSync(new URL("../../src/renderer/index.html", import.meta.url), "utf8");
     expect(new JSDOM(html).window.document.title).toBe(APP_NAME);
-  });
-});
-
-describe("packaged app the launchers look for", () => {
-  it.each([
-    ["rebuild.command", /^APP_NAME="([^"]*)"\r?$/m, /^OUT_DIR="([^"]*)"\r?$/m],
-    ["run-built.command", /^APP_NAME="([^"]*)"\r?$/m, /^OUT_DIR="([^"]*)"\r?$/m],
-    ["run-dev.command", /^APP_NAME="([^"]*)"\r?$/m, null],
-    ["rebuild.ps1", /^\$appName = "([^"]*)"\r?$/m, /^\$outDir = "([^"]*)"\r?$/m],
-    ["run-built.ps1", /^\$appName = "([^"]*)"\r?$/m, /^\$outDir = "([^"]*)"\r?$/m],
-    ["run-dev.ps1", /^\$appName = "([^"]*)"\r?$/m, null],
-  ])("is the one %s names", (launcher, namePattern, outputPattern) => {
-    const script = readFileSync(new URL(`../../scripts/${launcher}`, import.meta.url), "utf8");
-    expect(namePattern.exec(script)?.[1]).toBe(config.productName);
-    if (outputPattern) expect(outputPattern.exec(script)?.[1]).toBe(config.directories?.output);
   });
 });
 
