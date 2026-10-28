@@ -1,9 +1,8 @@
-import { authorizedRoleCall } from "../authorizedAiCall.js";
 import { ipcMain } from "electron";
 
 import { CHANNELS, type MetadataGenerationResults } from "@shared/ipc";
 import { getPost } from "../storageAccess.js";
-import { getGenerationPrompts } from "../storageAccess.js";
+import { getGenerationPrompts, getRoleCall } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildMetadataGenerationRequest,
@@ -58,7 +57,7 @@ async function generateMetadata(
 
   const post = (await getPost(dir, postId));
   if (!post) throw new Error("Post not found");
-  const roleCall = (await authorizedRoleCall(ws, "metadata"));
+  const roleCall = (await getRoleCall(ws, "metadata"));
   let provider;
   try {
     provider = createProvider(roleCall, { operationId, workspaceId: ws.id, postId, purpose: "metadata" });

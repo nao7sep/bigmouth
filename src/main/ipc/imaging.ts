@@ -1,8 +1,8 @@
-import { authorizedRoleCall } from "../authorizedAiCall.js";
 import { ipcMain } from "electron";
 
 import { CHANNELS } from "@shared/ipc";
 import { getPost } from "../storageAccess.js";
+import { getRoleCall } from "../storageAccess.js";
 import { createProvider } from "../core/ai/factory.js";
 import {
   buildImagingSchema,
@@ -75,7 +75,7 @@ async function generateImaging(
     frontMatter: post.frontMatter,
   });
 
-  const roleCall = (await authorizedRoleCall(ws, "imagingPrompts"));
+  const roleCall = (await getRoleCall(ws, "imagingPrompts"));
   let provider;
   try {
     provider = createProvider(roleCall, { operationId, workspaceId: ws.id, postId, purpose: "imaging" });

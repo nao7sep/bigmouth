@@ -56,7 +56,7 @@ function parseAppConfig(source: Record<string, unknown>, filePath: string): AppC
 
   const workspaces = (entries as unknown[]).map((item) => {
     if (!item || typeof item !== "object") reject("one of its workspaces is not an object");
-    const { id, name, dataDirectory, approvedAiEndpoint } = item as Record<string, unknown>;
+    const { id, name, dataDirectory } = item as Record<string, unknown>;
     if (
       typeof id !== "string" ||
       id.length === 0 ||
@@ -65,7 +65,7 @@ function parseAppConfig(source: Record<string, unknown>, filePath: string): AppC
     ) {
       reject("one of its workspaces is missing an id, a name, or a dataDirectory");
     }
-    return { id, name, dataDirectory, ...(typeof approvedAiEndpoint === "string" ? { approvedAiEndpoint } : {}) };
+    return { id, name, dataDirectory };
   });
 
   const ids = new Set<string>();
@@ -366,14 +366,6 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
   const renamed = { ...ws, name: updates.name };
   writeAppConfig({ ...config, workspaces: config.workspaces.map((item) => item.id === id ? renamed : item) });
   return renamed;
-}
-
-/** Records a permission granted by the local main-process dialog, never workspace content. */
-export function approveAiEndpoint(id: string, endpoint: string): void {
-  const config = ensureLoaded();
-  if (!config.workspaces.some((workspace) => workspace.id === id)) throw new Error("Workspace not found");
-  writeAppConfig({ ...config, workspaces: config.workspaces.map((workspace) =>
-    workspace.id === id ? { ...workspace, approvedAiEndpoint: endpoint } : workspace) });
 }
 
 export function deleteWorkspace(id: string): WorkspaceDeleteResult | null {

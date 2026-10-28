@@ -13,8 +13,6 @@ export interface Workspace {
   id: string;
   name: string;
   dataDirectory: string;
-  /** Machine-local permission; never supplied by a workspace config. */
-  approvedAiEndpoint?: string;
 }
 
 /** The workspace was removed; optional cleanup cannot undo that committed result. */

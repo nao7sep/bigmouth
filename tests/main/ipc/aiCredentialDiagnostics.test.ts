@@ -10,7 +10,7 @@ import { registerAnalysisHandlers } from "@main/ipc/analysis.js";
 import { registerMetadataHandlers } from "@main/ipc/metadata.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 import { initLogger, closeLogger } from "@main/core/services/logger.js";
-import { initAppDir, createWorkspace, approveAiEndpoint } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 
 const fixture = vi.hoisted(() => ({
   key: "sk-ant-fake-diagnostic-sentinel-12345",
@@ -48,7 +48,6 @@ beforeEach(() => {
   process.env.BIGMOUTH_DATA_DIR = home;
   initAppDir();
   fixture.workspaceId = createWorkspace("Diagnostics", path.join(home, "workspace")).id;
-  approveAiEndpoint(fixture.workspaceId, "https://custom.example.test");
   initLogger(path.join(home, "records.sqlite3"), path.join(home, "logs"));
   output = [];
   vi.spyOn(console, "log").mockImplementation((...args) => { output.push(JSON.stringify(args)); });

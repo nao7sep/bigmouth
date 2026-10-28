@@ -67,7 +67,7 @@ vi.mock("@main/core/ai/factory.js", () => ({
   },
 }));
 
-import { initAppDir, createWorkspace, approveAiEndpoint } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, updatePost, clearCache } from "@main/core/services/postStore.js";
 import { saveAnthropicSettings } from "@main/core/services/configStore.js";
 import { registerAiRequestHandlers } from "@main/ipc/aiRequests.js";
@@ -244,7 +244,6 @@ describe("imaging generation IPC handler", () => {
       thinking: { analysis: "max", metadata: "off", imagingPrompts: "between_tools" },
       apiKey: "sk-ws",
     });
-    approveAiEndpoint(wsId, "https://proxy.example");
 
     await invoke(CHANNELS.generateImaging, wsId, postId, "", validOptions()).catch(() => {});
 
