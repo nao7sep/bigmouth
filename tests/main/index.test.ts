@@ -7,7 +7,7 @@
 // showed unsaved text — only exists once the two are wired together. The one
 // seam is the worker thread the app runs that flush on (storageOwner.ts, tested on
 // its own): here the same store flush runs in place, or the test makes it
-// stall past its bound.
+// stall past the exit deadline, which runs on a fake clock.
 //
 // Menu Quit, Cmd+Q and the Dock's Quit all reach the app as before-quit, which
 // Electron raises for each; quit() below stands for all three.
@@ -53,7 +53,15 @@ const shell = vi.hoisted(() => ({
   loggedErrors: [] as unknown[][],
   // Signals the app sent to its own process: a forced exit, never a real kill here.
   kills: [] as (string | number | undefined)[],
+  // Tests waiting for the app to record something; see until().
+  waiters: [] as (() => void)[],
+  changed(): void { for (const wake of shell.waiters.splice(0)) wake(); },
 }));
+
+/** Resolves once `condition` holds, checking it first: a change before the wait began never comes again. */
+async function until(condition: () => boolean): Promise<void> {
+  while (!condition()) await new Promise<void>((resolve) => { shell.waiters.push(resolve); });
+}
 
 vi.mock("electron", () => ({
   app: {
@@ -70,7 +78,7 @@ vi.mock("electron", () => ({
     on: (event: string, cb: (...args: unknown[]) => unknown) => appHandlers.set(event, cb),
     quit: () => { shell.quitRequests++; },
     getPath: (name: string) => `/os-reported/${name}`,
-    exit: (code: number) => shell.exits.push(code),
+    exit: (code: number) => { shell.exits.push(code); shell.changed(); },
   },
   dialog: { showErrorBox: (title: string, content: string) => {
     shell.nativeErrors.push([title, content]);
@@ -86,6 +94,7 @@ vi.mock("electron", () => ({
 vi.mock("@main/plain-message-dialog.js", () => ({
   showPlainMessageDialog: async (options: { detail?: string; buttons?: string[] }) => {
     shell.dialogs.push(options);
+    shell.changed();
     if (shell.dialogFailure) throw shell.dialogFailure;
     if (shell.dialogAnswer) {
       return Promise.race([shell.dialogAnswer, new Promise<number>((resolve) => { shell.cancelOpenDialog = () => resolve(0); })]);
@@ -96,56 +105,71 @@ vi.mock("@main/plain-message-dialog.js", () => ({
 }));
 
 // What each flush at quit does, in order: "store" runs the real store's flush in
-// place; "stall" stands for a flush still blocked when the bound passes.
+// place; "stall" stands for a flush that never settles, as on a stalled disk.
 const flush = vi.hoisted(() => ({
   plan: [] as ("store" | "stall")[],
   calls: 0,
-  // Whether the storage worker finishes within the exit bound.
+  // Whether the storage worker finishes within the exit deadline.
   finishSettles: true,
-  // The backup drain each asynchronous finish was given, in ms.
+  // The bound and backup drain each finish was given, in ms.
+  finishBounds: [] as number[],
   backupDrains: [] as number[],
+  // What the worker's own last flush in finish could not write.
+  finishFailures: [] as unknown[],
   // How many times exit let the records window's reader go.
   recordsReaderCloses: 0,
   // The Documents folder each storage initialization was handed.
   initializedDocuments: [] as (string | undefined)[],
-  store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits" | "resumePendingFlushes" | "holdPendingFlushes">,
+  // When set, storage initialization waits for it.
+  initializeGate: null as Promise<void> | null,
+  store: null as null | Pick<typeof import("@main/core/services/postStore.js"), "flushAllPendingEdits">,
 }));
 vi.mock("@main/storageOwner.js", () => {
-  const flushNow = () => {
-    flush.calls++;
-    flush.store!.holdPendingFlushes();
-    if ((flush.plan.shift() ?? "store") === "stall") return { kind: "expired" };
-    return { kind: "flushed", failures: flush.store!.flushAllPendingEdits() };
+  // The worker's finish writes what is buffered, as storageWorker.ts does.
+  const finish = (boundMs: number, backupDrainMs: number) => {
+    flush.finishBounds.push(boundMs);
+    flush.backupDrains.push(backupDrainMs);
+    flush.finishFailures.push(...flush.store!.flushAllPendingEdits());
+    return flush.finishSettles;
   };
   return { storageOwner: {
-    onRecordStored: () => {}, flushAsync: async () => flushNow(), flushWithin: flushNow,
-    finishAsync: async (_boundMs: number, backupDrainMs: number) => { flush.backupDrains.push(backupDrainMs); return flush.finishSettles; },
-    finishWithin: () => flush.finishSettles, stop: async () => {},
+    onRecordStored: () => {},
+    finishAsync: async (boundMs: number, backupDrainMs: number) => finish(boundMs, backupDrainMs),
+    finishWithin: (boundMs: number) => finish(boundMs, 0), stop: async () => {},
   } };
 });
 vi.mock("@main/storageAccess.js", async () => ({
   initialize: async (documentsDirectory?: string) => {
     flush.initializedDocuments.push(documentsDirectory);
+    await flush.initializeGate;
     const store = await import("@main/core/services/workspaceStore.js");
     const paths = await import("@main/core/services/storagePaths.js");
     const config = store.initAppDir();
     return { config, settings: { theme: "system", language: "system" }, recordsDbPath: paths.getRecordsDbPath(), recordsPath: null, thumbnailsDir: paths.getThumbnailsDir() };
   },
+  flush: async () => {
+    flush.calls++;
+    if ((flush.plan.shift() ?? "store") === "stall") return new Promise(() => {});
+    return flush.store!.flushAllPendingEdits();
+  },
   listWorkspaces: async () => [],
   log: async () => {},
-  resumePendingFlushes: async () => flush.store!.resumePendingFlushes(),
 }));
 
 vi.mock("@main/window.js", () => ({
-  createMainWindow: () => shell.windowLoadFailure ? Promise.reject(shell.windowLoadFailure) : (shell.windowOpens++, Promise.resolve({
-    on: (event: string, cb: (...args: unknown[]) => unknown) => windowHandlers.set(event, cb),
+  createMainWindow: async () => {
+    if (shell.windowLoadFailure) throw shell.windowLoadFailure;
+    shell.windowOpens++;
+    return {
+    on: (event: string, cb: (...args: unknown[]) => unknown) => { windowHandlers.set(event, cb); shell.changed(); },
     webContents: { id: MAIN_WINDOW_ID },
     isDestroyed: () => false,
     close: () => { shell.windowCloses++; },
     isMinimized: () => shell.mainWindow.minimized,
     restore: () => { shell.mainWindow.restores++; },
     focus: () => { shell.mainWindow.focuses++; },
-  })),
+    };
+  },
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
 vi.mock("@main/core/services/recordsReader.js", async (importOriginal) => {
@@ -175,7 +199,7 @@ vi.mock("@main/core/services/logger.js", () => ({
   debug: () => {},
   info: () => {},
   warn: () => {},
-  error: (...args: unknown[]) => { shell.loggedErrors.push(args); },
+  error: (...args: unknown[]) => { shell.loggedErrors.push(args); shell.changed(); },
 }));
 
 type PostStore = typeof import("@main/core/services/postStore.js");
@@ -203,8 +227,8 @@ afterAll(() => {
 });
 
 // The first boot transforms index.ts and its whole module graph, several times
-// the cost of a later one. It is paid once here, inside the hook's own timeout,
-// so no test pays it inside its own (fleet-metadata-code-review checklist, Tests).
+// the cost of a later one. It is paid once here, so every test boots in about
+// the same time.
 beforeAll(async () => {
   const warmHome = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-warm-"));
   const warmData = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-warm-ws-"));
@@ -214,7 +238,6 @@ beforeAll(async () => {
   try {
     await bootApp();
   } finally {
-    flush.store?.resumePendingFlushes();
     const { closeBackupStore } = await import("@main/core/services/backupStore.js");
     closeBackupStore();
     if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
@@ -223,7 +246,7 @@ beforeAll(async () => {
     fs.rmSync(warmHome, { recursive: true, force: true });
     fs.rmSync(warmData, { recursive: true, force: true });
   }
-}, 30_000);
+});
 
 /**
  * Boots a fresh copy of the app entry against a fresh workspace directory and
@@ -252,9 +275,12 @@ async function bootApp(): Promise<PostStore> {
   flush.plan = [];
   flush.calls = 0;
   flush.finishSettles = true;
+  flush.finishBounds = [];
   flush.backupDrains = [];
+  flush.finishFailures = [];
   flush.recordsReaderCloses = 0;
   flush.initializedDocuments = [];
+  flush.initializeGate = null;
   shell.kills.length = 0;
   shell.windowLoadFailure = null;
   shell.windowOpens = 0;
@@ -268,19 +294,25 @@ async function bootApp(): Promise<PostStore> {
 
   await import("@main/index.js");
   // bootstrap() runs off app.whenReady(); the window wiring marks it done.
-  await vi.waitFor(() => expect(windowHandlers.has("session-end")).toBe(true));
+  await until(() => windowHandlers.has("session-end"));
   return store;
 }
 
-/** Runs the app's before-quit handler the way Electron would. */
+/**
+ * Runs the app's before-quit handler the way Electron would, and waits until
+ * the quit asks, exits or gives up. A stalled flush expires on the fake clock.
+ */
 async function quit(): Promise<void> {
   const handler = appHandlers.get("before-quit");
   expect(handler, "before-quit was never registered").toBeTruthy();
+  const asked = shell.dialogs.length;
+  const logged = shell.loggedErrors.length;
+  const stalls = flush.plan[0] === "stall";
+  if (stalls) vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   handler!({ preventDefault: () => {} });
-  await vi.waitFor(() => {
-    if (shell.dialogs.length === 0 && shell.exits.length === 0) throw new Error("quit is still settling");
-  });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (stalls) await vi.advanceTimersByTimeAsync(3000);
+  await until(() => shell.dialogs.length > asked || shell.exits.length > 0 || shell.kills.length > 0
+    || shell.loggedErrors.slice(logged).some(([event]) => event === "quit confirmation failed; quit cancelled"));
 }
 
 const PLATFORM = process.platform;
@@ -298,7 +330,7 @@ beforeEach(() => {
   shell.frameworkPaths.length = 0;
   shell.nativeErrors.length = 0;
   shell.nativeErrorFailure = false;
-  killSpy = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => { shell.kills.push(signal); return true; });
+  killSpy = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => { shell.kills.push(signal); shell.changed(); return true; });
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   processHandlers.clear();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
@@ -311,8 +343,6 @@ afterEach(async () => {
   consoleErrorSpy.mockRestore();
   vi.useRealTimers();
   Object.defineProperty(process, "platform", { value: PLATFORM });
-  // A quit the test left unfinished holds the store's writes.
-  flush.store?.resumePendingFlushes();
   // vi.resetModules() gives this file a fresh backup-store singleton, distinct
   // from the one closed by tests/main/setup.ts. Close the active instance before
   // removing its throwaway BIGMOUTH_DATA_DIR (Windows keeps the SQLite file locked).
@@ -369,11 +399,11 @@ describe("quit flushes the write-behind buffer", () => {
     const post = store.createPost(dataDir, "blogger", "en");
     store.queueContent(dataDir, post.frontMatter.id, "still owned");
     flush.plan = ["stall"];
-    shell.dialogAnswer = Promise.reject(new Error("dialog could not open"));
+    shell.dialogFailure = new Error("dialog could not open");
     await quit();
     expect(shell.exits).toEqual([]);
-    await vi.waitFor(() => expect(JSON.stringify(shell.loggedErrors)).toContain("quit confirmation failed; quit cancelled"));
-    shell.dialogAnswer = null;
+    expect(JSON.stringify(shell.loggedErrors)).toContain("quit confirmation failed; quit cancelled");
+    shell.dialogFailure = null;
     await quit();
     expect(shell.exits).toEqual([0]);
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("still owned");
@@ -431,8 +461,9 @@ describe("quit flushes the write-behind buffer", () => {
     shell.dialogChoices = [1];
 
     await quit();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
 
+    expect(shell.exits).toEqual([0]);
     expect(flush.calls).toBe(2);
     expect(shell.dialogs).toHaveLength(1);
     expect(fs.readFileSync(post.filePath, "utf8")).toContain("written on the second try");
@@ -446,7 +477,9 @@ describe("quit flushes the write-behind buffer", () => {
     shell.dialogChoices = [1, 0];
 
     await quit();
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(2));
+    // The retried flush stalls too, and expires on a deadline started afresh by the answer.
+    await vi.advanceTimersByTimeAsync(3000);
+    await until(() => shell.dialogs.length === 2);
 
     expect(flush.calls).toBe(2);
     expect(shell.exits).toEqual([]);
@@ -460,41 +493,14 @@ describe("quit flushes the write-behind buffer", () => {
     shell.dialogChoice = 2;
 
     await quit();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.exits).toEqual([0]);
     expect(flush.calls).toBe(1);
-  });
-
-  it("holds the store's own writes while it asks, and resumes them when the user cancels", async () => {
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "kept after a cancelled quit");
-    flush.plan = ["stall"];
-    let answer!: (choice: number) => void;
-    shell.dialogAnswer = new Promise((resolve) => { answer = resolve; });
-
-    await quit();
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      // Long past the store's debounce, nothing was written while the question was open.
-      store.queueContent(dataDir, post.frontMatter.id, "kept after a cancelled quit");
-      vi.advanceTimersByTime(60_000);
-      expect(fs.readFileSync(post.filePath, "utf8")).not.toContain("kept after a cancelled quit");
-
-      answer(0); // Cancel
-      // Once the cancel lands, the store's debounce writes the text again.
-      await vi.waitFor(() => {
-        vi.advanceTimersByTime(1_000);
-        expect(fs.readFileSync(post.filePath, "utf8")).toContain("kept after a cancelled quit");
-      });
-      expect(shell.exits).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 
-// An ending OS session never asks: the app writes what it can within the
-// flush's bound, logs what it could not, and exits.
+// An ending OS session never asks: the app writes what it can within the exit
+// deadline and exits; storage's finish logs what it could not write.
 describe("an ending OS session", () => {
   it("writes and exits on Windows' session-end, which raises no before-quit", async () => {
     const store = await bootApp();
@@ -509,7 +515,7 @@ describe("an ending OS session", () => {
     expect(shell.exits).toEqual([0]);
   });
 
-  it("logs and exits on Windows' session-end when the posts cannot be written", async () => {
+  it("exits on Windows' session-end without asking when the posts cannot be written", async () => {
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");
     store.queueContent(dataDir, post.frontMatter.id, "work that cannot be written");
@@ -519,7 +525,9 @@ describe("an ending OS session", () => {
 
     // A dialog here would block until Windows force-terminated the app.
     expect(shell.dialogs).toEqual([]);
-    expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush failed at quit");
+    expect(flush.finishFailures).toHaveLength(1);
+    expect(flush.finishBounds[0]).toBeGreaterThan(0);
+    expect(flush.finishBounds[0]).toBeLessThanOrEqual(3000);
     expect(shell.exits).toEqual([0]);
   });
 
@@ -539,19 +547,6 @@ describe("an ending OS session", () => {
     expect(shell.exits).toEqual([0]);
   });
 
-  it("logs and exits when the flush is still blocked at the bound", async () => {
-    const store = await bootApp();
-    const post = store.createPost(dataDir, "blogger", "en");
-    store.queueContent(dataDir, post.frontMatter.id, "stuck behind a stalled disk");
-    flush.plan = ["stall"];
-
-    windowHandlers.get("session-end")!({ reasons: ["shutdown"] });
-
-    expect(shell.dialogs).toEqual([]);
-    expect(JSON.stringify(shell.loggedErrors)).toContain("pending edits flush did not finish at quit");
-    expect(shell.exits).toEqual([0]);
-  });
-
   it("never asks at a macOS or Linux shutdown, which arrives as before-quit", async () => {
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");
@@ -566,10 +561,12 @@ describe("an ending OS session", () => {
     expect(shell.exits).toEqual([0]);
   });
 
-  it("gives pending backup writes part of the bound at an ordinary quit and none at shutdown", async () => {
+  it("gives pending backup writes what remains of the deadline at an ordinary quit and none at shutdown", async () => {
     await bootApp();
     await quit();
-    expect(flush.backupDrains).toEqual([300]);
+    expect(flush.backupDrains).toEqual(flush.finishBounds);
+    expect(flush.backupDrains[0]).toBeGreaterThan(0);
+    expect(flush.backupDrains[0]).toBeLessThanOrEqual(3000);
     expect(flush.recordsReaderCloses).toBe(1);
 
     await bootApp();
@@ -590,7 +587,8 @@ describe("an ending OS session", () => {
     expect(shell.dialogs).toHaveLength(1);
 
     powerHandlers.get("shutdown")!();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.exits).toEqual([0]);
     // The logout's own quit, held while the first one finishes.
     appHandlers.get("before-quit")!({ preventDefault: () => {} });
     expect(shell.dialogs).toHaveLength(1);
@@ -606,7 +604,8 @@ describe("a storage worker still blocked at the exit bound", () => {
     flush.finishSettles = false;
 
     appHandlers.get("before-quit")!({ preventDefault: () => {} });
-    await vi.waitFor(() => expect(shell.kills).toEqual(["SIGKILL"]));
+    await until(() => shell.kills.length > 0);
+    expect(shell.kills).toEqual(["SIGKILL"]);
 
     expect(shell.exits).toEqual([]);
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Storage did not settle"));
@@ -733,7 +732,8 @@ describe("a refused metadata value on screen", () => {
     shell.dialogChoice = 1;
 
     await quit();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.exits).toEqual([0]);
   });
 
 });
@@ -764,7 +764,8 @@ describe("a running AI request at quit", () => {
     shell.dialogChoice = 1;
 
     await quit();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.exits).toEqual([0]);
   });
 
   it("quits without asking once the request finished", async () => {
@@ -804,7 +805,7 @@ describe("a quit while shutdown runs", () => {
 
     const first = vi.fn();
     handler({ preventDefault: first });
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+    await until(() => shell.dialogs.length === 1);
 
     const second = vi.fn();
     handler({ preventDefault: second });
@@ -814,7 +815,8 @@ describe("a quit while shutdown runs", () => {
     expect(shell.exits).toEqual([]);
 
     answer(1); // Quit Anyway
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.exits).toEqual([0]);
   });
 
   it("is held when nothing needs asking, and the process exits once", async () => {
@@ -825,8 +827,7 @@ describe("a quit while shutdown runs", () => {
     handler({ preventDefault: first });
     handler({ preventDefault: second });
     expect(second).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await until(() => shell.exits.length > 0);
     expect(shell.exits).toEqual([0]);
   });
 
@@ -840,8 +841,9 @@ describe("a quit while shutdown runs", () => {
     shell.dialogChoice = 1;
     const again = vi.fn();
     appHandlers.get("before-quit")!({ preventDefault: again });
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(2));
-    await vi.waitFor(() => expect(shell.exits).toEqual([0]));
+    await until(() => shell.exits.length > 0);
+    expect(shell.dialogs).toHaveLength(2);
+    expect(shell.exits).toEqual([0]);
   });
 });
 
@@ -876,21 +878,51 @@ describe("single app-process ownership", () => {
     shell.windowLoadFailure = new Error("EACCES /private/tmp/renderer.html");
 
     await import("@main/index.js");
-    await vi.waitFor(() => expect(shell.dialogs).toHaveLength(1));
+    await until(() => shell.dialogs.length === 1);
 
     expect(shell.dialogs[0].detail).toContain("No posts or workspace documents were changed");
     expect(JSON.stringify(shell.dialogs[0])).not.toContain("EACCES");
     expect(JSON.stringify(shell.loggedErrors)).toContain("EACCES");
+    await until(() => shell.exits.length > 0 || shell.kills.length > 0);
     if (outcome === "settled") {
-      await vi.waitFor(() => expect(shell.exits).toEqual([1]));
+      expect(shell.exits).toEqual([1]);
       expect(shell.kills).toEqual([]);
     } else {
-      await vi.waitFor(() => expect(shell.kills).toEqual(["SIGKILL"]));
+      expect(shell.kills).toEqual(["SIGKILL"]);
       expect(shell.exits).toEqual([]);
     }
     shell.dialogAnswer = null;
     shell.dialogFailure = null;
     flush.finishSettles = true;
+  });
+
+  it("shows no startup failure for a startup the quit stopped, and exits once", async () => {
+    vi.resetModules();
+    appHandlers.clear();
+    windowHandlers.clear();
+    shell.dialogs.length = 0;
+    shell.exits.length = 0;
+    shell.kills.length = 0;
+    shell.loggedErrors.length = 0;
+    flush.plan = [];
+    flush.store = await import("@main/core/services/postStore.js");
+    let closeStorage!: () => void;
+    // Storage is closing under the startup that was still opening it.
+    flush.initializeGate = new Promise((_resolve, reject) => { closeStorage = () => reject(new Error("Storage is closing.")); });
+
+    await import("@main/index.js");
+    await until(() => appHandlers.has("before-quit"));
+    await quit();
+    expect(shell.exits).toEqual([0]);
+    closeStorage();
+    // Nothing is shown, so there is no event to wait for: let every pending
+    // continuation of the failed startup run before checking.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(shell.dialogs).toEqual([]);
+    expect(shell.loggedErrors).toEqual([]);
+    expect(shell.exits).toEqual([0]);
+    flush.initializeGate = null;
   });
 
   it("quits a second process before it can bootstrap process-local workspace state", async () => {

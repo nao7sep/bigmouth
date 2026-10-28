@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { presentFailure } from "../util/presentFailure";
 import { message, type Message } from "@shared/i18n/translate";
-import { useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 export interface ConfirmOptions {
   title?: string;
@@ -37,7 +37,6 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
  * is therefore the topmost layer in the modal stack and paints on top.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
   const [busy, setBusy] = useState(false);
@@ -83,7 +82,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
   const handleConfirm = useCallback(() => {
     const request = head;
-    if (!request || queueRef.current[0] !== request || runningRef.current || (storagePending && request.onConfirm)) return;
+    if (!request || queueRef.current[0] !== request || runningRef.current) return;
 
     if (!request.onConfirm) {
       request.resolve(true);
@@ -111,14 +110,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         runningRef.current = false;
       }
     })();
-  }, [head, dequeue, reportStorageResult, storagePending]);
+  }, [head, dequeue, reportStorageResult]);
 
   const handleCancel = useCallback(() => {
     const request = head;
-    if (!request || queueRef.current[0] !== request || (runningRef.current && !storagePending)) return;
+    if (!request || queueRef.current[0] !== request || runningRef.current) return;
     request.resolve(false);
     dequeue();
-  }, [head, dequeue, storagePending]);
+  }, [head, dequeue]);
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -131,7 +130,6 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           cancelLabel={head.cancelLabel}
           danger={head.danger}
           busy={busy}
-          pending={storagePending && Boolean(head.onConfirm)}
           error={error}
           onConfirm={handleConfirm}
           onCancel={handleCancel}

@@ -34,7 +34,6 @@ import {
   type AssetUploadFailure,
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
-  type PostMetadataRefusedEvent,
   assetUrl as buildAssetUrl,
   imageDerivativeUrl,
   type ImageDerivativeKind,
@@ -122,13 +121,6 @@ export function pickWorkspaceDirectory(purpose: "workspace" | "create", initialD
   return bridge().pickDirectory(purpose, initialDirectory);
 }
 
-/** At least one published change lacked stable-storage confirmation this launch. */
-/** A started user mutation exceeded its normal wait and still owns its result. */
-export function getStoragePending(): Promise<boolean> { return bridge().getStoragePending(); }
-export function onStoragePendingChanged(listener: (pending: boolean) => void): () => void {
-  return bridge().onStoragePendingChanged(listener);
-}
-
 // --- UI state (state.json) ---
 
 /** The persisted view state: side-pane intent widths + last active workspace id. */
@@ -213,16 +205,6 @@ export function onPostContentSaveFailed(
 ): () => void {
   const workspaceId = requireWs();
   return bridge().onPostContentSaveFailed((event) => {
-    if (event.wsId === workspaceId) listener(event);
-  });
-}
-
-/** A held metadata edit the store refused once storage took it. */
-export function onPostMetadataRefused(
-  listener: (event: PostMetadataRefusedEvent) => void,
-): () => void {
-  const workspaceId = requireWs();
-  return bridge().onPostMetadataRefused((event) => {
     if (event.wsId === workspaceId) listener(event);
   });
 }

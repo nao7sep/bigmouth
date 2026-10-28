@@ -4,18 +4,17 @@ import { storageTasks } from "./storageTasks.js";
 import { setContentSaveListener } from "./core/services/postStore.js";
 import { onRecordStored, onRecordsHealth } from "./core/services/recordsStore.js";
 import { useBackupRecorderModule } from "./core/services/backupStore.js";
-import { serializeError } from "./core/services/logger.js";
+import { error as logError, serializeError } from "./core/services/logger.js";
 import { WORKER_ENTRIES } from "./builtEntries.js";
-import type { StorageRequest, StorageReply, StorageFlushRequest, StorageFinishRequest } from "./storageOwner.js";
+import type { StorageRequest, StorageReply, StorageFinishRequest } from "./storageOwner.js";
 
 const port = parentPort!;
 // electron-vite builds the backup recorder as its own entry beside this one.
 const here = import.meta.url;
 if (here && !here.endsWith(".ts")) useBackupRecorderModule(new URL(`./${WORKER_ENTRIES.backup}.js`, here));
-function apply(request: StorageRequest) {
+function apply(request: StorageRequest): void {
   const value = (storageTasks[request.name] as (...args: unknown[]) => unknown)(...request.args);
   port.postMessage({ id: request.id, ok: true, value } satisfies StorageReply);
-  return value;
 }
 setContentSaveListener((value) => {
   const event = value.kind === "save-failed" ? { ...value, error: serializeError(value.error) } : value;
@@ -32,7 +31,7 @@ onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies Stora
 // A request that could not be read is said to be, so the owner fails it rather
 // than waiting for a reply that cannot come.
 port.on("messageerror", () => port.postMessage({ event: "request-unreadable" } satisfies StorageReply));
-port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinishRequest) => {
+port.on("message", (request: StorageRequest | StorageFinishRequest) => {
   if ("finish" in request) {
     try {
       for (const queued of request.queued) {
@@ -41,10 +40,13 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
           port.postMessage({ id: queued.id, ok: true, value } satisfies StorageReply);
         } catch (error) { port.postMessage({ id: queued.id, ok: false, error: serializeError(error) } as StorageReply); }
       }
-      // Edits that reached the buffer after the last quit flush, such as those
-      // typed while the quit question was open, get one more write attempt
-      // within the finish bound; a quit flush already held the debounce.
-      try { storageTasks.flush(); }
+      // Edits that reached the buffer after the quit's flush, such as those
+      // typed while the quit question was open, get one more write attempt. The
+      // records close after this, so a failure is logged here, where it can be.
+      try {
+        const failures = storageTasks.flush();
+        if (failures.length > 0) logError("pending edits flush failed at quit", { failures });
+      }
       finally { storageTasks.finish(request.backupBoundMs); }
     }
     finally {
@@ -53,27 +55,6 @@ port.on("message", (request: StorageRequest | StorageFlushRequest | StorageFinis
       Atomics.notify(request.signal, 0);
       request.port.close();
     }
-    return;
-  }
-  if ("flush" in request) {
-    const failures: { id: string; message: string }[] = [];
-    storageTasks.holdPendingFlushes();
-    for (const edit of request.edits) {
-      try {
-        if (!["queueWorkspaceContent", "queueWorkspaceMetadata"].includes(edit.name)) continue;
-        const result = apply(edit);
-        if (result !== null && !edit.name.endsWith("Content")) failures.push({ id: String(edit.args[1]), message: "The metadata edit could not be saved." });
-      } catch (error) {
-        failures.push({ id: String(edit.args[1]), message: "The edit could not reach storage." });
-        port.postMessage({ id: edit.id, ok: false, error: serializeError(error) } as StorageReply);
-      }
-    }
-    failures.push(...storageTasks.flush());
-    request.port.postMessage({ failures });
-    Atomics.store(request.signal, 0, 1);
-    Atomics.notify(request.signal, 0);
-    request.port.close();
-    port.postMessage({ event: "flush-settled" } satisfies StorageReply);
     return;
   }
   try {

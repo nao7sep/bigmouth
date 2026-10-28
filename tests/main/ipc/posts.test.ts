@@ -517,7 +517,6 @@ describe("queuePostContent (the content stream)", () => {
       expect(saved[0].wsId).toBe(wsId);
       expect(saved[0].postId).toBe(id);
       expect(saved[0].summary.id).toBe(id);
-      expect(saved[0].newerEditHeld).toBe(false);
       expect(saved[0].summary.fileName).toBe(path.basename(file));
       // The payload is the index projection, which excludes updatedAtUtc — a
       // consumer must never be able to read an edit time off it.

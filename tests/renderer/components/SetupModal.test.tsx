@@ -1,18 +1,12 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type { Settings, Workspace } from "@shared/types";
-const pendingBridge = vi.hoisted(() => ({ listeners: new Set<(pending: boolean) => void>() }));
 
 // First-run setup comes after the workspace window created the first workspace:
 // it asks for that workspace's first target, saved through the ordinary call
 // the moment the user finishes, then opens the workspace. The api is mocked so
 // the save, and what a skip leaves unwritten, can be asserted directly.
 vi.mock("@renderer/api", () => ({
-  getStoragePending: vi.fn(async () => false),
-  onStoragePendingChanged: (listener: (pending: boolean) => void) => {
-    pendingBridge.listeners.add(listener);
-    return () => pendingBridge.listeners.delete(listener);
-  },
   reportProblem: vi.fn(),
   listTargets: vi.fn(),
   getSettings: vi.fn(),
@@ -20,7 +14,7 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { SetupModal } from "@renderer/components/SetupModal";
-import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StorageResults, StorageResultsProvider } from "@renderer/StorageResults";
 import { getSettings, listTargets, saveTargets } from "@renderer/api";
 
 const mockListTargets = vi.mocked(listTargets);
@@ -40,7 +34,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  pendingBridge.listeners.clear();
   vi.clearAllMocks();
 });
 
@@ -56,49 +49,29 @@ function deferred<T>() {
 async function renderDepartableSetup() {
   const onFinish = vi.fn();
   const tree = (shown: boolean) => (
-    <StoragePendingProvider>
+    <StorageResultsProvider>
       {shown && <SetupModal workspace={WS} onFinish={onFinish} />}
-      <StoragePendingResults />
-    </StoragePendingProvider>
+      <StorageResults />
+    </StorageResultsProvider>
   );
   const view = render(tree(true));
   await flush();
   return { ...view, onFinish, leave: () => view.rerender(tree(false)) };
 }
 
-function announcePending() {
-  act(() => { for (const listener of pendingBridge.listeners) listener(true); });
-}
-
-describe("SetupModal — pending changes retain their result after leaving", () => {
-  it("offers Skip only while a slow save is pending, and does not finish twice on its late success", async () => {
-    const work = deferred<Awaited<ReturnType<typeof saveTargets>>>();
-    mockSaveTargets.mockReturnValue(work.promise);
-    const view = await renderDepartableSetup();
-    await click(view.getByText("Finish"));
-    expect(view.getByRole("button", { name: "Saving…" })).toBeTruthy();
-    expect(view.queryByText("Skip")).toBeNull();
-    announcePending();
-    await click(view.getByText("Skip"));
-    expect(view.onFinish).toHaveBeenCalledExactlyOnceWith(WS);
-    await act(async () => { work.resolve([]); });
-    expect(view.onFinish).toHaveBeenCalledTimes(1);
-  });
-
+describe("SetupModal — a save outlives the step it was started in", () => {
   it("retains a departed target failure in the surviving result owner", async () => {
     const work = deferred<Awaited<ReturnType<typeof saveTargets>>>();
     mockSaveTargets.mockReturnValue(work.promise);
     const view = await renderDepartableSetup();
     await click(view.getByText("Finish"));
-    announcePending();
-    await click(view.getByText("Skip"));
     view.leave();
     await act(async () => { work.reject(new Error("private target diagnostic")); });
     const result = view.getByRole("alert");
     expect(result.closest(".app-operational-result")).not.toBeNull();
     expect(result.textContent).toContain("The target could not be saved.");
     expect(result.textContent).not.toContain("private target diagnostic");
-    expect(view.onFinish).toHaveBeenCalledTimes(1);
+    expect(view.onFinish).not.toHaveBeenCalled();
   });
 
   it("does not finish a setup that left before its save succeeded", async () => {

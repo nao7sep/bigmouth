@@ -21,7 +21,6 @@ beforeEach(() => {
 import { NewPostModal } from "@renderer/components/NewPostModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { listPosts } from "@renderer/api";
-import { StoragePendingContext } from "@renderer/StoragePending";
 
 const mockListPosts = vi.mocked(listPosts);
 
@@ -255,34 +254,6 @@ describe("NewPostModal — dirty-close confirmation", () => {
     await within(document.body).findByText("Discard changes?");
     expect(onClose).not.toHaveBeenCalled();
   });
-});
-
-
-it("retires the submitted modal owner on pending departure before creation settles", async () => {
-  mockListPosts.mockResolvedValue(page());
-  let mayAdopt: (() => boolean) | undefined;
-  let finish!: () => void;
-  const onCreate = vi.fn((_target: string, _language: string, _source?: string, owner?: () => boolean) => {
-    mayAdopt = owner;
-    return new Promise<void>((resolve) => { finish = resolve; });
-  });
-  const onClose = vi.fn();
-  const view = render(<ConfirmProvider><StoragePendingContext.Provider value={false}>
-    <NewPostModal targets={TARGETS} supportedLanguages={["en", "ja"]} pubBatchSize={50} onClose={onClose} onCreate={onCreate} />
-  </StoragePendingContext.Provider></ConfirmProvider>);
-  await act(async () => { await Promise.resolve(); });
-  fireEvent.change(view.container.querySelector("select")!, { target: { value: "social" } });
-  fireEvent.click(view.getByText("Create"));
-  expect(mayAdopt?.()).toBe(true);
-  expect((view.getByText("Creating…").closest("button") as HTMLButtonElement).disabled).toBe(true);
-  view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={true}>
-    <NewPostModal targets={TARGETS} supportedLanguages={["en", "ja"]} pubBatchSize={50} onClose={onClose} onCreate={onCreate} />
-  </StoragePendingContext.Provider></ConfirmProvider>);
-  fireEvent.click(view.getAllByRole("button", { name: "Close" }).at(-1)!);
-  expect(onClose).toHaveBeenCalledOnce();
-  expect(mayAdopt?.()).toBe(false);
-  await act(async () => { finish(); });
-  expect(onClose).toHaveBeenCalledOnce();
 });
 
 it("names the target and language fields and the source group", async () => {

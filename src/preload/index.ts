@@ -4,7 +4,6 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   type PostContentSavedEvent,
   type PostContentSaveFailedEvent,
-  type PostMetadataRefusedEvent,
   CHANNELS,
   analysisStreamChannel,
   type AiRequestHandle,
@@ -192,12 +191,6 @@ const api = {
   },
 
   // --- UI state (state.json) ---
-  getStoragePending: () => ipcRenderer.invoke(CHANNELS.getStoragePending) as Promise<boolean>,
-  onStoragePendingChanged: (listener: (pending: boolean) => void) => {
-    const callback = (_event: unknown, pending: unknown) => { if (typeof pending === "boolean") listener(pending); };
-    ipcRenderer.on(CHANNELS.storagePendingChanged, callback);
-    return () => { ipcRenderer.removeListener(CHANNELS.storagePendingChanged, callback); };
-  },
 
   getUiState: () => ipcRenderer.invoke(CHANNELS.getUiState) as Promise<UiState>,
   updateUiState: (patch: Partial<UiState>) =>
@@ -256,11 +249,6 @@ const api = {
     const wrapped = (_event: unknown, payload: PostContentSaveFailedEvent): void => listener(payload);
     ipcRenderer.on(CHANNELS.postContentSaveFailed, wrapped);
     return () => ipcRenderer.removeListener(CHANNELS.postContentSaveFailed, wrapped);
-  },
-  onPostMetadataRefused: (listener: (event: PostMetadataRefusedEvent) => void) => {
-    const wrapped = (_event: unknown, payload: PostMetadataRefusedEvent): void => listener(payload);
-    ipcRenderer.on(CHANNELS.postMetadataRefused, wrapped);
-    return () => ipcRenderer.removeListener(CHANNELS.postMetadataRefused, wrapped);
   },
 
   // --- Targets ---

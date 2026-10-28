@@ -6,8 +6,6 @@ import type { AssetMeta } from "@shared/types";
 vi.mock("@renderer/api", () => ({
   onWindowActivated: vi.fn(() => () => {}),
   reportProblem: vi.fn(),
-  getStoragePending: vi.fn().mockResolvedValue(false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
   listAssets: vi.fn(),
   uploadAsset: vi.fn(),
   deleteAsset: vi.fn(),
@@ -21,7 +19,7 @@ vi.mock("@renderer/api", () => ({
 import { AssetsTab } from "@renderer/components/AssetsTab";
 import { inspectAssetDragOffer } from "@renderer/util/assetDrop";
 import { AssetUploadAdmissionError, AssetUploadFailureError } from "@renderer/util/assetUpload";
-import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StorageResults, StorageResultsProvider } from "@renderer/StorageResults";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import { onWindowActivated, listAssets, uploadAsset, deleteAsset, reportProblem } from "@renderer/api";
 import { usePostAssets } from "@renderer/hooks/usePostAssets";
@@ -819,10 +817,10 @@ it("keeps delayed upload partial-success warnings after leaving Assets", async (
   mockListAssets.mockResolvedValue({ assets: [] });
   let finish!: (value: { asset: AssetMeta; unsaved: Array<"details" | "modifiedTime"> }) => void;
   mockUploadAsset.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+  const surface = (shown: boolean) => <StorageResultsProvider><ConfirmProvider>
     {shown && <AssetsTab workspaceId="w1" postId="p1" onInsertAtCursor={vi.fn()} />}
-    <StoragePendingResults />
-  </ConfirmProvider></StoragePendingProvider>;
+    <StorageResults />
+  </ConfirmProvider></StorageResultsProvider>;
   const view = render(surface(true));
   await act(async () => { await Promise.resolve(); });
   fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [makeFile("pic.png")] } });

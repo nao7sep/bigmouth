@@ -46,8 +46,6 @@ export const renameTarget = command("renameTarget");
 export const refreshIndex = command("refreshIndex");
 export const listByStatus = command("listByStatus");
 export const countByStatus = command("countByStatus");
-export const holdPendingFlushes = command("holdPendingFlushes");
-export const resumePendingFlushes = command("resumePendingFlushes");
 export const listAssets = command("listAssets");
 export const installAsset = command("installAsset");
 export const deleteAsset = command("deleteAsset");
@@ -59,6 +57,4 @@ export const currentRecordsSession = command("currentRecordsSession");
 export const writeProviderCall = command("writeProviderCall");
 
 export const setContentSaveListener = storageOwner.onContentSave.bind(storageOwner);
-export const setHeldEditFailureListener = storageOwner.onHeldEditFailed.bind(storageOwner);
-export const holdsContentFor = (wsId: string, postId: string) => storageOwner.holdsContentFor(wsId, postId);
 export const deletePost = command("deletePost");

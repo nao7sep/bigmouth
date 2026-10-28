@@ -24,7 +24,7 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useRadioGroup } from "../hooks/useRadioGroup";
 import { CheckIcon, ChevronLeftIcon } from "./Icon";
 import { OperationalResult } from "./OperationalResult";
-import { useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 import type { MessageKey } from "@shared/i18n/catalogues";
 
 interface CenterPaneProps {
@@ -70,12 +70,11 @@ export function CenterPane({
   editorRef,
 }: CenterPaneProps) {
   const { t, text } = useI18n();
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const mutationRef = useRef(false);
   const [mutating, setMutating] = useState(false);
   const beginMutation = () => {
-    if (mutationRef.current || storagePending || !mountedRef.current) return false;
+    if (mutationRef.current || !mountedRef.current) return false;
     mutationRef.current = true;
     setMutating(true);
     return true;
@@ -168,9 +167,8 @@ export function CenterPane({
     const offSaved = onPostContentSaved((event) => {
       if (event.postId !== postId) return;
       // The event carries only the list projection (no updatedAtUtc — the index
-      // excludes it), so there is nothing here to fold into the open post. Newer
-      // text still held for storage keeps the notice: this save is not the latest.
-      if (!event.newerEditHeld) setSaveError(null);
+      // excludes it), so there is nothing here to fold into the open post.
+      setSaveError(null);
     });
     const offFailed = onPostContentSaveFailed((event) => {
       if (event.postId !== postId) return;
@@ -218,7 +216,7 @@ export function CenterPane({
   };
 
   const handleStatusChange = (newStatus: PostStatus) => {
-    if (!post || mutationRef.current || storagePending || post.frontMatter.status === newStatus) return;
+    if (!post || mutationRef.current || post.frontMatter.status === newStatus) return;
     // Only published and retired hold a publication time, so moving a post
     // that has one to any other status clears it, and a later publication is
     // a new one. Warn before it is lost.
@@ -272,7 +270,7 @@ export function CenterPane({
     // so two fast clicks queued two confirms: the first deleted the post and
     // moved the selection, then the second asked to delete a post that was
     // already gone and ran deletePost on the stale id from an unmounted pane.
-    if (deletingRef.current || mutationRef.current || storagePending) return;
+    if (deletingRef.current || mutationRef.current) return;
     deletingRef.current = true;
     try {
       await runDeleteConfirm();
@@ -402,7 +400,7 @@ export function CenterPane({
               type="button"
               className={`status-radio${fm.status === value ? " active" : ""}`}
               {...getRadioProps(value)}
-              disabled={mutating || storagePending}
+              disabled={mutating}
             >
               {t(POST_STATUS_LABELS[value])}
             </button>
@@ -414,7 +412,7 @@ export function CenterPane({
           aria-pressed={locked}
           title={t("center.lockHint")}
           onClick={() => void handleLockChange(!locked)}
-          disabled={mutating || storagePending}
+          disabled={mutating}
         >
           {/* The label names the state: "Lock" on the accent fill while the
               post is open to edits, since locking is its completion step, and
@@ -434,15 +432,15 @@ export function CenterPane({
             >
               {t("center.source")}
             </button>
-            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating || storagePending}>
+            <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating}>
               {t("center.change")}
             </button>
-            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked || mutating || storagePending}>
+            <button className="btn-toolbar" onClick={() => void handleClearSource()} disabled={locked || mutating}>
               {t("newPost.unlink")}
             </button>
           </>
         ) : (
-          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating || storagePending}>
+          <button className="btn-toolbar" onClick={() => setSourcePickerOpen(true)} disabled={locked || mutating}>
             {t("center.linkSource")}
           </button>
         )}
@@ -459,7 +457,7 @@ export function CenterPane({
         <button className="btn-toolbar" onClick={onExport}>
           {t("export.title")}
         </button>
-        <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()} disabled={mutating || storagePending}>
+        <button className="btn-toolbar btn-delete" onClick={() => void openDeleteConfirm()} disabled={mutating}>
           {t("common.delete")}
         </button>
       </div>

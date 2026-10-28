@@ -1,30 +1,13 @@
-import { Worker, MessageChannel, receiveMessageOnPort, type MessagePort } from "node:worker_threads";
+import { Worker, MessageChannel, type MessagePort } from "node:worker_threads";
 import type { RecordsHealth } from "@shared/records";
 import type { ContentSaveEvent } from "./core/services/postStore.js";
 import type { StorageTasks } from "./storageTasks.js";
 import { DEBUG_LOG_FLAG } from "./core/services/logger.js";
 import { WORKER_ENTRIES } from "./builtEntries.js";
 
-export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
-export const isAuthored = (name: StorageCommand) => ["queueWorkspaceContent", "queueWorkspaceMetadata"].includes(name);
-// These user mutations retain their logical result through actual settlement.
-// Their deadline ends the UI's normal wait through pending status, not a false
-// failure. Reads/startup and optional records/UI-state writes remain bounded.
-const mutationCommands = new Set<StorageCommand>([
-  "createWorkspace", "addExistingWorkspace", "updateWorkspace", "deleteWorkspace", "saveSettings",
-  "saveAnthropicSettings", "saveTargets", "saveAnalysisPrompts", "saveGenerationPrompts",
-  "rebuildIndex", "createPost", "updatePost", "changeStatus",
-  "setLocked", "deletePost", "renameTarget", "installAsset", "deleteAsset", "saveAppSettings",
-]);
-const retainsSettlement = (name: StorageCommand) => mutationCommands.has(name);
-const isContent = (name: StorageCommand) => name === "queueWorkspaceContent";
-// Requests that must still reach the worker after their caller stops waiting:
-// authored edits, and a cancelled quit's resumption of debounced writes.
-const mustReachWorker = (name: StorageCommand) => isAuthored(name) || name === "resumePendingFlushes";
 export interface StorageRequest { id: number; name: StorageCommand; args: unknown[] }
 export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; backupBoundMs: number; signal: Int32Array; port: MessagePort }
-export interface StorageFlushRequest { flush: true; edits: StorageRequest[]; signal: Int32Array; port: MessagePort }
 export type WorkspaceContentSaveEvent = ContentSaveEvent & { wsId: string };
 export type StorageReply =
   | { id: number; ok: true; value: unknown }
@@ -32,70 +15,39 @@ export type StorageReply =
   | { event: "content-save"; value: WorkspaceContentSaveEvent }
   | { event: "record-stored" }
   | { event: "records-health"; value: RecordsHealth }
-  | { event: "flush-settled" }
   // The worker could not read a request it was sent, so it never ran it.
   | { event: "request-unreadable" };
-
-export type StorageFlushOutcome =
-  | { kind: "flushed"; failures: { id: string; message: string }[] }
-  | { kind: "expired" }
-  | { kind: "crashed"; error: string };
-
-/**
- * An authored edit storage has not accepted yet: it arrived while storage was
- * settling a flush or an operation whose wait expired, or its own wait expired.
- * The edit is not lost. The owner holds it, keeps it in its queue position, or
- * the worker already has it, and it reaches the post store's buffer as soon as
- * storage takes work again.
- */
-export class EditPendingError extends Error {
-  constructor() {
-    super("Storage has not accepted this edit yet; it is held and will be delivered.");
-    this.name = "EditPendingError";
-  }
-}
 
 interface Waiting {
   request: StorageRequest;
   resolve(value: unknown): void;
   reject(error: Error): void;
-  timer: ReturnType<typeof setTimeout>;
-  expired: boolean;
-  started: boolean;
 }
-
-// One post's held edits: its newest content, which replaces the whole text,
-// and every metadata edit, each validated on its own as when it was typed.
-interface HeldEdits { content?: StorageRequest; metadata: StorageRequest[] }
 
 /**
  * The app's one storage owner (transaction-and-external-effect-conventions).
  *
- * Pending post edits have one owner at a time. Once the worker accepts an edit,
- * the post store's write-behind buffer owns it until it is written or reported
- * terminal. This owner holds only edits the worker has not accepted, by post,
- * and delivers them as soon as storage takes work again, so an edit typed while
- * storage is stalled is neither refused nor replayed after it saved. Edits are
- * held only as they arrive, so they keep their order against other requests.
+ * One worker thread runs every storage command, one at a time, in the order
+ * they arrive; node:sqlite and the stores' synchronous file code need a thread
+ * of their own. A command waits its turn and its caller waits for its result:
+ * local storage has no deadline, so a stalled volume holds storage until the
+ * operating system returns, and only the exit sequence's own deadline bounds
+ * the quit. Once the worker accepts a post edit, the post store's write-behind
+ * buffer owns it until it is written or reported terminal.
  */
 export class StorageOwner {
   private worker: Worker | null = null;
-  private active: Waiting | null = null;
+  // Sent to the worker and awaiting its reply, by request id, oldest first:
+  // one request at a time, except that finishing sends everything still queued.
+  private sent = new Map<number, Waiting>();
   private queued: Waiting[] = [];
   private sequence = 0;
   private failed = false;
-  private flushing = false;
   private closing = false;
-  // Requests taken out of the queue by a flush or finish, awaiting their replies.
-  private delivering = new Map<number, Waiting>();
-  private held = new Map<string, HeldEdits>();
-  private pendingListener: ((pending: boolean) => void) | null = null;
   private contentListener: ((event: WorkspaceContentSaveEvent) => void) | null = null;
-  private flushSettled: (() => void) | null = null;
   private recordsHealthValue: RecordsHealth = { databaseGap: false, fallbackFailed: false, fallbackPath: null };
   private recordsHealthListener: ((health: RecordsHealth) => void) | null = null;
   private recordListener: (() => void) | null = null;
-  private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
 
   constructor(private readonly createWorker = () => {
     const module = import.meta.url.endsWith(".ts") ? "./storageWorker.ts" : `./${WORKER_ENTRIES.storage}.js`;
@@ -104,173 +56,32 @@ export class StorageOwner {
     return new Worker(new URL(module, import.meta.url), { argv: process.argv.filter((arg) => arg === DEBUG_LOG_FLAG) });
   }) {}
 
-  storagePending(): boolean { return this.active?.expired === true && retainsSettlement(this.active.request.name); }
-  onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
-
   onContentSave(listener: ((event: WorkspaceContentSaveEvent) => void) | null): void { this.contentListener = listener; }
   recordsHealth(): RecordsHealth { return { ...this.recordsHealthValue }; }
   onRecordsHealth(listener: ((health: RecordsHealth) => void) | null): void { this.recordsHealthListener = listener; }
   onRecordStored(listener: (() => void) | null): void { this.recordListener = listener; }
-  /** A held edit the store refused or could not take once delivered: its caller has already been answered. */
-  onHeldEditFailed(listener: ((request: StorageRequest, failure: unknown) => void) | null): void { this.heldFailureListener = listener; }
 
-  run<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>, boundMs = STORAGE_WAIT_MS): Promise<ReturnType<StorageTasks[K]>> {
-    const request: StorageRequest = { id: ++this.sequence, name, args: structuredClone(args) };
+  run<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>): Promise<ReturnType<StorageTasks[K]>> {
     if (this.closing) return Promise.reject(new Error("Storage is closing."));
-    if (this.failed) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
-    if (name !== "resumePendingFlushes" && (this.flushing || this.active?.expired)) {
-      if (!isAuthored(name)) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
-      this.hold(request);
-      return Promise.reject(new EditPendingError());
-    }
+    if (this.failed) return Promise.reject(new Error("Storage is unavailable."));
+    const request: StorageRequest = { id: ++this.sequence, name, args: structuredClone(args) };
     return new Promise((resolve, reject) => {
-      this.queued.push(this.wait(request, resolve as (value: unknown) => void, reject, boundMs));
+      this.queued.push({ request, resolve: resolve as (value: unknown) => void, reject });
       this.dispatch();
     });
-  }
-
-  private wait(request: StorageRequest, resolve: (value: unknown) => void, reject: (error: Error) => void, boundMs: number): Waiting {
-    const waiting: Waiting = {
-      request, resolve, reject, expired: false, started: false,
-      timer: setTimeout(() => {
-        waiting.expired = true;
-        if (waiting.started && retainsSettlement(request.name)) {
-          // The mutation may already have published. Its real reply still owns
-          // completion work; the pending phase lets the user leave meanwhile.
-          this.pendingListener?.(true);
-          return;
-        }
-        // Timeout ends the caller's wait. An active mutation still belongs to
-        // this worker until its actual result settles; no successor runs. An
-        // edit, or a cancelled quit's resumption, keeps its queue position so it
-        // still runs in order; other queued work is dropped.
-        if (!mustReachWorker(request.name)) this.queued = this.queued.filter((item) => item !== waiting);
-        reject(isAuthored(request.name)
-          ? new EditPendingError()
-          : new Error(waiting.started || mustReachWorker(request.name)
-            ? "Storage did not finish within its wait bound. Its outcome is still pending."
-            : "Storage did not start within its wait bound. No operation was issued."));
-      }, boundMs),
-    };
-    return waiting;
-  }
-
-  private hold(request: StorageRequest): void {
-    const key = JSON.stringify([request.args[0], request.args[1]]);
-    const post = this.held.get(key) ?? { metadata: [] };
-    if (isContent(request.name)) post.content = request;
-    else post.metadata.push(request);
-    this.held.set(key, post);
-  }
-
-  private takeHeld(): StorageRequest[] {
-    const requests = [...this.held.values()].flatMap((post) => [...(post.content ? [post.content] : []), ...post.metadata]);
-    this.held.clear();
-    return requests.sort((a, b) => a.id - b.id);
-  }
-
-  // A held edit's own caller was answered when it was held, so its delivery
-  // reports a failure to the listener instead of to anyone waiting.
-  private delivery(request: StorageRequest): Waiting {
-    return this.wait(request, (value) => {
-      if (!isContent(request.name) && value !== null) this.heldFailureListener?.(request, value);
-    }, (error) => {
-      if (!(error instanceof EditPendingError)) this.heldFailureListener?.(request, error);
-    }, STORAGE_WAIT_MS);
-  }
-
-  /** Whether content for this post is still on this side of the worker: held, queued, or sent without a reply. */
-  holdsContentFor(wsId: string, postId: string): boolean {
-    const ours = (request: StorageRequest) => isContent(request.name) && request.args[0] === wsId && request.args[1] === postId;
-    for (const post of this.held.values()) if (post.content && ours(post.content)) return true;
-    return [this.active, ...this.queued, ...this.delivering.values()].some((waiting) => waiting !== null && ours(waiting.request));
-  }
-
-  private undeliveredEdits(): boolean {
-    return this.held.size > 0
-      || this.queued.some((waiting) => isAuthored(waiting.request.name))
-      || (this.active !== null && isAuthored(this.active.request.name));
-  }
-
-  private beginFlush() {
-    if (!this.worker || this.failed) throw new Error("Storage is unavailable.");
-    if (this.flushing) throw new Error("The previous storage flush is still running.");
-    this.flushing = true;
-    const queuedEdits = this.queued.filter((waiting) => isAuthored(waiting.request.name));
-    this.queued = this.queued.filter((waiting) => !isAuthored(waiting.request.name));
-    for (const waiting of queuedEdits) this.delivering.set(waiting.request.id, waiting);
-    const held = this.takeHeld();
-    for (const request of held) this.delivering.set(request.id, this.delivery(request));
-    const edits = [...held, ...queuedEdits.map((waiting) => waiting.request)].sort((a, b) => a.id - b.id);
-    const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
-    const { port1, port2 } = new MessageChannel();
-    try {
-      this.worker.postMessage({ flush: true, edits, signal, port: port2 } satisfies StorageFlushRequest, [port2]);
-    } catch (error) {
-      port1.close();
-      port2.close();
-      this.failed = true;
-      this.failWaiting(error instanceof Error ? error : new Error("Storage flush could not start."));
-      throw error;
-    }
-    return { port: port1, signal };
-  }
-
-  private async flushOnce(boundMs: number): Promise<StorageFlushOutcome> {
-    try {
-      let settled!: () => void;
-      const settlement = new Promise<void>((resolve) => { settled = resolve; });
-      const { port } = this.beginFlush();
-      this.flushSettled = settled;
-      return await new Promise<StorageFlushOutcome>((resolve) => {
-        const timer = setTimeout(() => { port.close(); resolve({ kind: "expired" }); }, boundMs);
-        port.once("message", async (reply: { failures: { id: string; message: string }[] }) => {
-          await settlement;
-          clearTimeout(timer);
-          port.close();
-          resolve({ kind: "flushed", failures: reply.failures });
-        });
-      });
-    } catch (error) { return { kind: "crashed", error: error instanceof Error ? error.message : String(error) }; }
-  }
-
-  /** Flushes until no edit remains undelivered: edits arriving during a flush are held and written by the next. */
-  async flushAsync(boundMs: number): Promise<StorageFlushOutcome> {
-    const deadline = performance.now() + boundMs;
-    for (;;) {
-      const result = await this.flushOnce(Math.max(0, deadline - performance.now()));
-      if (result.kind !== "flushed" || result.failures.length || !this.undeliveredEdits()) return result;
-      if (performance.now() >= deadline) return { kind: "expired" };
-    }
-  }
-
-  // Windows session-end cannot defer its return; ordinary quits use flushAsync.
-  flushWithin(boundMs: number): StorageFlushOutcome {
-    try {
-      const { port, signal } = this.beginFlush();
-      try {
-        Atomics.wait(signal, 0, 0, boundMs);
-        const reply = receiveMessageOnPort(port)?.message as { failures: { id: string; message: string }[] } | undefined;
-        return reply ? { kind: "flushed", failures: reply.failures } : { kind: "expired" };
-      } finally { port.close(); }
-    } catch (error) { return { kind: "crashed", error: error instanceof Error ? error.message : String(error) }; }
   }
 
   private beginFinish(backupBoundMs: number) {
     if (!this.worker || this.failed) return null;
     this.closing = true;
+    // The worker runs messages in order, so what is still queued runs after the
+    // request it is working on and before the finish itself.
     const queued = this.queued.splice(0);
-    for (const waiting of queued) {
-      waiting.started = true;
-      this.delivering.set(waiting.request.id, waiting);
-    }
-    const held = this.takeHeld();
-    for (const request of held) this.delivering.set(request.id, this.delivery(request));
-    const requests = [...held, ...queued.map((item) => item.request)].sort((a, b) => a.id - b.id);
+    for (const waiting of queued) this.sent.set(waiting.request.id, waiting);
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
-      this.worker.postMessage({ finish: true, queued: requests, backupBoundMs, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
+      this.worker.postMessage({ finish: true, queued: queued.map((item) => item.request), backupBoundMs, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
     } catch (error) {
       port1.close();
       port2.close();
@@ -282,8 +93,9 @@ export class StorageOwner {
   }
 
   /**
-   * Resolves true when the worker finished within the bound, false when it is still busy. Pending
-   * backup writes get `backupBoundMs` of it; 0 skips them.
+   * Ends storage for the process: the worker runs what is queued, writes the buffered post edits
+   * and closes its stores. Resolves true when it finished within `boundMs`, false when it is still
+   * busy. Pending backup writes get `backupBoundMs` of it; 0 skips them.
    */
   async finishAsync(boundMs: number, backupBoundMs: number): Promise<boolean> {
     const result = this.beginFinish(backupBoundMs);
@@ -295,8 +107,8 @@ export class StorageOwner {
   }
 
   /**
-   * Returns true when the worker finished within the bound, false when it is still busy. Only an
-   * ending OS session finishes this way, so pending backup writes are skipped.
+   * As finishAsync, waiting on this thread: Windows ends the process as soon as its session-end
+   * handler returns, so that handler cannot await. Pending backup writes are skipped.
    */
   finishWithin(boundMs: number): boolean {
     const result = this.beginFinish(0);
@@ -313,14 +125,10 @@ export class StorageOwner {
   }
 
   private dispatch(): void {
-    if (this.active || this.failed || this.flushing || this.closing) return;
-    // Held edits arrived while storage could take nothing, after everything
-    // already queued, so they are delivered after it.
-    if (this.held.size) this.queued.push(...this.takeHeld().map((request) => this.delivery(request)));
+    if (this.sent.size > 0 || this.failed || this.closing) return;
     const waiting = this.queued.shift();
     if (!waiting) return;
-    this.active = waiting;
-    waiting.started = true;
+    this.sent.set(waiting.request.id, waiting);
     try {
       if (!this.worker) {
         const worker = this.createWorker();
@@ -328,10 +136,10 @@ export class StorageOwner {
         worker.unref();
         worker.on("message", (reply: StorageReply) => this.receive(reply));
         // A reply the worker sent that could not be read here would otherwise
-        // leave its request waiting, and a retained mutation pending, forever.
-        // Requests run one at a time, so the lost reply is most likely the active
-        // request's; it fails with its outcome unknown rather than as undone.
-        worker.on("messageerror", (error) => this.loseActive(new Error(
+        // leave its request waiting forever. The oldest request sent is the one
+        // the worker answers next; it fails with its outcome unknown rather
+        // than as undone.
+        worker.on("messageerror", (error) => this.loseOldest(new Error(
           "Storage could not return this operation's result. Whether it took effect is unknown.",
           { cause: error },
         )));
@@ -356,66 +164,38 @@ export class StorageOwner {
         this.recordsHealthListener?.({ ...reply.value });
       }
       else if (reply.event === "record-stored") this.recordListener?.();
-      else if (reply.event === "flush-settled") { this.flushing = false; this.flushSettled?.(); this.flushSettled = null; this.dispatch(); }
-      else if (reply.event === "request-unreadable") this.loseActive(new Error("Storage could not read this request. Nothing was done."));
+      else if (reply.event === "request-unreadable") this.loseOldest(new Error("Storage could not read this request. Nothing was done."));
       else this.contentListener?.(reply.value);
       return;
     }
-    const delivered = this.delivering.get(reply.id);
-    const waiting = delivered ?? this.active;
-    if (!waiting || reply.id !== waiting.request.id) return;
-    if (delivered) this.delivering.delete(reply.id);
-    else this.active = null;
-    if (reply.ok) this.settle(waiting, { ok: true, value: reply.value });
+    const waiting = this.sent.get(reply.id);
+    if (!waiting) return;
+    this.sent.delete(reply.id);
+    if (reply.ok) waiting.resolve(reply.value);
     else {
       const data = reply.error;
       const error = new Error(data.message, { cause: data.cause });
       error.name = data.name;
       error.stack = data.stack;
-      this.settle(waiting, { ok: false, error });
+      waiting.reject(error);
     }
+    this.dispatch();
   }
 
-  /** Fails the active request, whose reply will not arrive, and moves on to the next. */
-  private loseActive(error: Error): void {
-    const waiting = this.active;
-    if (!waiting) return;
-    this.active = null;
-    this.settle(waiting, { ok: false, error });
-  }
-
-  private settle(waiting: Waiting, outcome: { ok: true; value: unknown } | { ok: false; error: Error }): void {
-    clearTimeout(waiting.timer);
-    // A timed-out authored edit was reported as held, not discarded. Its
-    // eventual refusal still belongs to the field/save-status owner.
-    if (outcome.ok) {
-      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.resolve(outcome.value);
-      else if (isAuthored(waiting.request.name) && !isContent(waiting.request.name) && outcome.value !== null) {
-        this.heldFailureListener?.(waiting.request, outcome.value);
-      }
-    } else {
-      if (!waiting.expired || (waiting.started && retainsSettlement(waiting.request.name))) waiting.reject(outcome.error);
-      else if (isAuthored(waiting.request.name)) this.heldFailureListener?.(waiting.request, outcome.error);
-    }
-    if (waiting.expired && waiting.started && retainsSettlement(waiting.request.name)) this.pendingListener?.(false);
+  /** Fails the oldest request sent, whose reply will not arrive, and moves on to the next. */
+  private loseOldest(error: Error): void {
+    const oldest = this.sent.entries().next().value;
+    if (!oldest) return;
+    this.sent.delete(oldest[0]);
+    oldest[1].reject(error);
     this.dispatch();
   }
 
   private failWaiting(error: Error): void {
-    const waiting = [this.active, ...this.queued, ...this.delivering.values()];
-    const held = this.takeHeld();
-    const wasPending = this.storagePending();
-    this.delivering.clear();
-    this.active = null;
+    const waiting = [...this.sent.values(), ...this.queued];
+    this.sent.clear();
     this.queued = [];
-    for (const item of waiting) if (item) clearTimeout(item.timer);
-    for (const item of waiting) {
-      if (!item) continue;
-      if (!item.expired || (item.started && retainsSettlement(item.request.name))) item.reject(error);
-      else if (isAuthored(item.request.name)) this.heldFailureListener?.(item.request, error);
-    }
-    for (const request of held) this.heldFailureListener?.(request, error);
-    if (wasPending) this.pendingListener?.(false);
+    for (const item of waiting) item.reject(error);
   }
 }
 

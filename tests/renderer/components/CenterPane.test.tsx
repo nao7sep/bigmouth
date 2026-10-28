@@ -7,15 +7,13 @@ import { DEFAULT_CONTENT_FONT } from "@shared/types";
 // saves stream through queuePostContent (fire-and-forget) and come back as
 // events; the captured listeners let tests play the main process's part.
 const savedListeners = vi.hoisted(
-  () => new Set<(e: { postId: string; summary: PostIndexEntry; newerEditHeld: boolean }) => void>()
+  () => new Set<(e: { postId: string; summary: PostIndexEntry }) => void>()
 );
 const failedListeners = vi.hoisted(
   () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable" }) => void>()
 );
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
-  getStoragePending: vi.fn().mockResolvedValue(false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
   getPost: vi.fn(),
   updatePost: vi.fn(),
   changePostStatus: vi.fn(),
@@ -23,7 +21,7 @@ vi.mock("@renderer/api", () => ({
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
   queuePostContent: vi.fn(),
-  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry; newerEditHeld: boolean }) => void) => {
+  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
   },
@@ -62,7 +60,7 @@ vi.mock("@renderer/components/SourcePickerModal", () => ({
 }));
 
 import { CenterPane } from "@renderer/components/CenterPane";
-import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StorageResults, StorageResultsProvider } from "@renderer/StorageResults";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import {
   getPost,
@@ -330,23 +328,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
     act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: false }));
-    });
-    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
-  });
-
-  it("keeps the retrying notice when newer text is still held behind the save", async () => {
-    const { container } = await renderPane();
-    act(() => {
-      failedListeners.forEach((cb) => cb({ postId: "p1", kind: "retrying" }));
-    });
-    await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
-    act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: true }));
-    });
-    expect(container.querySelector(".toolbar-error")?.textContent).toContain("Autosave failed and will retry.");
-    act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry(), newerEditHeld: false }));
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry() }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
   });
@@ -712,10 +694,10 @@ describe("CenterPane delete", () => {
 it("keeps a delayed status failure visible after leaving its post", async () => {
   let fail!: (error: Error) => void;
   mockChangeStatus.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject; }));
-  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+  const surface = (shown: boolean) => <StorageResultsProvider><ConfirmProvider>
     {shown && <CenterPane {...baseProps()} />}
-    <StoragePendingResults />
-  </ConfirmProvider></StoragePendingProvider>;
+    <StorageResults />
+  </ConfirmProvider></StorageResultsProvider>;
   const view = render(surface(true));
   await waitFor(() => expect(view.container.querySelector(".center-loading")).toBeNull());
   fireEvent.click(view.getByRole("radio", { name: "Verified" }));

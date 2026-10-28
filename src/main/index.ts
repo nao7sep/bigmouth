@@ -4,14 +4,11 @@ import english from "@shared/i18n/locales/en.json";
 
 import { confirmRunningWork, confirmUnsavedChanges, showStartupFailure } from "./dialogs.js";
 
-import { initialize, listWorkspaces, log as storageLog, resumePendingFlushes } from "./storageAccess.js";
+import { flush, initialize, listWorkspaces, log as storageLog } from "./storageAccess.js";
 import { storageOwner } from "./storageOwner.js";
-const QUIT_FLUSH_BOUND_MS = 2000;
 // How long after startup unused thumbnails are swept: well after the window and
 // the first workspace have opened.
 const DERIVATIVE_SWEEP_DELAY_MS = 60_000;
-// The part of the 1 s finish bound that pending backup writes may use at an ordinary quit.
-const BACKUP_DRAIN_MS = 300;
 import { cancelOpenMessageDialogs } from "./plain-message-dialog.js";
 import { applyThemePreference, followOsThemeChanges } from "./theme.js";
 import {
@@ -69,6 +66,19 @@ if (frameworkReady) setLogSink((record) => {
 
 let shuttingDown = false;
 
+// The quit's one deadline (architecture-conventions, Deadlines at the owner),
+// fixed when the quit begins: writing the buffered edits, finishing storage
+// with its backup writes, and the records reader draw on what remains of it. A
+// question the quit asks pauses it, and it starts again from the answer.
+const EXIT_DEADLINE_MS = 3000;
+let exitDeadline = 0;
+function startExitDeadline(): void { exitDeadline = performance.now() + EXIT_DEADLINE_MS; }
+const exitTimeLeft = () => Math.max(0, exitDeadline - performance.now());
+
+// Aborted once the process is committed to ending: startup stops at its next
+// step, and a startup failure caused by the closing storage shows nothing.
+const exiting = new AbortController();
+
 // The main window, apart from the records window beside it: closing it quits
 // on every platform.
 let mainWindow: BrowserWindow | null = null;
@@ -102,6 +112,7 @@ async function bootstrap(): Promise<void> {
   applyThemePreference(appSettings.theme);
   // The menu, dialogs and the window's first text all speak the saved language.
   await applyLanguagePreference(appSettings.language);
+  exiting.signal.throwIfAborted();
   followOsThemeChanges();
   info("app started", {
     version: __APP_VERSION__,
@@ -114,6 +125,7 @@ async function bootstrap(): Promise<void> {
   handleAssetProtocol();
   registerIpcHandlers();
   installApplicationMenu();
+  exiting.signal.throwIfAborted();
   await openMainWindow();
   // Unused thumbnails are cleared once a launch, after the opening work has
   // settled, so the sweep's reads never compete with startup. Nothing waits on
@@ -145,7 +157,7 @@ async function openMainWindow(): Promise<void> {
   window.on("session-end", () => {
     sessionEnding = true;
     shuttingDown = true;
-    logFlushOutcome(storageOwner.flushWithin(QUIT_FLUSH_BOUND_MS));
+    startExitDeadline();
     exitAppWithin();
   });
   window.on("close", (event) => {
@@ -156,32 +168,31 @@ async function openMainWindow(): Promise<void> {
 }
 
 /**
- * Writes the buffered post edits within the bound and logs what it could not
- * write. Returns whether they are all known to be on disk.
+ * Writes the buffered post edits within what remains of the exit deadline and
+ * logs what it could not write. Returns whether they are all known to be on disk.
  */
 async function flushPendingEdits(): Promise<boolean> {
-  return logFlushOutcome(await storageOwner.flushAsync(QUIT_FLUSH_BOUND_MS));
-}
-
-function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAsync>>): boolean {
-  switch (outcome.kind) {
-    case "flushed":
-      if (outcome.failures.length === 0) return true;
-      logError("pending edits flush failed at quit", { failures: outcome.failures });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<"expired">((resolve) => { timer = setTimeout(() => resolve("expired"), exitTimeLeft()); });
+  try {
+    const failures = await Promise.race([flush(), expired]);
+    if (failures === "expired") {
+      logError("pending edits flush did not finish at quit", { deadlineMs: EXIT_DEADLINE_MS });
       return false;
-    case "expired":
-      logError("pending edits flush did not finish at quit", { boundMs: QUIT_FLUSH_BOUND_MS });
-      return false;
-    case "crashed":
-      logError("pending edits flush could not run at quit", { error: outcome.error });
-      return false;
-  }
+    }
+    if (failures.length === 0) return true;
+    logError("pending edits flush failed at quit", { failures });
+    return false;
+  } catch (error) {
+    logError("pending edits flush could not run at quit", { error: serializeError(error) });
+    return false;
+  } finally { clearTimeout(timer); }
 }
 
 // Electron's app.exit never returns while a worker thread is blocked in a native
 // filesystem call, such as the storage worker on a stalled network or removable
 // volume: neither worker.terminate() nor a timer armed beforehand gets it out.
-// When the storage worker has not settled by the finish bound, the process is
+// When the storage worker has not settled by the exit deadline, the process is
 // killed instead, so quit and logout always end. A kill cannot tear a post:
 // atomic writes rename only complete files into place, at worst leaving an
 // inert .tmp. Records go through that same worker, so only the console hears.
@@ -200,22 +211,28 @@ function terminateApp(storageSettled: boolean, exitCode = 0): void {
 }
 
 async function exitApp(exitCode = 0): Promise<void> {
+  if (exiting.signal.aborted) return;
+  exiting.abort();
   let settled = false;
-  // Pending backup writes get a short part of the bound at an ordinary quit
-  // and none while the OS session ends (data-backup-conventions).
-  try { settled = await storageOwner.finishAsync(1000, systemShutdown() ? 0 : BACKUP_DRAIN_MS); }
+  // Pending backup writes draw on the deadline at an ordinary quit and are
+  // skipped while the OS session ends (data-backup-conventions).
+  const remaining = exitTimeLeft();
+  try { settled = await storageOwner.finishAsync(remaining, systemShutdown() ? 0 : remaining); }
   finally { terminateApp(settled, exitCode); }
 }
 
 function exitAppWithin(): void {
+  if (exiting.signal.aborted) return;
+  exiting.abort();
   let settled = false;
-  try { settled = storageOwner.finishWithin(1000); }
+  try { settled = storageOwner.finishWithin(exitTimeLeft()); }
   finally { terminateApp(settled); }
 }
 
 let handlingStartupFailure = false;
 async function handleStartupFailure(err: unknown): Promise<void> {
-  if (handlingStartupFailure) return;
+  // A quit already ending the process owns the exit; startup simply stopped.
+  if (handlingStartupFailure || exiting.signal.aborted) return;
   handlingStartupFailure = true;
   console.error("[bigmouth] Bootstrap failed:", err instanceof Error ? err.stack : String(err));
   try {
@@ -223,11 +240,14 @@ async function handleStartupFailure(err: unknown): Promise<void> {
   } catch {
     // The logger itself may be what failed; stderr above already carried it.
   }
-  // Initialization can time out while storage is still blocked in native I/O.
-  // The halt must use the same bounded teardown as an ordinary exit.
+  // The halt uses the same bounded teardown as an ordinary exit, its deadline
+  // starting once the dialog is answered.
   try { await showStartupFailure(err); }
   catch (error) { console.error("[bigmouth] Startup failure dialog could not be shown:", error); }
-  finally { await exitApp(1); }
+  finally {
+    startExitDeadline();
+    await exitApp(1);
+  }
 }
 
 if (!ownsInstance) {
@@ -249,7 +269,7 @@ if (!ownsInstance) {
   app.on("window-all-closed", () => {});
 
   // Clean shutdown (unsaved-edits-conventions, Quitting): hold the quit, write
-  // any buffered content and metadata edits within the flush's bound, close the
+  // any buffered content and metadata edits within the exit deadline, close the
   // records database, then exit deterministically. The post store owns pending
   // edits (write-behind), so this flush — not a renderer round-trip — is what
   // guarantees the newest keystroke is on disk. Menu Quit, Cmd+Q, the Dock's
@@ -264,6 +284,7 @@ if (!ownsInstance) {
       return;
     }
     shuttingDown = true;
+    startExitDeadline();
 
     void (async () => {
       try {
@@ -272,24 +293,26 @@ if (!ownsInstance) {
           const refusedMetadata = anyRefusedMetadata();
           if (systemShutdown() || (!writeFailures && !refusedMetadata)) break;
           const choice = await confirmUnsavedChanges({ writeFailures, refusedMetadata });
+          startExitDeadline();
           if (systemShutdown() || choice === "proceed") break;
           if (choice === "cancel") {
             shuttingDown = false;
-            void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
             return;
           }
         }
         // A paid AI request still running would be stopped and its result lost;
         // the user started it, so a quit they started asks first.
-        if (!systemShutdown() && anyAiRequestRunning() && await confirmRunningWork() === "cancel" && !systemShutdown()) {
-          shuttingDown = false;
-          void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
-          return;
+        if (!systemShutdown() && anyAiRequestRunning()) {
+          const choice = await confirmRunningWork();
+          startExitDeadline();
+          if (choice === "cancel" && !systemShutdown()) {
+            shuttingDown = false;
+            return;
+          }
         }
         await exitApp();
       } catch (error) {
         shuttingDown = false;
-        void resumePendingFlushes().catch((error) => console.error("[bigmouth] Storage could not resume", error));
         logError("quit confirmation failed; quit cancelled", { error: serializeError(error) });
       }
     })();

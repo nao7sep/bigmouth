@@ -89,9 +89,6 @@ export const CHANNELS = {
   getRecordsHealth: "records:health",
   recordsHealthChanged: "records:health-changed",
 
-  getStoragePending: "storage:pending",
-  storagePendingChanged: "storage:pendingChanged",
-
   // UI state (state.json)
   getUiState: "state:get",
   updateUiState: "state:update",
@@ -129,7 +126,6 @@ export const CHANNELS = {
   postContentSaveFailed: "post:contentSaveFailed",
   // A metadata edit held while storage was busy, which the store refused once
   // it was delivered. Its field was told it was buffered; this reports otherwise.
-  postMetadataRefused: "post:metadataRefused",
 
   // Targets
   listTargets: "target:list",
@@ -180,11 +176,6 @@ export interface PostContentSavedEvent {
    * source for the post's edit time.
    */
   summary: PostIndexEntry;
-  /**
-   * Newer text for this post is still held in the main process, waiting for
-   * storage, so this save is not the post's latest and its retrying notice stays.
-   */
-  newerEditHeld: boolean;
 }
 
 export interface PostContentSaveFailedEvent {
@@ -197,14 +188,6 @@ export interface PostContentSaveFailedEvent {
    * and the only copies left are the buffer and what the editor shows.
    */
   kind: "retrying" | "unsaveable";
-}
-
-/** A held metadata edit the store refused on delivery: the edits it carried and why. */
-export interface PostMetadataRefusedEvent {
-  wsId: string;
-  postId: string;
-  edits: EditablePostMetadata;
-  refusal: Message;
 }
 
 /** The per-request event channel main pushes analysis-stream frames on. */
@@ -374,8 +357,6 @@ export type Platform =
   | "netbsd";
 
 export interface BigMouthApi {
-  getStoragePending(): Promise<boolean>;
-  onStoragePendingChanged(listener: (pending: boolean) => void): () => void;
   /** The running OS, exposed synchronously from the preload (process.platform). */
   platform: Platform;
   /** Native BrowserWindow activation, which is distinct from DOM document focus on macOS. */
@@ -440,7 +421,6 @@ export interface BigMouthApi {
   reportMetadataRefusal(id: string, refused: boolean): void;
   onPostContentSaved(listener: (event: PostContentSavedEvent) => void): () => void;
   onPostContentSaveFailed(listener: (event: PostContentSaveFailedEvent) => void): () => void;
-  onPostMetadataRefused(listener: (event: PostMetadataRefusedEvent) => void): () => void;
   changePostStatus(wsId: string, id: string, status: PostStatus): Promise<PostMutationResult>;
   setPostLocked(wsId: string, id: string, locked: boolean): Promise<PostMutationResult>;
   deletePost(wsId: string, id: string): Promise<PostDeleteResult>;

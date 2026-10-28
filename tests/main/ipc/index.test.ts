@@ -30,12 +30,10 @@ describe("registerIpcHandlers", () => {
     const outbound = new Set<string>([
       CHANNELS.postContentSaved,
       CHANNELS.postContentSaveFailed,
-      CHANNELS.postMetadataRefused,
       CHANNELS.windowActivityChanged,
       CHANNELS.interfaceLanguageChanged,
       CHANNELS.recordsChanged,
       CHANNELS.recordsHealthChanged,
-      CHANNELS.storagePendingChanged,
     ]);
     registerIpcHandlers();
     for (const channel of Object.values(CHANNELS)) {

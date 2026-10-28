@@ -22,8 +22,6 @@ let {
   clearCache,
   rebuildIndex,
   renameTarget,
-  holdPendingFlushes,
-  resumePendingFlushes,
 } = await import("@main/core/services/postStore.js");
 
 let dataDir: string;
@@ -34,8 +32,7 @@ beforeEach(async () => {
   dataDir = fixture.dataDir;
   ({ createPost, getPost, queueContent, queueMetadata, flushPostEdits, flushAllPendingEdits,
     setContentSaveListener, updatePost, changeStatus, setLocked, recordAssetChange, deletePost,
-    refreshIndex, listByStatus, countByStatus, clearCache, rebuildIndex, renameTarget,
-    holdPendingFlushes, resumePendingFlushes } = fixture.store);
+    refreshIndex, listByStatus, countByStatus, clearCache, rebuildIndex, renameTarget } = fixture.store);
 });
 
 afterEach(() => {
@@ -1127,33 +1124,6 @@ describe("pending content (write-behind buffer)", () => {
     });
   });
 });
-
-// A quit owns the buffer while it runs: the store writes nothing on its own
-// until the quit flushes it or the user cancels.
-describe("a quit's hold on the buffer", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    resumePendingFlushes();
-    setContentSaveListener(null);
-    flushAllPendingEdits();
-  });
-
-  it("holds the debounce and the retry while a quit owns the buffer, and resumes them after", () => {
-    vi.useFakeTimers();
-    const post = createPost(dataDir, "blogger", "en");
-    queueContent(dataDir, post.frontMatter.id, "armed before the quit");
-    holdPendingFlushes();
-    queueContent(dataDir, post.frontMatter.id, "typed while the quit runs");
-    vi.advanceTimersByTime(60_000);
-    expect(vi.getTimerCount()).toBe(0);
-    expect(fs.readFileSync(post.filePath, "utf8")).not.toContain("typed while the quit runs");
-
-    resumePendingFlushes();
-    vi.advanceTimersByTime(1_000);
-    expect(fs.readFileSync(post.filePath, "utf8")).toContain("typed while the quit runs");
-  });
-});
-
 
 describe("a refused post deletion", () => {
   it("retains buffered content and metadata for the next save", () => {

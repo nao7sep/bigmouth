@@ -9,8 +9,6 @@ import { message } from "@shared/i18n/translate";
 // hydrated via getUiState and persisted via updateUiState.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
-  getStoragePending: vi.fn().mockResolvedValue(false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   listWorkspaces: vi.fn(),
   setActiveWorkspace: vi.fn(),
@@ -152,9 +150,9 @@ vi.mock("@renderer/components/SetupModal", () => ({
 }));
 
 import { App as AppContent } from "@renderer/App";
-import { StoragePendingProvider } from "@renderer/StoragePending";
+import { StorageResultsProvider } from "@renderer/StorageResults";
 // Match production ownership while keeping the heavy confirm child mocked.
-function App() { return <StoragePendingProvider><AppContent /></StoragePendingProvider>; }
+function App() { return <StorageResultsProvider><AppContent /></StorageResultsProvider>; }
 import { getAppSettings, listWorkspaces, setActiveWorkspace, getUiState, updateUiState } from "@renderer/api";
 
 const mockList = vi.mocked(listWorkspaces);

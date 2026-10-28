@@ -198,12 +198,7 @@ function reportTerminal(
   contentSaveListener?.(event);
 }
 
-// Set while a quit owns the buffer: no debounce or retry write may then run on
-// this thread, where a stalled disk would block the quit and its dialog.
-let flushesHeld = false;
-
 function scheduleFlush(dataDir: string, id: string, delayMs: number): void {
-  if (flushesHeld) return;
   let timers = pendingTimers.get(dataDir);
   if (!timers) {
     timers = new Map();
@@ -353,25 +348,6 @@ export function flushAllPendingEdits(): { id: string; message: string }[] {
     }
   }
   return failures;
-}
-
-/** Stops every debounce and retry write until resumePendingFlushes. Called when a quit starts. */
-export function holdPendingFlushes(): void {
-  flushesHeld = true;
-  for (const timers of pendingTimers.values()) {
-    for (const timer of timers.values()) clearTimeout(timer);
-    timers.clear();
-  }
-}
-
-/** Writes the buffer on its debounce again, after a quit the user cancelled. */
-export function resumePendingFlushes(): void {
-  flushesHeld = false;
-  for (const [dataDir, posts] of pendingEdits) {
-    for (const [id, pending] of posts) {
-      if (pending.terminal === null) scheduleFlush(dataDir, id, PENDING_FLUSH_DELAY_MS);
-    }
-  }
 }
 
 // --- List ---

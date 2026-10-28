@@ -8,7 +8,7 @@ import { OperationalResult } from "./OperationalResult";
 import { presentFailure } from "../util/presentFailure";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
-import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 interface NewPostModalProps {
   targets: Target[];
@@ -36,7 +36,6 @@ export function NewPostModal({
 }: NewPostModalProps) {
   const { t, text } = useI18n();
   const fieldIds = useId();
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   const creatingRef = useRef(false);
@@ -60,7 +59,7 @@ export function NewPostModal({
 
   const handleRequestClose = async () => {
     if (!current.current) return;
-    if (creatingRef.current) { if (storagePending) close(); return; }
+    if (creatingRef.current) return;
     if (!isDirty) {
       close();
       return;
@@ -87,7 +86,7 @@ export function NewPostModal({
   };
 
   const handleCreate = async () => {
-    if (creatingRef.current || storagePending || !current.current) return;
+    if (creatingRef.current || !current.current) return;
     if (!hasTargets) {
       setCreateError(message("newPost.noTargets"));
       return;
@@ -121,9 +120,8 @@ export function NewPostModal({
   };
 
   return (
-    <ModalShell title={t("left.newPost")} onClose={() => void handleRequestClose()} width={440} closeDisabled={creating && !storagePending}>
+    <ModalShell title={t("left.newPost")} onClose={() => void handleRequestClose()} width={440} closeDisabled={creating}>
       <div className="modal-body">
-        <StoragePendingNotice />
         <fieldset disabled={creating} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="form-field">
           {hasTargets ? <label className="form-label" htmlFor={`${fieldIds}-target`}>{t("newPost.target")}</label>
@@ -211,13 +209,13 @@ export function NewPostModal({
         )}
       </div>
       <div className="modal-footer">
-        <button className="btn-action" onClick={() => void handleRequestClose()} disabled={creating && !storagePending}>
-          {creating && storagePending ? t("common.close") : t("common.cancel")}
+        <button className="btn-action" onClick={() => void handleRequestClose()} disabled={creating}>
+          {t("common.cancel")}
         </button>
         <button
           className="btn-primary"
           onClick={handleCreate}
-          disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating || storagePending}
+          disabled={!hasTargets || !hasLanguages || !selectedTarget || !selectedLanguage || creating}
         >
           {creating ? t("newPost.creating") : t("newPost.create")}
         </button>

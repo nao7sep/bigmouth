@@ -4,14 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createPostStoreFixture } from "./postStore-fixture.js";
 
 describe("post-store fixture lifetime", () => {
-  it.each(["success", "assertion failure", "interruption", "terminal failure"])("leaves no earlier work after %s", async (outcome) => {
+  it.each(["success", "assertion failure", "terminal failure"])("leaves no earlier work after %s", async (outcome) => {
     vi.useFakeTimers();
     const first = await createPostStoreFixture();
     let second: Awaited<ReturnType<typeof createPostStoreFixture>> | undefined;
     try {
       try {
         const post = first.store.createPost(first.dataDir, "blogger", "en");
-        if (outcome === "interruption") first.store.holdPendingFlushes();
         first.store.queueContent(first.dataDir, post.frontMatter.id, "pending fixture edit");
         if (outcome === "terminal failure") {
           fs.unlinkSync(post.filePath);
@@ -26,7 +25,6 @@ describe("post-store fixture lifetime", () => {
       second = await createPostStoreFixture();
       const events = vi.fn();
       second.store.setContentSaveListener(events);
-      second.store.resumePendingFlushes();
       vi.advanceTimersByTime(60_000);
       expect(events).not.toHaveBeenCalled();
       expect(second.store.flushAllPendingEdits()).toEqual([]);

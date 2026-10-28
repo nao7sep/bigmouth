@@ -48,7 +48,7 @@ import { useTablist } from "../hooks/useTablist";
 import { OperationalResult } from "./OperationalResult";
 import { ListedMessageView, type ListedMessage } from "./NamedItems";
 import { finalSegment } from "../util/shortenedText";
-import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 interface SettingsModalProps {
   workspaceId: string;
@@ -125,7 +125,6 @@ export function SettingsModal({
   onWorkspaceRenamed,
 }: SettingsModalProps) {
   const { t, text } = useI18n();
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   const savingRef = useRef(false);
@@ -233,7 +232,7 @@ export function SettingsModal({
 
   const handleRequestClose = async () => {
     if (!current.current) return;
-    if (savingRef.current) { if (storagePending) close(); return; }
+    if (savingRef.current) return;
     if (!isDirty) { close(); return; }
     const ok = await confirm({
       title: t("common.discardTitle"),
@@ -262,7 +261,7 @@ export function SettingsModal({
 
   // Save requires both dirty and valid: re-persisting an unchanged form is a
   // no-op that the convention asks us to disable.
-  const canSave = !saving && !storagePending && isDirty && isValid();
+  const canSave = !saving && isDirty && isValid();
 
   const { tablistProps, getTabProps, getPanelProps } = useTablist<Tab>({
     tabs: TABS,
@@ -272,7 +271,7 @@ export function SettingsModal({
   });
 
   const handleSaveAll = async () => {
-    if (savingRef.current || storagePending || !appSettings || !settings || !anthropic || !generationPrompts) return;
+    if (savingRef.current || !appSettings || !settings || !anthropic || !generationPrompts) return;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
@@ -363,9 +362,8 @@ export function SettingsModal({
       onClose={() => void handleRequestClose()}
       width={560}
       maxHeight="85vh"
-      closeDisabled={saving && !storagePending}
+      closeDisabled={saving}
     >
-      <StoragePendingNotice />
       {loadError ? (
         <div className="modal-body">
           <OperationalResult severity="error" className="modal-result">
@@ -455,9 +453,9 @@ export function SettingsModal({
             <button
               className="btn-action"
               onClick={() => void handleRequestClose()}
-              disabled={saving && !storagePending}
+              disabled={saving}
             >
-              {saving && storagePending ? t("common.close") : t("common.cancel")}
+              {t("common.cancel")}
             </button>
             <button
               className="btn-primary"
@@ -831,7 +829,6 @@ type RebuildSummary = { count: number; skipped: number; duplicateSlugs: number; 
 
 function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
   const { t, text, rich } = useI18n();
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   const runningRef = useRef(false);
@@ -841,7 +838,7 @@ function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState<Message | null>(null);
 
   const rebuild = async () => {
-    if (runningRef.current || storagePending) return;
+    if (runningRef.current) return;
     runningRef.current = true;
     setRunning(true);
     setSummary(null);
@@ -869,7 +866,7 @@ function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
       <p className="settings-hint">
         {rich("settings.rebuildHint", { file: <code>posts/index.json</code> })}
       </p>
-      <button className="btn-action" onClick={() => void rebuild()} disabled={running || storagePending}>
+      <button className="btn-action" onClick={() => void rebuild()} disabled={running}>
         {running ? t("settings.rebuilding") : t("settings.rebuild")}
       </button>
       {summary && (

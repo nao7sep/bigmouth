@@ -14,8 +14,6 @@ import { settingsFieldErrors } from "@shared/settingsValidation";
 // the whole module so the dialog renders against in-memory fixtures.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
-  getStoragePending: vi.fn().mockResolvedValue(false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
   getAppSettings: vi.fn(),
   saveAppSettings: vi.fn(),
   getSettings: vi.fn(),
@@ -50,7 +48,7 @@ vi.mock("@shared/timeZone", async (importActual) => {
 import { SettingsModal } from "@renderer/components/SettingsModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
 import * as api from "@renderer/api";
-import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StorageResults, StorageResultsProvider } from "@renderer/StorageResults";
 
 const mock = {
   getAppSettings: vi.mocked(api.getAppSettings),
@@ -1197,35 +1195,6 @@ describe("SettingsModal — workspace name", () => {
 });
 
 
-describe("SettingsModal — slow submitted save", () => {
-  it("allows leaving after storage reports pending and never closes a successor on settlement", async () => {
-    seedLoaders();
-    let finish!: (value: Settings) => void;
-    mock.saveSettings.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    const onClose = vi.fn();
-    const onSettingsChanged = vi.fn();
-    const view = render(<ConfirmProvider><StoragePendingContext.Provider value={true}>
-      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
-    </StoragePendingContext.Provider></ConfirmProvider>);
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });
-    // Pending from another change prevents a new submission.
-    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
-    view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={false}>
-      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
-    </StoragePendingContext.Provider></ConfirmProvider>);
-    fireEvent.click(view.getByRole("button", { name: "Save" }));
-    view.rerender(<ConfirmProvider><StoragePendingContext.Provider value={true}>
-      <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={onClose} onSettingsChanged={onSettingsChanged} />
-    </StoragePendingContext.Provider></ConfirmProvider>);
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    await act(async () => { finish({ ...settings(), postsPerLoad: 75 }); });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-});
-
-
 it("finishes a dismissed multi-step settings intent against its original workspace", async () => {
   const view = await renderModal();
   let finish!: (settings: Settings) => void;
@@ -1254,10 +1223,10 @@ it("reports a departed rename's skipped files as one result", async () => {
   const skipped = Array.from({ length: 5 }, (_, index) => ({ fileName: `2026010${index}-000000-utc-post.md`, reason: "bad YAML" }));
   mock.renameTarget.mockResolvedValue({ targets: targets(), postsUpdated: 0, postsSkipped: skipped });
   mock.saveTargets.mockResolvedValue([{ name: "renamed", defaultLanguage: "en", requiresMetadata: false }]);
-  const surface = (shown: boolean) => <StoragePendingProvider><ConfirmProvider>
+  const surface = (shown: boolean) => <StorageResultsProvider><ConfirmProvider>
     {shown && <SettingsModal workspaceId="ws1" {...WORKSPACE_PROPS} onClose={vi.fn()} onSettingsChanged={vi.fn()} onWorkspaceRenamed={vi.fn()} />}
-    <StoragePendingResults />
-  </ConfirmProvider></StoragePendingProvider>;
+    <StorageResults />
+  </ConfirmProvider></StorageResultsProvider>;
   const view = render(surface(true));
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   fireEvent.change(view.container.querySelector('input[type="number"]')!, { target: { value: "75" } });

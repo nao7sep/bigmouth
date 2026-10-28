@@ -19,7 +19,7 @@ import { AssetUploadAdmissionError, AssetUploadFailureError } from "../util/asse
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
-import { useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 interface AssetsTabProps extends Pick<
   HTMLAttributes<HTMLDivElement>,
@@ -121,7 +121,6 @@ export function AssetsTab({
   ...containerProps
 }: AssetsTabProps) {
   const { t, text, list } = useI18n();
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
@@ -333,7 +332,7 @@ export function AssetsTab({
 
   const enqueueUpload = async (files: FileList | File[]) => {
     const captured = Array.from(files);
-    if (captured.length === 0 || storagePending || deletingRef.current) return;
+    if (captured.length === 0 || deletingRef.current) return;
     queuedUploadsRef.current += 1;
     setUploading(true);
     const operation = uploadTailRef.current.then(() => checkAndUpload(captured));
@@ -388,7 +387,7 @@ export function AssetsTab({
   };
 
   const handleDelete = async (filename: string) => {
-    if (locked || storagePending || queuedUploadsRef.current > 0 || deletingRef.current) return;
+    if (locked || queuedUploadsRef.current > 0 || deletingRef.current) return;
     deletingRef.current = true;
     setDeleting(true);
     try {
@@ -455,7 +454,7 @@ export function AssetsTab({
         e.preventDefault();
         e.stopPropagation();
         const offer = inspectAssetDragOffer(e.dataTransfer);
-        if (locked || storagePending || offer === "rejected") {
+        if (locked || offer === "rejected") {
           e.dataTransfer.dropEffect = "none";
           setDragState("rejecting");
           return;
@@ -486,7 +485,7 @@ export function AssetsTab({
         <button
           type="button"
           className="action-button"
-          disabled={locked || uploading || deleting || storagePending}
+          disabled={locked || uploading || deleting}
           onClick={() => fileInputRef.current?.click()}
         >
           {uploading ? t("assets.adding") : t("assets.add")}
@@ -547,7 +546,7 @@ export function AssetsTab({
                 asset={asset}
                 onInsert={() => handleInsert(asset.filename)}
                 onDelete={() => void handleDelete(asset.filename)}
-                locked={locked || storagePending || uploading || deleting}
+                locked={locked || uploading || deleting}
               />
             ))}
         </div>

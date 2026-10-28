@@ -11,8 +11,7 @@
  * or Escape dismissal, and the modal-dialog conventions permit that for a root
  * launch gate: there is nothing behind it to return to. Its way out is Skip,
  * which opens the workspace without a target: offered where the step cannot be
- * completed (a workspace with no languages), and while a slow save is pending,
- * whose later result keeps its owner. Quitting part-way leaves the workspace
+ * completed (a workspace with no languages). Quitting part-way leaves the workspace
  * registered, and the next launch offers it in the workspace window.
  */
 
@@ -25,7 +24,7 @@ import { OperationalResult } from "./OperationalResult";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
-import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 interface SetupModalProps {
   /** The workspace the workspace window just created. */
@@ -93,7 +92,6 @@ function TargetStep({ workspace, onDone, mayAdopt }: {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const current = useRef(true);
-  const pending = useStoragePending();
   const reportResult = useStorageResultReporter();
   const ownsView = () => current.current && mayAdopt();
   const composing = useComposing();
@@ -140,7 +138,7 @@ function TargetStep({ workspace, onDone, mayAdopt }: {
   const canContinue = loaded !== null && hasLanguages && nameError === null && targetLanguage !== "" && !saving;
 
   const handleContinue = async () => {
-    if (!canContinue || !loaded || savingRef.current || pending || !ownsView()) return;
+    if (!canContinue || !loaded || savingRef.current || !ownsView()) return;
     savingRef.current = true;
     setSaving(true);
     setError(null);
@@ -253,19 +251,16 @@ function TargetStep({ workspace, onDone, mayAdopt }: {
             {text(error)}
           </OperationalResult>
         )}
-        <StoragePendingNotice />
       </div>
       <div className="modal-footer">
         {/* Skipping is offered only where the step cannot be completed here: a
-            workspace with no languages has nothing to give a target, and a
-            pending save lets the user leave while it settles. */}
-        {pending && saving && <button className="btn-action" onClick={onDone}>{t("setup.skip")}</button>}
+            workspace with no languages has nothing to give a target. */}
         {loaded && !hasLanguages ? (
           <button className="btn-primary" onClick={onDone} autoFocus>
             {t("setup.skip")}
           </button>
         ) : (
-          <button className="btn-primary" onClick={() => void handleContinue()} disabled={!canContinue || pending}>
+          <button className="btn-primary" onClick={() => void handleContinue()} disabled={!canContinue}>
             {saving ? t("common.saving") : t("setup.finish")}
           </button>
         )}

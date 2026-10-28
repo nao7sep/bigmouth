@@ -44,7 +44,7 @@ import { OperationalResult } from "./OperationalResult";
 import { ShortPath } from "./ShortPath";
 import { useI18n } from "../i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
-import { StoragePendingNotice, useStoragePending, useStorageResultReporter } from "../StoragePending";
+import { useStorageResultReporter } from "../StorageResults";
 
 interface WorkspaceModalProps {
   dismissable: boolean;
@@ -106,7 +106,6 @@ export function WorkspaceModal({
   const selectionIntent = useRef(0);
   const submittingRef = useRef(false);
   const renamingRef = useRef(false);
-  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const confirm = useConfirm();
 
@@ -195,11 +194,7 @@ export function WorkspaceModal({
   }, [chosenLocation, creatingForm]);
 
   const handleRequestClose = () => {
-    if (submittingRef.current || renamingRef.current) {
-      // The submitted intent stays owned by storage after this view is left.
-      if (!dismissable || !storagePending) return;
-      if (submittingRef.current) { close(); return; }
-    }
+    if (submittingRef.current || renamingRef.current) return;
     // A nested edit — an inline rename or the new-workspace form over a list —
     // unwinds first, keeping "cancel this edit" distinct from "leave the window".
     if (editingId !== null && !renamingRef.current) {
@@ -240,7 +235,7 @@ export function WorkspaceModal({
   const handleCreate = async () => {
     const name = createName.trim();
     const location = chosenLocation ?? suggestedLocation;
-    if (!name || !location || submittingRef.current || renamingRef.current || storagePending) return;
+    if (!name || !location || submittingRef.current || renamingRef.current) return;
     submittingRef.current = true;
     const intent = ++selectionIntent.current;
     const firstRun = workspaces.length === 0;
@@ -264,7 +259,7 @@ export function WorkspaceModal({
   };
 
   const handleAddExisting = async () => {
-    if (submittingRef.current || renamingRef.current || storagePending) return;
+    if (submittingRef.current || renamingRef.current) return;
     setAddError(null);
     setCreateError(null);
     let dir: string | null;
@@ -309,7 +304,7 @@ export function WorkspaceModal({
   };
 
   const handleRename = async (id: string) => {
-    if (!editName.trim() || renamingRef.current || submittingRef.current || storagePending) return;
+    if (!editName.trim() || renamingRef.current || submittingRef.current) return;
     renamingRef.current = true;
     setRenamingId(id);
     setRenameError(null);
@@ -335,7 +330,7 @@ export function WorkspaceModal({
   };
 
   const handleDelete = (ws: Workspace) => {
-    if (storagePending || submittingRef.current || renamingRef.current) return;
+    if (submittingRef.current || renamingRef.current) return;
     void confirm({
       title: t("workspaces.deleteTitle"),
       message: t("workspaces.deleteMessage", { name: ws.name }),
@@ -424,7 +419,7 @@ export function WorkspaceModal({
     followFocus: true,
     autoActivateFirst: true,
     onRowAction: (id, action) => {
-      if (storagePending || submittingRef.current || renamingRef.current) return;
+      if (submittingRef.current || renamingRef.current) return;
       const ws = workspaces.find((w) => w.id === id);
       if (!ws) return;
       if (action === "rename") startRename(ws);
@@ -448,7 +443,7 @@ export function WorkspaceModal({
   };
 
   const firstRun = !loading && !listError && sorted.length === 0;
-  const rowActionsDisabled = !selected || storagePending || mutationBusy || editingId !== null;
+  const rowActionsDisabled = !selected || mutationBusy || editingId !== null;
 
   const createForm = (
     <div className="workspace-create">
@@ -566,7 +561,7 @@ export function WorkspaceModal({
                       <button
                         className="btn-primary"
                         onClick={() => void handleRename(ws.id)}
-                        disabled={!editName.trim() || renamingId === ws.id || storagePending}
+                        disabled={!editName.trim() || renamingId === ws.id}
                       >
                         {renamingId === ws.id ? t("common.saving") : t("common.save")}
                       </button>
@@ -613,22 +608,21 @@ export function WorkspaceModal({
       maxHeight="85vh"
       closeOnBackdrop={dismissable}
       showClose={dismissable}
-      closeDisabled={mutationBusy && !storagePending}
+      closeDisabled={mutationBusy}
     >
       {!loading && !listError && (
         <div className="workspace-toolbar">
           {!creatingForm && (
-            <button className="btn-toolbar" disabled={mutationBusy || storagePending} onClick={() => openCreateForm("")}>
+            <button className="btn-toolbar" disabled={mutationBusy} onClick={() => openCreateForm("")}>
               {t("workspaces.new")}
             </button>
           )}
-          <button className="btn-toolbar" disabled={mutationBusy || storagePending} onClick={() => void handleAddExisting()}>
+          <button className="btn-toolbar" disabled={mutationBusy} onClick={() => void handleAddExisting()}>
             {adding ? t("workspaces.opening") : t("workspaces.addExisting")}
           </button>
         </div>
       )}
       <div className="modal-body">
-        <StoragePendingNotice />
         {removalWarnings.map((warning) => (
           <OperationalResult
             key={warning.id}
@@ -649,14 +643,14 @@ export function WorkspaceModal({
         {creatingForm ? (
           <>
             {listed && (
-              <button className="btn-action" disabled={creating && !storagePending} onClick={handleRequestClose}>
+              <button className="btn-action" disabled={creating} onClick={handleRequestClose}>
                 {t("common.cancel")}
               </button>
             )}
             <button
               className="btn-primary"
               onClick={() => void handleCreate()}
-              disabled={!createName.trim() || !(chosenLocation ?? suggestedLocation) || mutationBusy || storagePending}
+              disabled={!createName.trim() || !(chosenLocation ?? suggestedLocation) || mutationBusy}
             >
               {creating ? t("workspaces.creating") : t("workspaces.create")}
             </button>
@@ -664,15 +658,15 @@ export function WorkspaceModal({
         ) : (
           <>
             {dismissable && (
-              <button className="btn-action" onClick={handleRequestClose} disabled={mutationBusy && !storagePending}>
-                {t(mutationBusy && storagePending ? "common.close" : "common.cancel")}
+              <button className="btn-action" onClick={handleRequestClose} disabled={mutationBusy}>
+                {t("common.cancel")}
               </button>
             )}
             {listed && (
               <button
                 className="btn-primary"
                 onClick={() => handleOpen(selectedId)}
-                disabled={!selected || mutationBusy || storagePending || editingId !== null}
+                disabled={!selected || mutationBusy || editingId !== null}
               >
                 {t("workspaces.open")}
               </button>

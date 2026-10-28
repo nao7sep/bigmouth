@@ -20,7 +20,7 @@ export async function createPostStoreFixture() {
       store,
       dispose() {
         store.setContentSaveListener(null);
-        store.holdPendingFlushes();
+        store.flushAllPendingEdits();
         store.clearCache(dataDir);
         closeBackupStore();
         fs.rmSync(dataDir, { recursive: true, force: true });

@@ -3,7 +3,6 @@ import { ModalShell } from "./ModalShell";
 import { OperationalResult } from "./OperationalResult";
 import { useI18n } from "../i18n/I18nContext";
 import type { Message } from "@shared/i18n/translate";
-import { StoragePendingNotice } from "../StoragePending";
 
 interface ConfirmModalProps {
   title?: string;
@@ -13,7 +12,6 @@ interface ConfirmModalProps {
   danger?: boolean;
   /** Disables both buttons while the confirm action is in flight. */
   busy?: boolean;
-  pending?: boolean;
   /** A failure from the confirm action, shown in the dialog the user acted in. */
   error?: Message | null;
   onConfirm: () => void;
@@ -27,7 +25,6 @@ export function ConfirmModal({
   cancelLabel,
   danger = false,
   busy = false,
-  pending = false,
   error = null,
   onConfirm,
   onCancel,
@@ -39,7 +36,7 @@ export function ConfirmModal({
   const messageId = useId();
 
   return (
-    <ModalShell title={heading} onClose={onCancel} width={360} describedBy={messageId} closeDisabled={busy && !pending}>
+    <ModalShell title={heading} onClose={onCancel} width={360} describedBy={messageId} closeDisabled={busy}>
       <div className="modal-body">
         {/* Announced with the title: this sentence is the whole content of every
             confirm in the app, and it is what the choice turns on. It is never
@@ -47,7 +44,6 @@ export function ConfirmModal({
         <p id={messageId} style={{ margin: 0, fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>
           {message}
         </p>
-        {busy && pending && <StoragePendingNotice />}
         {error && (
           <OperationalResult severity="error" className="modal-result">
             {text(error)}
@@ -55,13 +51,13 @@ export function ConfirmModal({
         )}
       </div>
       <div className="modal-footer">
-        <button className="btn-action" onClick={onCancel} autoFocus disabled={busy && !pending}>
-          {busy && pending ? t("common.close") : cancelLabel}
+        <button className="btn-action" onClick={onCancel} autoFocus disabled={busy}>
+          {cancelLabel}
         </button>
         <button
           className={danger ? "btn-action btn-delete-confirm" : "btn-primary"}
           onClick={onConfirm}
-          disabled={busy || pending}
+          disabled={busy}
         >
           {confirmLabel}
         </button>

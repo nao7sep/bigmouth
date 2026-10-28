@@ -58,10 +58,7 @@ export const storageTasks = {
     const settings = initAppSettingsStore();
     return { config, state, settings, recordsDbPath: getRecordsDbPath(), recordsPath: getRecordsPath(), thumbnailsDir: getThumbnailsDir() };
   },
-  flush() {
-    postStore.holdPendingFlushes();
-    return postStore.flushAllPendingEdits();
-  },
+  flush: postStore.flushAllPendingEdits,
   /** Ends storage for the process; pending backup writes get `backupBoundMs`, 0 at OS session end. */
   finish(backupBoundMs: number) {
     try { stopBackups(backupBoundMs); }
@@ -167,8 +164,6 @@ export const storageTasks = {
   },
   listByStatus: postStore.listByStatus,
   countByStatus: postStore.countByStatus,
-  holdPendingFlushes: postStore.holdPendingFlushes,
-  resumePendingFlushes: postStore.resumePendingFlushes,
   listAssets: assetStore.listAssets,
   /**
    * Publishes a staged upload. The post's identity and lock are checked here, at

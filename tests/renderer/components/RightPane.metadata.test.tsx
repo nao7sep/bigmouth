@@ -10,18 +10,11 @@ vi.mock("@renderer/components/AnalysisTab", () => ({ AnalysisTab: () => null }))
 vi.mock("@renderer/components/ImagingTab", () => ({ ImagingTab: () => null }));
 vi.mock("@renderer/components/AssetsTab", () => ({ AssetsTab: () => null }));
 vi.mock("@renderer/components/PreviewTab", () => ({ PreviewTab: () => null }));
-const refusedListeners = vi.hoisted(() => new Set<(event: {
-  postId: string; edits: Record<string, unknown>; refusal: { key: "metadata.queueFailed" };
-}) => void>());
 
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
   queuePostMetadata: vi.fn(),
   reportMetadataRefusal: vi.fn(),
-  onPostMetadataRefused: (listener: (event: { postId: string; edits: Record<string, unknown>; refusal: { key: "metadata.queueFailed" } }) => void) => {
-    refusedListeners.add(listener);
-    return () => { refusedListeners.delete(listener); };
-  },
   generateMetadataField: vi.fn(),
   generateMetadataFields: vi.fn(),
 }));
@@ -96,28 +89,6 @@ describe("RightPane metadata rescue lifetime", () => {
   });
 });
 
-it("restores Metadata and its raw value when held delivery is refused after the tab hides", async () => {
-  mockQueue.mockResolvedValue(null);
-  const view = mountMetadata();
-  const title = view.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement;
-  fireEvent.change(title, { target: { value: " Raw\n  rescue text " } });
-  await act(async () => { await Promise.resolve(); });
-  view.refresh(false);
-  expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
-  expect(view.queryByRole("textbox", { name: "Title" })).toBeNull();
-  expect(title.isConnected).toBe(true);
-  expect(title.closest("[hidden]")).toBeTruthy();
-  expect(title.closest("[role=tabpanel]")).toBeNull();
-  expect(refusedListeners.size).toBe(1);
-  act(() => {
-    refusedListeners.forEach((listener) => listener({ postId: "p1", edits: { title: "Raw rescue text" }, refusal: { key: "metadata.queueFailed" } }));
-  });
-  expect(view.getByRole("tab", { name: "Metadata" })).toBeTruthy();
-  expect(view.getByRole("textbox", { name: "Title" })).toBe(title);
-  expect(title.value).toBe(" Raw\n  rescue text ");
-  expect(view.getByRole("alert").textContent).toContain("Metadata could not be saved");
-});
-
 it.each(["post", "workspace"])("drops the retained hidden instance when its %s changes", async (change) => {
   mockQueue.mockResolvedValue(null);
   const view = mountMetadata();
@@ -126,6 +97,5 @@ it.each(["post", "workspace"])("drops the retained hidden instance when its %s c
   expect(title.isConnected).toBe(true);
   view.refresh(false, false, change === "post" ? "p2" : "p1", change === "workspace" ? "w2" : "w1");
   expect(title.isConnected).toBe(false);
-  expect(refusedListeners.size).toBe(0);
   expect(view.queryByRole("tab", { name: "Metadata" })).toBeNull();
 });

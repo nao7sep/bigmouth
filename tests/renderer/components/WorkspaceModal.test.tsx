@@ -14,13 +14,11 @@ vi.mock("@renderer/api", () => ({
   deleteWorkspace: vi.fn(),
   pickWorkspaceDirectory: vi.fn(),
   suggestWorkspaceLocation: vi.fn(),
-  getStoragePending: vi.fn(async () => false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
 }));
 
 import { WorkspaceModal } from "@renderer/components/WorkspaceModal";
 import { ConfirmProvider } from "@renderer/components/ConfirmHost";
-import { StoragePendingContext, StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
+import { StorageResults, StorageResultsProvider } from "@renderer/StorageResults";
 import { carryingText } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
 import { loadCatalogue } from "@shared/i18n/catalogues";
@@ -108,10 +106,9 @@ async function renderWith(over: ModalOverrides = {}) {
   const onSelect = over.onSelect ?? vi.fn();
   const onWorkspaceDeleted = over.onWorkspaceDeleted ?? vi.fn().mockResolvedValue(true);
   const onWorkspaceUpdated = over.onWorkspaceUpdated ?? vi.fn();
-  const element = (pending = false, shown = true) => (
+  const element = (shown = true) => (
     <I18nProvider language={over.language ?? "en"} locale={over.language ?? "en"}>
-    <StoragePendingProvider>
-    <StoragePendingContext.Provider value={pending}>
+    <StorageResultsProvider>
     <ConfirmProvider>
       {shown && <WorkspaceModal
         dismissable={over.dismissable ?? true}
@@ -126,9 +123,8 @@ async function renderWith(over: ModalOverrides = {}) {
         reloadVersion={over.reloadVersion}
       />}
     </ConfirmProvider>
-    </StoragePendingContext.Provider>
-    <StoragePendingResults />
-    </StoragePendingProvider>
+    <StorageResults />
+    </StorageResultsProvider>
     </I18nProvider>
   );
   const utils = render(element());
@@ -136,8 +132,7 @@ async function renderWith(over: ModalOverrides = {}) {
     await Promise.resolve();
   });
   return { onClose, onSelect, onWorkspaceDeleted, onWorkspaceUpdated, ...utils,
-    rerenderPending: (pending: boolean) => utils.rerender(element(pending)),
-    leaveModal: () => utils.rerender(element(true, false)),
+    leaveModal: () => utils.rerender(element(false)),
   };
 }
 
@@ -725,35 +720,6 @@ describe("WorkspaceModal — Add Existing Folder", () => {
 });
 
 describe("WorkspaceModal — inline rename save", () => {
-  it("checks an unsubmitted new-workspace draft when leaving a pending rename", async () => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    let resolveRename!: (workspace: Workspace) => void;
-    mockUpdateWorkspace.mockReturnValue(new Promise((resolve) => { resolveRename = resolve; }));
-    const view = await renderWith();
-    await openNewForm("Unsubmitted workspace");
-    fireEvent.click(view.getByText("Rename"));
-    fireEvent.change(view.getByDisplayValue("Alpha"), { target: { value: "Submitted name" } });
-    fireEvent.click(view.getByText("Save"));
-    view.rerenderPending(true);
-    fireEvent.click(footerButton(view.container, "Cancel"));
-    expect(view.onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
-    await flush();
-    expect(view.getByDisplayValue("Unsubmitted workspace")).toBeTruthy();
-    fireEvent.click(footerButton(view.container, "Cancel"));
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Discard" })); });
-    // Discarding the draft closes the form, not the window behind it.
-    expect(view.queryByDisplayValue("Unsubmitted workspace")).toBeNull();
-    expect(view.onClose).not.toHaveBeenCalled();
-    fireEvent.click(footerButton(view.container, "Close"));
-    expect(view.onClose).toHaveBeenCalledTimes(1);
-    expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
-    await act(async () => { resolveRename({ ...WORKSPACE, name: "Submitted name" }); });
-    expect(view.onWorkspaceUpdated).toHaveBeenCalledTimes(1);
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
   it("keeps a departed rename failure in the app without reviving its editor", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     let rejectRename!: (error: Error) => void;
@@ -765,9 +731,6 @@ describe("WorkspaceModal — inline rename save", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1);
-    view.rerenderPending(true);
-    fireEvent.click(footerButton(view.container, "Close"));
-    expect(view.onClose).toHaveBeenCalledTimes(1);
     view.leaveModal();
     await act(async () => { rejectRename(new Error("private rename diagnostic")); });
 
@@ -897,8 +860,8 @@ describe("WorkspaceModal — inline rename save", () => {
   });
 });
 
-describe("WorkspaceModal — pending creation and adding", () => {
-  it("retains a failed creation after the modal leaves while pending", async () => {
+describe("WorkspaceModal — creation and adding in flight", () => {
+  it("retains a failed creation after the modal leaves", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     let rejectCreate!: (error: Error) => void;
     mockCreate.mockReturnValue(new Promise((_, reject) => { rejectCreate = reject; }));
@@ -906,9 +869,6 @@ describe("WorkspaceModal — pending creation and adding", () => {
     const view = await renderWith({ onCreated });
     await openNewForm("Beta");
     fireEvent.click(footerButton(view.container, "Create"));
-    view.rerenderPending(true);
-    fireEvent.click(footerButton(view.container, "Cancel"));
-    expect(view.onClose).toHaveBeenCalledTimes(1);
     view.leaveModal();
     await act(async () => { rejectCreate(new Error("private create diagnostic")); });
 
@@ -919,7 +879,7 @@ describe("WorkspaceModal — pending creation and adding", () => {
     expect(view.onSelect).not.toHaveBeenCalled();
   });
 
-  it("retains a failed add after the modal leaves while pending", async () => {
+  it("retains a failed add after the modal leaves", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockPickDirectory.mockResolvedValue("/picked/notes");
     let rejectAdd!: (error: Error) => void;
@@ -927,9 +887,6 @@ describe("WorkspaceModal — pending creation and adding", () => {
     const view = await renderWith();
     await act(async () => { fireEvent.click(view.getByRole("button", { name: "Add Existing Folder" })); });
     expect(view.getByRole("button", { name: "Opening…" })).toBeTruthy();
-    view.rerenderPending(true);
-    fireEvent.click(footerButton(view.container, "Close"));
-    expect(view.onClose).toHaveBeenCalledTimes(1);
     view.leaveModal();
     await act(async () => { rejectAdd(new Error("private add diagnostic")); });
 
@@ -956,38 +913,6 @@ describe("WorkspaceModal — pending creation and adding", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it.each(["Cancel", "✕", "Escape", "backdrop"] as const)("can leave via %s without replaying or adopting a late creation", async (path) => {
-    mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    let resolveCreate!: (workspace: Workspace) => void;
-    mockCreate.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
-    const onCreated = vi.fn();
-    const { getByRole, getByLabelText, container, onClose, onSelect, rerenderPending } = await renderWith({ onCreated });
-    await openNewForm("Submitted workspace");
-    const name = getByLabelText("Name");
-    fireEvent.click(footerButton(container, "Create"));
-    // Enter remains a form submission path even when its button is disabled.
-    fireEvent.keyDown(name, { key: "Enter" });
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(name.hasAttribute("disabled")).toBe(true);
-    rerenderPending(true);
-
-    expect(getByRole("status").textContent).toContain("This change is still being saved.");
-    const leave = footerButton(container, "Cancel");
-    expect(leave.hasAttribute("disabled")).toBe(false);
-    if (path === "Cancel") fireEvent.click(leave);
-    else if (path === "✕") fireEvent.click(getByLabelText("Close"));
-    else if (path === "Escape") fireEvent.keyDown(document, { key: "Escape" });
-    else fireEvent.click(container.querySelector(".modal-backdrop")!);
-
-    expect(onClose).toHaveBeenCalledTimes(1);
-    // A submitted draft is not a discardable one.
-    expect(screen.queryByText("Discard changes?")).toBeNull();
-    await act(async () => { resolveCreate(CREATED); });
-    expect(onCreated).not.toHaveBeenCalled();
-    expect(onSelect).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockListWorkspaces).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("WorkspaceModal — delete", () => {

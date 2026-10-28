@@ -27,7 +27,7 @@ import { presentFailure } from "./util/presentFailure";
 import { OperationalResult } from "./components/OperationalResult";
 import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
-import { StoragePendingNotice, StoragePendingResults, useStorageResultReporter } from "./StoragePending";
+import { StorageResults, useStorageResultReporter } from "./StorageResults";
 import "./App.css";
 
 // Each side pane stores an INTENT width in pixels: the width the user resized
@@ -392,8 +392,7 @@ export function App() {
 
   const shellResultStack = (
     <div className="app-operational-results">
-      <StoragePendingNotice className="app-operational-result" />
-      <StoragePendingResults />
+      <StorageResults />
       {shellResults.map((result) => (
         <OperationalResult
           key={result.key}
