@@ -1,7 +1,6 @@
 import type { FileHandle } from "node:fs/promises";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 
 import { ipcMain } from "electron";
 import exifr from "exifr";
@@ -9,8 +8,6 @@ import exifr from "exifr";
 import type { AssetMeta } from "@shared/types";
 import {
   CHANNELS,
-  ASSET_UPLOAD_SLICE_BYTES,
-  ASSET_UPLOAD_SLICES_IN_FLIGHT,
   type AssetDeleteResult,
   type AssetUploadFromMain,
   type AssetUploadResult,
@@ -127,20 +124,16 @@ function registerImage(wsId: string, dir: string, postId: string, asset: AssetMe
 async function upload(port: UploadPort, start: AssetUploadStart, lifetime: UploadLifetime): Promise<AssetUploadResult | null> {
   const { wsId, postId } = start;
   const dir = (await resolveWorkspace(wsId)).dataDirectory;
-  if (lifetime.reason) return null;
-  lifetime.progress();
+  if (lifetime.abandoned) return null;
   const filename = sanitizeFilename(start.name);
   if (isReservedAssetName(filename)) return { ok: false, admission: { code: "reserved-name", filename } };
   const post = await getPost(dir, postId);
-  if (lifetime.reason) return null;
-  lifetime.progress();
+  if (lifetime.abandoned) return null;
   if (!post) return { ok: false, admission: { code: "post-missing" } };
   if (post.frontMatter.locked === true) return { ok: false, admission: { code: "post-locked" } };
 
   const received = await receiveUpload(port, stagingDir(dir), lifetime);
   switch (received.kind) {
-    case "stalled":
-      return { ok: false, failure: { code: "stalled" } };
     case "abandoned":
       logWarn("asset upload abandoned", { workspace: wsId, postId, filename });
       return null;
@@ -156,13 +149,11 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
   try {
     const image = isImageAssetFilename(filename);
     const hasMetadata = image && (await carriesMetadata(staging.path));
-    if (lifetime.reason) return null;
-    lifetime.progress();
+    if (lifetime.abandoned) return null;
     // Its dimensions and frame count come from the image's header, read by sharp
     // without decoding the picture; a file sharp cannot read records neither.
     const facts = image ? await readImageFacts(staging.path) : null;
-    if (lifetime.reason) return null;
-    lifetime.progress();
+    if (lifetime.abandoned) return null;
     const meta = {
       filename,
       size: staged.size,
@@ -172,12 +163,7 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
     };
     // The post's lock is checked again at publication, inside the storage task.
     const sourceMetadata = await readSourceMetadata(start.sourcePath, staged.size);
-    if (lifetime.reason) return null;
-    lifetime.progress();
-    // The sender acknowledges leaving its timeout phase before publication can
-    // start. Otherwise a queued proposal could race its deadline and falsely
-    // report failure for an attachment that was actually installed.
-    if (!await agreeToInstall(port, lifetime)) return null;
+    if (lifetime.abandoned) return null;
     const result = await installAsset(dir, postId, filename, staged, meta, sourceMetadata);
     if (result.ok) {
       logInfo("asset uploaded", { workspace: wsId, postId, filename: result.asset.filename, size: staged.size, hasMetadata });
@@ -192,34 +178,6 @@ async function upload(port: UploadPort, start: AssetUploadStart, lifetime: Uploa
   }
 }
 
-// Each upload has at most one native filesystem operation in flight. Leave a
-// libuv worker available for unrelated app work; stalled origins retain their
-// admission slot through physical cleanup rather than admitting replacements.
-const nativeThreads = Math.max(1, Number.parseInt(process.env.UV_THREADPOOL_SIZE ?? "4", 10) || 4);
-const uploadCapacity = Math.max(1, Math.min(nativeThreads - 1, os.availableParallelism(),
-  Math.floor(os.totalmem() / (ASSET_UPLOAD_SLICE_BYTES * ASSET_UPLOAD_SLICES_IN_FLIGHT * 4))));
-const uploads = new Set<string>();
-
-function agreeToInstall(port: UploadPort, lifetime: UploadLifetime): Promise<boolean> {
-  return new Promise((resolve) => {
-    let done = false;
-    let off = () => {};
-    const finish = (ready: boolean) => {
-      if (done) return;
-      done = true;
-      off();
-      if (ready) lifetime.beginInstall();
-      resolve(ready);
-    };
-    off = lifetime.onStop(() => finish(false));
-    port.on("message", ({ data }) => {
-      if (!done && data !== null && typeof data === "object" && (data as { type?: unknown }).type === "install") finish(!lifetime.reason);
-    });
-    if (lifetime.reason) finish(false);
-    else port.postMessage({ type: "installing" });
-  });
-}
-
 /**
  * Answers an upload on its port, once. An unexpected failure is logged here and
  * reaches the renderer only as fixed text, or as the catalogue message the
@@ -231,21 +189,8 @@ export async function handleUpload(port: UploadPort & { close(): void }, raw: un
   let reply: AssetUploadFromMain | null;
   try {
     port.start();
-    const start = readUploadStart(raw);
-    if (uploads.has(start.wsId) || uploads.size >= uploadCapacity) {
-      reply = { type: "result", result: { ok: false, failure: { code: "busy" } } };
-    } else {
-      uploads.add(start.wsId);
-      const operation = upload(port, start, lifetime).then((result): AssetUploadFromMain | null => result && { type: "result", result })
-        .finally(() => { uploads.delete(start.wsId); lifetime.dispose(); });
-      // Ending this wait never releases the stage, native writes or admission:
-      // their operation remains owned until the eventual cleanup finishes.
-      reply = await Promise.race([operation, lifetime.stopped.then((reason): AssetUploadFromMain | null => reason === "abandoned"
-        ? null : { type: "result", result: { ok: false, failure: { code: "stalled" } } })]);
-      void operation.catch((error: unknown) => {
-        if (lifetime.reason) logError("abandoned asset upload could not settle", { workspace: start.wsId, postId: start.postId, error: serializeError(error) });
-      });
-    }
+    const result = await upload(port, readUploadStart(raw), lifetime);
+    reply = result && { type: "result", result };
   } catch (err) {
     const { wsId, postId } = (raw !== null && typeof raw === "object" ? raw : {}) as { wsId?: unknown; postId?: unknown };
     logError("asset upload failed", { workspace: String(wsId), postId: String(postId), error: serializeError(err) });
@@ -257,7 +202,6 @@ export async function handleUpload(port: UploadPort & { close(): void }, raw: un
   } catch {
     // The window went away; nobody is waiting for the answer.
   } finally {
-    lifetime.dispose();
     port.close();
   }
 }

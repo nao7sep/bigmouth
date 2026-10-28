@@ -412,13 +412,11 @@ describe("api wrappers — call-through and argument shape", () => {
     });
 
     it.each([
-      [{ code: "source-unreadable" }, "assets.sourceUnreadable", false],
-      [{ code: "stalled" }, "assets.uploadStalled", true],
-      [{ code: "busy" }, "assets.uploadBusy", true],
-      [{ code: "workspace-unwritable", problem: "full" }, "assets.workspaceFull", false],
-      [{ code: "workspace-unwritable", problem: "denied" }, "assets.workspaceDenied", false],
-      [{ code: "workspace-unwritable", problem: "failed" }, "assets.workspaceWriteFailed", false],
-    ])("maps the structured upload failure %o to its own copy", async (failure, key, stopBatch) => {
+      [{ code: "source-unreadable" }, "assets.sourceUnreadable"],
+      [{ code: "workspace-unwritable", problem: "full" }, "assets.workspaceFull"],
+      [{ code: "workspace-unwritable", problem: "denied" }, "assets.workspaceDenied"],
+      [{ code: "workspace-unwritable", problem: "failed" }, "assets.workspaceWriteFailed"],
+    ])("maps the structured upload failure %o to its own copy", async (failure, key) => {
       const b = bridge();
       b.uploadAsset.mockResolvedValue({ ok: false, failure });
       installBridge(b);
@@ -426,7 +424,6 @@ describe("api wrappers — call-through and argument shape", () => {
       const refusal = await uploadAsset("p1", { name: "photo.png" } as File).catch((error: unknown) => error);
       expect(refusal).toBeInstanceOf(AssetUploadFailureError);
       expect((refusal as AssetUploadFailureError).reason).toEqual({ key });
-      expect((refusal as AssetUploadFailureError).stopBatch).toBe(stopBatch);
     });
 
     it("maps a deleted post to its own admission copy", async () => {

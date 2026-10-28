@@ -370,10 +370,7 @@ export interface UploadedAsset {
 export async function uploadAsset(postId: string, file: File, workspaceId?: string): Promise<UploadedAsset> {
   const result = await bridge().uploadAsset(requireWs(workspaceId), postId, file);
   if (result.ok) return result.unsaved ? { asset: result.asset, unsaved: result.unsaved } : { asset: result.asset };
-  if ("failure" in result) throw new AssetUploadFailureError(
-    assetUploadFailureMessage(result.failure),
-    result.failure.code === "stalled" || result.failure.code === "busy",
-  );
+  if ("failure" in result) throw new AssetUploadFailureError(assetUploadFailureMessage(result.failure));
   throw new AssetUploadAdmissionError(assetUploadAdmissionMessage(result.admission));
 }
 
@@ -389,8 +386,6 @@ function assetUploadAdmissionMessage(admission: AssetUploadAdmission): Message {
 }
 
 function assetUploadFailureMessage(failure: AssetUploadFailure): Message {
-  if (failure.code === "stalled") return message("assets.uploadStalled");
-  if (failure.code === "busy") return message("assets.uploadBusy");
   if (failure.code === "source-unreadable") return message("assets.sourceUnreadable");
   switch (failure.problem) {
     case "full":

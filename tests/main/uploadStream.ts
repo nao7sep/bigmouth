@@ -47,10 +47,6 @@ export function playRenderer(port: MessagePort, step: (index: number) => SliceSt
     };
     const send = (message: AssetUploadToMain) => port.postMessage(message);
     port.on("message", (reply: AssetUploadFromMain) => {
-      if (reply.type === "installing") {
-        send({ type: "install" });
-        return;
-      }
       if (reply.type !== "next") {
         finish(reply);
         return;
