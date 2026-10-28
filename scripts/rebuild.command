@@ -44,10 +44,11 @@ cd "$REPO_DIR"
 log_step "Installing dependencies"
 npm install --no-audit --no-fund
 
-# Remove stale output so a build that fails to emit a file can't be masked by a
-# leftover artifact from a previous run.
-log_step "Cleaning previous build"
-rm -rf out "$OUT_DIR"
+# Build into a clean candidate so a build that fails to emit a file can't be masked
+# by a leftover artifact; the previous package stays runnable until the candidate
+# is complete.
+log_step "Preparing clean build output"
+CANDIDATE="$(node "$RUNTIME_HELPER" prepare-candidate "$OUT_DIR")"
 
 # `npm run build` is the one definition of the release build (type-check the
 # shipped sources, then bundle), which CI runs through `npm run dist`; calling
@@ -60,14 +61,12 @@ npm run build
 # the app its own identity, so the dock and menu show "BigMouth" rather than the
 # generic "Electron".
 log_step "Packaging the app bundle"
-node_modules/.bin/electron-builder --dir
+node_modules/.bin/electron-builder --dir --config.directories.output="$CANDIDATE"
 
+log_step "Publishing the verified package"
+node "$RUNTIME_HELPER" stop "$APP_NAME"
+node "$RUNTIME_HELPER" publish-candidate "$OUT_DIR" "$APP_NAME"
 APP_BUNDLE="$(find "$OUT_DIR" -maxdepth 2 -name "$APP_NAME.app" -type d 2>/dev/null | head -1 || true)"
-if [[ -z "$APP_BUNDLE" ]]; then
-  echo "Packaging did not produce $APP_NAME.app under $OUT_DIR/." >&2
-  exit 1
-fi
 
 log_step "Launching the packaged app"
-node "$RUNTIME_HELPER" stop "$APP_NAME"
 node "$RUNTIME_HELPER" launch-bundle "$APP_BUNDLE" "$APP_NAME"
