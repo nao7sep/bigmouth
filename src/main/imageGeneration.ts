@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import fsp, { type FileHandle } from "node:fs/promises";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { createReadStream } from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 
 import type { ImageDerivativeKind } from "@shared/ipc";
@@ -42,16 +41,8 @@ export function parseDerivativeName(name: string): { hash: string; version: numb
 
 // --- sharp ---
 
-type SharpFactory = ((input?: Buffer | string, options?: SharpOptions) => Sharp) & { concurrency(threads: number): number };
+type SharpFactory = (input?: Buffer | string, options?: SharpOptions) => Sharp;
 let loadedSharp: Promise<SharpFactory> | null = null;
-let activeSharp: SharpFactory | null = null;
-let decoderThreads: number | undefined;
-
-/** The generation worker assigns its share of this host's available decoder threads once. */
-export function configureImageConcurrency(threads: number): void {
-  decoderThreads = threads;
-  activeSharp?.concurrency(threads);
-}
 
 /**
  * sharp, loaded on first use rather than at startup: it is a native module, and
@@ -63,11 +54,9 @@ function loadSharp(): Promise<SharpFactory> {
     // libvips' operation cache keeps the decoded pixels of recent inputs alive;
     // every image here is processed once, so the cache would only hold memory.
     sharp.cache(false);
-    if (decoderThreads !== undefined) sharp.concurrency(decoderThreads);
-    activeSharp = sharp as unknown as SharpFactory;
-    return activeSharp;
+    return sharp as unknown as SharpFactory;
   });
-  loadedSharp.catch(() => { loadedSharp = null; activeSharp = null; });
+  loadedSharp.catch(() => { loadedSharp = null; });
   return loadedSharp;
 }
 
@@ -112,87 +101,54 @@ export type DerivativeOutcome =
   | { kind: "failed"; error: unknown };
 
 /**
- * Snapshot and hash the source through bounded chunks, then decode that private
- * file. Sharp gathers stream inputs into memory, so it receives a path instead.
- * Both renditions describe the closed snapshot even if the source changes later.
- * Display is rendered once, and the thumbnail reads the bounded display file.
+ * Makes both derivatives of the image at `sourcePath` in `dir`, provided its
+ * bytes are the ones `expectedHash` names. The file is hashed through bounded
+ * chunks, then sharp decodes it by path, since sharp gathers stream input into
+ * memory. The display image is made first, with EXIF orientation applied and no
+ * metadata carried, and the thumbnail from the display file, so the original is
+ * decoded once; `withoutEnlargement` keeps a small picture its own size. Each
+ * rendition is written under a temporary name and renamed into place.
  */
 export async function generateDerivatives(
   sourcePath: string,
   expectedHash: string,
   dir: string,
   workspaceRoot = path.dirname(sourcePath),
-  stageDirectory?: string,
-  progress?: () => void,
-  stageCreated?: () => void,
 ): Promise<DerivativeOutcome> {
-  let ownedStage: string | undefined;
+  const display = path.join(dir, `${derivativeName(expectedHash, "display")}.${randomUUID()}.tmp`);
+  const thumb = path.join(dir, `${derivativeName(expectedHash, "thumb")}.${randomUUID()}.tmp`);
   try {
     const sharp = await loadSharp();
-    await fsp.mkdir(dir, { recursive: true });
-    if (stageDirectory) {
-      await fsp.mkdir(path.dirname(stageDirectory), { recursive: true });
-      await fsp.mkdir(stageDirectory, { mode: 0o700 });
-      ownedStage = stageDirectory;
-    } else {
-      ownedStage = await fsp.mkdtemp(path.join(dir, ".generate-"));
-    }
-    stageCreated?.();
-    const snapshot = path.join(ownedStage, "source.snapshot");
-    const actual = await snapshotSource(sourcePath, workspaceRoot, snapshot, progress);
-    progress?.();
+    // Recheck after loading sharp: the registered path may have changed since
+    // listing.
+    safeResolveUnder(workspaceRoot, path.relative(workspaceRoot, sourcePath));
+    const actual = await hashFile(sourcePath);
     if (actual !== expectedHash) return { kind: "changed", actual };
-    const image = sharp(snapshot);
+    const image = sharp(sourcePath);
     const facts = imageFacts(await image.metadata());
-    progress?.();
     if (!facts) throw new Error("The image header gives no dimensions.");
     if (facts.animated) return { kind: "animated" };
-    const display = path.join(ownedStage, `display-${randomUUID()}.tmp`);
-    const thumb = path.join(ownedStage, `thumb-${randomUUID()}.tmp`);
+    await fsp.mkdir(dir, { recursive: true });
     await image.rotate()
       .resize({ width: DISPLAY_EDGE, height: DISPLAY_EDGE, fit: "inside", withoutEnlargement: true })
       .webp({ quality: WEBP_QUALITY })
       .toFile(display);
-    progress?.();
     await sharp(display)
       .resize({ width: THUMB_EDGE, height: THUMB_EDGE, fit: "inside", withoutEnlargement: true })
       .webp({ quality: WEBP_QUALITY })
       .toFile(thumb);
-    progress?.();
     await fsp.rename(display, path.join(dir, derivativeName(expectedHash, "display")));
     await fsp.rename(thumb, path.join(dir, derivativeName(expectedHash, "thumb")));
     return { kind: "generated" };
   } catch (error) {
     return { kind: "failed", error };
   } finally {
-    // Every pipeline and native decode/write was awaited before reaching here.
-    // Never remove a supplied directory unless this invocation created it.
-    if (ownedStage) await fsp.rm(ownedStage, { recursive: true, force: true }).catch(() => undefined);
+    await Promise.allSettled([fsp.rm(display, { force: true }), fsp.rm(thumb, { force: true })]);
   }
 }
 
-async function snapshotSource(sourcePath: string, workspaceRoot: string, snapshot: string, progress?: () => void): Promise<string> {
+async function hashFile(filePath: string): Promise<string> {
   const hash = createHash("sha256");
-  let source: FileHandle | undefined;
-  const destination = await fsp.open(snapshot, "wx", 0o600);
-  try {
-    // Node lacks descriptor-relative resolve-beneath: a hostile replacement
-    // between this check and open remains possible. The open descriptor pins
-    // the chosen source throughout the copy; later decoding uses only our file.
-    safeResolveUnder(workspaceRoot, path.relative(workspaceRoot, sourcePath));
-    source = await fsp.open(sourcePath, "r");
-    const hashing = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        hash.update(chunk);
-        progress?.();
-        callback(null, chunk);
-      },
-    });
-    await pipeline(source.createReadStream({ highWaterMark: 64 * 1024 }), hashing, destination.createWriteStream());
-    return hash.digest("hex");
-  } finally {
-    // pipeline closes its FileHandle streams, including on failure. Also close
-    // handles acquired before a stream could be connected.
-    await Promise.allSettled([source?.close(), destination.close()]);
-  }
+  for await (const chunk of createReadStream(filePath, { highWaterMark: 64 * 1024 })) hash.update(chunk as Buffer);
+  return hash.digest("hex");
 }

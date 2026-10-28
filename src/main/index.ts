@@ -28,7 +28,7 @@ import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { anyAiRequestRunning } from "./ipc/aiRequests.js";
 import { registerAssetScheme, handleAssetProtocol } from "./assetProtocol.js";
-import { closeImageDerivatives, configureImageDerivatives, sweepImageDerivatives } from "./imageDerivatives.js";
+import { configureImageDerivatives, sweepImageDerivatives } from "./imageDerivatives.js";
 import { installApplicationMenu } from "./menu.js";
 import { APP_NAME } from "@shared/appName";
 import { applyLanguagePreference, detectComputerLanguage } from "./i18n.js";
@@ -189,7 +189,6 @@ function logFlushOutcome(outcome: Awaited<ReturnType<typeof storageOwner.flushAs
 // records.sqlite3 lives in the storage root on the local disk, outside the
 // stalled volumes this path exists for.
 function terminateApp(storageSettled: boolean, exitCode = 0): void {
-  closeImageDerivatives();
   closeRecordsReader();
   if (!storageSettled) {
     console.error("[bigmouth] Storage did not settle within the exit bound; ending the process.");

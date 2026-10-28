@@ -1,11 +1,10 @@
-/** Registered image hashes, their derivative cache, and isolated generation admission. */
+/** Registered image hashes and their derivative cache. */
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { ImageDerivativeKind } from "@shared/ipc";
 import { visitRecordedHashes } from "./core/services/assetStore.js";
 import { info as logInfo, warn as logWarn, serializeError } from "./core/services/logger.js";
 import { generateDerivatives, derivativeName, parseDerivativeName, isContentHash, DERIVATIVE_VERSION } from "./imageGeneration.js";
-import { ImageHelperPool } from "./imageHelperPool.js";
 export { DERIVATIVE_VERSION, DISPLAY_EDGE, THUMB_EDGE, WEBP_QUALITY, derivativeName, parseDerivativeName, isContentHash, generateDerivatives, readImageFacts, imageFacts } from "./imageGeneration.js";
 export type { DerivativeOutcome, ImageFacts } from "./imageGeneration.js";
 export type { ImageDerivativeKind } from "@shared/ipc";
@@ -30,13 +29,14 @@ async function isFile(filePath: string): Promise<boolean> {
 
 /**
  * The derivative cache of this process: which hashes may be asked for, and the
- * bounded helper admission that makes their derivatives.
+ * queue that makes their derivatives.
  *
  * Only hashes main has seen among the assets it listed or installed for the
  * window are served or generated, each tied to the file that holds those bytes,
  * so the window cannot have an arbitrary file read or decoded by naming a hash.
- * The helper pool serializes each workspace independently and reserves room
- * for foreground requests. An image that failed, or turned out to be
+ * Generation runs one image at a time, whatever the number of images asked for,
+ * since each one can take a large share of memory and the CPU (libvips already
+ * uses several threads for one image). An image that failed, or turned out to be
  * animated, is not tried again this session, so a damaged file is not read at
  * every request; the next launch tries it again.
  */
@@ -44,15 +44,12 @@ export class ImageDerivatives {
   private readonly sources = new Map<string, Source>();
   private readonly unavailable = new Set<string>();
   private readonly pending = new Map<string, Promise<boolean>>();
-  private readonly foreground = new Set<string>();
-  private readonly pool = new ImageHelperPool();
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
     readonly dir: string,
-    private readonly generate?: typeof generateDerivatives,
+    private readonly generate: typeof generateDerivatives = generateDerivatives,
   ) {}
-
-  stop(): void { this.pool.stop(); }
 
   /** Records that the asset at `filePath` holds the bytes `hash` names. */
   register(hash: string, workspaceId: string, filePath: string, workspaceRoot: string): void {
@@ -77,41 +74,37 @@ export class ImageDerivatives {
     if (!isContentHash(hash) || !this.sources.has(hash)) return null;
     const file = path.join(this.dir, derivativeName(hash, kind));
     if (await isFile(file)) return file;
-    if (!(await this.ensure(hash, true))) return null;
+    if (!(await this.ensure(hash))) return null;
     return (await isFile(file)) ? file : null;
   }
 
   /** Starts making a newly added image's derivatives, so its card has one when it is shown. */
   prepare(hash: string): void {
-    void this.ensure(hash, false);
+    void this.ensure(hash);
   }
 
   /** Whether both derivatives of `hash` exist, making them in turn if needed. Never rejects. */
-  private ensure(hash: string, foreground: boolean): Promise<boolean> {
+  private ensure(hash: string): Promise<boolean> {
     if (this.unavailable.has(hash)) return Promise.resolve(false);
-    if (foreground) { this.foreground.add(hash); this.pool.promote(hash); }
     const running = this.pending.get(hash);
     if (running) return running;
-    const run = this.generateNow(hash, foreground).catch((error: unknown) => {
+    const run = this.queue.then(() => this.generateNow(hash)).catch((error: unknown) => {
       logWarn("image derivatives could not be made", { hash, error: serializeError(error) });
       return false;
     });
+    this.queue = run;
     this.pending.set(hash, run);
-    void run.finally(() => { this.pending.delete(hash); this.foreground.delete(hash); });
+    void run.finally(() => this.pending.delete(hash));
     return run;
   }
 
-  private async generateNow(hash: string, foreground: boolean): Promise<boolean> {
+  private async generateNow(hash: string): Promise<boolean> {
     if (await isFile(path.join(this.dir, derivativeName(hash, "display"))) &&
       await isFile(path.join(this.dir, derivativeName(hash, "thumb")))) return true;
     const source = this.sources.get(hash);
     if (!source) return false;
-    const outcome = await (this.generate
-      ? this.generate(source.filePath, hash, this.dir, source.workspaceRoot)
-      : this.pool.generate(source.workspaceId, source.filePath, hash, this.dir, source.workspaceRoot, foreground || this.foreground.has(hash)));
+    const outcome = await this.generate(source.filePath, hash, this.dir, source.workspaceRoot);
     switch (outcome.kind) {
-      case "busy":
-        return false;
       case "generated":
         return true;
       case "animated":
@@ -178,9 +171,6 @@ export function configureImageDerivatives(dir: string): ImageDerivatives {
   current = new ImageDerivatives(dir);
   return current;
 }
-
-/** Retire only this cache's owned helpers without delaying application exit. */
-export function closeImageDerivatives(): void { current?.stop(); }
 
 /** The cache, or null before startup has set it up. */
 export function imageDerivatives(): ImageDerivatives | null {
