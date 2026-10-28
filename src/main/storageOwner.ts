@@ -4,10 +4,6 @@ import type { ContentSaveEvent } from "./core/services/postStore.js";
 import type { StorageTasks } from "./storageTasks.js";
 import { DEBUG_LOG_FLAG } from "./core/services/logger.js";
 import { WORKER_ENTRIES } from "./builtEntries.js";
-import type { LogRecord } from "./core/services/recordsStore.js";
-import os from "node:os";
-import { StorageAdmission } from "./storageAdmission.js";
-import { createStorageFleet } from "./storageFleet.js";
 
 export const STORAGE_WAIT_MS = 10_000;
 export type StorageCommand = keyof StorageTasks;
@@ -20,7 +16,6 @@ const mutationCommands = new Set<StorageCommand>([
   "saveAnthropicSettings", "saveTargets", "saveAnalysisPrompts", "saveGenerationPrompts",
   "rebuildIndex", "createPost", "updatePost", "changeStatus",
   "setLocked", "deletePost", "renameTarget", "installAsset", "deleteAsset", "saveAppSettings",
-  "prepareWorkspace", "prepareExistingWorkspace", "registerPreparedWorkspace", "saveAnthropicConfig", "saveAnthropicKey",
 ]);
 const retainsSettlement = (name: StorageCommand) => mutationCommands.has(name);
 const isContent = (name: StorageCommand) => name === "queueWorkspaceContent";
@@ -36,8 +31,6 @@ export type StorageReply =
   | { id: number; ok: false; error: { name: string; message: string; stack?: string; cause?: unknown } }
   | { event: "content-save"; value: WorkspaceContentSaveEvent }
   | { event: "record-stored" }
-  | { event: "forward-log"; record: LogRecord; bytes: number }
-  | { event: "forward-log-gap" }
   | { event: "records-health"; value: RecordsHealth }
   | { event: "durability-unconfirmed" }
   | { event: "flush-settled" }
@@ -77,7 +70,7 @@ interface Waiting {
 interface HeldEdits { content?: StorageRequest; metadata: StorageRequest[] }
 
 /**
- * One serial filesystem executor and its unsettled requests.
+ * The app's one storage owner (transaction-and-external-effect-conventions).
  *
  * Pending post edits have one owner at a time. Once the worker accepts an edit,
  * the post store's write-behind buffer owns it until it is written or reported
@@ -87,7 +80,6 @@ interface HeldEdits { content?: StorageRequest; metadata: StorageRequest[] }
  * held only as they arrive, so they keep their order against other requests.
  */
 export class StorageOwner {
-  private readonly admission: StorageAdmission;
   private worker: Worker | null = null;
   private active: Waiting | null = null;
   private queued: Waiting[] = [];
@@ -107,18 +99,15 @@ export class StorageOwner {
   private recordsHealthListener: ((health: RecordsHealth) => void) | null = null;
   private recordListener: (() => void) | null = null;
   private heldFailureListener: ((request: StorageRequest, failure: unknown) => void) | null = null;
-  private logListener: ((event: Extract<StorageReply, { event: "forward-log" | "forward-log-gap" }>) => void) | null = null;
 
   constructor(private readonly createWorker = () => {
     const module = import.meta.url.endsWith(".ts") ? "./storageWorker.ts" : `./${WORKER_ENTRIES.storage}.js`;
     // The records are written on the worker, so it reads the debug switch there:
     // a worker sees only the arguments it is given, never the app's own.
     return new Worker(new URL(module, import.meta.url), { argv: process.argv.filter((arg) => arg === DEBUG_LOG_FLAG) });
-  }, pendingBytes = Math.floor(os.totalmem() / 256)) { this.admission = new StorageAdmission(pendingBytes); }
+  }) {}
 
   storagePending(): boolean { return this.active?.expired === true && retainsSettlement(this.active.request.name); }
-  isIdle(): boolean { return !this.active && !this.queued.length && !this.delivering.size && !this.held.size && !this.flushing && !this.closing && !this.failed; }
-  onForwardLog(listener: typeof this.logListener): void { this.logListener = listener; }
   onStoragePending(listener: ((pending: boolean) => void) | null): void { this.pendingListener = listener; }
 
   onContentSave(listener: ((event: WorkspaceContentSaveEvent) => void) | null): void { this.contentListener = listener; }
@@ -131,34 +120,11 @@ export class StorageOwner {
   onHeldEditFailed(listener: ((request: StorageRequest, failure: unknown) => void) | null): void { this.heldFailureListener = listener; }
 
   run<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>, boundMs = STORAGE_WAIT_MS): Promise<ReturnType<StorageTasks[K]>> {
-    return this.submit(name, args, boundMs, false);
-  }
-
-  /** The fleet already owns this immutable snapshot; do not duplicate a long draft while routing it. */
-  runOwned<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>, boundMs = STORAGE_WAIT_MS): Promise<ReturnType<StorageTasks[K]>> {
-    return this.submit(name, args, boundMs, true);
-  }
-
-  private submit<K extends StorageCommand>(name: K, args: Parameters<StorageTasks[K]>, boundMs: number, owned: boolean): Promise<ReturnType<StorageTasks[K]>> {
+    const request: StorageRequest = { id: ++this.sequence, name, args: structuredClone(args) };
     if (this.closing) return Promise.reject(new Error("Storage is closing."));
     if (this.failed) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
-    const id = ++this.sequence;
-    const previous = isContent(name) ? this.held.get(JSON.stringify([args[0], args[1]]))?.content : undefined;
-    if (!this.admission.replace(previous?.id ?? id, id, args)) {
-      return Promise.reject(new Error("Storage cannot accept more pending work until its earlier operations settle. This edit was not accepted."));
-    }
-    let request: StorageRequest;
-    try { request = { id, name, args: owned ? args : structuredClone(args) }; }
-    catch (error) {
-      this.admission.release(id);
-      if (previous) this.admission.reserve(previous.id, previous.args);
-      return Promise.reject(error);
-    }
     if (name !== "resumePendingFlushes" && (this.flushing || this.active?.expired)) {
-      if (!isAuthored(name)) {
-        this.admission.release(id);
-        return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
-      }
+      if (!isAuthored(name)) return Promise.reject(new Error("Storage is unavailable while its previous operation settles."));
       this.hold(request);
       return Promise.reject(new EditPendingError());
     }
@@ -183,10 +149,7 @@ export class StorageOwner {
         // this worker until its actual result settles; no successor runs. An
         // edit, or a cancelled quit's resumption, keeps its queue position so it
         // still runs in order; other queued work is dropped.
-        if (!mustReachWorker(request.name)) {
-          this.queued = this.queued.filter((item) => item !== waiting);
-          if (!waiting.started) this.admission.release(request.id);
-        }
+        if (!mustReachWorker(request.name)) this.queued = this.queued.filter((item) => item !== waiting);
         reject(isAuthored(request.name)
           ? new EditPendingError()
           : new Error(waiting.started || mustReachWorker(request.name)
@@ -234,7 +197,7 @@ export class StorageOwner {
       || (this.active !== null && isAuthored(this.active.request.name));
   }
 
-  beginFlush() {
+  private beginFlush() {
     if (!this.worker || this.failed) throw new Error("Storage is unavailable.");
     if (this.flushing) throw new Error("The previous storage flush is still running.");
     this.flushing = true;
@@ -298,7 +261,7 @@ export class StorageOwner {
     } catch (error) { return { kind: "crashed", error: error instanceof Error ? error.message : String(error) }; }
   }
 
-  beginFinish(backupBoundMs: number) {
+  private beginFinish(backupBoundMs: number) {
     if (!this.worker || this.failed) return null;
     this.closing = true;
     const queued = this.queued.splice(0);
@@ -393,8 +356,7 @@ export class StorageOwner {
 
   private receive(reply: StorageReply): void {
     if ("event" in reply) {
-      if (reply.event === "forward-log" || reply.event === "forward-log-gap") this.logListener?.(reply);
-      else if (reply.event === "durability-unconfirmed") { this.unconfirmedDurability = true; this.durabilityListener?.(); }
+      if (reply.event === "durability-unconfirmed") { this.unconfirmedDurability = true; this.durabilityListener?.(); }
       else if (reply.event === "records-health") {
         this.recordsHealthValue = reply.value;
         this.recordsHealthListener?.({ ...reply.value });
@@ -430,7 +392,6 @@ export class StorageOwner {
 
   private settle(waiting: Waiting, outcome: { ok: true; value: unknown } | { ok: false; error: Error }): void {
     clearTimeout(waiting.timer);
-    this.admission.release(waiting.request.id);
     // A timed-out authored edit was reported as held, not discarded. Its
     // eventual refusal still belongs to the field/save-status owner.
     if (outcome.ok) {
@@ -447,7 +408,6 @@ export class StorageOwner {
   }
 
   private failWaiting(error: Error): void {
-    this.admission.clear();
     const waiting = [this.active, ...this.queued, ...this.delivering.values()];
     const held = this.takeHeld();
     const wasPending = this.storagePending();
@@ -465,4 +425,4 @@ export class StorageOwner {
   }
 }
 
-export const storageOwner = createStorageFleet(StorageOwner);
+export const storageOwner = new StorageOwner();

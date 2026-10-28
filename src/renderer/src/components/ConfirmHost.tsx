@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { presentFailure } from "../util/presentFailure";
 import { message, type Message } from "@shared/i18n/translate";
-import { useStoragePendingFor, useStorageScopeIdentity, useStorageResultReporter } from "../StoragePending";
+import { useStoragePending, useStorageResultReporter } from "../StoragePending";
 
 export interface ConfirmOptions {
   title?: string;
@@ -20,17 +20,15 @@ export interface ConfirmOptions {
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
-type ScopedConfirmFn = (options: ConfirmOptions, workspaceId: string | null) => Promise<boolean>;
 
 // A queued request: the options plus the resolver of the promise handed back to
 // the caller of confirm(). The promise always settles — confirm resolves true,
 // cancel/Escape/backdrop resolve false.
 interface ConfirmRequest extends ConfirmOptions {
-  workspaceId: string | null;
   resolve: (result: boolean) => void;
 }
 
-const ConfirmContext = createContext<ScopedConfirmFn | null>(null);
+const ConfirmContext = createContext<ConfirmFn | null>(null);
 
 /**
  * The single, app-wide promise-based confirm host. `confirm(opts)` enqueues a
@@ -39,6 +37,7 @@ const ConfirmContext = createContext<ScopedConfirmFn | null>(null);
  * is therefore the topmost layer in the modal stack and paints on top.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const storagePending = useStoragePending();
   const reportStorageResult = useStorageResultReporter();
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
   const [busy, setBusy] = useState(false);
@@ -61,9 +60,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const confirm = useCallback<ScopedConfirmFn>((options, workspaceId) => {
+  const confirm = useCallback<ConfirmFn>((options) => {
     return new Promise<boolean>((resolve) => {
-      const next = [...queueRef.current, { ...options, workspaceId, resolve }];
+      const next = [...queueRef.current, { ...options, resolve }];
       queueRef.current = next;
       setQueue(next);
     });
@@ -81,7 +80,6 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const head = queue[0];
-  const storagePending = useStoragePendingFor(head?.workspaceId ?? null);
 
   const handleConfirm = useCallback(() => {
     const request = head;
@@ -146,9 +144,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 /** Returns the app-wide `confirm` function. Must be called under a ConfirmProvider. */
 export function useConfirm(): ConfirmFn {
   const confirm = useContext(ConfirmContext);
-  const workspaceId = useStorageScopeIdentity();
   if (!confirm) {
     throw new Error("useConfirm must be used within a ConfirmProvider");
   }
-  return useCallback((options: ConfirmOptions) => confirm(options, workspaceId), [confirm, workspaceId]);
+  return confirm;
 }

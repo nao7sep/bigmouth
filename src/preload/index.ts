@@ -241,7 +241,7 @@ const api = {
     ipcRenderer.on(CHANNELS.durabilityUnconfirmed, callback);
     return () => ipcRenderer.removeListener(CHANNELS.durabilityUnconfirmed, callback);
   },
-  getStoragePending: (workspaceId?: string | null) => ipcRenderer.invoke(CHANNELS.getStoragePending, workspaceId) as Promise<boolean>,
+  getStoragePending: () => ipcRenderer.invoke(CHANNELS.getStoragePending) as Promise<boolean>,
   onStoragePendingChanged: (listener: (pending: boolean) => void) => {
     const callback = (_event: unknown, pending: unknown) => { if (typeof pending === "boolean") listener(pending); };
     ipcRenderer.on(CHANNELS.storagePendingChanged, callback);

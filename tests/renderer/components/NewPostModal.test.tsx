@@ -7,8 +7,6 @@ import type { PostListResponse, PostSummary, Target } from "@shared/types";
 // ConfirmProvider.
 vi.mock("@renderer/api", () => ({
   reportProblem: vi.fn(),
-  getStoragePending: vi.fn().mockResolvedValue(false),
-  onStoragePendingChanged: vi.fn(() => () => {}),
   listPosts: vi.fn(),
 }));
 

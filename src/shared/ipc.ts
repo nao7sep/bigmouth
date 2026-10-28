@@ -385,7 +385,7 @@ export type Platform =
 export interface BigMouthApi {
   getDurabilityUnconfirmed(): Promise<boolean>;
   onDurabilityUnconfirmed(listener: () => void): () => void;
-  getStoragePending(workspaceId?: string | null): Promise<boolean>;
+  getStoragePending(): Promise<boolean>;
   onStoragePendingChanged(listener: (pending: boolean) => void): () => void;
   /** The running OS, exposed synchronously from the preload (process.platform). */
   platform: Platform;

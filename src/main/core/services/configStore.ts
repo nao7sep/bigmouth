@@ -217,17 +217,13 @@ export interface RoleCall {
  * workspace). NEVER send the result to the renderer.
  */
 export function getRoleCall(workspace: Workspace, role: AiRole): RoleCall {
-  return { ...getRoleConfig(workspace.dataDirectory, role), apiKey: resolveAnthropicKey(workspace.id) };
-}
-
-/** Workspace-only call settings; resolving app-local credentials has a separate owner. */
-export function getRoleConfig(dataDir: string, role: AiRole): Omit<RoleCall, "apiKey"> {
-  const section = anthropicSection(readConfig(dataDir));
+  const section = anthropicSection(readConfig(workspace.dataDirectory));
   const model = section.models[role];
   return {
     endpoint: section.endpoint,
     model,
     thinking: thinkingFor(model, section.thinking[role]),
+    apiKey: apiKeys.resolveApiKey(getApiKeysPath(), workspace.id, "anthropic"),
   };
 }
 
@@ -237,15 +233,10 @@ export function getRoleConfig(dataDir: string, role: AiRole): Omit<RoleCall, "ap
  * environment overrides it. The key value never crosses the IPC bridge.
  */
 export function getAnthropicSettingsForClient(workspace: Workspace): AnthropicSettingsView {
-  return { ...getAnthropicConfigForClient(workspace.dataDirectory), ...getAnthropicKeyState(workspace.id) };
+  return anthropicSettingsView(workspace, readConfig(workspace.dataDirectory));
 }
 
-/** The renderer's workspace config projection, independent of the app-local key store. */
-export function getAnthropicConfigForClient(dataDir: string): AnthropicSettings {
-  return anthropicConfigView(readConfig(dataDir));
-}
-
-function anthropicConfigView(config: WorkspaceConfig): AnthropicSettings {
+function anthropicSettingsView(workspace: Workspace, config: WorkspaceConfig): AnthropicSettingsView {
   const section = anthropicSection(config);
   const thinking = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) {
@@ -254,6 +245,9 @@ function anthropicConfigView(config: WorkspaceConfig): AnthropicSettings {
   return {
     ...section,
     thinking,
+    hasApiKey: apiKeys.hasStoredApiKey(getApiKeysPath(), workspace.id, "anthropic"),
+    usingEnvKey: apiKeys.hasEnvApiKey("anthropic"),
+    keyNotice: apiKeys.keyFileProblem(getApiKeysPath()),
   };
 }
 
@@ -264,41 +258,12 @@ function anthropicConfigView(config: WorkspaceConfig): AnthropicSettings {
  * aside, the returned notice says where it went.
  */
 export function saveAnthropicSettings(workspace: Workspace, input: AnthropicSettingsInput): AnthropicSettingsView {
-  const { apiKey, ...configInput } = input;
-  const movedTo = saveAnthropicKey(workspace.id, apiKey ?? "");
-  const config = saveAnthropicConfig(workspace.dataDirectory, configInput);
-  const view = { ...config, ...getAnthropicKeyState(workspace.id) };
-  return movedTo ? { ...view, keyNotice: message("settings.keyFileMovedAside", { path: movedTo }) } : view;
-}
-
-/** Saves only workspace config sets and returns their published interpretation. */
-export function saveAnthropicConfig(dataDir: string, input: Omit<AnthropicSettingsInput, "apiKey">): AnthropicSettings {
+  const movedTo = input.apiKey?.trim() ? apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey) : null;
   const models = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) models[role] = input.models[role].trim();
-  const config = writeSets(dataDir, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
-  return anthropicConfigView(config);
-}
-
-export type AnthropicKeyState = Pick<AnthropicSettingsView, "hasApiKey" | "usingEnvKey" | "keyNotice">;
-
-/** App-local key availability; no workspace config is read. */
-export function getAnthropicKeyState(workspaceId: string): AnthropicKeyState {
-  const filePath = getApiKeysPath();
-  return {
-    hasApiKey: apiKeys.hasStoredApiKey(filePath, workspaceId, "anthropic"),
-    usingEnvKey: apiKeys.hasEnvApiKey("anthropic"),
-    keyNotice: apiKeys.keyFileProblem(filePath),
-  };
-}
-
-/** Main-process only: the resolved plaintext credential never crosses the renderer bridge. */
-export function resolveAnthropicKey(workspaceId: string): string | null {
-  return apiKeys.resolveApiKey(getApiKeysPath(), workspaceId, "anthropic");
-}
-
-/** Blank input preserves the key; explicit replacement may return a preserved damaged-file path. */
-export function saveAnthropicKey(workspaceId: string, key: string): string | null {
-  return key.trim() ? apiKeys.writeApiKey(getApiKeysPath(), workspaceId, "anthropic", key) : null;
+  const config = writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
+  const view = anthropicSettingsView(workspace, config);
+  return movedTo ? { ...view, keyNotice: message("settings.keyFileMovedAside", { path: movedTo }) } : view;
 }
 
 // --- Targets ------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import type { BackupWrite } from "./backupWorker.js";
 
-interface Entry { write: BackupWrite; bytes: number; descriptors: number; onRelease?: () => void }
+interface Entry { write: BackupWrite; bytes: number; descriptors: number }
 
 /** One in flight; replace only pending versions, preserving the order of their latest saves. */
 export class BackupAdmission {
@@ -18,7 +18,7 @@ export class BackupAdmission {
   ) {}
 
   /** The caller owns its bytes; copy only once admission succeeds. File descriptors are consumed. */
-  offer(write: BackupWrite, onRelease?: () => void): void {
+  offer(write: BackupWrite): void {
     let retained = false;
     try {
       this.reap();
@@ -35,26 +35,17 @@ export class BackupAdmission {
       const owned = write.kind === "record" ? { ...write, bytes: new Uint8Array(write.bytes) } : write;
       this.bytes += bytes;
       this.descriptors += descriptors;
-      this.pending.set(key, { write: owned, bytes, descriptors, onRelease });
+      this.pending.set(key, { write: owned, bytes, descriptors });
       retained = true;
       this.dispatch();
-    } finally {
-      if (!retained) {
-        if (onRelease) onRelease();
-        else this.release(write);
-      }
-    }
+    } finally { if (!retained) this.release(write); }
   }
 
   private discard(entry: Entry): void {
     this.bytes -= entry.bytes;
     this.descriptors -= entry.descriptors;
-    if (entry.onRelease) entry.onRelease();
-    else this.release(entry.write);
+    this.release(entry.write);
   }
-
-  /** No submitted or pending version still owns bytes or a descriptor. */
-  get isIdle(): boolean { return this.active === null && this.pending.size === 0; }
 
   /** Shared completion works even while the origin is synchronously draining at shutdown. */
   reap(): void {

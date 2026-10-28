@@ -10,14 +10,13 @@ import type { Message } from "@shared/i18n/translate";
 type ResultReporter = (message: Message | ListedMessage, severity?: "warning" | "error") => void;
 type StorageResult = { id: number; listed: ListedMessage; severity: "warning" | "error" };
 export const StoragePendingContext = createContext(false);
-const StorageScopeContext = createContext<string | null>(null);
 const DurabilityContext = createContext(false);
 const StorageResultContext = createContext<ResultReporter>(() => {});
 const StorageResultsContext = createContext<{ results: StorageResult[]; dismiss: (id: number) => void }>({ results: [], dismiss: () => {} });
 
 /** A slow started change still belongs to storage until its actual result arrives. */
 export function StoragePendingProvider({ children }: { children: ReactNode }) {
-  const pending = useStoragePendingFor(null);
+  const [pending, setPending] = useState(false);
   const [unconfirmed, setUnconfirmed] = useState(false);
   useEffect(() => {
     let active = true;
@@ -37,45 +36,27 @@ export function StoragePendingProvider({ children }: { children: ReactNode }) {
     setResults((current) => [...current, { id, listed, severity }]);
   }, []);
   const dismiss = useCallback((id: number) => setResults((current) => current.filter((result) => result.id !== id)), []);
-  return <StorageScopeContext.Provider value={null}><StoragePendingContext.Provider value={pending}>
+  useEffect(() => {
+    let active = true;
+    let receivedEvent = false;
+    const off = onStoragePendingChanged((next) => {
+      if (!active) return;
+      receivedEvent = true;
+      setPending(next);
+    });
+    void getStoragePending().then((initial) => {
+      if (active && !receivedEvent) setPending(initial);
+    }).catch((error: unknown) => reportProblem("renderer: pending storage state could not be read", error));
+    return () => { active = false; off(); };
+  }, []);
+  return <StoragePendingContext.Provider value={pending}>
     <StorageResultContext.Provider value={report}>
       <DurabilityContext.Provider value={unconfirmed}>
         <StorageResultsContext.Provider value={{ results, dismiss }}>{children}</StorageResultsContext.Provider>
       </DurabilityContext.Provider>
     </StorageResultContext.Provider>
-  </StoragePendingContext.Provider></StorageScopeContext.Provider>;
+  </StoragePendingContext.Provider>;
 }
-
-/** Pending changes are queried for their owner; the broadcast only invalidates the query. */
-export function useStoragePendingFor(workspaceId: string | null): boolean {
-  const [snapshot, setSnapshot] = useState({ workspaceId, pending: false });
-  useEffect(() => {
-    let active = true;
-    let generation = 0;
-    setSnapshot({ workspaceId, pending: false });
-    const read = () => {
-      const request = ++generation;
-      void getStoragePending(workspaceId).then((pending) => {
-        if (active && generation === request) setSnapshot({ workspaceId, pending });
-      }).catch((error: unknown) => {
-        if (active && generation === request) reportProblem("renderer: pending storage state could not be read", error);
-      });
-    };
-    const off = onStoragePendingChanged(read);
-    read();
-    return () => { active = false; off(); };
-  }, [workspaceId]);
-  return snapshot.workspaceId === workspaceId && snapshot.pending;
-}
-
-export function StoragePendingScope({ workspaceId, children }: { workspaceId: string | null; children: ReactNode }) {
-  const pending = useStoragePendingFor(workspaceId);
-  return <StorageScopeContext.Provider value={workspaceId}>
-    <StoragePendingContext.Provider value={pending}>{children}</StoragePendingContext.Provider>
-  </StorageScopeContext.Provider>;
-}
-
-export function useStorageScopeIdentity(): string | null { return useContext(StorageScopeContext); }
 
 export function useStoragePending(): boolean { return useContext(StoragePendingContext); }
 export function useStorageResultReporter(): ResultReporter { return useContext(StorageResultContext); }

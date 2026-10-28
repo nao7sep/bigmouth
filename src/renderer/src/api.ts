@@ -126,7 +126,7 @@ export function pickWorkspaceDirectory(purpose: "workspace" | "create", initialD
 export function getDurabilityUnconfirmed(): Promise<boolean> { return bridge().getDurabilityUnconfirmed(); }
 export function onDurabilityUnconfirmed(listener: () => void): () => void { return bridge().onDurabilityUnconfirmed(listener); }
 /** A started user mutation exceeded its normal wait and still owns its result. */
-export function getStoragePending(workspaceId?: string | null): Promise<boolean> { return bridge().getStoragePending(workspaceId); }
+export function getStoragePending(): Promise<boolean> { return bridge().getStoragePending(); }
 export function onStoragePendingChanged(listener: (pending: boolean) => void): () => void {
   return bridge().onStoragePendingChanged(listener);
 }

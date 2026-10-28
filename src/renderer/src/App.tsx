@@ -27,7 +27,7 @@ import { presentFailure } from "./util/presentFailure";
 import { OperationalResult } from "./components/OperationalResult";
 import { useI18n } from "./i18n/I18nContext";
 import { message, type Message } from "@shared/i18n/translate";
-import { StoragePendingNotice, StoragePendingResults, StoragePendingScope, useStorageResultReporter } from "./StoragePending";
+import { StoragePendingNotice, StoragePendingResults, useStorageResultReporter } from "./StoragePending";
 import "./App.css";
 
 // Each side pane stores an INTENT width in pixels: the width the user resized
@@ -392,9 +392,7 @@ export function App() {
 
   const shellResultStack = (
     <div className="app-operational-results">
-      <StoragePendingScope workspaceId={activeWorkspace?.id ?? setupWorkspace?.id ?? null}>
-        <StoragePendingNotice className="app-operational-result" />
-      </StoragePendingScope>
+      <StoragePendingNotice className="app-operational-result" />
       <StoragePendingResults />
       {shellResults.map((result) => (
         <OperationalResult
@@ -411,9 +409,7 @@ export function App() {
 
   if (!activeWorkspace) {
     const gate = setupWorkspace ? (
-      <StoragePendingScope workspaceId={setupWorkspace.id}>
-        <SetupModal workspace={setupWorkspace} onFinish={handleSelectWorkspace} />
-      </StoragePendingScope>
+      <SetupModal workspace={setupWorkspace} onFinish={handleSelectWorkspace} />
     ) : workspaceModal;
     return <>{gate}{shellResultStack}</>;
   }
@@ -425,7 +421,6 @@ export function App() {
           className="workspace-floor"
           style={{ minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }}
         >
-          <StoragePendingScope workspaceId={activeWorkspace.id}>
           <WorkspaceSession
             ref={sessionRef}
             appLayoutRef={appLayoutRef}
@@ -446,7 +441,6 @@ export function App() {
             onSwitchWorkspace={() => setWorkspaceModalOpen(true)}
             onWorkspaceUpdated={handleActiveWorkspaceUpdated}
           />
-          </StoragePendingScope>
         </div>
       </div>
       {workspaceModalOpen && workspaceModal}

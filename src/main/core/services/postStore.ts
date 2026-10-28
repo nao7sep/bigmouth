@@ -126,11 +126,6 @@ const LOCKED_REASON = "post is locked";
 const pendingEdits = new Map<string, Map<string, PendingEdit>>();
 const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
 
-/** Terminal/refused buffers also prevent retirement: the author still owns their rescue copy. */
-export function hasPendingEdits(): boolean {
-  return [...pendingEdits.values()].some((posts) => posts.size > 0);
-}
-
 /**
  * What became of a buffered edit. Retryable and terminal are deliberately
  * distinct: `save-failed` is retryable (the same write can land later), while

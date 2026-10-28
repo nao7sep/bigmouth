@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import type { Settings, Workspace } from "@shared/types";
-const pendingBridge = vi.hoisted(() => ({ pending: new Set<string>(), listeners: new Set<(pending: boolean) => void>() }));
+const pendingBridge = vi.hoisted(() => ({ listeners: new Set<(pending: boolean) => void>() }));
 
 // First-run setup comes after the workspace window created the first workspace:
 // it asks for that workspace's first target, saved through the ordinary call
 // the moment the user finishes, then opens the workspace. The api is mocked so
 // the save, and what a skip leaves unwritten, can be asserted directly.
 vi.mock("@renderer/api", () => ({
-  getStoragePending: vi.fn(async (workspaceId?: string | null) => workspaceId ? pendingBridge.pending.has(workspaceId) : false),
+  getStoragePending: vi.fn(async () => false),
   getDurabilityUnconfirmed: vi.fn().mockResolvedValue(false),
   onDurabilityUnconfirmed: vi.fn(() => () => {}),
   onStoragePendingChanged: (listener: (pending: boolean) => void) => {
@@ -22,7 +22,7 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { SetupModal } from "@renderer/components/SetupModal";
-import { StoragePendingProvider, StoragePendingResults, StoragePendingScope } from "@renderer/StoragePending";
+import { StoragePendingProvider, StoragePendingResults } from "@renderer/StoragePending";
 import { getSettings, listTargets, saveTargets } from "@renderer/api";
 
 const mockListTargets = vi.mocked(listTargets);
@@ -33,7 +33,6 @@ const mockWriteRendererLog = vi.fn();
 const WS: Workspace = { id: "ws1", name: "My Blog", dataDirectory: "/home/me/Documents/BigMouth/My Blog" };
 
 beforeEach(() => {
-  pendingBridge.pending.clear();
   mockWriteRendererLog.mockReset();
   Object.defineProperty(window, "bigmouth", { configurable: true, value: { writeRendererLog: mockWriteRendererLog } });
   mockListTargets.mockResolvedValue([]);
@@ -60,7 +59,7 @@ async function renderDepartableSetup() {
   const onFinish = vi.fn();
   const tree = (shown: boolean) => (
     <StoragePendingProvider>
-      {shown && <StoragePendingScope workspaceId={WS.id}><SetupModal workspace={WS} onFinish={onFinish} /></StoragePendingScope>}
+      {shown && <SetupModal workspace={WS} onFinish={onFinish} />}
       <StoragePendingResults />
     </StoragePendingProvider>
   );
@@ -69,11 +68,8 @@ async function renderDepartableSetup() {
   return { ...view, onFinish, leave: () => view.rerender(tree(false)) };
 }
 
-async function announcePending() {
-  await act(async () => {
-    pendingBridge.pending.add(WS.id);
-    for (const listener of pendingBridge.listeners) listener(true);
-  });
+function announcePending() {
+  act(() => { for (const listener of pendingBridge.listeners) listener(true); });
 }
 
 describe("SetupModal — pending changes retain their result after leaving", () => {
@@ -84,7 +80,7 @@ describe("SetupModal — pending changes retain their result after leaving", () 
     await click(view.getByText("Finish"));
     expect(view.getByRole("button", { name: "Saving…" })).toBeTruthy();
     expect(view.queryByText("Skip")).toBeNull();
-    await announcePending();
+    announcePending();
     await click(view.getByText("Skip"));
     expect(view.onFinish).toHaveBeenCalledExactlyOnceWith(WS);
     await act(async () => { work.resolve([]); });
@@ -96,7 +92,7 @@ describe("SetupModal — pending changes retain their result after leaving", () 
     mockSaveTargets.mockReturnValue(work.promise);
     const view = await renderDepartableSetup();
     await click(view.getByText("Finish"));
-    await announcePending();
+    announcePending();
     await click(view.getByText("Skip"));
     view.leave();
     await act(async () => { work.reject(new Error("private target diagnostic")); });
