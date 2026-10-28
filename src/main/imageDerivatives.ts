@@ -9,6 +9,17 @@ export { DERIVATIVE_VERSION, DISPLAY_EDGE, THUMB_EDGE, WEBP_QUALITY, derivativeN
 export type { DerivativeOutcome, ImageFacts } from "./imageGeneration.js";
 export type { ImageDerivativeKind } from "@shared/ipc";
 const TEMPORARY_NAME = /^[0-9a-f]{64}-v\d+-(?:thumb|display)\.webp\.[0-9a-f-]+\.tmp$/;
+/**
+ * Engineering bound. Lanes of the derivative queue, so this many images are
+ * made at once. Measured on an Apple M4 (10 cores): one 12 MP or 24 MP JPEG
+ * takes about 0.24 s and keeps one core busy (process CPU near 100%), so a post
+ * of 12 photos waits about 2.8 s one at a time; 2, 3 and 4 at once finish it
+ * 1.9, 2.8 and 3.3 times sooner. Three leaves one of the main process's four
+ * libuv threads, which sharp runs on, for file reads, and holds at most three
+ * decoded images (about 60 MB more each for a 24 MP PNG). A hash picks its lane,
+ * so lanes fill unevenly, and 12 images finish about twice as soon on average.
+ */
+const LANES = 3;
 
 // --- The cache ---
 
@@ -33,39 +44,40 @@ async function isFile(filePath: string): Promise<boolean> {
  * Only hashes main has seen among the assets it listed or installed for the
  * window are served or generated, each tied to the file that holds those bytes,
  * so the window cannot have an arbitrary file read or decoded by naming a hash.
- * Every command — registering, forgetting, serving, generating and sweeping —
- * takes its turn in the queue, so generation runs one image at a time, whatever
- * the number of images asked for, since each one can take a large share of
- * memory and the CPU (libvips already uses several threads for one image), and a
- * repeated request finds the files the earlier one made. An image that failed,
- * or turned out to be animated, is not tried again this session, so a damaged
+ * Every command takes its turn in a queue: registering, serving and generating
+ * in the lane its hash picks, so one image's requests run in order and a
+ * repeated one finds the files the earlier one made; forgetting and sweeping
+ * after every lane, with every lane waiting for them. An image that failed, or
+ * turned out to be animated, is not tried again this session, so a damaged
  * file is not read at every request; the next launch tries it again.
  */
 export class ImageDerivatives {
   private readonly sources = new Map<string, Source>();
   private readonly unavailable = new Set<string>();
-  private queue: Promise<unknown> = Promise.resolve();
+  private lanes: Promise<unknown>[] = Array.from({ length: LANES }, () => Promise.resolve());
 
   constructor(
     readonly dir: string,
     private readonly generate: typeof generateDerivatives = generateDerivatives,
   ) {}
 
-  /** Runs `command` after every command before it. */
-  private enqueue<T>(command: () => T | Promise<T>): Promise<T> {
-    const run = this.queue.then(command);
-    this.queue = run.catch(() => undefined);
+  /** Runs `command` after the commands before it in `hash`'s lane, or with no hash, after every command before it. */
+  private enqueue<T>(hash: string | null, command: () => T | Promise<T>): Promise<T> {
+    const lane = hash === null ? null : Number.parseInt(hash.slice(0, 8), 16) % LANES;
+    const run = (lane === null ? Promise.all(this.lanes) : this.lanes[lane]).then(command);
+    const settled = run.catch(() => undefined);
+    this.lanes = this.lanes.map((previous, index) => (lane === null || index === lane ? settled : previous));
     return run;
   }
 
   /** Records that the asset at `filePath` holds the bytes `hash` names. */
   register(hash: string, workspaceId: string, filePath: string): void {
-    if (isContentHash(hash)) void this.enqueue(() => { this.sources.set(hash, { workspaceId, filePath }); });
+    if (isContentHash(hash)) void this.enqueue(hash, () => { this.sources.set(hash, { workspaceId, filePath }); });
   }
 
   /** Stops serving the assets of a workspace that was removed from the registry. */
   forgetWorkspace(workspaceId: string): void {
-    void this.enqueue(() => {
+    void this.enqueue(null, () => {
       for (const [hash, source] of this.sources) if (source.workspaceId === workspaceId) this.sources.delete(hash);
     });
   }
@@ -77,7 +89,7 @@ export class ImageDerivatives {
    */
   resolve(hash: string, kind: ImageDerivativeKind): Promise<string | null> {
     if (!isContentHash(hash)) return Promise.resolve(null);
-    return this.enqueue(async () => {
+    return this.enqueue(hash, async () => {
       if (!this.sources.has(hash)) return null;
       const file = path.join(this.dir, derivativeName(hash, kind));
       if (await isFile(file)) return file;
@@ -87,10 +99,10 @@ export class ImageDerivatives {
 
   /** Starts making a newly added image's derivatives, so its card has one when it is shown. */
   prepare(hash: string): void {
-    void this.enqueue(() => this.ensure(hash));
+    void this.enqueue(hash, () => this.ensure(hash));
   }
 
-  /** Whether both derivatives of `hash` exist, making them if needed. Runs in the queue; never rejects. */
+  /** Whether both derivatives of `hash` exist, making them if needed. Runs in its lane; never rejects. */
   private async ensure(hash: string): Promise<boolean> {
     if (this.unavailable.has(hash)) return false;
     try {
@@ -132,11 +144,11 @@ export class ImageDerivatives {
   /**
    * Removes the derivatives no asset names: those of a hash outside `referenced`
    * and not registered this session, those of an older format version, and
-   * temporary files an interrupted generation left. It takes its turn in the
-   * queue, so nothing is being made meanwhile. Returns how many files it removed.
+   * temporary files an interrupted generation left. It runs after every lane,
+   * so nothing is being made meanwhile. Returns how many files it removed.
    */
   sweep(referenced: ReadonlySet<string>): Promise<number> {
-    return this.enqueue(async () => {
+    return this.enqueue(null, async () => {
       let names: string[];
       try {
         names = await fsp.readdir(this.dir);

@@ -1,6 +1,6 @@
 // Covers image derivatives: their names and format version, generation that
 // writes both files whole and only for the bytes it was asked about, what an
-// animated, changed or damaged image gets (nothing), the one-at-a-time queue,
+// animated, changed or damaged image gets (nothing), the queue's lanes,
 // session memory of failures, the refusal of unknown hashes, and the sweep.
 // Images are made by sharp in each test; no fixtures are kept.
 
@@ -229,7 +229,7 @@ function controlledGenerator() {
 describe("ImageDerivatives", () => {
   const a = "a".repeat(64);
   const b = "b".repeat(64);
-  const c = "c".repeat(64);
+  const d = "d".repeat(64);
 
   it("refuses a hash no listed asset has, and never generates for it", async () => {
     const { generate } = controlledGenerator();
@@ -249,29 +249,36 @@ describe("ImageDerivatives", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it("makes one image at a time, however many are asked for, and each once", async () => {
+  it("makes images side by side in the lanes their hashes pick, each image's requests in turn and each once", async () => {
+    // a and d share a lane; b has its own.
     const { generate, runs, started, mostAtOnce } = controlledGenerator();
     const cache = new ImageDerivatives(thumbnails, generate);
-    for (const hash of [a, b, c]) cache.register(hash, "ws", path.join(root, `${hash}.png`));
+    for (const hash of [a, b, d]) cache.register(hash, "ws", path.join(root, `${hash}.png`));
 
-    const asked = [cache.resolve(a, "thumb"), cache.resolve(a, "display"), cache.resolve(b, "thumb"), cache.resolve(c, "display")];
-    await started(1);
-    runs[0].settle({ kind: "generated" });
+    const asked = [cache.resolve(a, "thumb"), cache.resolve(a, "display"), cache.resolve(b, "thumb"), cache.resolve(d, "display")];
+    let swept = false;
+    const sweeping = cache.sweep(new Set()).then(() => { swept = true; });
     await started(2);
-    runs[1].settle({ kind: "generated" });
+    expect(runs.map((run) => run.hash).sort()).toEqual([a, b]);
+    runs.find((run) => run.hash === a)!.settle({ kind: "generated" });
     await started(3);
-    runs[2].settle({ kind: "generated" });
+    expect(swept).toBe(false);
+    for (const run of runs.filter((run) => run.hash !== a)) run.settle({ kind: "generated" });
 
     const served = await Promise.all(asked);
     expect(served.map((file) => file && path.basename(file))).toEqual([
       derivativeName(a, "thumb"),
       derivativeName(a, "display"),
       derivativeName(b, "thumb"),
-      derivativeName(c, "display"),
+      derivativeName(d, "display"),
     ]);
-    // Requests take their turns in order, and a repeated one finds the files.
-    expect(runs.map((run) => run.hash)).toEqual([a, b, c]);
-    expect(mostAtOnce()).toBe(1);
+    // A repeated request finds the files; d waited for a's lane.
+    expect(runs.map((run) => run.hash).sort()).toEqual([a, b, d]);
+    expect(runs[2].hash).toBe(d);
+    expect(mostAtOnce()).toBe(2);
+    // The sweep waited for every lane, so it removed nothing being made.
+    await sweeping;
+    expect(cacheFiles()).toHaveLength(6);
   });
 
   it("does not try a failed image again this session, and logs it once", async () => {
