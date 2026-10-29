@@ -302,7 +302,6 @@ async function quit(): Promise<void> {
   const asked = shell.dialogs.length;
   const logged = shell.loggedErrors.length;
   const stalls = flush.plan[0] === "stall";
-  if (stalls) vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   handler!({ preventDefault: () => {} });
   if (stalls) await vi.advanceTimersByTimeAsync(3000);
   await until(() => shell.dialogs.length > asked || shell.exits.length > 0 || shell.kills.length > 0
@@ -325,6 +324,9 @@ beforeEach(() => {
   shell.nativeErrors.length = 0;
   shell.nativeErrorFailure = false;
   killSpy = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => { shell.kills.push(signal); shell.changed(); return true; });
+  // A real exit ends the process before the deadline armed through it fires; here the fake clock holds
+  // that timer, and afterEach drops it with the clock.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   processHandlers.clear();
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
@@ -600,7 +602,7 @@ describe("a storage worker still blocked at the exit bound", () => {
     expect(shell.kills).toEqual(["SIGKILL"]);
 
     expect(shell.exits).toEqual([]);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Storage did not settle"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("did not finish within the exit deadline"));
   });
 
   it("ends the process instead of calling app.exit at Windows' session-end", async () => {
@@ -621,11 +623,22 @@ describe("a storage worker still blocked at the exit bound", () => {
   });
 });
 
+describe("the exit deadline", () => {
+  it("stays armed through app.exit, killing an exit that has not ended the process by then", async () => {
+    await bootApp();
+    await quit();
+    expect(shell.exits).toEqual([0]);
+    expect(shell.kills).toEqual([]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(shell.kills).toEqual(["SIGKILL"]);
+  });
+});
+
 // Electron reports no cancelled logout, so the shutdown signal covers only a
 // quit within 60 seconds of it.
 describe("a macOS or Linux shutdown signal with no quit after it", () => {
   it("asks about a failed save again once its window has passed", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "performance"] });
     vi.setSystemTime(new Date("2026-10-09T01:00:00.000Z"));
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");
@@ -641,7 +654,7 @@ describe("a macOS or Linux shutdown signal with no quit after it", () => {
   });
 
   it("still never asks for a quit inside its window", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "performance"] });
     vi.setSystemTime(new Date("2026-10-09T01:00:00.000Z"));
     const store = await bootApp();
     const post = store.createPost(dataDir, "blogger", "en");
