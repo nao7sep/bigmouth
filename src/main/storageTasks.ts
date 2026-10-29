@@ -60,8 +60,8 @@ export const storageTasks = {
   },
   flush: postStore.flushAllPendingEdits,
   /** Ends storage for the process; pending backup writes are applied with `drainBackups`, skipped at OS session end. */
-  finish(drainBackups: boolean) {
-    try { stopBackups(drainBackups); }
+  async finish(drainBackups: boolean) {
+    try { await stopBackups(drainBackups); }
     finally { closeLogger(); }
   },
   log(record: recordsStore.LogRecord) {

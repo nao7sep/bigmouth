@@ -31,7 +31,7 @@ onRecordStored(() => port.postMessage({ event: "record-stored" } satisfies Stora
 // A request that could not be read is said to be, so the owner fails it rather
 // than waiting for a reply that cannot come.
 port.on("messageerror", () => port.postMessage({ event: "request-unreadable" } satisfies StorageReply));
-port.on("message", (request: StorageRequest | StorageFinishRequest) => {
+port.on("message", async (request: StorageRequest | StorageFinishRequest) => {
   if ("finish" in request) {
     try {
       for (const queued of request.queued) {
@@ -47,7 +47,9 @@ port.on("message", (request: StorageRequest | StorageFinishRequest) => {
         const failures = storageTasks.flush();
         if (failures.length > 0) logError("pending edits flush failed at quit", { failures });
       }
-      finally { storageTasks.finish(request.drainBackups); }
+      // The storage finish says it is done only once the recorder has stopped; the exit deadline
+      // the main process holds over it ends the process when it has not.
+      finally { await storageTasks.finish(request.drainBackups); }
     }
     finally {
       request.port.postMessage({ finished: true });

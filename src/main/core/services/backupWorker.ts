@@ -82,7 +82,6 @@ function open(file: string): DatabaseSync | null {
       warn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", { file, formatVersion: version });
       return null;
     }
-    opened.exec("PRAGMA busy_timeout = 2000");
     opened.exec("BEGIN IMMEDIATE");
     try {
       opened.exec(SCHEMA);

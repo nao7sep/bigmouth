@@ -50,18 +50,18 @@ function release(write: BackupWrite): void {
 
 // Lets the recorder go: what it has not applied is dropped, and its exit is no longer news.
 // Its messages still arrive, so a warning it sent before going is logged.
-function letGo(owner: Recorder): void {
+function letGo(owner: Recorder): Promise<number> {
   recorder = null;
   for (const event of ["exit", "error", "messageerror"]) owner.worker.removeAllListeners(event);
   for (const write of owner.inFlight.splice(0)) release(write);
-  void owner.worker.terminate();
+  return owner.worker.terminate();
 }
 
 function disable(error: unknown): void {
   const owner = recorder;
   if (!owner) return;
   recorderFailed = true;
-  letGo(owner);
+  void letGo(owner);
   logWarn("backup recorder stopped; recording disabled for this session", { error: serializeError(error) });
 }
 
@@ -137,17 +137,20 @@ export function recordFile(absolutePath: string, fd: number, sha256: string, siz
 
 /**
  * Ends recording for the process. With `drain`, as at an ordinary quit, this thread waits until every
- * pending write is applied and the store file released; the quit's exit deadline is what bounds that
- * wait. Without it, as at OS session end, they are skipped. The recorder is then let go.
+ * pending write is applied and the store file released; without it, as at OS session end, they are
+ * skipped. Resolves once the recorder has stopped, which one blocked inside SQLite does only when that
+ * call returns: Electron's exit would wait for it, so the quit's exit deadline bounds this wait too.
  */
-export function stopBackups(drain: boolean): void {
+export async function stopBackups(drain: boolean): Promise<void> {
   const owner = recorder;
   if (!owner) return;
+  let stopped: Promise<number>;
   try {
     if (drain) {
       const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
       owner.worker.postMessage({ kind: "close", signal } satisfies BackupWorkerRequest);
       Atomics.wait(signal, 0, 0);
     }
-  } finally { letGo(owner); }
+  } finally { stopped = letGo(owner); }
+  await stopped;
 }

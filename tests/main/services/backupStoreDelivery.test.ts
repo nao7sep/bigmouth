@@ -100,6 +100,20 @@ describe("backup store delivery", () => {
     expect(fake.workers).toHaveLength(1);
   });
 
+  it("resolves the stop only once the recorder has stopped, so a blocked one holds the storage finish", async () => {
+    const { record, stopBackups } = await import("@main/core/services/backupStore.js");
+    record(path.join(root, "pending.md"), new Uint8Array([1]));
+    const worker = fake.workers[0];
+    let stopped = false;
+    const stopping = stopBackups(false).then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(stopped).toBe(false);
+    worker.finish();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
   it("returns from held byte recording without waiting and sends every save, in save order, as its own copy", async () => {
     const { record, stopBackups } = await import("@main/core/services/backupStore.js");
     const wait = vi.spyOn(Atomics, "wait");
