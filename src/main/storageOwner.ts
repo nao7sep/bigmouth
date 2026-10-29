@@ -7,7 +7,7 @@ import { WORKER_ENTRIES } from "./builtEntries.js";
 
 export type StorageCommand = keyof StorageTasks;
 export interface StorageRequest { id: number; name: StorageCommand; args: unknown[] }
-export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; backupBoundMs: number; signal: Int32Array; port: MessagePort }
+export interface StorageFinishRequest { finish: true; queued: StorageRequest[]; drainBackups: boolean; signal: Int32Array; port: MessagePort }
 export type WorkspaceContentSaveEvent = ContentSaveEvent & { wsId: string };
 export type StorageReply =
   | { id: number; ok: true; value: unknown }
@@ -71,7 +71,7 @@ export class StorageOwner {
     });
   }
 
-  private beginFinish(backupBoundMs: number) {
+  private beginFinish(drainBackups: boolean) {
     if (!this.worker || this.failed) return null;
     this.closing = true;
     // The worker runs messages in order, so what is still queued runs after the
@@ -81,7 +81,7 @@ export class StorageOwner {
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const { port1, port2 } = new MessageChannel();
     try {
-      this.worker.postMessage({ finish: true, queued: queued.map((item) => item.request), backupBoundMs, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
+      this.worker.postMessage({ finish: true, queued: queued.map((item) => item.request), drainBackups, signal, port: port2 } satisfies StorageFinishRequest, [port2]);
     } catch (error) {
       port1.close();
       port2.close();
@@ -95,10 +95,10 @@ export class StorageOwner {
   /**
    * Ends storage for the process: the worker runs what is queued, writes the buffered post edits
    * and closes its stores. Resolves true when it finished within `boundMs`, false when it is still
-   * busy. Pending backup writes get `backupBoundMs` of it; 0 skips them.
+   * busy. Pending backup writes are applied within that bound with `drainBackups`, and skipped without.
    */
-  async finishAsync(boundMs: number, backupBoundMs: number): Promise<boolean> {
-    const result = this.beginFinish(backupBoundMs);
+  async finishAsync(boundMs: number, drainBackups: boolean): Promise<boolean> {
+    const result = this.beginFinish(drainBackups);
     if (!result) return true;
     return await new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => { result.port.close(); resolve(false); }, boundMs);
@@ -111,7 +111,7 @@ export class StorageOwner {
    * handler returns, so that handler cannot await. Pending backup writes are skipped.
    */
   finishWithin(boundMs: number): boolean {
-    const result = this.beginFinish(0);
+    const result = this.beginFinish(false);
     if (!result) return true;
     try { return Atomics.wait(result.signal, 0, 0, boundMs) !== "timed-out"; } finally { result.port.close(); }
   }

@@ -44,7 +44,6 @@ export default defineConfig({
         "src/preload/**", // contextBridge wiring
         "src/renderer/src/main.tsx", // React DOM mount
         "src/renderer/src/records.tsx", // React DOM mount of the records window
-        "src/main/core/services/recordsReaderWorker.ts", // worker-thread wiring
         "src/main/storageWorker.ts", // worker-thread wiring
         "src/renderer/src/vite-env.d.ts",
         "**/*.d.ts",

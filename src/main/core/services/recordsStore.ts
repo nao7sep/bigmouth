@@ -3,10 +3,11 @@
 import { RECORDS_SCHEMA, validateRecordsSchema } from "./recordsSchema.js";
 import fs from "node:fs";
 import path from "node:path";
-import type { RecordsHealth } from "@shared/records";
+import type { RecordDetail, RecordKind, RecordsHealth, RecordsPage, RecordsQuery } from "@shared/records";
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
+import { readDetail, readPage, readSessions } from "./recordsQueries.js";
 
 /** A log line as emitted: its envelope, and the whole JSON object it serializes to. */
 export type LogRecord = {
@@ -125,6 +126,17 @@ export function currentRecordsPath(): string | null {
   if (!records) return null;
   return records.db ? records.dbPath : records.fallbackPath;
 }
+
+// The records window's reads, on the one connection the writes use, so a read
+// sees every record stored before it.
+function openDb(): DatabaseSync {
+  const db = records?.db;
+  if (!db) throw new Error("The records database is not open.");
+  return db;
+}
+export function readRecordsPage(query: RecordsQuery): RecordsPage { return readPage(openDb(), query); }
+export function readRecordDetail(kind: RecordKind, id: number): RecordDetail | null { return readDetail(openDb(), kind, id); }
+export function readRecordSessions(): string[] { return readSessions(openDb()); }
 
 export function writeLogRecord(entry: LogRecord): void {
   if (!records) return;

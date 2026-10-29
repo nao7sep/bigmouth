@@ -119,7 +119,7 @@ describe("storage command order", () => {
     try {
       const active = owner.run("getUiState", []);
       const queued = owner.run("queueWorkspaceContent", ["ws", "post", "typed during the question", EDITED_AT]);
-      const finishing = owner.finishAsync(1000, 0);
+      const finishing = owner.finishAsync(1000, false);
       const finish = worker.requests.at(-1) as unknown as StorageFinishRequest;
       expect(finish.queued.map((request) => request.name)).toEqual(["queueWorkspaceContent"]);
       await expect(owner.run("getUiState", [])).rejects.toThrow("Storage is closing.");
@@ -140,11 +140,11 @@ describe("storage command order", () => {
       const started = owner.run("getUiState", []);
       worker.emit("message", { id: worker.requests[0].id, ok: true, value: {} });
       await started;
-      const finishing = owner.finishAsync(1000, 0);
+      const finishing = owner.finishAsync(1000, false);
       await vi.advanceTimersByTimeAsync(1000);
       expect(await finishing).toBe(false);
     } finally { await owner.stop(); }
-    expect(await new StorageOwner(() => new HeldWorker() as unknown as Worker).finishAsync(1000, 0)).toBe(true);
+    expect(await new StorageOwner(() => new HeldWorker() as unknown as Worker).finishAsync(1000, false)).toBe(true);
   });
 });
 
@@ -218,7 +218,7 @@ it.each(["async", "session-end"] as const)("runs real store writes, the quit flu
     // In the synchronous mode it is still queued on this side when finish takes it.
     const lateEdit = owner.run("queueWorkspaceContent", [workspace.id, late.frontMatter.id, "typed during the question", new Date()]);
     if (mode === "async") await lateEdit;
-    expect(mode === "async" ? await owner.finishAsync(5000, 0) : owner.finishWithin(5000)).toBe(true);
+    expect(mode === "async" ? await owner.finishAsync(5000, false) : owner.finishWithin(5000)).toBe(true);
     await lateEdit;
     expect(fs.readFileSync(late.filePath, "utf8")).toContain("typed during the question");
   } finally { await owner?.stop(); fs.rmSync(root, { recursive: true, force: true }); }

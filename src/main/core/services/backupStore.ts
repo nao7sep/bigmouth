@@ -6,19 +6,17 @@
  * `meta.json` call {@link record} after their write lands, and an installed attachment calls
  * {@link recordFile}; the post index, view state, secrets and records never do. There is no capture at launch, on a timer or at exit, and no restore path.
  *
- * Recording runs on its own thread (backupWorker.ts), which applies writes in save order, so a slow or
- * locked store never holds up the save that called it or the storage work behind it. `record` queues a
- * copy of the exact bytes written and returns; `recordFile` queues an installed attachment the app never
- * held whole, to be read from disk. One write is in flight at a time, and a newer save of a path replaces
- * its pending version. Failures are the thread's to report: one warn,
- * never a failed save. At an ordinary quit the pending writes draw on the exit deadline; at OS session
- * end they are skipped.
+ * Recording runs on its own thread (backupWorker.ts), which applies every write in save order, so a slow
+ * or locked store never holds up the save that called it or the storage work behind it. `record` sends
+ * the thread a copy of the exact bytes written and returns; `recordFile` sends an installed attachment
+ * the app never held whole, to be read from disk. Failures are the thread's to report: one warn, never a
+ * failed save. At an ordinary quit the pending writes draw on the exit deadline; at OS session end they
+ * are skipped.
  *
  * SQLite binding: Node's built-in `node:sqlite`, which needs no native rebuild against Electron's Node ABI.
  */
 
 import fs from "node:fs";
-import { BackupAdmission } from "./backupAdmission.js";
 import { Worker } from "node:worker_threads";
 import { getBackupsDbPath } from "./storagePaths.js";
 import { formatUtcIso } from "../shared/timestamps.js";
@@ -37,7 +35,8 @@ export function useBackupRecorderModule(url: URL): void {
   recorderModule = url;
 }
 
-interface Recorder { worker: Worker; queue: BackupAdmission }
+// The writes sent and not yet applied, in send order; the thread answers each in turn.
+interface Recorder { worker: Worker; inFlight: BackupWrite[] }
 // One recorder for the storage worker's lifetime, started at the first protected write.
 let recorder: Recorder | null = null;
 // The recorder failing to start or dying is reported once; recording then stays off.
@@ -49,12 +48,12 @@ function release(write: BackupWrite): void {
   }
 }
 
-// Lets the recorder go: what it has not been handed is dropped, and its exit is no longer news.
+// Lets the recorder go: what it has not applied is dropped, and its exit is no longer news.
 // Its messages still arrive, so a warning it sent before going is logged.
 function letGo(owner: Recorder): void {
   recorder = null;
   for (const event of ["exit", "error", "messageerror"]) owner.worker.removeAllListeners(event);
-  owner.queue.abandonPending();
+  for (const write of owner.inFlight.splice(0)) release(write);
   void owner.worker.terminate();
 }
 
@@ -73,19 +72,19 @@ function ensureRecorder(): Recorder | null {
     if (!recorderModule) throw new Error("The backup recorder's module is not known.");
     const worker = new Worker(recorderModule);
     worker.unref();
-    const queue = new BackupAdmission(
-      (write) => worker.postMessage(write satisfies BackupWorkerRequest,
-        write.kind === "record" ? [write.bytes.buffer as ArrayBuffer] : []),
-      release,
-    );
+    const owner: Recorder = { worker, inFlight: [] };
+    // The thread applied the oldest write it was sent; a descriptor is closed on this thread, which opened it.
     worker.on("message", (notice: BackupWorkerNotice) => {
       if (notice.kind === "warn") logWarn(notice.text, notice.fields);
-      else queue.settled();
+      else {
+        const write = owner.inFlight.shift();
+        if (write) release(write);
+      }
     });
     worker.on("messageerror", disable);
     worker.on("error", disable);
     worker.on("exit", (code) => disable(new Error(`The backup recorder exited with code ${code}.`)));
-    recorder = { worker, queue };
+    recorder = owner;
   } catch (error) {
     recorderFailed = true;
     logWarn("backup recorder could not start; recording disabled for this session", { error: serializeError(error) });
@@ -96,8 +95,13 @@ function ensureRecorder(): Recorder | null {
 function offer(write: BackupWrite): void {
   const owner = ensureRecorder();
   if (!owner) { release(write); return; }
-  try { owner.queue.offer(write); }
-  catch (error) { release(write); disable(error); }
+  // The caller keeps its bytes: the thread is handed a copy of its own.
+  const sent = write.kind === "record" ? { ...write, bytes: new Uint8Array(write.bytes) } : write;
+  try {
+    owner.worker.postMessage(sent satisfies BackupWorkerRequest, sent.kind === "record" ? [sent.bytes.buffer as ArrayBuffer] : []);
+    owner.inFlight.push(sent);
+  }
+  catch (error) { release(sent); disable(error); }
 }
 
 /**
@@ -132,21 +136,18 @@ export function recordFile(absolutePath: string, fd: number, sha256: string, siz
 }
 
 /**
- * Ends recording for the process: the pending writes get `boundMs` to be applied and the store file
- * released (0 skips them, as at OS session end), then the recorder is let go without waiting.
- * Returns whether every pending write was applied.
+ * Ends recording for the process. With `drain`, as at an ordinary quit, this thread waits until every
+ * pending write is applied and the store file released; the quit's exit deadline is what bounds that
+ * wait. Without it, as at OS session end, they are skipped. The recorder is then let go.
  */
-export function stopBackups(boundMs: number): boolean {
+export function stopBackups(drain: boolean): void {
   const owner = recorder;
-  if (!owner) return true;
-  let applied = false;
+  if (!owner) return;
   try {
-    if (boundMs > 0) {
-      owner.queue.flush();
+    if (drain) {
       const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
       owner.worker.postMessage({ kind: "close", signal } satisfies BackupWorkerRequest);
-      applied = Atomics.wait(signal, 0, 0, boundMs) !== "timed-out";
+      Atomics.wait(signal, 0, 0);
     }
   } finally { letGo(owner); }
-  return applied;
 }

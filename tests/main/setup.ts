@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  stopBackups(Infinity);
+  stopBackups(true);
   restore("HOME", SAVED_HOME);
   restore("USERPROFILE", SAVED_USERPROFILE);
   if (testHome !== null) fs.rmSync(testHome, { recursive: true, force: true });

@@ -22,12 +22,12 @@ export async function createPostStoreFixture() {
         store.setContentSaveListener(null);
         store.flushAllPendingEdits();
         store.clearCache(dataDir);
-        stopBackups(Infinity);
+        stopBackups(true);
         fs.rmSync(dataDir, { recursive: true, force: true });
       },
     };
   } catch (error) {
-    stopBackups(Infinity);
+    stopBackups(true);
     fs.rmSync(dataDir, { recursive: true, force: true });
     throw error;
   }

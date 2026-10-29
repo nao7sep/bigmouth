@@ -3,25 +3,13 @@
  * schema): a filtered page of summaries, newest first and keyset-paged, the
  * launches that have records, and one record whole.
  *
- * Runs in the records reader's worker, which Node starts from this source in
- * tests: its only runtime import is `node:sqlite`.
+ * Runs on the storage worker, through the records store's own connection.
  */
 
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { RecordDetail, RecordKind, RecordsPage, RecordsQuery, RecordSummary } from "@shared/records";
 
 export const RECORDS_PAGE_SIZE = 100;
-
-export type RecordsRead =
-  | { op: "page"; query: RecordsQuery }
-  | { op: "sessions" }
-  | { op: "detail"; kind: RecordKind; id: number };
-
-export interface RecordsReadResults {
-  page: RecordsPage;
-  sessions: string[];
-  detail: RecordDetail | null;
-}
 
 // A provider call has no level of its own; a failed one reads as an error.
 const CALL_LEVEL = "CASE WHEN error IS NULL THEN 'info' ELSE 'error' END";
@@ -31,12 +19,6 @@ const CALL_MODEL =
   "CASE WHEN json_valid(request) THEN COALESCE(json_extract(request, '$.body.model'), json_extract(request, '$.model')) END";
 const LOG_SEARCHED = ["message", "workspace_id", "post_id", "event"];
 const CALL_SEARCHED = ["provider", "purpose", "workspace_id", "post_id", "request", "response", "error"];
-
-export function readRecords(db: DatabaseSync, read: RecordsRead): RecordsReadResults[RecordsRead["op"]] {
-  if (read.op === "page") return readPage(db, read.query);
-  if (read.op === "sessions") return readSessions(db);
-  return readDetail(db, read.kind, read.id);
-}
 
 function likePattern(search: string): string | null {
   const trimmed = search.trim();

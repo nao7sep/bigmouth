@@ -10,8 +10,7 @@ import {
   type RecordsQuery,
 } from "@shared/records";
 import { error as logError, serializeError } from "../core/services/logger.js";
-import { readRecords } from "../core/services/recordsReader.js";
-import { currentRecordsSession, listWorkspaces } from "../storageAccess.js";
+import { currentRecordsSession, listWorkspaces, readRecordDetail, readRecordSessions, readRecordsPage } from "../storageAccess.js";
 import { storageOwner } from "../storageOwner.js";
 import { openRecordsWindow, notifyRecordsHealthChanged } from "../records-window.js";
 
@@ -71,7 +70,7 @@ export function registerRecordsHandlers(): void {
   ipcMain.handle(CHANNELS.readRecordsPage, async (_event, query: unknown) =>
     logged(CHANNELS.readRecordsPage, async () => {
       assertRecordsQuery(query);
-      return readRecords({ op: "page", query });
+      return readRecordsPage(query);
     }),
   );
 
@@ -79,14 +78,14 @@ export function registerRecordsHandlers(): void {
     logged(CHANNELS.readRecordDetail, async () => {
       assertRecordKind(kind);
       if (!Number.isInteger(id)) throw new Error("Invalid IPC parameter: id must be an integer.");
-      return readRecords({ op: "detail", kind, id: id as number });
+      return readRecordDetail(kind, id as number);
     }),
   );
 
   ipcMain.handle(CHANNELS.readRecordSources, async () =>
     logged(CHANNELS.readRecordSources, async (): Promise<RecordSources> => {
       const [currentSession, earlierSessions, workspaces] = await Promise.all([
-        currentRecordsSession(), readRecords({ op: "sessions" }), listWorkspaces(),
+        currentRecordsSession(), readRecordSessions(), listWorkspaces(),
       ]);
       return {
         currentSession,

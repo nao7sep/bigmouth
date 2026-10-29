@@ -78,7 +78,7 @@ function pin(name: string) {
 const expectClosed = (fd: number) => expect(() => fs.fstatSync(fd)).toThrow(/EBADF/);
 
 describe("backup store delivery", () => {
-  it.each(["error", "messageerror"])("closes pending descriptors after worker %s and disables later recording", async (event) => {
+  it.each(["error", "messageerror"])("closes unapplied descriptors after worker %s and disables later recording", async (event) => {
     const { recordFile } = await import("@main/core/services/backupStore.js");
     const active = pin("active");
     const queued = pin("queued");
@@ -86,10 +86,11 @@ describe("backup store delivery", () => {
     recordFile(queued.file, queued.fd, "b".repeat(64), queued.size);
     expect(fake.workers).toHaveLength(1);
     const worker = fake.workers[0];
-    expect(worker.messages).toHaveLength(1);
+    expect(worker.messages).toHaveLength(2);
 
     worker.emit(event, new Error("recorder failed"));
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expectClosed(active.fd);
     expectClosed(queued.fd);
     expect(fake.warn).toHaveBeenCalledTimes(1);
 
@@ -99,7 +100,7 @@ describe("backup store delivery", () => {
     expect(fake.workers).toHaveLength(1);
   });
 
-  it("returns from held byte recording without waiting and sends only the newest pending save once the recorder settles", async () => {
+  it("returns from held byte recording without waiting and sends every save, in save order, as its own copy", async () => {
     const { record, stopBackups } = await import("@main/core/services/backupStore.js");
     const wait = vi.spyOn(Atomics, "wait");
     try {
@@ -110,14 +111,9 @@ describe("backup store delivery", () => {
       newest.fill(0);
       expect(fake.workers).toHaveLength(1);
       const worker = fake.workers[0];
-      expect(worker.messages).toHaveLength(1);
+      expect(worker.messages.map((message) => "bytes" in message ? [...message.bytes] : null)).toEqual([[1], [2], [3, 4]]);
       expect(wait).not.toHaveBeenCalled();
-      worker.emit("message", { kind: "settled" });
-      expect(worker.messages).toHaveLength(2);
-      expect(worker.messages[1]).toMatchObject({ kind: "record", path: path.join(root, "pending.md"), bytes: new Uint8Array([3, 4]) });
-      expect(wait).not.toHaveBeenCalled();
-      worker.emit("message", { kind: "settled" });
-      stopBackups(0);
+      stopBackups(false);
       expect(worker.terminate).toHaveBeenCalledTimes(1);
     } finally { wait.mockRestore(); }
   });

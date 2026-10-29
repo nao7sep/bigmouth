@@ -113,11 +113,10 @@ const flush = vi.hoisted(() => ({
   finishSettles: true,
   // The bound and backup drain each finish was given, in ms.
   finishBounds: [] as number[],
-  backupDrains: [] as number[],
+  backupDrains: [] as boolean[],
   // What the worker's own last flush in finish could not write.
   finishFailures: [] as unknown[],
   // How many times exit let the records window's reader go.
-  recordsReaderCloses: 0,
   // The Documents folder each storage initialization was handed.
   initializedDocuments: [] as (string | undefined)[],
   // When set, storage initialization waits for it.
@@ -126,16 +125,16 @@ const flush = vi.hoisted(() => ({
 }));
 vi.mock("@main/storageOwner.js", () => {
   // The worker's finish writes what is buffered, as storageWorker.ts does.
-  const finish = (boundMs: number, backupDrainMs: number) => {
+  const finish = (boundMs: number, drainBackups: boolean) => {
     flush.finishBounds.push(boundMs);
-    flush.backupDrains.push(backupDrainMs);
+    flush.backupDrains.push(drainBackups);
     flush.finishFailures.push(...flush.store!.flushAllPendingEdits());
     return flush.finishSettles;
   };
   return { storageOwner: {
     onRecordStored: () => {},
-    finishAsync: async (boundMs: number, backupDrainMs: number) => finish(boundMs, backupDrainMs),
-    finishWithin: (boundMs: number) => finish(boundMs, 0), stop: async () => {},
+    finishAsync: async (boundMs: number, drainBackups: boolean) => finish(boundMs, drainBackups),
+    finishWithin: (boundMs: number) => finish(boundMs, false), stop: async () => {},
   } };
 });
 vi.mock("@main/storageAccess.js", async () => ({
@@ -145,7 +144,7 @@ vi.mock("@main/storageAccess.js", async () => ({
     const store = await import("@main/core/services/workspaceStore.js");
     const paths = await import("@main/core/services/storagePaths.js");
     const config = store.initAppDir();
-    return { config, settings: { theme: "system", language: "system" }, recordsDbPath: paths.getRecordsDbPath(), recordsPath: null, thumbnailsDir: paths.getThumbnailsDir() };
+    return { config, settings: { theme: "system", language: "system" }, recordsPath: null, thumbnailsDir: paths.getThumbnailsDir() };
   },
   flush: async () => {
     flush.calls++;
@@ -172,10 +171,6 @@ vi.mock("@main/window.js", () => ({
   },
 }));
 vi.mock("@main/ipc/index.js", () => ({ registerIpcHandlers: () => {} }));
-vi.mock("@main/core/services/recordsReader.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@main/core/services/recordsReader.js")>();
-  return { ...actual, closeRecordsReader: () => { flush.recordsReaderCloses++; actual.closeRecordsReader(); } };
-});
 vi.mock("@main/assetProtocol.js", () => ({
   registerAssetScheme: () => {},
   handleAssetProtocol: () => {},
@@ -239,7 +234,7 @@ beforeAll(async () => {
     await bootApp();
   } finally {
     const { stopBackups } = await import("@main/core/services/backupStore.js");
-    stopBackups(Infinity);
+    stopBackups(true);
     if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
     else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
     dataDir = savedData;
@@ -256,7 +251,7 @@ async function bootApp(): Promise<PostStore> {
   // Repeated boots in one test must retire the old recorder before resetting
   // its module owner; otherwise its queued writes race deletion of this root.
   const previousBackup = await import("@main/core/services/backupStore.js");
-  previousBackup.stopBackups(Infinity);
+  previousBackup.stopBackups(true);
   vi.resetModules();
   appHandlers.clear();
   windowHandlers.clear();
@@ -278,7 +273,6 @@ async function bootApp(): Promise<PostStore> {
   flush.finishBounds = [];
   flush.backupDrains = [];
   flush.finishFailures = [];
-  flush.recordsReaderCloses = 0;
   flush.initializedDocuments = [];
   flush.initializeGate = null;
   shell.kills.length = 0;
@@ -347,7 +341,7 @@ afterEach(async () => {
   // from the one closed by tests/main/setup.ts. Close the active instance before
   // removing its throwaway BIGMOUTH_DATA_DIR (Windows keeps the SQLite file locked).
   const { stopBackups } = await import("@main/core/services/backupStore.js");
-  stopBackups(Infinity);
+  stopBackups(true);
   if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
   fs.rmSync(home, { recursive: true, force: true });
@@ -561,19 +555,17 @@ describe("an ending OS session", () => {
     expect(shell.exits).toEqual([0]);
   });
 
-  it("gives pending backup writes what remains of the deadline at an ordinary quit and none at shutdown", async () => {
+  it("drains pending backup writes within the exit deadline at an ordinary quit and skips them at shutdown", async () => {
     await bootApp();
     await quit();
-    expect(flush.backupDrains).toEqual(flush.finishBounds);
-    expect(flush.backupDrains[0]).toBeGreaterThan(0);
-    expect(flush.backupDrains[0]).toBeLessThanOrEqual(3000);
-    expect(flush.recordsReaderCloses).toBe(1);
+    expect(flush.backupDrains).toEqual([true]);
+    expect(flush.finishBounds[0]).toBeGreaterThan(0);
+    expect(flush.finishBounds[0]).toBeLessThanOrEqual(3000);
 
     await bootApp();
     powerHandlers.get("shutdown")!();
     await quit();
-    expect(flush.backupDrains).toEqual([0]);
-    expect(flush.recordsReaderCloses).toBe(1);
+    expect(flush.backupDrains).toEqual([false]);
   });
 
   it("answers a quit question already open, and exits", async () => {

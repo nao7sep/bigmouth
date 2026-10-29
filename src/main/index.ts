@@ -20,7 +20,6 @@ import {
 } from "./core/services/logger.js";
 import { createMainWindow } from "./window.js";
 import { notifyRecordsChanged } from "./records-window.js";
-import { closeRecordsReader, initRecordsReader } from "./core/services/recordsReader.js";
 import { registerIpcHandlers } from "./ipc/index.js";
 import { anyRefusedMetadata } from "./ipc/refusedMetadata.js";
 import { anyAiRequestRunning } from "./ipc/aiRequests.js";
@@ -67,8 +66,8 @@ if (frameworkReady) setLogSink((record) => {
 let shuttingDown = false;
 
 // The quit's one deadline (architecture-conventions, Deadlines at the owner),
-// fixed when the quit begins: writing the buffered edits, finishing storage
-// with its backup writes, and the records reader draw on what remains of it. A
+// fixed when the quit begins: writing the buffered edits and finishing storage
+// with its backup writes draw on what remains of it. A
 // question the quit asks pauses it, and it starts again from the answer.
 const EXIT_DEADLINE_MS = 3000;
 let exitDeadline = 0;
@@ -108,7 +107,6 @@ async function bootstrap(): Promise<void> {
   const initialized = await initialize(app.getPath("documents"));
   const appConfig = initialized.config;
   const appSettings = initialized.settings;
-  initRecordsReader(initialized.recordsDbPath);
   applyThemePreference(appSettings.theme);
   // The menu, dialogs and the window's first text all speak the saved language.
   await applyLanguagePreference(appSettings.language);
@@ -197,11 +195,7 @@ async function flushPendingEdits(): Promise<boolean> {
 // killed instead, so quit and logout always end. A kill cannot tear a post:
 // atomic writes rename only complete files into place, at worst leaving an
 // inert .tmp. Records go through that same worker, so only the console hears.
-// The records window's reader is let go without waiting and never forces a kill:
-// records.sqlite3 lives in the storage root on the local disk, outside the
-// stalled volumes this path exists for.
 function terminateApp(storageSettled: boolean, exitCode = 0): void {
-  closeRecordsReader();
   if (!storageSettled) {
     console.error("[bigmouth] Storage did not settle within the exit bound; ending the process.");
     process.kill(process.pid, "SIGKILL");
@@ -217,8 +211,7 @@ async function exitApp(exitCode = 0): Promise<void> {
   let settled = false;
   // Pending backup writes draw on the deadline at an ordinary quit and are
   // skipped while the OS session ends (data-backup-conventions).
-  const remaining = exitTimeLeft();
-  try { settled = await storageOwner.finishAsync(remaining, systemShutdown() ? 0 : remaining); }
+  try { settled = await storageOwner.finishAsync(exitTimeLeft(), !systemShutdown()); }
   finally { terminateApp(settled, exitCode); }
 }
 

@@ -54,6 +54,9 @@ export const updateUiState = command("updateUiState");
 export const getAppSettingsLoad = command("getAppSettingsLoad");
 export const saveAppSettings = command("saveAppSettings");
 export const currentRecordsSession = command("currentRecordsSession");
+export const readRecordsPage = command("readRecordsPage");
+export const readRecordDetail = command("readRecordDetail");
+export const readRecordSessions = command("readRecordSessions");
 export const writeProviderCall = command("writeProviderCall");
 
 export const setContentSaveListener = storageOwner.onContentSave.bind(storageOwner);

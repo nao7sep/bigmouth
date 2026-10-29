@@ -47,7 +47,7 @@ port.on("message", (request: StorageRequest | StorageFinishRequest) => {
         const failures = storageTasks.flush();
         if (failures.length > 0) logError("pending edits flush failed at quit", { failures });
       }
-      finally { storageTasks.finish(request.backupBoundMs); }
+      finally { storageTasks.finish(request.drainBackups); }
     }
     finally {
       request.port.postMessage({ finished: true });

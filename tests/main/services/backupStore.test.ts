@@ -43,7 +43,7 @@ function storeFile(): string {
 
 /** Settles the recorder: everything it was handed is applied and its store file released. */
 function settleBackups(): void {
-  expect(stopBackups(Infinity)).toBe(true);
+  stopBackups(true);
 }
 
 /**
@@ -284,10 +284,10 @@ describe("never holds up the save", () => {
     expect(rows(file).map(text)).toEqual(["while locked"]);
   });
 
-  it("applies pending writes within its bound at quit", () => {
+  it("applies pending writes at quit", () => {
     const file = path.join(root, "doc.md");
     record(file, Buffer.from("drained at quit"));
-    expect(stopBackups(5000)).toBe(true);
+    stopBackups(true);
     expect(rows(file).map(text)).toEqual(["drained at quit"]);
   });
 
@@ -296,7 +296,7 @@ describe("never holds up the save", () => {
     settleBackups();
     const wait = vi.spyOn(Atomics, "wait");
     try {
-      stopBackups(0);
+      stopBackups(false);
       expect(wait).not.toHaveBeenCalled();
     } finally {
       wait.mockRestore();

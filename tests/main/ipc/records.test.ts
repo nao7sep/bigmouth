@@ -22,20 +22,21 @@ const state = vi.hoisted(() => ({
 vi.mock("@main/storageAccess.js", async () => {
   const records = await import("@main/core/services/recordsStore.js");
   const workspaces = await import("@main/core/services/workspaceStore.js");
+  const read = async (request: { op: string }) => {
+    state.reads.push(request);
+    if (state.readFailure) throw state.readFailure;
+    return request.op === "sessions" ? state.sessions : { records: [], more: false };
+  };
   return {
     currentRecordsSession: async () => records.currentRecordsSession(),
     listWorkspaces: async () => workspaces.listWorkspaces(),
+    readRecordsPage: (query: unknown) => read({ op: "page", query } as { op: string }),
+    readRecordDetail: (kind: unknown, id: unknown) => read({ op: "detail", kind, id } as { op: string }),
+    readRecordSessions: () => read({ op: "sessions" }),
   };
 });
 vi.mock("electron", () => ({
   ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
-}));
-vi.mock("@main/core/services/recordsReader.js", () => ({
-  readRecords: async (read: { op: string }) => {
-    state.reads.push(read);
-    if (state.readFailure) throw state.readFailure;
-    return read.op === "sessions" ? state.sessions : { records: [], more: false };
-  },
 }));
 vi.mock("@main/core/services/recordsStore.js", () => ({ currentRecordsSession: () => "2026-10-02T08:00:00.000Z" }));
 vi.mock("@main/core/services/workspaceStore.js", () => ({

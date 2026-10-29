@@ -125,7 +125,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  stopBackups(Infinity);
+  stopBackups(true);
   if (savedDataRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = savedDataRoot;
   if (home) fs.rmSync(home, { recursive: true, force: true });

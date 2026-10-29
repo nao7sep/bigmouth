@@ -11,6 +11,8 @@ import {
   currentRecordsSession,
   onRecordStored,
   openRecords,
+  readRecordSessions,
+  readRecordsPage,
   writeLogRecord,
   writeProviderCall,
   type ProviderCallRecord,
@@ -42,6 +44,23 @@ afterEach(() => {
   onRecordStored(null);
   closeRecords();
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe("records window reads", () => {
+  const query = { session: null, kind: null, level: null, search: "", after: null };
+
+  it("reads on the connection the writes use, seeing every record stored before the read", () => {
+    openRecords(path.join(root, "records.sqlite3"), path.join(root, "logs"), new Date());
+    line();
+    expect(readRecordsPage(query).records).toHaveLength(1);
+    line();
+    expect(readRecordsPage(query).records).toHaveLength(2);
+    expect(readRecordSessions()).toEqual([currentRecordsSession()]);
+  });
+
+  it("refuses a read while the database is not open", () => {
+    expect(() => readRecordsPage(query)).toThrow(/not open/);
+  });
 });
 
 describe("stored-record signal", () => {

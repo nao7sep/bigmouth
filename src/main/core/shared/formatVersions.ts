@@ -1,5 +1,5 @@
 // The format version of every store BigMouth writes (store-recovery-conventions).
-// No imports: the records reader's worker runs this file from source.
+// No imports: the backup recorder's worker runs this file from source.
 
 export const FORMAT_VERSIONS = {
   /** A post's `.md` file, in its front matter. */

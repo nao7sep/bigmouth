@@ -56,12 +56,12 @@ export const storageTasks = {
     initLogger(getRecordsDbPath(), getLogsDir());
     const state = initStateStore();
     const settings = initAppSettingsStore();
-    return { config, state, settings, recordsDbPath: getRecordsDbPath(), recordsPath: getRecordsPath(), thumbnailsDir: getThumbnailsDir() };
+    return { config, state, settings, recordsPath: getRecordsPath(), thumbnailsDir: getThumbnailsDir() };
   },
   flush: postStore.flushAllPendingEdits,
-  /** Ends storage for the process; pending backup writes get `backupBoundMs`, 0 at OS session end. */
-  finish(backupBoundMs: number) {
-    try { stopBackups(backupBoundMs); }
+  /** Ends storage for the process; pending backup writes are applied with `drainBackups`, skipped at OS session end. */
+  finish(drainBackups: boolean) {
+    try { stopBackups(drainBackups); }
     finally { closeLogger(); }
   },
   log(record: recordsStore.LogRecord) {
@@ -215,6 +215,9 @@ export const storageTasks = {
   getAppSettingsLoad: appSettingsStore.getAppSettingsLoad,
   saveAppSettings: appSettingsStore.saveAppSettings,
   currentRecordsSession: recordsStore.currentRecordsSession,
+  readRecordsPage: recordsStore.readRecordsPage,
+  readRecordDetail: recordsStore.readRecordDetail,
+  readRecordSessions: recordsStore.readRecordSessions,
   writeProviderCall: recordsStore.writeProviderCall,
 };
 export type StorageTasks = typeof storageTasks;

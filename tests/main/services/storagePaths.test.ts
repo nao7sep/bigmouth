@@ -31,7 +31,7 @@ const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
 let fakeHome: string;
 
 function removeTestTree(tree: string): void {
-  stopBackups(Infinity);
+  stopBackups(true);
   fs.rmSync(tree, { recursive: true, force: true });
 }
 

@@ -19,7 +19,7 @@ it("keeps the live handler workspace and posts inside the disposable fixture roo
     expect(path.relative(root, post.filePath)).toBe(path.join("workspace", "posts", path.basename(post.filePath)));
     expect(fs.existsSync(post.filePath)).toBe(true);
   } finally {
-    stopBackups(Infinity);
+    stopBackups(true);
     if (originalRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
     else process.env.BIGMOUTH_DATA_DIR = originalRoot;
     fs.rmSync(root, { recursive: true, force: true });
