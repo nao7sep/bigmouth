@@ -424,6 +424,25 @@ describe("RecordsWindow", () => {
     expect(titles()).toEqual(["arrived while open", "anthropic metadata", "post save failed"]);
   });
 
+  it("holds a newest page that arrives after the list left the top until it is back there", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const next = deferred<RecordsPage>();
+    api.readRecordsPage.mockReturnValueOnce(next.promise);
+    api.readRecordsPage.mockResolvedValueOnce({ records: [newer, call, line], more: false });
+
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(api.readRecordsPage).toHaveBeenCalledTimes(2);
+    await scrollTo(300);
+    await act(async () => next.resolve({ records: [newer, call, line], more: false }));
+    expect(titles()).toEqual(["anthropic metadata", "post save failed"]);
+
+    await scrollTo(0);
+    expect(api.readRecordsPage).toHaveBeenCalledTimes(3);
+    expect(titles()).toEqual(["arrived while open", "anthropic metadata", "post save failed"]);
+  });
+
   it("keeps the selected record selected through an update", async () => {
     await mount();
     await click(options()[1]!);
