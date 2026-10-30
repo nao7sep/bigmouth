@@ -35,6 +35,7 @@ vi.mock("@renderer/api", () => ({
 }));
 
 import { RecordsWindow } from "@renderer/records/RecordsWindow";
+import { KEY_RESIZE_SAVE_DELAY_MS } from "@renderer/hooks/useKeyboardResize";
 
 const SESSION = "2026-10-02T08:00:00.000Z";
 
@@ -510,7 +511,7 @@ describe("RecordsWindow", () => {
     expect(shell.style.getPropertyValue("--records-list-width")).toBe(`${RECORDS_LIST_WIDTH.max}px`);
   });
 
-  it("resizes the list from the keyboard within the same bounds, saving once per key release", async () => {
+  it("resizes the list from the keyboard within the same bounds, saving after the last step", async () => {
     await mount();
     const divider = document.querySelector<HTMLElement>(".pane-divider")!;
     const shell = document.querySelector<HTMLElement>(".records-shell")!;
@@ -520,30 +521,30 @@ describe("RecordsWindow", () => {
     expect(divider.tabIndex).toBe(0);
     expect(divider.getAttribute("aria-valuemin")).toBe(String(RECORDS_LIST_WIDTH.min));
     expect(divider.getAttribute("aria-valuemax")).toBe(String(RECORDS_LIST_WIDTH.max));
+    vi.useFakeTimers();
 
-    // A held arrow: three presses, one release, one save.
+    // Three separate presses: the width follows each, and one save follows the last.
     await act(async () => {
-      for (let i = 0; i < 3; i += 1) fireEvent.keyDown(divider, { key: "ArrowRight" });
-      fireEvent.keyUp(divider, { key: "ArrowRight" });
+      for (let i = 0; i < 3; i += 1) {
+        fireEvent.keyDown(divider, { key: "ArrowRight" });
+        fireEvent.keyUp(divider, { key: "ArrowRight" });
+      }
     });
     expect(width()).toBe(`${RECORDS_LIST_WIDTH.default + 48}px`);
     expect(divider.getAttribute("aria-valuenow")).toBe(String(RECORDS_LIST_WIDTH.default + 48));
+    expect(api.updateUiState).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS));
     expect(api.updateUiState).toHaveBeenCalledExactlyOnceWith({ recordsListWidth: RECORDS_LIST_WIDTH.default + 48 });
-
-    await act(async () => {
-      fireEvent.keyDown(divider, { key: "ArrowLeft" });
-      fireEvent.keyUp(divider, { key: "ArrowLeft" });
-    });
-    expect(api.updateUiState).toHaveBeenLastCalledWith({ recordsListWidth: RECORDS_LIST_WIDTH.default + 32 });
 
     await act(async () => {
       fireEvent.keyDown(divider, { key: "End" });
       fireEvent.keyDown(divider, { key: "ArrowRight" });
-      fireEvent.keyUp(divider, { key: "ArrowRight" });
     });
+    await act(async () => vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS));
     expect(width()).toBe(`${RECORDS_LIST_WIDTH.max}px`);
     expect(api.updateUiState).toHaveBeenLastCalledWith({ recordsListWidth: RECORDS_LIST_WIDTH.max });
 
+    // Leaving the divider saves at once.
     await act(async () => {
       fireEvent.keyDown(divider, { key: "Home" });
       fireEvent.keyDown(divider, { key: "ArrowLeft" });
@@ -551,7 +552,7 @@ describe("RecordsWindow", () => {
     });
     expect(width()).toBe(`${RECORDS_LIST_WIDTH.min}px`);
     expect(api.updateUiState).toHaveBeenLastCalledWith({ recordsListWidth: RECORDS_LIST_WIDTH.min });
-    expect(api.updateUiState).toHaveBeenCalledTimes(4);
+    expect(api.updateUiState).toHaveBeenCalledTimes(3);
   });
 
   it("ignores other keys on the divider and saves nothing for them", async () => {

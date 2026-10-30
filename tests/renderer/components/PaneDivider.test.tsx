@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { PaneDivider } from "@renderer/components/PaneDivider";
+import { KEY_RESIZE_SAVE_DELAY_MS } from "@renderer/hooks/useKeyboardResize";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function renderDivider(sign: 1 | -1 = 1, width = 300) {
   const onWidthChange = vi.fn();
@@ -35,10 +39,33 @@ describe("PaneDivider keyboard resizing", () => {
     });
     expect(view.onWidthChange.mock.calls.map(([width]) => width)).toEqual([316, 332, 348]);
     expect(view.onCommitWidth).not.toHaveBeenCalled();
-    fireEvent.keyUp(view.divider, { key: "ArrowRight" });
     fireEvent.blur(view.divider);
     expect(view.onCommitWidth).toHaveBeenCalledExactlyOnceWith(348);
-    expect(view.parentKeyUp).not.toHaveBeenCalled();
+  });
+
+  // Stepping is continuous editing: the width is saved a short delay after the
+  // last step, each step pushing the save back, never once per press.
+  it("saves once, a short delay after the last of separate presses", () => {
+    vi.useFakeTimers();
+    const view = renderDivider();
+    for (let count = 0; count < 3; count += 1) {
+      fireEvent.keyDown(view.divider, { key: "ArrowRight" });
+      fireEvent.keyUp(view.divider, { key: "ArrowRight" });
+      act(() => { vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS - 1); });
+    }
+    expect(view.onCommitWidth).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(view.onCommitWidth).toHaveBeenCalledExactlyOnceWith(348);
+    fireEvent.blur(view.divider);
+    act(() => { vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS); });
+    expect(view.onCommitWidth).toHaveBeenCalledOnce();
+  });
+
+  it("saves a pending step when the divider goes away", () => {
+    const view = renderDivider();
+    fireEvent.keyDown(view.divider, { key: "ArrowLeft" });
+    view.unmount();
+    expect(view.onCommitWidth).toHaveBeenCalledExactlyOnceWith(284);
   });
 
   it.each([1, -1] as const)("uses pane width bounds for Home and End with sign %s", (sign) => {
