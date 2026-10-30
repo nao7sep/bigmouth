@@ -121,8 +121,28 @@ describe("records", () => {
     const fallback = getRecordsPath()!;
     expect(path.dirname(fallback)).toBe(logsDir);
     expect(path.basename(fallback)).toMatch(/^\d{8}-\d{6}-utc\.log$/);
-    const [line] = fs.readFileSync(fallback, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    expect(line).toMatchObject({ level: "info", message: "kept anyway", count: 1 });
+    const lines = fs.readFileSync(fallback, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines[0]).toMatchObject({ level: "warn", message: expect.stringMatching(/could not be opened/) });
+    expect(lines[1]).toMatchObject({ level: "info", message: "kept anyway", count: 1 });
+  });
+
+  it("says in the new database where an unusable one was set aside", () => {
+    closeLogger();
+    fs.rmSync(dbPath, { force: true });
+    const old = new DatabaseSync(dbPath);
+    old.exec("CREATE TABLE earlier (id INTEGER); PRAGMA user_version = 1");
+    old.close();
+    initLogger(dbPath, logsDir);
+    const [line] = readLogLines();
+    expect(line).toMatchObject({
+      level: "warn",
+      message: expect.stringMatching(/set aside and a new one created/),
+      path: dbPath,
+      movedTo: expect.stringMatching(/records-\d{8}-\d{6}-utc\.invalid$/),
+      detail: expect.stringMatching(/format version 1/),
+    });
+    expect(fs.existsSync(line!.movedTo as string)).toBe(true);
+    expect(fs.existsSync(logsDir)).toBe(false);
   });
 });
 

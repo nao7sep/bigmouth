@@ -16,7 +16,7 @@ const ENVELOPE_KEYS = new Set(["time", "level", "message"]);
 
 /** Starts this launch's session in the records database. Must be called once at startup. */
 export function initLogger(recordsDbPath: string, logsDir: string): void {
-  const { newer, setAside } = openRecords(recordsDbPath, logsDir, utcNow());
+  const { newer, setAside, failed } = openRecords(recordsDbPath, logsDir, utcNow());
   if (setAside) {
     warn("records database could not be used by this version of BigMouth; set aside and a new one created", setAside);
   }
@@ -25,6 +25,9 @@ export function initLogger(recordsDbPath: string, logsDir: string): void {
       path: newer.filePath,
       formatVersion: newer.version,
     });
+  }
+  if (failed) {
+    warn("records database could not be opened; this session's records go to its log file", { error: serializeError(failed) });
   }
 }
 

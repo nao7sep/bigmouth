@@ -19,6 +19,7 @@ import {
 } from "@main/core/services/recordsStore.js";
 import { RECORDS_SCHEMA } from "@main/core/services/recordsSchema.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let root: string;
 
@@ -117,10 +118,10 @@ describe("records database format version", () => {
 
   it("stamps this build's format version and opens it again", () => {
     const file = path.join(root, "records.sqlite3");
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
     closeRecords();
     expect(userVersion(file)).toBe(2);
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
     const stored = vi.fn();
     onRecordStored(stored);
     line();
@@ -195,25 +196,111 @@ describe("records database format version", () => {
     expectSetAside(file, history, schema, 2, /columns/);
   });
 
-  it("carries a set-aside database's write-ahead files with it, so its last rows are kept", () => {
+  // A crashed writer's newest rows can sit only in the write-ahead file. SQLite
+  // folds that file back into the main one when its last connection closes, so
+  // another connection is held open here, as a crash leaves it, to keep the
+  // write-ahead file apart through the set-aside.
+  function crashedWithWal(): { file: string; holder: DatabaseSync } {
     const file = path.join(root, "records.sqlite3");
     const writer = new DatabaseSync(file);
     writer.exec(RECORDS_SCHEMA + "PRAGMA user_version = 1; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;");
     writer.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
       VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{"last":true}')`);
-    // A copy taken while the writer is open leaves its newest row only in the
-    // write-ahead file, as a crash would.
-    const crashed = path.join(root, "crashed");
-    fs.mkdirSync(crashed);
-    for (const suffix of ["", "-wal", "-shm"]) fs.copyFileSync(file + suffix, path.join(crashed, "records.sqlite3" + suffix));
+    const holder = new DatabaseSync(file);
+    holder.prepare("SELECT COUNT(*) FROM provider_calls").get();
     writer.close();
-    const copy = path.join(crashed, "records.sqlite3");
-    const opening = openRecords(copy, path.join(crashed, "logs"), new Date());
-    closeRecords();
-    const check = new DatabaseSync(opening.setAside!.movedTo);
+    expect(fs.statSync(file + "-wal").size).toBeGreaterThan(0);
+    return { file, holder };
+  }
+
+  it("carries a set-aside database's write-ahead files with it, so its last rows are kept", () => {
+    const { file, holder } = crashedWithWal();
     try {
-      expect(check.prepare("SELECT request FROM provider_calls").all()).toEqual([{ request: '{"last":true}' }]);
-    } finally { check.close(); }
+      const opening = openRecords(file, path.join(root, "logs"), new Date());
+      closeRecords();
+      const movedTo = opening.setAside!.movedTo;
+      expect(fs.existsSync(movedTo + "-wal")).toBe(true);
+      const check = new DatabaseSync(movedTo);
+      try {
+        expect(check.prepare("SELECT request FROM provider_calls").all()).toEqual([{ request: '{"last":true}' }]);
+      } finally { check.close(); }
+    } finally { holder.close(); }
+  });
+
+  it("names where the database went when its write-ahead file cannot follow, and creates nothing over it", () => {
+    const { file, holder } = crashedWithWal();
+    const rename = fs.renameSync;
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith("-wal")) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      rename(from, to);
+    });
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
+    try {
+      const logs = path.join(root, "logs");
+      const opening = openRecords(file, logs, new Date());
+      expect(opening.setAside).toBeNull();
+      const movedTo = fs.readdirSync(root).find((name) => name.endsWith(".invalid"));
+      expect(movedTo).toBeDefined();
+      expect(opening.failed?.message).toContain(path.join(root, movedTo!));
+      expect(opening.failed?.message).toContain(file + "-wal");
+      expect(fs.existsSync(file)).toBe(false);
+      expect(fs.existsSync(file + "-wal")).toBe(true);
+      line();
+      closeRecords();
+      expect(fs.readdirSync(logs)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+      console.mockRestore();
+      holder.close();
+    }
+  });
+
+  it("falls back to the log file when the database cannot be set aside, leaving it in place", () => {
+    const file = path.join(root, "records.sqlite3");
+    const db = new DatabaseSync(file);
+    db.exec(RECORDS_SCHEMA + "PRAGMA user_version = 1;");
+    db.close();
+    const bytes = fs.readFileSync(file);
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation(() => { throw Object.assign(new Error("denied"), { code: "EACCES" }); });
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
+    try {
+      const logs = path.join(root, "logs");
+      const opening = openRecords(file, logs, new Date());
+      expect(opening.setAside).toBeNull();
+      expect(opening.failed).toBeInstanceOf(QuarantineError);
+      line();
+      closeRecords();
+      expect(fs.readFileSync(file).equals(bytes)).toBe(true);
+      expect(fs.readdirSync(root).sort()).toEqual(["logs", "records.sqlite3"]);
+      expect(fs.readdirSync(logs)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+      console.mockRestore();
+    }
+  });
+
+  it("falls back to the log file when the database opened after the set-aside is unusable too", () => {
+    const file = path.join(root, "records.sqlite3");
+    const db = new DatabaseSync(file);
+    db.exec(RECORDS_SCHEMA + "PRAGMA user_version = 1;");
+    db.close();
+    // The move leaves a copy behind, so the second open meets the same database.
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => { fs.copyFileSync(from, to); });
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
+    try {
+      const logs = path.join(root, "logs");
+      const opening = openRecords(file, logs, new Date());
+      expect(opening.setAside).toMatchObject({ path: file });
+      expect(fs.existsSync(opening.setAside!.movedTo)).toBe(true);
+      expect(opening.failed?.message).toMatch(/format version 1/);
+      line();
+      closeRecords();
+      expect(userVersion(file)).toBe(1);
+      expect(fs.readdirSync(logs)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+      console.mockRestore();
+    }
   });
 
   it("sets aside a file that is not a database", () => {
@@ -234,7 +321,7 @@ describe("records database format version", () => {
     const db = new DatabaseSync(file);
     db.exec("CREATE TABLE earlier (id INTEGER)");
     db.close();
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
     const stored = vi.fn();
     onRecordStored(stored);
     line();
