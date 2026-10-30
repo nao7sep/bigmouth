@@ -17,7 +17,7 @@ import {
   CONTENT_PADDING_MAX,
   CONTENT_PADDING_MIN,
 } from "@shared/types";
-import { firstSettingsError, settingsFieldErrors } from "@shared/settingsValidation";
+import { firstSettingsError, numberFieldValue, settingsFieldErrors } from "@shared/settingsValidation";
 import {
   getAppSettings,
   saveAppSettings,
@@ -508,6 +508,20 @@ function useFieldDraft(
   return [draft, setDraft];
 }
 
+/**
+ * A number field's draft (number-field-conventions): the text stays as typed,
+ * through blur too, and the model holds what it means, NaN for an empty or
+ * unreadable entry, so the field's message and the Save gate decide, never a
+ * fallback that would put a number the user did not type back in the field.
+ */
+function useNumberDraft(value: number): [string, (text: string) => number] {
+  const [draft, setDraft] = useFieldDraft(String(value), (current) => Object.is(numberFieldValue(current), value));
+  return [draft, (text) => {
+    setDraft(text);
+    return numberFieldValue(text);
+  }];
+}
+
 /** The comma-separated language list, as the model holds it. */
 function parseLanguages(text: string): string[] {
   return text
@@ -557,10 +571,7 @@ function GeneralTab({
     persistedLanguages,
     (draft) => parseLanguages(draft).join(", ") === persistedLanguages,
   );
-  const [perLoadText, setPerLoadText] = useFieldDraft(
-    String(settings.postsPerLoad),
-    (draft) => Number(draft) === settings.postsPerLoad,
-  );
+  const [perLoadText, setPerLoadText] = useNumberDraft(settings.postsPerLoad);
 
   return (
     <div className="settings-section">
@@ -616,14 +627,7 @@ function GeneralTab({
           className="form-input"
           type="number"
           value={perLoadText}
-          onChange={(e) => {
-            setPerLoadText(e.target.value);
-            // An emptied field is NaN, which the validator calls out and the
-            // Save gate refuses, rather than a fallback number the user never
-            // chose appearing under the caret; and a typed 0 stays 0 for the
-            // validator, which `parseInt(...) || fallback` could not tell from nothing.
-            update({ postsPerLoad: Number.parseInt(e.target.value, 10) });
-          }}
+          onChange={(e) => update({ postsPerLoad: setPerLoadText(e.target.value) })}
         />
         {errors.postsPerLoad && <FieldError msg={errors.postsPerLoad} />}
       </div>
@@ -721,6 +725,9 @@ function FontsSection({
   const cf = settings.contentFont;
   const updateContentFont = (patch: Partial<Settings["contentFont"]>) =>
     update({ contentFont: { ...cf, ...patch } });
+  const [sizeText, setSizeText] = useNumberDraft(cf.size);
+  const [lineHeightText, setLineHeightText] = useNumberDraft(cf.lineHeight);
+  const [paddingText, setPaddingText] = useNumberDraft(cf.padding);
 
   // The same per-field messages the Save gate and the IPC boundary read.
   const errors = settingsFieldErrors(settings);
@@ -759,8 +766,8 @@ function FontsSection({
             type="number"
             min={CONTENT_FONT_SIZE_MIN}
             max={CONTENT_FONT_SIZE_MAX}
-            value={cf.size}
-            onChange={(e) => updateContentFont({ size: parseInt(e.target.value) || cf.size })}
+            value={sizeText}
+            onChange={(e) => updateContentFont({ size: setSizeText(e.target.value) })}
           />
           {errors["contentFont.size"] && <FieldError msg={errors["contentFont.size"]} />}
         </div>
@@ -773,8 +780,8 @@ function FontsSection({
             min={CONTENT_LINE_HEIGHT_MIN}
             max={CONTENT_LINE_HEIGHT_MAX}
             step={0.1}
-            value={cf.lineHeight}
-            onChange={(e) => updateContentFont({ lineHeight: parseFloat(e.target.value) || cf.lineHeight })}
+            value={lineHeightText}
+            onChange={(e) => updateContentFont({ lineHeight: setLineHeightText(e.target.value) })}
           />
           {errors["contentFont.lineHeight"] && (
             <FieldError msg={errors["contentFont.lineHeight"]} />
@@ -788,11 +795,8 @@ function FontsSection({
             type="number"
             min={CONTENT_PADDING_MIN}
             max={CONTENT_PADDING_MAX}
-            value={cf.padding}
-            onChange={(e) => {
-              const next = parseInt(e.target.value);
-              updateContentFont({ padding: Number.isNaN(next) ? cf.padding : next });
-            }}
+            value={paddingText}
+            onChange={(e) => updateContentFont({ padding: setPaddingText(e.target.value) })}
           />
           {errors["contentFont.padding"] && <FieldError msg={errors["contentFont.padding"]} />}
         </div>

@@ -49,6 +49,15 @@ function withinBounds(value: number, min: number, max: number): boolean {
   return Number.isFinite(value) && value >= min && value <= max;
 }
 
+/**
+ * A number field's text as the value it means: NaN for an empty field or one
+ * that is not a number as a whole, so the field's message, not a guess such as
+ * `parseInt`'s leading digits, decides what happens to it.
+ */
+export function numberFieldValue(text: string): number {
+  return text.trim() === "" ? Number.NaN : Number(text);
+}
+
 // The list offers only System and zones the runtime resolves, so this guards
 // the IPC boundary against anything else.
 function timezoneError(timezone: string): Message | null {
@@ -62,8 +71,8 @@ function timezoneError(timezone: string): Message | null {
  */
 function languagesError(languages: readonly string[]): Message | null {
   if (languages.length === 0) return message("settings.languagesRequired");
-  if (languages.some((l) => !/^[a-z]{2}$/.test(l))) return message("settings.languagesFormat");
-  return null;
+  const failing = languages.find((l) => !/^[a-z]{2}$/.test(l));
+  return failing === undefined ? null : message("settings.languageCodeInvalid", { code: failing });
 }
 
 /** The value rules for one set; the sets without rules have no messages. */
@@ -76,6 +85,8 @@ export function settingsSetErrors<K extends keyof Settings>(key: K, value: Setti
   const between = (min: number, max: number) => message("settings.between", { min, max });
   const bounded = (field: SettingsField, v: number, min: number, max: number) =>
     set(field, withinBounds(v, min, max) ? null : between(min, max));
+  const wholeBounded = (field: SettingsField, v: number, min: number, max: number) =>
+    set(field, Number.isInteger(v) && withinBounds(v, min, max) ? null : message("settings.wholeBetween", { min, max }));
 
   switch (key) {
     case "timezone":
@@ -89,9 +100,9 @@ export function settingsSetErrors<K extends keyof Settings>(key: K, value: Setti
       break;
     case "contentFont": {
       const font = value as Settings["contentFont"];
-      bounded("contentFont.size", font.size, CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX);
+      wholeBounded("contentFont.size", font.size, CONTENT_FONT_SIZE_MIN, CONTENT_FONT_SIZE_MAX);
       bounded("contentFont.lineHeight", font.lineHeight, CONTENT_LINE_HEIGHT_MIN, CONTENT_LINE_HEIGHT_MAX);
-      bounded("contentFont.padding", font.padding, CONTENT_PADDING_MIN, CONTENT_PADDING_MAX);
+      wholeBounded("contentFont.padding", font.padding, CONTENT_PADDING_MIN, CONTENT_PADDING_MAX);
       break;
     }
   }

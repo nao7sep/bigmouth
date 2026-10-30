@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Settings } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
-import { firstSettingsError, settingsFieldErrors } from "@shared/settingsValidation";
+import { firstSettingsError, numberFieldValue, settingsFieldErrors } from "@shared/settingsValidation";
 
 function settings(over: Partial<Settings> = {}): Settings {
   return {
@@ -66,6 +66,28 @@ describe("settings value rules", () => {
       "contentFont.size",
     ]);
     expect(firstSettingsError(settings({ contentFont: font }))?.field).toBe("contentFont.size");
+  });
+
+  it("takes whole numbers only for font size and padding, and any number in range for line height", () => {
+    const errors = (font: Partial<Settings["contentFont"]>) =>
+      Object.keys(settingsFieldErrors(settings({ contentFont: { ...DEFAULT_CONTENT_FONT, ...font } })));
+    expect(errors({ size: 12.5, padding: 3.5 }).sort()).toEqual(["contentFont.padding", "contentFont.size"]);
+    expect(errors({ size: 8, padding: 0, lineHeight: 1.25 })).toEqual([]);
+    expect(errors({ size: Number.NaN, padding: Number.NaN, lineHeight: Number.NaN }).sort())
+      .toEqual(["contentFont.lineHeight", "contentFont.padding", "contentFont.size"]);
+  });
+
+  it("names the language code that fails its check", () => {
+    expect(settingsFieldErrors(settings({ supportedLanguages: ["en", "EN", "ja"] })).supportedLanguages)
+      .toEqual({ key: "settings.languageCodeInvalid", values: { code: "EN" } });
+  });
+
+  it("reads a number field's text whole, never its leading digits", () => {
+    expect(numberFieldValue("12")).toBe(12);
+    expect(numberFieldValue("1.25")).toBe(1.25);
+    expect(numberFieldValue("")).toBeNaN();
+    expect(numberFieldValue("  ")).toBeNaN();
+    expect(numberFieldValue("12px")).toBeNaN();
   });
 
   it("reports every offending field at once, not just the first", () => {

@@ -594,11 +594,13 @@ describe("SettingsModal — General tab validation", () => {
     fireEvent.change(langs, { target: { value: "" } });
     expect(getByText("At least one language is required.")).toBeTruthy();
 
-    fireEvent.change(langs, { target: { value: "eng" } });
-    expect(getByText("Each language must be a 2-letter lowercase code (e.g. en, ja).")).toBeTruthy();
+    // The message names the code that fails, so a long list says which one.
+    fireEvent.change(langs, { target: { value: "en, eng, ja" } });
+    const failing = "“eng” is not a 2-letter lowercase language code (e.g. en, ja).";
+    expect(getByText(failing)).toBeTruthy();
 
     fireEvent.change(langs, { target: { value: "en, ja" } });
-    expect(queryByText("Each language must be a 2-letter lowercase code (e.g. en, ja).")).toBeNull();
+    expect(queryByText(failing)).toBeNull();
   });
 
   it("does not treat a duplicate language as an error, because the store folds it away", () => {
@@ -646,6 +648,44 @@ describe("SettingsModal — General tab validation", () => {
     fireEvent.change(numbers[0], { target: { value: "0" } });
     expect(getByText("Must be a positive integer.")).toBeTruthy();
     expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // number-field-conventions: the field keeps what was typed, an unusable value
+  // is a message under it with Save held, and nothing is rewritten on blur.
+  it.each([
+    ["Posts per load", "2.5", "Must be a positive integer."],
+    ["Posts per load", "", "Must be a positive integer."],
+    ["Editor font size (px)", "12.5", "Must be a whole number between 8 and 48."],
+    ["Editor font size (px)", "60", "Must be a whole number between 8 and 48."],
+    ["Editor font size (px)", "", "Must be a whole number between 8 and 48."],
+    ["Line height", "0.5", "Must be between 1 and 3."],
+    ["Line height", "", "Must be between 1 and 3."],
+    ["Editor padding (px)", "4.5", "Must be a whole number between 0 and 64."],
+    ["Editor padding (px)", "", "Must be a whole number between 0 and 64."],
+  ])("keeps %s as typed (%j) through blur, with its message and Save held", async (label, typed, error) => {
+    const { getByRole, getByLabelText, getByText } = await renderModal();
+    const field = getByLabelText(label) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: typed } });
+    fireEvent.blur(field);
+    expect(field.value).toBe(typed);
+    expect(getByText(error)).toBeTruthy();
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("saves a corrected number as typed", async () => {
+    const { getByRole, getByLabelText } = await renderModal();
+    const size = getByLabelText("Editor font size (px)") as HTMLInputElement;
+    fireEvent.change(size, { target: { value: "" } });
+    fireEvent.change(size, { target: { value: "17" } });
+    fireEvent.change(getByLabelText("Line height") as HTMLInputElement, { target: { value: "1.25" } });
+    mock.saveSettings.mockImplementation((next) => Promise.resolve({ ...settings(), ...next }));
+    mock.saveTargets.mockResolvedValue(targets());
+    mock.saveGenerationPrompts.mockResolvedValue(genPrompts());
+    mock.saveAnalysisPrompts.mockResolvedValue(prompts());
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    expect(mock.saveSettings.mock.calls[0]![0]).toMatchObject({ contentFont: { size: 17, lineHeight: 1.25 } });
   });
 
   it("flags non-positive numeric fields", async () => {
