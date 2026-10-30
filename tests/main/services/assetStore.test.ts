@@ -698,6 +698,41 @@ describe("an attachment list under its old name", () => {
     expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "assets.json", "b.png", "meta.json"]);
   });
 
+  it("is read and written where it is when it cannot be renamed", () => {
+    writeLegacy();
+    const rename = fs.renameSync;
+    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (path.basename(String(from)) === "meta.json") throw Object.assign(new Error("denied"), { code: "EACCES" });
+      rename(from, to);
+    });
+    try {
+      expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);
+      install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
+      expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "b.png", "meta.json"]);
+    } finally { spy.mockRestore(); }
+    const list = JSON.parse(fs.readFileSync(path.join(dir(), "meta.json"), "utf-8")).assets as AssetMeta[];
+    expect(list.map((a) => a.filename)).toEqual(["a.png", "b.png"]);
+    expect(listAssets(dataDir, POST).assets.map((a) => a.filename)).toEqual(["a.png", "b.png"]);
+    expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "assets.json", "b.png"]);
+  });
+
+  // An earlier build reserved only meta.json, so a user's file could be stored
+  // as assets.json beside it.
+  it("is kept over an attachment an earlier build stored as assets.json, which is left as it is", async () => {
+    writeLegacy();
+    const attachment = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+    fs.writeFileSync(path.join(dir(), "assets.json"), attachment);
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);
+    install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2));
+    expect(fs.readFileSync(path.join(dir(), "assets.json"))).toEqual(attachment);
+    expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "assets.json", "b.png", "meta.json"]);
+    const list = JSON.parse(fs.readFileSync(path.join(dir(), "meta.json"), "utf-8")).assets as AssetMeta[];
+    expect(list.map((a) => a.filename)).toEqual(["a.png", "b.png"]);
+    const seen: string[] = [];
+    await visitRecordedHashes(dataDir, (hash) => seen.push(hash));
+    expect(seen.sort()).toEqual([sha("abc"), sha("de")].sort());
+  });
+
   it("names its hashes to the thumbnail sweep before it is renamed", async () => {
     writeLegacy();
     const seen: string[] = [];

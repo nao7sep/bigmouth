@@ -263,11 +263,10 @@ export function installAsset(
 
   const fromPath = stagedPath(dataDir, staged.name);
   const dir = ensureAssetDir(dataDir, postId);
-  const { assets: siblings, records, refusal } = reconcileAssets(dir, dataDir);
+  const { assets: siblings, records, refusal, metaPath } = reconcileAssets(dir, dataDir);
   if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = assetPath(dataDir, postId, finalName);
-  const metaPath = assetPath(dataDir, postId, META_FILENAME);
   const finalMeta: AssetMeta = { ...meta, filename: finalName, size: staged.size, contentHash: staged.sha256 };
   const existing = records.filter((a) => a.filename !== finalName);
   const current = siblings.find((a) => a.filename === finalName);
@@ -359,8 +358,7 @@ function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): str
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
   const dir = assetDir(dataDir, postId);
   const filePath = assetPath(dataDir, postId, filename);
-  const metaPath = assetPath(dataDir, postId, META_FILENAME);
-  const { assets, records, refusal } = reconcileAssets(dir, dataDir);
+  const { assets, records, refusal, metaPath } = reconcileAssets(dir, dataDir);
   if (refusal) throw refusal;
   const remaining = records.filter((a) => a.filename !== filename);
 
@@ -400,19 +398,22 @@ function reconcileAssets(dir: string, dataDir: string): {
   refusal: Error | null;
   unavailable: string[];
   movedAside?: { path: string; movedTo: string };
+  /** Where the folder's attachment list is read and written. */
+  metaPath: string;
 } {
   let filenames: string[];
   try {
     filenames = fs.readdirSync(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { assets: [], records: [], refusal: null, unavailable: [] };
+      return { assets: [], records: [], refusal: null, unavailable: [], metaPath: path.join(dir, META_FILENAME) };
     }
     throw error;
   }
   const onDisk = new Set(filenames.filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, refusal, movedAside } = readAssetMeta(adoptLegacyMeta(dir));
+  const metaPath = adoptLegacyMeta(dir);
+  const { cached, refusal, movedAside } = readAssetMeta(metaPath);
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
   const unavailable: string[] = [];
@@ -445,7 +446,7 @@ function reconcileAssets(dir: string, dataDir: string): {
       logWarn("asset could not be listed", { path: path.resolve(dir, filename), error: serializeError(error) });
     }
   }
-  return { assets: result, records, refusal, movedAside, unavailable };
+  return { assets: result, records, refusal, movedAside, unavailable, metaPath };
 }
 
 /**
@@ -477,13 +478,21 @@ function checkRecordedHash(filePath: string, entry: RecordedAsset):
 /**
  * The path of the folder's attachment list, renaming a `meta.json` an earlier
  * build wrote to `assets.json` when only the old name exists. A failed rename
- * leaves the old file where it is and reads it there; the next write then
- * creates `assets.json` beside it, which is read from then on.
+ * leaves the old file where it is, read and written there until a later read
+ * renames it. An `assets.json`
+ * beside a `meta.json` that is not an asset list is an attachment an earlier
+ * build stored under that name: the list stays in `meta.json`, and the file is
+ * left as it is, neither listed nor moved aside.
  */
 function adoptLegacyMeta(dir: string): string {
   const metaPath = path.join(dir, META_FILENAME);
   const legacyPath = path.join(dir, LEGACY_META_FILENAME);
-  if (fs.existsSync(metaPath) || !fs.existsSync(legacyPath)) return metaPath;
+  if (!fs.existsSync(legacyPath)) return metaPath;
+  if (fs.existsSync(metaPath)) {
+    if (holdsAssetList(metaPath)) return metaPath;
+    logWarn("a file named assets.json is not an asset list; the list is kept in meta.json", { path: metaPath });
+    return legacyPath;
+  }
   try {
     fs.renameSync(legacyPath, metaPath);
     return metaPath;
@@ -491,6 +500,19 @@ function adoptLegacyMeta(dir: string): string {
     logWarn("asset list under its old name could not be renamed; read where it is", { path: legacyPath, error: serializeError(err) });
     return legacyPath;
   }
+}
+
+/**
+ * Whether a file is BigMouth's attachment list, judged as readAssetMeta reads it.
+ * One a newer build wrote, or one that could not be read, says nothing against
+ * it, so it is taken as the list and refused or reported as such.
+ */
+function holdsAssetList(filePath: string): boolean {
+  const read = readJsonStore("assetMeta", filePath);
+  if (read.kind === "newer" || read.kind === "inaccessible") return true;
+  if (read.kind !== "read") return false;
+  const assets = read.value.assets;
+  return Array.isArray(assets) && assets.every(isAssetMeta);
 }
 
 /**
@@ -608,37 +630,27 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
   }
   for (const postId of posts) {
     if (!isPostId(postId)) continue;
-    let text: string;
-    try {
-      text = await readFirstPresent([
-        assetPath(dataDir, postId, META_FILENAME),
-        assetPath(dataDir, postId, LEGACY_META_FILENAME),
-      ]);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ENOTDIR") continue;
-      throw err;
-    }
-    let assets: unknown;
-    try { assets = (JSON.parse(text) as { assets?: unknown }).assets; } catch { continue; }
-    if (!Array.isArray(assets)) continue;
-    for (const asset of assets) {
-      const hash = (asset as { contentHash?: unknown } | null)?.contentHash;
-      if (typeof hash === "string") visit(hash);
-    }
-  }
-}
-
-/** The text of the first of `paths` that exists; ENOENT when none does. */
-async function readFirstPresent(paths: string[]): Promise<string> {
-  for (const [i, file] of paths.entries()) {
-    try {
-      return await fsp.readFile(file, "utf8");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT" || i === paths.length - 1) throw err;
+    // The first of the two names that holds an asset list: an `assets.json`
+    // that is an attachment an earlier build stored leaves the list in `meta.json`.
+    for (const name of [META_FILENAME, LEGACY_META_FILENAME]) {
+      let text: string;
+      try {
+        text = await fsp.readFile(assetPath(dataDir, postId, name), "utf8");
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ENOTDIR") continue;
+        throw err;
+      }
+      let assets: unknown;
+      try { assets = (JSON.parse(text) as { assets?: unknown } | null)?.assets; } catch { continue; }
+      if (!Array.isArray(assets)) continue;
+      for (const asset of assets) {
+        const hash = (asset as { contentHash?: unknown } | null)?.contentHash;
+        if (typeof hash === "string") visit(hash);
+      }
+      break;
     }
   }
-  throw new Error("readFirstPresent needs at least one path");
 }
 
 /**
