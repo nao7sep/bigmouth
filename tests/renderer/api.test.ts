@@ -19,7 +19,7 @@ import {
   setPostLocked,
   deletePost,
   listReferrers,
-  rebuildPostIndex,
+  rereadPosts,
   listTargets,
   listAnalysisPrompts,
   getWorkspaceConfig,
@@ -258,11 +258,11 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.listReferrers).toHaveBeenCalledWith("w1", "p1");
     });
 
-    it("rebuildPostIndex forwards the active ws", () => {
+    it("rereadPosts forwards the active ws", () => {
       const b = bridge();
       installBridge(b);
-      void rebuildPostIndex();
-      expect(b.rebuildPostIndex).toHaveBeenCalledWith("w1");
+      void rereadPosts();
+      expect(b.rereadPosts).toHaveBeenCalledWith("w1");
     });
   });
 

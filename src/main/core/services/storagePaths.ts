@@ -88,8 +88,8 @@ function expandAndResolve(input: string, base: string, label: string): string {
  * hands back NFD from a file dialog where the user typed NFC, its default volume
  * is case-insensitive, and either can be reached through a symlink. Each of
  * those slipped past the "already registered as workspace X" guard and
- * registered ONE folder twice — two ids, two in-memory indexes keyed by
- * different strings writing over a single posts/index.json, and two separate
+ * registered ONE folder twice — two ids, two in-memory post lists keyed by
+ * different strings over the same post files, and two separate
  * API-key sets for one workspace.
  */
 export function sameDirectory(a: string, b: string): boolean {

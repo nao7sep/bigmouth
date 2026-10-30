@@ -4,8 +4,6 @@
 export const FORMAT_VERSIONS = {
   /** A post's `.md` file, in its front matter. */
   postFile: 1,
-  /** `posts/index.json`. */
-  postIndex: 1,
   /** An asset folder's `assets.json` (`meta.json` before it was renamed; same contents). */
   assetMeta: 2, // Recorded upload details are bound to the installed content hash.
   /** The storage root's `workspaces.json`. */

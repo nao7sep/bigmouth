@@ -454,23 +454,23 @@
   "settings.bold": "Bold",
   "settings.italic": "Italic",
   "settings.underline": "Underline",
-  "settings.rebuildFailed": "The post index could not be rebuilt. Existing posts were not changed; try again or check the log.",
-  "settings.rebuildHint": "The post index ({file}) is rebuilt automatically from the Markdown files. Rebuild it by hand after editing or merging post files outside the app.",
-  "settings.rebuilding": "Rebuilding…",
-  "settings.rebuild": "Rebuild index",
-  "settings.rebuilt": {
-    "one": "Rebuilt the index from {count} post.",
-    "other": "Rebuilt the index from {count} posts."
+  "settings.rereadFailed": "The post files could not be reread. Existing posts were not changed; try again or check the log.",
+  "settings.rereadHint": "BigMouth reads the post list from the Markdown files in {folder} when the workspace opens. Reread them after editing, adding or merging post files outside the app.",
+  "settings.rereading": "Rereading…",
+  "settings.reread": "Reread posts",
+  "settings.rereadDone": {
+    "one": "Read {count} post.",
+    "other": "Read {count} posts."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "{count} file could not be read and was left out — see the log.",
     "other": "{count} files could not be read and were left out — see the log."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "{count} duplicate slug group remains — see the log.",
     "other": "{count} duplicate slug groups remain — see the log."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} asset folder belongs to a post that no longer exists.",
     "other": "{count} asset folders belong to posts that no longer exist."
   },

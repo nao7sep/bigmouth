@@ -30,7 +30,7 @@ vi.mock("@renderer/api", () => ({
   getGenerationPrompts: vi.fn(),
   getGenerationPromptDefaults: vi.fn(),
   saveGenerationPrompts: vi.fn(),
-  rebuildPostIndex: vi.fn(),
+  rereadPosts: vi.fn(),
 }));
 
 // The platform's full IANA list is several hundred <option>s, which jsdom
@@ -75,6 +75,7 @@ const WORKSPACE_PROPS = {
   workspaceName: "Alpha",
   workspaceFolder: "/data/alpha",
   onWorkspaceRenamed: vi.fn(),
+  onPostsReread: vi.fn(),
 };
 
 function settings(): Settings {
@@ -480,7 +481,7 @@ describe("SettingsModal — Save flow (Anthropic section)", () => {
 
 // --- Additional coverage: General / Targets / Analysis / Generation / close ---
 
-const mockRebuildPostIndex = vi.mocked(api.rebuildPostIndex);
+const mockRereadPosts = vi.mocked(api.rereadPosts);
 
 // Open a tab by its visible label and return its panel for scoped queries.
 function openTab(
@@ -718,10 +719,11 @@ describe("SettingsModal — General tab validation", () => {
   });
 });
 
-describe("SettingsModal — RebuildIndexSection", () => {
-  it("rebuilds the index and reports the post count", async () => {
+describe("SettingsModal — RereadPostsSection", () => {
+  it("rereads the post files, reports the post count and has the open lists read again", async () => {
+    WORKSPACE_PROPS.onPostsReread.mockClear();
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({
+    mockRereadPosts.mockResolvedValue({
       count: 3,
       skipped: 0,
       duplicateSlugs: 0,
@@ -729,34 +731,35 @@ describe("SettingsModal — RebuildIndexSection", () => {
     });
 
     await act(async () => {
-      fireEvent.click(getByText("Rebuild index"));
+      fireEvent.click(getByText("Reread posts"));
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(getByText("Rebuilt the index from 3 posts.")).toBeTruthy();
+    expect(getByText("Read 3 posts.")).toBeTruthy();
+    expect(WORKSPACE_PROPS.onPostsReread).toHaveBeenCalledOnce();
   });
 
-  it("uses the singular noun for a one-post rebuild", async () => {
+  it("uses the singular noun for a one-post reread", async () => {
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({
+    mockRereadPosts.mockResolvedValue({
       count: 1,
       skipped: 0,
       duplicateSlugs: 0,
       orphanedAssets: 0,
     });
     await act(async () => {
-      fireEvent.click(getByText("Rebuild index"));
+      fireEvent.click(getByText("Reread posts"));
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(getByText("Rebuilt the index from 1 post.")).toBeTruthy();
+    expect(getByText("Read 1 post.")).toBeTruthy();
   });
 
   it("says how many files it could not read, rather than reporting plain success", async () => {
     // A skipped file is a post the app can no longer show. Reporting only the
-    // indexed count let one vanish under a success message.
+    // listed count let one vanish under a success message.
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({
+    mockRereadPosts.mockResolvedValue({
       count: 2,
       skipped: 1,
       duplicateSlugs: 0,
@@ -764,18 +767,18 @@ describe("SettingsModal — RebuildIndexSection", () => {
     });
 
     await act(async () => {
-      fireEvent.click(getByText("Rebuild index"));
+      fireEvent.click(getByText("Reread posts"));
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(
-      getByText(/Rebuilt the index from 2 posts\. 1 file could not be read and was left out/),
+      getByText(/Read 2 posts\. 1 file could not be read and was left out/),
     ).toBeTruthy();
   });
 
   it("reports duplicate slug groups without claiming posts were left out", async () => {
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockResolvedValue({
+    mockRereadPosts.mockResolvedValue({
       count: 2,
       skipped: 0,
       duplicateSlugs: 1,
@@ -783,24 +786,24 @@ describe("SettingsModal — RebuildIndexSection", () => {
     });
 
     await act(async () => {
-      fireEvent.click(getByText("Rebuild index"));
+      fireEvent.click(getByText("Reread posts"));
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(
-      getByText(/Rebuilt the index from 2 posts\. 1 duplicate slug group remains/),
+      getByText(/Read 2 posts\. 1 duplicate slug group remains/),
     ).toBeTruthy();
   });
 
-  it("surfaces a rebuild failure", async () => {
+  it("surfaces a reread failure", async () => {
     const { getByText } = await renderModal();
-    mockRebuildPostIndex.mockRejectedValue(new Error("index locked"));
+    mockRereadPosts.mockRejectedValue(new Error("posts folder locked"));
     await act(async () => {
-      fireEvent.click(getByText("Rebuild index"));
+      fireEvent.click(getByText("Reread posts"));
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(getByText("The post index could not be rebuilt. Existing posts were not changed; try again or check the log.")).toBeTruthy();
+    expect(getByText("The post files could not be reread. Existing posts were not changed; try again or check the log.")).toBeTruthy();
   });
 });
 

@@ -442,20 +442,20 @@
   "settings.bold": "粗体",
   "settings.italic": "斜体",
   "settings.underline": "下划线",
-  "settings.rebuildFailed": "无法重建文章索引。现有文章没有改变；请重试或查看日志。",
-  "settings.rebuildHint": "文章索引（{file}）会根据 Markdown 文件自动重建。在应用之外编辑或合并文章文件后，请手动重建。",
-  "settings.rebuilding": "正在重建…",
-  "settings.rebuild": "重建索引",
-  "settings.rebuilt": {
-    "other": "已根据 {count} 篇文章重建索引。"
+  "settings.rereadFailed": "无法重新读取文章文件。现有文章没有改变；请重试或查看日志。",
+  "settings.rereadHint": "BigMouth 在打开工作区时从 {folder} 中的 Markdown 文件读取文章列表。在应用之外编辑、添加或合并文章文件后，请重新读取。",
+  "settings.rereading": "正在重新读取…",
+  "settings.reread": "重新读取文章",
+  "settings.rereadDone": {
+    "other": "已读取 {count} 篇文章。"
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "other": "有 {count} 个文件无法读取，已被略过——请查看日志。"
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "other": "仍有 {count} 组重复的别名——请查看日志。"
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "other": "有 {count} 个素材文件夹属于已不存在的文章。"
   },
   "settings.nameRequired": "名称为必填项。",

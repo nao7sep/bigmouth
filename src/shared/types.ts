@@ -129,9 +129,9 @@ export interface PostFrontMatter {
 }
 
 /**
- * One row of the derived post index — the canonical list projection the main
- * process sends for a post, and the definition both processes use. Deliberately
- * carries NO updatedAtUtc: the index excludes the one field every content save
+ * A post as the list shows it — the canonical list projection the main process
+ * reads from its front matter and sends, and the definition both processes use. Deliberately
+ * carries NO updatedAtUtc: the list excludes the one field every content save
  * changes, so a projection must never be read as an edit time.
  * A type alias, not an interface, so it stays assignable where the looser
  * PostFrontMatter (with its index signature) is expected.

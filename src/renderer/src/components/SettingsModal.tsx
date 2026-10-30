@@ -35,7 +35,7 @@ import {
   getGenerationPrompts,
   getGenerationPromptDefaults,
   saveGenerationPrompts,
-  rebuildPostIndex,
+  rereadPosts,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
 import {
@@ -58,6 +58,8 @@ interface SettingsModalProps {
   workspaceFolder: string;
   onClose: () => void;
   onSettingsChanged: () => void;
+  /** The post files were reread, so the open lists show what they hold now. */
+  onPostsReread: () => void;
   /** A saved rename, so the open workspace shows its new name. */
   onWorkspaceRenamed: (workspace: Workspace) => void;
 }
@@ -122,6 +124,7 @@ export function SettingsModal({
   workspaceFolder,
   onClose,
   onSettingsChanged,
+  onPostsReread,
   onWorkspaceRenamed,
 }: SettingsModalProps) {
   const { t, text, list } = useI18n();
@@ -409,6 +412,7 @@ export function SettingsModal({
                 systemAppearance={systemAppearance}
                 systemLanguage={systemLanguage}
                 onAppSettingsChange={setAppSettings}
+                onPostsReread={onPostsReread}
               />
             )}
             {tab === "ai" && anthropic && (
@@ -549,6 +553,7 @@ function GeneralTab({
   systemAppearance,
   systemLanguage,
   onAppSettingsChange,
+  onPostsReread,
 }: {
   workspaceName: string;
   workspaceFolder: string;
@@ -560,6 +565,7 @@ function GeneralTab({
   systemAppearance: "light" | "dark";
   systemLanguage: Language;
   onAppSettingsChange: (s: AppSettings) => void;
+  onPostsReread: () => void;
 }) {
   const { t, locale } = useI18n();
   const fieldIds = useId();
@@ -714,7 +720,7 @@ function GeneralTab({
       <FontsSection settings={settings} update={update} />
 
       <div className="settings-subheading">{t("settings.maintenance")}</div>
-      <RebuildIndexSection workspaceId={workspaceId} />
+      <RereadPostsSection workspaceId={workspaceId} onPostsReread={onPostsReread} />
     </div>
   );
 }
@@ -836,35 +842,36 @@ function FontsSection({
 
 // --- Maintenance ---
 
-// What a rebuild found: the counts, rendered as sentences when shown.
-type RebuildSummary = { count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number };
+// What a reread found: the counts, rendered as sentences when shown.
+type RereadSummary = { count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number };
 
-function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
+function RereadPostsSection({ workspaceId, onPostsReread }: { workspaceId: string; onPostsReread: () => void }) {
   const { t, text, rich } = useI18n();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   const runningRef = useRef(false);
   useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
   const [running, setRunning] = useState(false);
-  const [summary, setSummary] = useState<RebuildSummary | null>(null);
+  const [summary, setSummary] = useState<RereadSummary | null>(null);
   const [error, setError] = useState<Message | null>(null);
 
-  const rebuild = async () => {
+  const reread = async () => {
     if (runningRef.current) return;
     runningRef.current = true;
     setRunning(true);
     setSummary(null);
     setError(null);
     try {
-      const { count, skipped, duplicateSlugs, orphanedAssets } = await rebuildPostIndex(workspaceId);
+      const { count, skipped, duplicateSlugs, orphanedAssets } = await rereadPosts(workspaceId);
+      onPostsReread();
       if (current.current) setSummary({ count, skipped, duplicateSlugs, orphanedAssets });
       else {
-        if (skipped > 0) reportStorageResult(message("settings.rebuildSkipped", { count: skipped }), "warning");
-        if (duplicateSlugs > 0) reportStorageResult(message("settings.rebuildDuplicates", { count: duplicateSlugs }), "warning");
-        if (orphanedAssets > 0) reportStorageResult(message("settings.rebuildOrphans", { count: orphanedAssets }), "warning");
+        if (skipped > 0) reportStorageResult(message("settings.rereadSkipped", { count: skipped }), "warning");
+        if (duplicateSlugs > 0) reportStorageResult(message("settings.rereadDuplicates", { count: duplicateSlugs }), "warning");
+        if (orphanedAssets > 0) reportStorageResult(message("settings.rereadOrphans", { count: orphanedAssets }), "warning");
       }
     } catch (err) {
-      const failure = presentFailure(message("settings.rebuildFailed"), "renderer: post index rebuild failed", err);
+      const failure = presentFailure(message("settings.rereadFailed"), "renderer: posts could not be reread", err);
       if (current.current) setError(failure);
       else reportStorageResult(failure);
     } finally {
@@ -876,23 +883,23 @@ function RebuildIndexSection({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="form-field">
       <p className="settings-hint">
-        {rich("settings.rebuildHint", { file: <code>posts/index.json</code> })}
+        {rich("settings.rereadHint", { folder: <code>posts</code> })}
       </p>
-      <button className="btn-action" onClick={() => void rebuild()} disabled={running}>
-        {running ? t("settings.rebuilding") : t("settings.rebuild")}
+      <button className="btn-action" onClick={() => void reread()} disabled={running}>
+        {running ? t("settings.rereading") : t("settings.reread")}
       </button>
       {summary && (
         <p className="settings-hint">
-          {t("settings.rebuilt", { count: summary.count })}
+          {t("settings.rereadDone", { count: summary.count })}
           {/* A skipped file is a post the app can no longer show. Saying only
               what was indexed let one vanish under a success message. */}
-          {summary.skipped > 0 && <> {t("settings.rebuildSkipped", { count: summary.skipped })}</>}
-          {summary.duplicateSlugs > 0 && <> {t("settings.rebuildDuplicates", { count: summary.duplicateSlugs })}</>}
+          {summary.skipped > 0 && <> {t("settings.rereadSkipped", { count: summary.skipped })}</>}
+          {summary.duplicateSlugs > 0 && <> {t("settings.rereadDuplicates", { count: summary.duplicateSlugs })}</>}
           {/* Asset folders whose post is gone: nothing here deletes them (they
               are the user's uploads, and a .md can be restored from git), but
               nothing in the UI could reach them either, so the count is the
               path to them. */}
-          {summary.orphanedAssets > 0 && <> {t("settings.rebuildOrphans", { count: summary.orphanedAssets })}</>}
+          {summary.orphanedAssets > 0 && <> {t("settings.rereadOrphans", { count: summary.orphanedAssets })}</>}
         </p>
       )}
       {error && (

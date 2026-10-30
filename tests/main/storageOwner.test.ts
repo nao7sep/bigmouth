@@ -195,7 +195,7 @@ it.each(["async", "session-end"] as const)("runs real store writes, the quit flu
     const copiedFile = path.join(secondWorkspace.dataDirectory, path.relative(workspace.dataDirectory, post.filePath));
     fs.mkdirSync(path.dirname(copiedFile), { recursive: true });
     fs.copyFileSync(post.filePath, copiedFile);
-    await owner.run("refreshIndex", [secondWorkspace.dataDirectory]);
+    await owner.run("rereadPosts", [secondWorkspace.dataDirectory]);
     const savedBeforeCopies = saveEvents.length;
     await owner.run("queueWorkspaceContent", [workspace.id, post.frontMatter.id, "first workspace copy", new Date()]);
     await owner.run("queueWorkspaceContent", [secondWorkspace.id, post.frontMatter.id, "second workspace copy", new Date()]);

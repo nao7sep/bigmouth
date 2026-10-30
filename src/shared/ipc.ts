@@ -112,7 +112,7 @@ export const CHANNELS = {
   setPostLocked: "post:locked",
   deletePost: "post:delete",
   listReferrers: "post:referrers",
-  rebuildPostIndex: "post:rebuildIndex",
+  rereadPosts: "post:reread",
   // Content streaming: renderer fires every editor change at the main process,
   // which owns coalescing and disk writes (write-behind in the post store).
   queuePostContent: "post:queueContent",
@@ -426,11 +426,11 @@ export interface BigMouthApi {
   deletePost(wsId: string, id: string): Promise<PostDeleteResult>;
   listReferrers(wsId: string, id: string): Promise<{ count: number; ids: string[] }>;
   /**
-   * `count` is what is now indexed, `skipped` how many files could not be read,
+   * `count` is how many posts are now listed, `skipped` how many files could not be read,
    * `duplicateSlugs` how many case-insensitive slug collisions remain, and
    * `orphanedAssets` how many asset folders belong to a post that is gone.
    */
-  rebuildPostIndex(
+  rereadPosts(
     wsId: string,
   ): Promise<{ count: number; skipped: number; duplicateSlugs: number; orphanedAssets: number }>;
 

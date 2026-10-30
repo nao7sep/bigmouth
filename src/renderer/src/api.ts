@@ -247,13 +247,13 @@ export function listReferrers(
   return bridge().listReferrers(requireWs(workspaceId), id);
 }
 
-export function rebuildPostIndex(workspaceId?: string): Promise<{
+export function rereadPosts(workspaceId?: string): Promise<{
   count: number;
   skipped: number;
   duplicateSlugs: number;
   orphanedAssets: number;
 }> {
-  return bridge().rebuildPostIndex(requireWs(workspaceId));
+  return bridge().rereadPosts(requireWs(workspaceId));
 }
 
 // --- Targets ---

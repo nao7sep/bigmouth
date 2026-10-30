@@ -40,7 +40,7 @@ vi.mock("@main/storageAccess.js", async () => {
     setHeldEditFailureListener: () => {},
     // Storage here runs in-process, so no text is ever held behind a save.
     holdsContentFor: () => false,
-    refreshIndex: async (...args: Parameters<typeof post.refreshIndex>) => post.refreshIndex(...args),
+    unreadablePosts: async (...args: Parameters<typeof post.unreadablePosts>) => post.unreadablePosts(...args),
     listByStatus: async (...args: Parameters<typeof post.listByStatus>) => post.listByStatus(...args),
     countByStatus: async (...args: Parameters<typeof post.countByStatus>) => post.countByStatus(...args),
     getPost: async (...args: Parameters<typeof post.getPost>) => post.getPost(...args),
@@ -55,7 +55,7 @@ vi.mock("@main/storageAccess.js", async () => {
       return result;
     },
     deletePost: async (...args: Parameters<typeof post.deletePost>) => post.deletePost(...args),
-    rebuildIndex: async (...args: Parameters<typeof post.rebuildIndex>) => post.rebuildIndex(...args),
+    rereadPosts: async (...args: Parameters<typeof post.rereadPosts>) => post.rereadPosts(...args),
     postExists: async (...args: Parameters<typeof post.postExists>) => post.postExists(...args),
     listReferrers: async (...args: Parameters<typeof post.listReferrers>) => post.listReferrers(...args),
     getPostSummary: async (...args: Parameters<typeof post.getPostSummary>) => {
@@ -256,6 +256,7 @@ describe("listPosts", () => {
     const newer = path.join(posts, "20260101-000001-utc-newer.md");
     fs.writeFileSync(broken, "---\nid: [unclosed\n---\nbody\n");
     fs.writeFileSync(newer, "---\nformatVersion: 99\nid: NEWERxxxxxxxxxxxxxxxx\nstatus: draft\n---\nbody\n");
+    await invoke(CHANNELS.rereadPosts, wsId);
 
     const res = (await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0));
 
@@ -265,10 +266,11 @@ describe("listPosts", () => {
       { path: newer, newer: true },
     ]);
     expect(fs.readFileSync(broken, "utf8")).toBe("---\nid: [unclosed\n---\nbody\n");
-    // Still named on the next read, and gone from the answer once repaired.
+    // Still named on the next read, and gone from the answer once repaired and reread.
     expect((await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0)).unreadable).toHaveLength(2);
     fs.rmSync(broken);
     fs.rmSync(newer);
+    await invoke(CHANNELS.rereadPosts, wsId);
     expect((await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0)).unreadable).toBeUndefined();
   });
 
@@ -279,7 +281,8 @@ describe("listPosts", () => {
 });
 
 // Post files are the user's to edit outside the app (git, another editor), and
-// nothing watches them: every list read reconciles the index with them first.
+// nothing watches them: the list shows such an edit once the posts are reread
+// (or the workspace reopened), never from a re-check before each list read.
 describe("listPosts after an edit on disk", () => {
   function postFile(id: string): string {
     const dir = path.join(dataDir, "posts");
@@ -287,25 +290,26 @@ describe("listPosts after an edit on disk", () => {
     return path.join(dir, name!);
   }
 
-  it("shows a status and title changed in the file since the last read", async () => {
+  it("shows a status and title changed in the file once the posts are reread", async () => {
     const id = (await createDraft());
     expect(listIds((await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0)), "draft")).toContain(id);
 
     const file = postFile(id);
     const edited = fs.readFileSync(file, "utf8").replace("status: draft", "status: verified").replace(/^---\n/, "---\ntitle: Edited in git\n");
     fs.writeFileSync(file, edited);
-    const later = new Date(Date.now() + 10_000);
-    fs.utimesSync(file, later, later);
+    expect(listIds((await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0)), "draft")).toContain(id);
 
+    await invoke(CHANNELS.rereadPosts, wsId);
     const res = (await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0));
     expect(listIds(res, "draft")).not.toContain(id);
     expect(res.verified.posts.find((d) => d.frontMatter.id === id)?.frontMatter.title).toBe("Edited in git");
   });
 
-  it("drops a post whose file was removed since the last read", async () => {
+  it("drops a post whose file was removed once the posts are reread", async () => {
     const id = (await createDraft());
     (await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0));
     fs.rmSync(postFile(id));
+    await invoke(CHANNELS.rereadPosts, wsId);
     expect(listIds((await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0)), "draft")).not.toContain(id);
   });
 });
@@ -603,8 +607,8 @@ describe("queuePostMetadata (the metadata stream)", () => {
   });
 });
 
-describe("rebuildPostIndex", () => {
-  it("rebuilds the index and reports the post count", async () => {
+describe("rereadPosts", () => {
+  it("rereads the post files and reports the post count", async () => {
     (await createDraft());
     (await createDraft());
     const res = (await invoke<{
@@ -612,11 +616,11 @@ describe("rebuildPostIndex", () => {
       skipped: number;
       duplicateSlugs: number;
       orphanedAssets: number;
-    }>(CHANNELS.rebuildPostIndex, wsId));
+    }>(CHANNELS.rereadPosts, wsId));
     expect(res).toEqual({ count: 2, skipped: 0, duplicateSlugs: 0, orphanedAssets: 0 });
   });
 
-  // The catch branch (rebuildIndex throwing) is not exercised: rebuildIndex only
+  // The catch branch (rereadPosts throwing) is not exercised: rereadPosts only
   // throws on unreadable workspace files, which cannot be induced through the
   // public handler surface without corrupting the on-disk posts directory in a way
   // that is environment-specific and brittle. The success path is covered above.
@@ -654,7 +658,7 @@ describe("listPostPage", () => {
     for (let i = 0; i < 3; i++) await invoke(CHANNELS.changePostStatus, wsId, await createDraft(), status);
     await createDraft();
     const access = await import("@main/storageAccess.js");
-    const refresh = vi.spyOn(access, "refreshIndex");
+    const refresh = vi.spyOn(access, "unreadablePosts");
     const list = vi.spyOn(access, "listByStatus");
     const count = vi.spyOn(access, "countByStatus");
     try {
@@ -682,7 +686,7 @@ describe("listPostPage", () => {
 
   it("rejects nonpaged or invalid statuses before reading posts", async () => {
     const access = await import("@main/storageAccess.js");
-    const refresh = vi.spyOn(access, "refreshIndex");
+    const refresh = vi.spyOn(access, "unreadablePosts");
     try {
       for (const status of ["draft", "verified", "unknown", null]) {
         await expect(invoke(CHANNELS.listPostPage, wsId, status, 0, 1)).rejects.toThrow("Invalid paged post status");

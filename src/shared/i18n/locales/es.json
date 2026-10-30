@@ -466,26 +466,26 @@
   "settings.bold": "Negrita",
   "settings.italic": "Cursiva",
   "settings.underline": "Subrayado",
-  "settings.rebuildFailed": "No se pudo reconstruir el índice de publicaciones. No se cambió ninguna publicación; inténtalo de nuevo o revisa el registro.",
-  "settings.rebuildHint": "El índice de publicaciones ({file}) se reconstruye automáticamente a partir de los archivos Markdown. Reconstrúyelo a mano después de editar o fusionar archivos de publicación fuera de la app.",
-  "settings.rebuilding": "Reconstruyendo…",
-  "settings.rebuild": "Reconstruir índice",
-  "settings.rebuilt": {
-    "one": "Se reconstruyó el índice a partir de {count} publicación.",
-    "many": "Se reconstruyó el índice a partir de {count} de publicaciones.",
-    "other": "Se reconstruyó el índice a partir de {count} publicaciones."
+  "settings.rereadFailed": "No se pudieron volver a leer los archivos de publicación. No se cambió ninguna publicación; inténtalo de nuevo o revisa el registro.",
+  "settings.rereadHint": "BigMouth lee la lista de publicaciones de los archivos Markdown de {folder} al abrir el espacio de trabajo. Vuelve a leerlos después de editar, añadir o fusionar archivos de publicación fuera de la app.",
+  "settings.rereading": "Volviendo a leer…",
+  "settings.reread": "Volver a leer publicaciones",
+  "settings.rereadDone": {
+    "one": "Se leyó {count} publicación.",
+    "many": "Se leyeron {count} de publicaciones.",
+    "other": "Se leyeron {count} publicaciones."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "No se pudo leer {count} archivo y se omitió; consulta el registro.",
     "many": "No se pudieron leer {count} de archivos y se omitieron; consulta el registro.",
     "other": "No se pudieron leer {count} archivos y se omitieron; consulta el registro."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "Queda {count} grupo de slugs duplicados; consulta el registro.",
     "many": "Quedan {count} de grupos de slugs duplicados; consulta el registro.",
     "other": "Quedan {count} grupos de slugs duplicados; consulta el registro."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} carpeta de recursos pertenece a una publicación que ya no existe.",
     "many": "{count} de carpetas de recursos pertenecen a publicaciones que ya no existen.",
     "other": "{count} carpetas de recursos pertenecen a publicaciones que ya no existen."

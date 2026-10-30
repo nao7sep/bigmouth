@@ -224,8 +224,8 @@ const api = {
   deletePost: (wsId: string, id: string) => ipcRenderer.invoke(CHANNELS.deletePost, wsId, id) as Promise<PostDeleteResult>,
   listReferrers: (wsId: string, id: string) =>
     ipcRenderer.invoke(CHANNELS.listReferrers, wsId, id) as Promise<{ count: number; ids: string[] }>,
-  rebuildPostIndex: (wsId: string) =>
-    ipcRenderer.invoke(CHANNELS.rebuildPostIndex, wsId) as Promise<{
+  rereadPosts: (wsId: string) =>
+    ipcRenderer.invoke(CHANNELS.rereadPosts, wsId) as Promise<{
       count: number;
       skipped: number;
       duplicateSlugs: number;

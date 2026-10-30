@@ -442,20 +442,20 @@
   "settings.bold": "굵게",
   "settings.italic": "기울임꼴",
   "settings.underline": "밑줄",
-  "settings.rebuildFailed": "게시물 인덱스를 다시 만들 수 없습니다. 기존 게시물은 바뀌지 않았습니다. 다시 시도하거나 로그를 확인하십시오.",
-  "settings.rebuildHint": "게시물 인덱스({file})는 Markdown 파일에서 자동으로 다시 만들어집니다. 앱 밖에서 게시물 파일을 편집하거나 병합한 뒤에는 직접 다시 만드십시오.",
-  "settings.rebuilding": "다시 만드는 중…",
-  "settings.rebuild": "인덱스 다시 만들기",
-  "settings.rebuilt": {
-    "other": "게시물 {count}개로 인덱스를 다시 만들었습니다."
+  "settings.rereadFailed": "게시물 파일을 다시 읽을 수 없습니다. 기존 게시물은 바뀌지 않았습니다. 다시 시도하거나 로그를 확인하십시오.",
+  "settings.rereadHint": "BigMouth는 작업 공간을 열 때 {folder}의 Markdown 파일에서 게시물 목록을 읽습니다. 앱 밖에서 게시물 파일을 편집하거나 추가하거나 병합한 뒤에는 다시 읽으십시오.",
+  "settings.rereading": "다시 읽는 중…",
+  "settings.reread": "게시물 다시 읽기",
+  "settings.rereadDone": {
+    "other": "게시물 {count}개를 읽었습니다."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "other": "파일 {count}개를 읽을 수 없어 제외했습니다. 로그를 확인하십시오."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "other": "중복된 슬러그 그룹 {count}개가 남아 있습니다. 로그를 확인하십시오."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "other": "에셋 폴더 {count}개가 더 이상 없는 게시물에 속해 있습니다."
   },
   "settings.nameRequired": "이름은 필수입니다.",

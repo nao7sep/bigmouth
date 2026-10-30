@@ -54,10 +54,10 @@ const frameworkReady = (() => {
   }
 })();
 
-// The stores below deliberately keep their indexes and write-behind buffers in
+// The stores below deliberately keep their post lists and write-behind buffers in
 // process memory. A second process over the same workspace could therefore make
-// decisions from stale state (including assigning the same export slug twice)
-// and overwrite a newer index.json. One app process may own that state; a second
+// decisions from stale state (including assigning the same export slug twice).
+// One app process may own that state; a second
 // launch is routed back to its existing window before it can touch durable data.
 if (frameworkReady) setLogSink((record) => {
   void storageLog(record).catch((error) => console.error("[bigmouth] Log could not reach storage", error));

@@ -466,26 +466,26 @@
   "settings.bold": "Grassetto",
   "settings.italic": "Corsivo",
   "settings.underline": "Sottolineato",
-  "settings.rebuildFailed": "Non è stato possibile ricostruire l’indice dei post. Nessun post è stato modificato; riprova o controlla il registro.",
-  "settings.rebuildHint": "L’indice dei post ({file}) viene ricostruito automaticamente dai file Markdown. Ricostruiscilo a mano dopo aver modificato o unito file di post fuori dall’app.",
-  "settings.rebuilding": "Ricostruzione…",
-  "settings.rebuild": "Ricostruisci indice",
-  "settings.rebuilt": {
-    "one": "Indice ricostruito da {count} post.",
-    "many": "Indice ricostruito da {count} di post.",
-    "other": "Indice ricostruito da {count} post."
+  "settings.rereadFailed": "Non è stato possibile rileggere i file dei post. Nessun post è stato modificato; riprova o controlla il registro.",
+  "settings.rereadHint": "BigMouth legge l’elenco dei post dai file Markdown in {folder} quando apre lo spazio di lavoro. Rileggili dopo aver modificato, aggiunto o unito file di post fuori dall’app.",
+  "settings.rereading": "Rilettura…",
+  "settings.reread": "Rileggi i post",
+  "settings.rereadDone": {
+    "one": "Letto {count} post.",
+    "many": "Letti {count} di post.",
+    "other": "Letti {count} post."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "{count} file non è stato letto ed è stato escluso: vedi il registro.",
     "many": "{count} di file non sono stati letti e sono stati esclusi: vedi il registro.",
     "other": "{count} file non sono stati letti e sono stati esclusi: vedi il registro."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "Resta {count} gruppo di slug duplicati: vedi il registro.",
     "many": "Restano {count} di gruppi di slug duplicati: vedi il registro.",
     "other": "Restano {count} gruppi di slug duplicati: vedi il registro."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} cartella di risorse appartiene a un post che non esiste più.",
     "many": "{count} di cartelle di risorse appartengono a post che non esistono più.",
     "other": "{count} cartelle di risorse appartengono a post che non esistono più."

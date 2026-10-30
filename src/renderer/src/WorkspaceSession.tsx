@@ -302,10 +302,11 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
     );
 
     /**
-     * Reads the lists again as they are on disk, keeping as many posts of each
-     * paged section loaded as are shown now. Post files can change outside the
-     * app (git, another editor) and nothing watches them. The selected-post
-     * refresh separately updates front matter while the editor retains text.
+     * Reads the lists again, keeping as many posts of each paged section loaded
+     * as are shown now. The main process reads the post files when the
+     * workspace opens or Settings rereads them; nothing watches them between.
+     * The selected-post refresh separately reads the open post's file, keeping
+     * the editor's text.
      */
     const refreshPosts = useCallback(async () => {
       const request = ++listRequestRef.current;
@@ -798,6 +799,12 @@ export const WorkspaceSession = forwardRef<WorkspaceSessionHandle, WorkspaceSess
               workspaceFolder={workspace.dataDirectory}
               onClose={() => setSettingsOpen(false)}
               onSettingsChanged={reloadConfig}
+              onPostsReread={() => {
+                Promise.all([refreshPosts(), refreshSelectedPost()]).catch((err: unknown) => {
+                  if (!mounted.current) return;
+                  setLoadError(presentFailure(message("session.postListFailed"), "renderer: post list refresh failed", err));
+                });
+              }}
               onWorkspaceRenamed={onWorkspaceUpdated}
             />
           )}

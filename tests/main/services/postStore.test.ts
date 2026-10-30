@@ -16,11 +16,10 @@ let {
   setLocked,
   recordAssetChange,
   deletePost,
-  refreshIndex,
+  rereadPosts,
   listByStatus,
   countByStatus,
   clearCache,
-  rebuildIndex,
   renameTarget,
 } = await import("@main/core/services/postStore.js");
 
@@ -32,7 +31,7 @@ beforeEach(async () => {
   dataDir = fixture.dataDir;
   ({ createPost, getPost, queueContent, queueMetadata, flushPostEdits, flushAllPendingEdits,
     setContentSaveListener, updatePost, changeStatus, setLocked, recordAssetChange, deletePost,
-    refreshIndex, listByStatus, countByStatus, clearCache, rebuildIndex, renameTarget } = fixture.store);
+    rereadPosts, listByStatus, countByStatus, clearCache, renameTarget } = fixture.store);
 });
 
 afterEach(() => {
@@ -147,7 +146,7 @@ describe("authoritative post files", () => {
     expect(fs.readFileSync(copy, "utf8")).toContain("target: journal");
   });
 
-  it("does not promote a copy merely because its indexed owner cannot be read", () => {
+  it("does not promote a copy merely because its listed owner cannot be read", () => {
     const primary = createPost(dataDir, "blogger", "en");
     const copy = path.join(dataDir, "posts", "000-copy.md");
     const copyBytes = fs.readFileSync(primary.filePath, "utf8");
@@ -175,23 +174,6 @@ describe("canonical edit admission and committed writes", () => {
     queueMetadata(dataDir, post.frontMatter.id, { title: "Authored title", titleEn: "stripped for English" });
     expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
     expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.updatedAtUtc).toBe("2026-10-07T01:01:00.000Z");
-  });
-
-  it("reports a committed post save when persisting the derived index fails", () => {
-    const post = createPost(dataDir, "blogger", "en");
-    queueContent(dataDir, post.frontMatter.id, "durable body");
-    const original = fs.renameSync;
-    const rename = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
-      if (String(to) === path.join(dataDir, "posts", "index.json")) throw new Error("derived failure");
-      return original(from, to);
-    });
-    expect(flushPostEdits(dataDir, post.frontMatter.id)).toBe(true);
-    rename.mockRestore();
-    expect(fs.readFileSync(post.filePath, "utf8")).toContain("durable body");
-    // The buffer was cleared: a later flush has nothing to write over an outside edit.
-    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf8").replace("durable body", "edited outside"));
-    expect(flushAllPendingEdits()).toEqual([]);
-    expect(fs.readFileSync(post.filePath, "utf8")).toContain("edited outside");
   });
 
   it.each([
@@ -246,7 +228,7 @@ describe("canonical edit admission and committed writes", () => {
 });
 
 describe("createPost", () => {
-  it("creates a draft directly under posts/ and in the index", () => {
+  it("creates a draft directly under posts/ and in the list", () => {
     const post = createPost(dataDir, "blogger", "en");
     expect(post.frontMatter.status).toBe("draft");
     expect(fs.existsSync(post.filePath)).toBe(true);
@@ -336,13 +318,14 @@ describe("updatePost", () => {
     expect(getPost(dataDir, second.frontMatter.id)?.frontMatter.slug).toBeUndefined();
   });
 
-  it("refuses a slug added to another post by an external Markdown edit", () => {
+  it("refuses a slug an external Markdown edit gave another post, once the posts are reread", () => {
     const first = createPost(dataDir, "blogger", "en");
     const second = createPost(dataDir, "blogger", "en");
     const externallyEdited = fs
       .readFileSync(first.filePath, "utf-8")
       .replace("status: draft", "status: draft\nslug: Release-Notes");
     fs.writeFileSync(first.filePath, externallyEdited);
+    rereadPosts(dataDir);
 
     expect(() =>
       updatePost(dataDir, second.frontMatter.id, { frontMatter: { slug: "release-notes" } }),
@@ -355,7 +338,6 @@ describe("updatePost", () => {
   it("checks a slug without reading the other posts' files", () => {
     const others = Array.from({ length: 10 }, () => createPost(dataDir, "blogger", "en"));
     const editable = createPost(dataDir, "blogger", "en");
-    refreshIndex(dataDir); // Establish per-file source observations before testing unchanged files.
     const read = vi.spyOn(fs, "readFileSync");
     try {
       updatePost(dataDir, editable.frontMatter.id, { frontMatter: { slug: "fresh-slug" } });
@@ -413,7 +395,7 @@ describe("changeStatus", () => {
     }
   });
 
-  it("writes the status times to the file and the index, and drops the ones it clears", () => {
+  it("writes the status times to the file and the list, and drops the ones it clears", () => {
     const id = publishableDraft();
     changeStatus(dataDir, id, "retired");
     const retired = getPost(dataDir, id)!;
@@ -597,7 +579,7 @@ describe("updatedAtUtc", () => {
 });
 
 describe("setLocked", () => {
-  it("writes the flag to the file and the index, and unlocking removes it", () => {
+  it("writes the flag to the file and the list, and unlocking removes it", () => {
     const post = createPost(dataDir, "blogger", "en");
     const id = post.frontMatter.id;
 
@@ -668,7 +650,7 @@ describe("deletePost", () => {
     expect(fs.existsSync(assets)).toBe(true);
   });
 
-  it("removes the file and the index entry", () => {
+  it("removes the file and its listed post", () => {
     const created = createPost(dataDir, "blogger", "en");
     const id = created.frontMatter.id;
 
@@ -698,7 +680,7 @@ describe("deletePost", () => {
     const source = createPost(dataDir, "blogger", "en");
     const broken = createPost(dataDir, "blogger", "en", source.frontMatter.id);
     const fine = createPost(dataDir, "blogger", "en", source.frontMatter.id);
-    // The index row is stale: it still says the broken file links the source.
+    // The listed post is stale: it still says the broken file links the source.
     fs.writeFileSync(broken.filePath, "---\ntitle: [unclosed\n---\nbody\n");
 
     expect(deletePost(dataDir, source.frontMatter.id)).toEqual({ cleanupIncomplete: true });
@@ -722,7 +704,7 @@ describe("listByStatus", () => {
   });
 });
 
-describe("index recovery", () => {
+describe("reopening a workspace", () => {
   it("rediscovers posts from disk after the in-memory cache is cleared", () => {
     const created = createPost(dataDir, "blogger", "en");
     clearCache(dataDir);
@@ -744,28 +726,13 @@ describe("renameTarget", () => {
     const keep = createPost(dataDir, "blogger", "en");
     const gone = createPost(dataDir, "blogger", "en");
 
-    // The file disappears but its index entry lingers until the next reconcile.
+    // The file disappears but the post stays listed until the posts are reread.
     fs.unlinkSync(gone.filePath);
 
     // The rename must not throw on the missing file, and must still retarget the
     // surviving post (no all-or-nothing failure leaving some posts behind).
     expect(() => renameTarget(dataDir, "blogger", "journal")).not.toThrow();
     expect(getPost(dataDir, keep.frontMatter.id)?.frontMatter.target).toBe("journal");
-  });
-
-  // The index is one file, and every write of it is a full backup row; a rename
-  // must not rewrite it once per post.
-  it("writes the index once for the whole rename", () => {
-    for (let i = 0; i < 5; i += 1) createPost(dataDir, "blogger", "en");
-    const indexFile = path.join(dataDir, "posts", "index.json");
-    const renames = vi.spyOn(fs, "renameSync");
-    try {
-      renameTarget(dataDir, "blogger", "journal");
-      expect(renames.mock.calls.filter(([, to]) => String(to) === indexFile)).toHaveLength(1);
-    } finally {
-      renames.mockRestore();
-    }
-    expect(listByStatus(dataDir, "draft").every((d) => d.frontMatter.target === "journal")).toBe(true);
   });
 
   it("skips and reports a post file that cannot be read, and renames the rest", () => {
@@ -1079,7 +1046,7 @@ describe("pending content (write-behind buffer)", () => {
       // The file comes back (the sync client catches up) — the buffered text is
       // still there to be written, which is only true if it was never dropped.
       fs.writeFileSync(post.filePath, onDisk);
-      rebuildIndex(dataDir);
+      rereadPosts(dataDir);
       expect(flushPostEdits(dataDir, id)).toBe(true);
       expect(diskContent(post.filePath)).toContain("the newest keystrokes");
     });
@@ -1111,10 +1078,10 @@ describe("pending content (write-behind buffer)", () => {
       }
     });
 
-    it("keeps and reports content queued for a post that is no longer indexed", () => {
+    it("keeps and reports content queued for a post that is no longer listed", () => {
       const events: ContentSaveEvent[] = [];
       setContentSaveListener((e) => events.push(e));
-      // The index dropped the entry before the keystroke arrived (a rebuild ran
+      // The list dropped the post before the keystroke arrived (a reread ran
       // first). The queue path must not swallow the text either.
       queueContent(dataDir, "no-such-post", "typed into a post that is gone");
       expect(events).toEqual([{ kind: "post-missing", dataDir, id: "no-such-post" }]);
@@ -1211,38 +1178,3 @@ describe("one author baseline per pending edit buffer", () => {
   });
 });
 
-describe("outside changes during an app write", () => {
-  it("does not certify an external atomic replacement as its own published projection", () => {
-    const post = createPost(dataDir, "blogger", "en");
-    const external = path.join(dataDir, "outside.tmp");
-    fs.writeFileSync(external, fs.readFileSync(post.filePath, "utf8").replace("status: draft", "status: draft\ntitle: outside\nlocked: true"));
-    const rename = fs.renameSync;
-    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
-      rename(from, to);
-      if (to === post.filePath) rename(external, to);
-    });
-    try { updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } }); }
-    finally { spy.mockRestore(); }
-    refreshIndex(dataDir);
-    expect(listByStatus(dataDir, "draft")[0].frontMatter).toMatchObject({ title: "outside", locked: true });
-  });
-
-  it("declines a same-size in-place edit that preserves mtime during publication", () => {
-    const post = createPost(dataDir, "blogger", "en");
-    const rename = fs.renameSync;
-    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
-      rename(from, to);
-      if (to === post.filePath) {
-        const stat = fs.statSync(to);
-        const written = fs.readFileSync(to, "utf8");
-        fs.writeFileSync(to, written.replace("title: inside", "title: beyond"));
-        fs.utimesSync(to, stat.atime, stat.mtime);
-      }
-    });
-    try { updatePost(dataDir, post.frontMatter.id, { frontMatter: { title: "inside" } }); }
-    finally { spy.mockRestore(); }
-    refreshIndex(dataDir);
-    expect(listByStatus(dataDir, "draft")[0].frontMatter.title).toBe("beyond");
-  });
-
-});

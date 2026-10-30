@@ -5,13 +5,13 @@ import { AssetRecordError } from "@main/core/services/assetStore.js";
 const effects = vi.hoisted(() => ({
   getPost: vi.fn(), recordAssetChange: vi.fn(), assertUnambiguousPostId: vi.fn(), clearCache: vi.fn(),
   installAsset: vi.fn(), deleteAsset: vi.fn(), getWorkspace: vi.fn(), deleteWorkspace: vi.fn(),
-  sweepStaging: vi.fn(), refreshIndex: vi.fn(),
+  sweepStaging: vi.fn(), unreadablePosts: vi.fn(),
 }));
 vi.mock("@main/core/services/postStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/postStore.js")>(),
   getPost: effects.getPost, recordAssetChange: effects.recordAssetChange,
   assertUnambiguousPostId: effects.assertUnambiguousPostId, clearCache: effects.clearCache,
-  refreshIndex: effects.refreshIndex,
+  unreadablePosts: effects.unreadablePosts,
 }));
 vi.mock("@main/core/services/assetStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/assetStore.js")>(),
@@ -114,15 +114,15 @@ describe("storage tasks own consequences before replying", () => {
     expect(effects.recordAssetChange).not.toHaveBeenCalled();
   });
   it("clears a workspace's leftover staged uploads at its first post listing of the launch, once", () => {
-    effects.refreshIndex.mockReturnValue([]);
-    storageTasks.refreshIndex("/swept-workspace");
-    storageTasks.refreshIndex("/swept-workspace");
+    effects.unreadablePosts.mockReturnValue([]);
+    storageTasks.unreadablePosts("/swept-workspace");
+    storageTasks.unreadablePosts("/swept-workspace");
     expect(effects.sweepStaging).toHaveBeenCalledExactlyOnceWith("/swept-workspace");
-    expect(effects.refreshIndex).toHaveBeenCalledTimes(2);
+    expect(effects.unreadablePosts).toHaveBeenCalledTimes(2);
   });
   it("lists the posts even when the staging folder cannot be cleared", () => {
-    effects.refreshIndex.mockReturnValue([]);
+    effects.unreadablePosts.mockReturnValue([]);
     effects.sweepStaging.mockImplementation(() => { throw new Error("EACCES"); });
-    expect(storageTasks.refreshIndex("/unsweepable-workspace")).toEqual([]);
+    expect(storageTasks.unreadablePosts("/unsweepable-workspace")).toEqual([]);
   });
 });

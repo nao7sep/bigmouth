@@ -442,20 +442,20 @@
   "settings.bold": "太字",
   "settings.italic": "斜体",
   "settings.underline": "下線",
-  "settings.rebuildFailed": "投稿インデックスを再構築できませんでした。既存の投稿は変更されていません。もう一度試すか、ログを確認してください。",
-  "settings.rebuildHint": "投稿インデックス（{file}）は Markdown ファイルから自動で再構築されます。アプリの外で投稿ファイルを編集・マージしたあとは、手動で再構築してください。",
-  "settings.rebuilding": "再構築中…",
-  "settings.rebuild": "インデックスを再構築",
-  "settings.rebuilt": {
-    "other": "{count} 件の投稿からインデックスを再構築しました。"
+  "settings.rereadFailed": "投稿ファイルを読み直せませんでした。既存の投稿は変更されていません。もう一度試すか、ログを確認してください。",
+  "settings.rereadHint": "BigMouth はワークスペースを開くときに、{folder} の Markdown ファイルから投稿一覧を読み込みます。アプリの外で投稿ファイルを編集・追加・マージしたあとは、読み直してください。",
+  "settings.rereading": "読み直し中…",
+  "settings.reread": "投稿を読み直す",
+  "settings.rereadDone": {
+    "other": "{count} 件の投稿を読み込みました。"
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "other": "{count} 件のファイルを読み込めず、除外しました。ログを確認してください。"
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "other": "重複したスラッグのグループが {count} 件残っています。ログを確認してください。"
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "other": "{count} 件のアセットフォルダが、存在しなくなった投稿のものです。"
   },
   "settings.nameRequired": "名前は必須です。",

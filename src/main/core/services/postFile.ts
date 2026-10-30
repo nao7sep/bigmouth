@@ -3,8 +3,8 @@
  *
  * Owns everything about reading and writing one `.md` post file: front-matter
  * parsing, canonical serialization, atomic writes, and the projection of a post
- * into its index entry. Knows nothing about the index or the post store, so it
- * sits below both of them with no cycles.
+ * into its list entry. Knows nothing about the post list or the post store, so
+ * it sits below both of them with no cycles.
  */
 
 import fs from "node:fs";

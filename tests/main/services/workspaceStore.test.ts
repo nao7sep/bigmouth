@@ -61,8 +61,8 @@ afterEach(() => {
 });
 
 // One folder must never register as two workspaces. Two registrations mean two
-// ids, two in-memory indexes keyed by different strings writing over a single
-// posts/index.json, and two separate API-key sets for one folder.
+// ids, two in-memory post lists keyed by different strings over the same post
+// files, and two separate API-key sets for one folder.
 // A halt only makes sense when the user can act on it, and BIGMOUTH_DATA_DIR can put
 // the registry anywhere — so every rejection names the file's full path and says
 // it was left in place, rather than a bare JSON.parse SyntaxError reaching the

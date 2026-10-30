@@ -5,7 +5,7 @@ import path from "node:path";
 import matter from "gray-matter";
 import type { PostFrontMatter } from "@main/core/shared/types.js";
 import { readPost, writePost, parsePostRaw, projectIndexEntry } from "@main/core/services/postFile.js";
-import { rebuild, clearCache as clearIndexCache } from "@main/core/services/postIndex.js";
+import { reread, clearCache as clearIndexCache } from "@main/core/services/postCatalog.js";
 
 let dir: string;
 
@@ -120,7 +120,7 @@ describe("front matter is YAML data", () => {
         expect(() => parsePostRaw(raw)).toThrow("must use YAML");
         expect(() => parsePostRaw(`\uFEFF${raw}`)).toThrow("must use YAML");
         expect(() => readPost(file)).toThrow("must use YAML");
-        expect(rebuild(dir)).toMatchObject({ indexed: 0, skipped: [{ fileName: "post.md" }] });
+        expect(reread(dir)).toMatchObject({ listed: 0, skipped: [{ fileName: "post.md" }] });
         expect(marker.bigmouthFrontMatterExecuted).toBeUndefined();
         expect(fs.readFileSync(file, "utf-8")).toBe(raw);
       } finally {
@@ -150,7 +150,7 @@ describe("front matter is YAML data", () => {
     expect(post.frontMatter).not.toHaveProperty("title");
     expect(post.frontMatter).not.toHaveProperty("extra");
     expect(projectIndexEntry(post.frontMatter, "post.md", post.content)).toMatchObject({ id: "post-1", excerpt: "Body" });
-    expect(rebuild(dir)).toMatchObject({ indexed: 1, skipped: [] });
+    expect(reread(dir)).toMatchObject({ listed: 1, skipped: [] });
     expect(fs.readFileSync(file, "utf-8")).toBe(raw);
   });
 });

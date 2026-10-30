@@ -466,26 +466,26 @@
   "settings.bold": "Negrito",
   "settings.italic": "Itálico",
   "settings.underline": "Sublinhado",
-  "settings.rebuildFailed": "Não foi possível reconstruir o índice de publicações. Nenhuma publicação foi alterada; tente novamente ou verifique o registro.",
-  "settings.rebuildHint": "O índice de publicações ({file}) é reconstruído automaticamente a partir dos arquivos Markdown. Reconstrua-o manualmente depois de editar ou mesclar arquivos de publicação fora do app.",
-  "settings.rebuilding": "Reconstruindo…",
-  "settings.rebuild": "Reconstruir índice",
-  "settings.rebuilt": {
-    "one": "Índice reconstruído a partir de {count} publicação.",
-    "many": "Índice reconstruído a partir de {count} de publicações.",
-    "other": "Índice reconstruído a partir de {count} publicações."
+  "settings.rereadFailed": "Não foi possível reler os arquivos de publicação. Nenhuma publicação foi alterada; tente novamente ou verifique o registro.",
+  "settings.rereadHint": "O BigMouth lê a lista de publicações dos arquivos Markdown em {folder} ao abrir o espaço de trabalho. Releia-os depois de editar, adicionar ou mesclar arquivos de publicação fora do app.",
+  "settings.rereading": "Relendo…",
+  "settings.reread": "Reler publicações",
+  "settings.rereadDone": {
+    "one": "{count} publicação lida.",
+    "many": "{count} de publicações lidas.",
+    "other": "{count} publicações lidas."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "Não foi possível ler {count} arquivo, que ficou de fora; veja o registro.",
     "many": "Não foi possível ler {count} de arquivos, que ficaram de fora; veja o registro.",
     "other": "Não foi possível ler {count} arquivos, que ficaram de fora; veja o registro."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "Resta {count} grupo de slugs duplicados; veja o registro.",
     "many": "Restam {count} de grupos de slugs duplicados; veja o registro.",
     "other": "Restam {count} grupos de slugs duplicados; veja o registro."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} pasta de recursos pertence a uma publicação que não existe mais.",
     "many": "{count} de pastas de recursos pertencem a publicações que não existem mais.",
     "other": "{count} pastas de recursos pertencem a publicações que não existem mais."

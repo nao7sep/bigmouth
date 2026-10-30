@@ -8,7 +8,7 @@ import {
 } from "@shared/ipc";
 import type { PostPageResponse, PostListResponse, PostStatus } from "@shared/types";
 import {
-  refreshIndex,
+  unreadablePosts,
   listByStatus,
   countByStatus,
   getPost,
@@ -17,14 +17,14 @@ import {
   changeStatus,
   setLocked,
   deletePost,
-  rebuildIndex,
+  rereadPosts,
   postExists,
   listReferrers,
   queueWorkspaceContent,
   queueWorkspaceMetadata,
   setContentSaveListener,
 } from "../storageAccess.js";
-import type { RebuildResult } from "../core/services/postIndex.js";
+import type { RereadResult } from "../core/services/postCatalog.js";
 import { getSettings, getTargets } from "../storageAccess.js";
 import { POST_STATUSES, isPostStatus } from "../core/shared/postLifecycle.js";
 import { isPagedPostStatus } from "@shared/postStatus";
@@ -101,7 +101,7 @@ export function registerPostHandlers(): void {
     const dir = (await resolveWorkspace(wsId)).dataDirectory;
     const lim = limit || (await getSettings(dir)).postsPerLoad;
 
-    const unreadable = (await refreshIndex(dir));
+    const unreadable = await unreadablePosts(dir);
     const response = {} as PostListResponse;
     if (unreadable.length > 0) response.unreadable = unreadable;
     for (const status of POST_STATUSES) {
@@ -135,7 +135,7 @@ export function registerPostHandlers(): void {
     const dir = (await resolveWorkspace(wsId)).dataDirectory;
     if (!isPostStatus(status) || !isPagedPostStatus(status)) throw new Error("Invalid paged post status");
     const lim = limit || (await getSettings(dir)).postsPerLoad;
-    const unreadable = await refreshIndex(dir);
+    const unreadable = await unreadablePosts(dir);
     const offset = typeof requestedOffset === "number" ? Math.max(0, requestedOffset) : 0;
     const response: PostPageResponse = {
       posts: await listByStatus(dir, status, { offset, limit: lim }),
@@ -147,28 +147,28 @@ export function registerPostHandlers(): void {
     return response;
   });
 
-  ipcMain.handle(CHANNELS.rebuildPostIndex, async (_event, wsId: string) => {
+  ipcMain.handle(CHANNELS.rereadPosts, async (_event, wsId: string) => {
     const dir = (await resolveWorkspace(wsId)).dataDirectory;
-    let result: RebuildResult & { orphanedAssets: number };
+    let result: RereadResult & { orphanedAssets: number };
     try {
-      result = (await rebuildIndex(dir));
+      result = await rereadPosts(dir);
     } catch (err) {
-      logError("post index rebuild failed", { workspace: wsId, error: serializeError(err) });
-      throw err instanceof Error ? err : new Error("Index rebuild failed");
+      logError("posts could not be reread", { workspace: wsId, error: serializeError(err) });
+      throw err instanceof Error ? err : new Error("Posts could not be reread");
     }
     // Every skipped file is named in the log, and the count of them goes back to
-    // the caller: a rebuild that reported only what it indexed let a post the
-    // user had hand-edited into something unreadable vanish under a success
+    // the caller: a reread that reported only what it listed would let a post the
+    // user hand-edited into something unreadable vanish under a success
     // message.
-    info("post index rebuilt", {
+    info("posts reread", {
       workspace: wsId,
-      indexed: result.indexed,
+      listed: result.listed,
       skipped: result.skipped,
       duplicateSlugs: result.duplicateSlugs,
       orphanedAssets: result.orphanedAssets,
     });
     return {
-      count: result.indexed,
+      count: result.listed,
       skipped: result.skipped.length,
       duplicateSlugs: result.duplicateSlugs.length,
       orphanedAssets: result.orphanedAssets,

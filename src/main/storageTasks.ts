@@ -102,7 +102,7 @@ export const storageTasks = {
   getGenerationPrompts: configStore.getGenerationPrompts,
   saveGenerationPrompts: configStore.saveGenerationPrompts,
   clearCache: postStore.clearCache,
-  rebuildIndex: postStore.rebuildIndex,
+  rereadPosts: postStore.rereadPosts,
   queueWorkspaceContent(wsId: string, id: string, content: string, editedAt: Date) {
     return postStore.queueContent(workspaceDir(wsId), id, content, editedAt);
   },
@@ -148,7 +148,7 @@ export const storageTasks = {
     const saved = configStore.saveTargets(dir, targets);
     return { targets: saved, postsUpdated: renamed.updated, postsSkipped: renamed.skipped };
   },
-  refreshIndex(dataDirectory: string) {
+  unreadablePosts(dataDirectory: string) {
     // Listing its posts is the first thing an opened workspace does, so staged
     // uploads an earlier launch left behind are cleared here, once per launch.
     if (!sweptWorkspaces.has(dataDirectory)) {
@@ -160,7 +160,7 @@ export const storageTasks = {
         warn("leftover staged uploads could not be cleared", { dataDirectory, error: serializeError(cause) });
       }
     }
-    return postStore.refreshIndex(dataDirectory);
+    return postStore.unreadablePosts(dataDirectory);
   },
   listByStatus: postStore.listByStatus,
   countByStatus: postStore.countByStatus,

@@ -454,23 +454,23 @@
   "settings.bold": "Fett",
   "settings.italic": "Kursiv",
   "settings.underline": "Unterstrichen",
-  "settings.rebuildFailed": "Der Beitragsindex konnte nicht neu aufgebaut werden. Vorhandene Beiträge wurden nicht geändert; versuchen Sie es erneut oder prüfen Sie das Protokoll.",
-  "settings.rebuildHint": "Der Beitragsindex ({file}) wird automatisch aus den Markdown-Dateien aufgebaut. Bauen Sie ihn von Hand neu auf, nachdem Sie Beitragsdateien außerhalb der App bearbeitet oder zusammengeführt haben.",
-  "settings.rebuilding": "Wird neu aufgebaut\u00a0…",
-  "settings.rebuild": "Index neu aufbauen",
-  "settings.rebuilt": {
-    "one": "Index aus {count} Beitrag neu aufgebaut.",
-    "other": "Index aus {count} Beiträgen neu aufgebaut."
+  "settings.rereadFailed": "Die Beitragsdateien konnten nicht neu eingelesen werden. Vorhandene Beiträge wurden nicht geändert; versuchen Sie es erneut oder prüfen Sie das Protokoll.",
+  "settings.rereadHint": "BigMouth liest die Beitragsliste beim Öffnen des Arbeitsbereichs aus den Markdown-Dateien in {folder}. Lesen Sie sie neu ein, nachdem Sie Beitragsdateien außerhalb der App bearbeitet, hinzugefügt oder zusammengeführt haben.",
+  "settings.rereading": "Wird neu eingelesen\u00a0…",
+  "settings.reread": "Beiträge neu einlesen",
+  "settings.rereadDone": {
+    "one": "{count} Beitrag eingelesen.",
+    "other": "{count} Beiträge eingelesen."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "{count} Datei konnte nicht gelesen werden und wurde ausgelassen – siehe Protokoll.",
     "other": "{count} Dateien konnten nicht gelesen werden und wurden ausgelassen – siehe Protokoll."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "{count} Gruppe doppelter Slugs bleibt bestehen – siehe Protokoll.",
     "other": "{count} Gruppen doppelter Slugs bleiben bestehen – siehe Protokoll."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} Asset-Ordner gehört zu einem Beitrag, den es nicht mehr gibt.",
     "other": "{count} Asset-Ordner gehören zu Beiträgen, die es nicht mehr gibt."
   },

@@ -410,14 +410,13 @@ describe("protected writes", () => {
     expect(rows(getStateJsonPath())).toHaveLength(0);
   });
 
-  it("does not record the post index", async () => {
+  it("records only the post file when a post is created, with no list beside it", async () => {
     const { createWorkspace } = await import("@main/core/services/workspaceStore.js");
     const { createPost, clearCache } = await import("@main/core/services/postStore.js");
-    const ws = createWorkspace("Index WS");
+    const ws = createWorkspace("Posts WS");
     const post = createPost(ws.dataDirectory, "blogger", "en");
-    const indexPath = path.join(ws.dataDirectory, "posts", "index.json");
-    expect(fs.readFileSync(indexPath, "utf-8")).toContain(post.frontMatter.id);
-    expect(rows(indexPath)).toHaveLength(0);
+    expect(fs.readdirSync(path.join(ws.dataDirectory, "posts"))).toEqual([path.basename(post.filePath)]);
+    expect(rows(path.join(ws.dataDirectory, "posts", "index.json"))).toHaveLength(0);
     clearCache(ws.dataDirectory);
   });
 });

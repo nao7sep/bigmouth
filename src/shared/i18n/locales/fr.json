@@ -466,26 +466,26 @@
   "settings.bold": "Gras",
   "settings.italic": "Italique",
   "settings.underline": "Souligné",
-  "settings.rebuildFailed": "L’index des publications n’a pas pu être reconstruit. Aucune publication n’a été modifiée\u00a0; réessayez ou consultez le journal.",
-  "settings.rebuildHint": "L’index des publications ({file}) est reconstruit automatiquement à partir des fichiers Markdown. Reconstruisez-le manuellement après avoir modifié ou fusionné des fichiers de publication en dehors de l’app.",
-  "settings.rebuilding": "Reconstruction…",
-  "settings.rebuild": "Reconstruire l’index",
-  "settings.rebuilt": {
-    "one": "Index reconstruit à partir de {count} publication.",
-    "many": "Index reconstruit à partir de {count} de publications.",
-    "other": "Index reconstruit à partir de {count} publications."
+  "settings.rereadFailed": "Les fichiers de publication n’ont pas pu être relus. Aucune publication n’a été modifiée\u00a0; réessayez ou consultez le journal.",
+  "settings.rereadHint": "BigMouth lit la liste des publications dans les fichiers Markdown de {folder} à l’ouverture de l’espace de travail. Relisez-les après avoir modifié, ajouté ou fusionné des fichiers de publication en dehors de l’app.",
+  "settings.rereading": "Relecture…",
+  "settings.reread": "Relire les publications",
+  "settings.rereadDone": {
+    "one": "{count} publication lue.",
+    "many": "{count} de publications lues.",
+    "other": "{count} publications lues."
   },
-  "settings.rebuildSkipped": {
+  "settings.rereadSkipped": {
     "one": "{count} fichier n’a pas pu être lu et a été ignoré — voir le journal.",
     "many": "{count} de fichiers n’ont pas pu être lus et ont été ignorés — voir le journal.",
     "other": "{count} fichiers n’ont pas pu être lus et ont été ignorés — voir le journal."
   },
-  "settings.rebuildDuplicates": {
+  "settings.rereadDuplicates": {
     "one": "{count} groupe de slugs en double subsiste — voir le journal.",
     "many": "{count} de groupes de slugs en double subsistent — voir le journal.",
     "other": "{count} groupes de slugs en double subsistent — voir le journal."
   },
-  "settings.rebuildOrphans": {
+  "settings.rereadOrphans": {
     "one": "{count} dossier de ressources appartient à une publication qui n’existe plus.",
     "many": "{count} de dossiers de ressources appartiennent à des publications qui n’existent plus.",
     "other": "{count} dossiers de ressources appartiennent à des publications qui n’existent plus."

@@ -23,8 +23,8 @@ const READ_ATTRIBUTES = new Set([
 const LITERAL_TEXT = new Set([
   "BigMouth",
   "GitHub",
-  // The post index's file name, shown as a path.
-  "posts/index.json",
+  // The workspace's posts folder, shown as a path.
+  "posts",
   // Example language codes, the values the field takes.
   "en, ja, es, fr, de",
 ]);
