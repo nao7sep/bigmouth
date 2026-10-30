@@ -23,6 +23,8 @@ interface KeyboardResize {
  * A divider's keyboard resizing (the window splitter pattern): the arrows move
  * it a step, Home and End take it to either bound. The width shows at once and
  * is saved after the last step, or as focus leaves or the divider goes away.
+ * A drag settles a pending save as it starts, through `beforeDrag`, so the
+ * keyed width is written before the dragged one and never after it.
  */
 export function useKeyboardResize({ width, min, max, sign, onWidthChange, onCommitWidth }: KeyboardResize) {
   // A run of steps advances from the last intent, even before its render and
@@ -60,5 +62,5 @@ export function useKeyboardResize({ width, min, max, sign, onWidthChange, onComm
     timer.current = setTimeout(save, KEY_RESIZE_SAVE_DELAY_MS);
   };
 
-  return { onKeyDown, onBlur: save };
+  return { onKeyDown, onBlur: save, beforeDrag: save };
 }

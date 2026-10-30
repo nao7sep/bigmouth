@@ -517,7 +517,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         aria-valuemax={RECORDS_LIST_WIDTH.max}
         aria-valuenow={listWidth}
         tabIndex={0}
-        onMouseDown={startDrag}
+        onMouseDown={(event) => { keyResize.beforeDrag(); startDrag(event); }}
         onKeyDown={keyResize.onKeyDown}
         onBlur={keyResize.onBlur}
       />

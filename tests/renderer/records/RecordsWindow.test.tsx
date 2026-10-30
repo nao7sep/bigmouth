@@ -555,6 +555,27 @@ describe("RecordsWindow", () => {
     expect(api.updateUiState).toHaveBeenCalledTimes(3);
   });
 
+  // A drag on the divider settles a keyed width still waiting to be saved, so
+  // the dragged width is the one saved last.
+  it("saves a pending keyed width before a drag, never over it", async () => {
+    await mount();
+    const divider = document.querySelector<HTMLElement>(".pane-divider")!;
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.keyDown(divider, { key: "ArrowRight" }); });
+    await act(async () => {
+      fireEvent.mouseDown(divider, { clientX: 100 });
+      fireEvent.mouseMove(document, { clientX: 60 });
+      fireEvent.mouseUp(document);
+    });
+    await act(async () => vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS));
+    expect(api.updateUiState.mock.calls).toEqual([
+      [{ recordsListWidth: RECORDS_LIST_WIDTH.default + 16 }],
+      [{ recordsListWidth: RECORDS_LIST_WIDTH.default - 24 }],
+    ]);
+    const shell = document.querySelector<HTMLElement>(".records-shell")!;
+    expect(shell.style.getPropertyValue("--records-list-width")).toBe(`${RECORDS_LIST_WIDTH.default - 24}px`);
+  });
+
   it("ignores other keys on the divider and saves nothing for them", async () => {
     await mount();
     const divider = document.querySelector<HTMLElement>(".pane-divider")!;

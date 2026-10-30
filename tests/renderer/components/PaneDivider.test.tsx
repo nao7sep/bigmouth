@@ -11,15 +11,17 @@ afterEach(() => {
 function renderDivider(sign: 1 | -1 = 1, width = 300) {
   const onWidthChange = vi.fn();
   const onCommitWidth = vi.fn();
+  // A drag that saves where it ends, as the panes' own drags do.
+  const onMouseDown = vi.fn(() => onCommitWidth(250));
   const parentKeyDown = vi.fn();
   const parentKeyUp = vi.fn();
   const view = render(
     <div onKeyDown={parentKeyDown} onKeyUp={parentKeyUp}>
       <PaneDivider label="Resize" width={width} min={200} max={400} sign={sign}
-        onMouseDown={vi.fn()} onWidthChange={onWidthChange} onCommitWidth={onCommitWidth} />
+        onMouseDown={onMouseDown} onWidthChange={onWidthChange} onCommitWidth={onCommitWidth} />
     </div>,
   );
-  return { ...view, divider: view.getByRole("separator"), onWidthChange, onCommitWidth, parentKeyDown, parentKeyUp };
+  return { ...view, divider: view.getByRole("separator"), onWidthChange, onCommitWidth, onMouseDown, parentKeyDown, parentKeyUp };
 }
 
 describe("PaneDivider keyboard resizing", () => {
@@ -107,5 +109,30 @@ describe("PaneDivider keyboard resizing", () => {
     expect(view.parentKeyDown).toHaveBeenCalledOnce();
     fireEvent.blur(view.divider);
     expect(view.onCommitWidth).toHaveBeenCalledExactlyOnceWith(316);
+  });
+
+  it("saves a pending step before a drag starts, so the drag's width is saved last", () => {
+    vi.useFakeTimers();
+    const view = renderDivider();
+    fireEvent.keyDown(view.divider, { key: "ArrowRight" });
+    fireEvent.mouseDown(view.divider);
+    expect(view.onCommitWidth.mock.calls).toEqual([[316], [250]]);
+    act(() => { vi.advanceTimersByTime(KEY_RESIZE_SAVE_DELAY_MS); });
+    fireEvent.blur(view.divider);
+    expect(view.onCommitWidth).toHaveBeenCalledTimes(2);
+  });
+
+  it("steps from the drag's width after a drag, not from an earlier keyed one", () => {
+    const view = renderDivider();
+    fireEvent.keyDown(view.divider, { key: "ArrowRight" });
+    fireEvent.mouseDown(view.divider);
+    view.rerender(
+      <div>
+        <PaneDivider label="Resize" width={250} min={200} max={400} sign={1}
+          onMouseDown={view.onMouseDown} onWidthChange={view.onWidthChange} onCommitWidth={view.onCommitWidth} />
+      </div>,
+    );
+    fireEvent.keyDown(view.divider, { key: "ArrowRight" });
+    expect(view.onWidthChange).toHaveBeenLastCalledWith(266);
   });
 });

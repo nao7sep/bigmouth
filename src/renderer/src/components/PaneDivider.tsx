@@ -13,7 +13,7 @@ interface PaneDividerProps {
 }
 
 export function PaneDivider({ label, width, min, max, sign, onMouseDown, onWidthChange, onCommitWidth }: PaneDividerProps) {
-  const { onKeyDown, onBlur } = useKeyboardResize({ width, min, max, sign, onWidthChange, onCommitWidth });
+  const { onKeyDown, onBlur, beforeDrag } = useKeyboardResize({ width, min, max, sign, onWidthChange, onCommitWidth });
 
   return (
     <div
@@ -25,7 +25,7 @@ export function PaneDivider({ label, width, min, max, sign, onMouseDown, onWidth
       aria-valuemax={max}
       aria-valuenow={width}
       tabIndex={0}
-      onMouseDown={onMouseDown}
+      onMouseDown={(event) => { beforeDrag(); onMouseDown(event); }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
     />
