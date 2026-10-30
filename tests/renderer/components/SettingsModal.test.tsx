@@ -1313,7 +1313,8 @@ describe("duplicate config names can be repaired", () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(mock.listTargets).toHaveBeenCalledWith("ws1", true);
     expect(mock.listAnalysisPrompts).toHaveBeenCalledWith("ws1", true);
-    fireEvent.click(result.getByRole("tab", { name: kind === "targets" ? "Targets" : "Analysis" }));
+    // Stored duplicates mark their tab before it is opened.
+    fireEvent.click(result.getByRole("tab", { name: new RegExp(`^${kind === "targets" ? "Targets" : "Analysis"}\\s*Has a field to fix$`) }));
     return result;
   }
 
@@ -1384,5 +1385,47 @@ describe("SettingsModal visible field labels", () => {
     fireEvent.click(view.getByRole("tab", { name: "Analysis" }));
     expect(view.getByRole("textbox", { name: "Name" })).toBe(view.getByLabelText("Name"));
     expect(view.getByRole("textbox", { name: "Prompt text ({content} = post content)" })).toBe(view.getByLabelText("Prompt text ({content} = post content)"));
+  });
+});
+
+// number-field-conventions: Save is never disabled without a visible reason, so
+// a field it cannot take on another tab is named wherever the user is.
+describe("SettingsModal — Save held by a field on another tab", () => {
+  const tab = (name: string) => document.querySelector<HTMLElement>(`[role="tab"][id$="${name}"]`)
+    ?? Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((el) => el.textContent?.startsWith(name))!;
+  const marked = (name: string) => within(tab(name)).queryByRole("img", { name: "Has a field to fix" }) !== null;
+  const save = () => document.querySelector<HTMLButtonElement>(".modal-footer .btn-primary")!;
+
+  it("marks the tab holding an invalid number and names it beside Save from any tab", async () => {
+    const { getByLabelText, getByText } = await renderModal();
+    fireEvent.change(getByLabelText("Posts per load"), { target: { value: "" } });
+    fireEvent.click(tab("AI"));
+
+    expect(save().disabled).toBe(true);
+    expect(marked("General")).toBe(true);
+    expect(marked("AI")).toBe(false);
+    const reason = getByText("Save waits for a fix on General.");
+    expect(save().getAttribute("aria-describedby")).toBe(reason.id);
+
+    fireEvent.change(within(document.querySelector<HTMLElement>('[role="tabpanel"]')!).getByLabelText("Endpoint"), { target: { value: "api.anthropic.com" } });
+    expect(marked("AI")).toBe(true);
+    expect(getByText("Save waits for a fix on General, AI.")).toBeTruthy();
+  });
+
+  it("marks a language, target or prompt problem on its own tab and clears the mark once fixed", async () => {
+    const { getByDisplayValue, getByText, queryByText } = await renderModal();
+    const langs = getByDisplayValue("en, ja");
+    fireEvent.change(langs, { target: { value: "en, EN" } });
+    expect(marked("General")).toBe(true);
+    fireEvent.change(langs, { target: { value: "en, ja" } });
+    expect(marked("General")).toBe(false);
+    expect(queryByText(/^Save waits/)).toBeNull();
+
+    fireEvent.click(tab("Targets"));
+    const name = within(document.querySelector<HTMLElement>('[role="tabpanel"]')!).getAllByRole("textbox")[0] as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "" } });
+    expect(marked("Targets")).toBe(true);
+    expect(getByText("Save waits for a fix on Targets.")).toBeTruthy();
+    expect(save().disabled).toBe(true);
   });
 });

@@ -124,7 +124,7 @@ export function SettingsModal({
   onSettingsChanged,
   onWorkspaceRenamed,
 }: SettingsModalProps) {
-  const { t, text } = useI18n();
+  const { t, text, list } = useI18n();
   const reportStorageResult = useStorageResultReporter();
   const current = useRef(true);
   const savingRef = useRef(false);
@@ -244,20 +244,19 @@ export function SettingsModal({
     if (ok && current.current) close();
   };
 
-  const isValid = (): boolean => {
-    if (!settings) return false;
-    if (!name.trim()) return false;
-    // The settings fields answer from the one module the inputs render their
-    // messages from, so an inline error can never sit beside an enabled Save.
-    if (firstSettingsError(settings) !== null) return false;
-    if (anthropic && (!isEndpoint(anthropic.endpoint) || AI_ROLE_IDS.some((role) => !anthropic.models[role].trim()))) {
-      return false;
-    }
-    const tNames = targets.map((t) => t.name.trim());
-    if (tNames.some((n) => !n) || duplicateConfigNames(targets).size > 0) return false;
-    if (prompts.some((p) => !p.name.trim() || !p.text.trim()) || duplicateConfigNames(prompts).size > 0) return false;
-    return true;
+  // Which tabs hold a field Save cannot take, from the same checks the fields
+  // render their messages from. Save never waits without saying why where the
+  // user is: each such tab is marked, and a line beside Save names them.
+  const tabIssues: Readonly<Record<Tab, boolean>> = {
+    general: !settings || !name.trim() || firstSettingsError(settings) !== null,
+    targets: targets.some((target) => !target.name.trim()) || duplicateConfigNames(targets).size > 0,
+    ai: !!anthropic && (!isEndpoint(anthropic.endpoint) || AI_ROLE_IDS.some((role) => !anthropic.models[role].trim())),
+    analysis: prompts.some((p) => !p.name.trim() || !p.text.trim()) || duplicateConfigNames(prompts).size > 0,
+    generation: false,
   };
+  const heldBy = TABS.filter((tabId) => tabIssues[tabId]);
+  const saveHeldId = useId();
+  const isValid = (): boolean => !!settings && heldBy.length === 0;
 
   // Save requires both dirty and valid: re-persisting an unchanged form is a
   // no-op that the convention asks us to disable.
@@ -388,6 +387,9 @@ export function SettingsModal({
                   autoFocus={tabId === tab}
                 >
                   {t(TAB_LABELS[tabId])}
+                  {tabIssues[tabId] && (
+                    <span className="settings-tab-issue" role="img" aria-label={t("settings.tabHasIssue")}>!</span>
+                  )}
                 </button>
               );
             })}
@@ -450,6 +452,11 @@ export function SettingsModal({
             </OperationalResult>
           )}
           <div className="modal-footer">
+            {heldBy.length > 0 && (
+              <span id={saveHeldId} className="settings-save-held">
+                {t("settings.saveHeld", { tabs: list(heldBy.map((tabId) => t(TAB_LABELS[tabId]))) })}
+              </span>
+            )}
             <button
               className="btn-action"
               onClick={() => void handleRequestClose()}
@@ -461,6 +468,7 @@ export function SettingsModal({
               className="btn-primary"
               onClick={handleSaveAll}
               disabled={!canSave}
+              aria-describedby={heldBy.length > 0 ? saveHeldId : undefined}
             >
               {saving ? t("common.saving") : t("common.save")}
             </button>

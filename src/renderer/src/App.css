@@ -1943,6 +1943,31 @@ select:is(.form-select, .prompt-select) {
   overflow-wrap: anywhere;
 }
 
+/* An error mark beside a Settings tab's name, with a shape so it does not rely
+   on colour alone. */
+.settings-tab-issue {
+  display: inline-grid;
+  place-items: center;
+  width: 1.2em;
+  height: 1.2em;
+  margin-inline-start: 0.4em;
+  border-radius: 50%;
+  background: var(--bm-danger);
+  color: var(--bm-surface);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Why Save waits: takes the footer's free space before the buttons. */
+.settings-save-held {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+  font-size: 12px;
+  color: var(--bm-danger);
+}
+
 .settings-field-error {
   font-size: 12px;
   color: var(--bm-danger);

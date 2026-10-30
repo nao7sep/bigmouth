@@ -421,6 +421,8 @@
   "settings.positiveInteger": "正の整数を入力してください。",
   "settings.between": "{min}～{max} の値を入力してください。",
   "settings.wholeBetween": "{min}～{max} の整数を入力してください。",
+  "settings.saveHeld": "{tabs} の修正が必要なため保存できません。",
+  "settings.tabHasIssue": "修正が必要な項目があります",
   "settings.postsPerLoad": "1 回に読み込む投稿の数",
   "settings.editorWatermark": "エディタのプレースホルダー",
   "settings.extraFieldWatermark": "追加フィールドのプレースホルダー",

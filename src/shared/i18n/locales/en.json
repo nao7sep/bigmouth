@@ -433,6 +433,8 @@
   "settings.positiveInteger": "Must be a positive integer.",
   "settings.between": "Must be between {min} and {max}.",
   "settings.wholeBetween": "Must be a whole number between {min} and {max}.",
+  "settings.saveHeld": "Save waits for a fix on {tabs}.",
+  "settings.tabHasIssue": "Has a field to fix",
   "settings.postsPerLoad": "Posts per load",
   "settings.editorWatermark": "Editor placeholder text",
   "settings.extraFieldWatermark": "Extra field placeholder text",

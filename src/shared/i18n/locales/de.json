@@ -433,6 +433,8 @@
   "settings.positiveInteger": "Muss eine positive ganze Zahl sein.",
   "settings.between": "Muss zwischen {min} und {max} liegen.",
   "settings.wholeBetween": "Muss eine ganze Zahl zwischen {min} und {max} sein.",
+  "settings.saveHeld": "Speichern wartet auf eine Korrektur unter {tabs}.",
+  "settings.tabHasIssue": "Enthält ein Feld zum Korrigieren",
   "settings.postsPerLoad": "Beiträge pro Ladevorgang",
   "settings.editorWatermark": "Platzhaltertext im Editor",
   "settings.extraFieldWatermark": "Platzhaltertext für weitere Felder",

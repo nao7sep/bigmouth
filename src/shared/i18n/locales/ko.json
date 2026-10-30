@@ -421,6 +421,8 @@
   "settings.positiveInteger": "양의 정수여야 합니다.",
   "settings.between": "{min}에서 {max} 사이여야 합니다.",
   "settings.wholeBetween": "{min}에서 {max} 사이의 정수여야 합니다.",
+  "settings.saveHeld": "{tabs}에서 수정이 필요해 저장할 수 없습니다.",
+  "settings.tabHasIssue": "수정할 항목이 있습니다",
   "settings.postsPerLoad": "한 번에 불러올 게시물 수",
   "settings.editorWatermark": "편집기 안내 문구",
   "settings.extraFieldWatermark": "추가 필드 안내 문구",

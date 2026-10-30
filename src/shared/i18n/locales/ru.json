@@ -457,6 +457,8 @@
   "settings.positiveInteger": "Должно быть целым положительным числом.",
   "settings.between": "Должно быть от {min} до {max}.",
   "settings.wholeBetween": "Должно быть целым числом от {min} до {max}.",
+  "settings.saveHeld": "Сохранение ждёт исправления на вкладке {tabs}.",
+  "settings.tabHasIssue": "Есть поле для исправления",
   "settings.postsPerLoad": "Публикаций за одну загрузку",
   "settings.editorWatermark": "Текст-подсказка в редакторе",
   "settings.extraFieldWatermark": "Текст-подсказка в дополнительных полях",

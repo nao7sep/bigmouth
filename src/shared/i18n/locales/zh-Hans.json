@@ -421,6 +421,8 @@
   "settings.positiveInteger": "必须是正整数。",
   "settings.between": "必须介于 {min} 和 {max} 之间。",
   "settings.wholeBetween": "必须是介于 {min} 和 {max} 之间的整数。",
+  "settings.saveHeld": "需要先修正 {tabs} 中的内容才能保存。",
+  "settings.tabHasIssue": "有需要修正的字段",
   "settings.postsPerLoad": "每次加载的文章数",
   "settings.editorWatermark": "编辑器占位文字",
   "settings.extraFieldWatermark": "额外字段占位文字",

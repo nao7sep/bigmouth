@@ -445,6 +445,8 @@
   "settings.positiveInteger": "Debe ser un número entero positivo.",
   "settings.between": "Debe estar entre {min} y {max}.",
   "settings.wholeBetween": "Debe ser un número entero entre {min} y {max}.",
+  "settings.saveHeld": "Guardar espera una corrección en {tabs}.",
+  "settings.tabHasIssue": "Tiene un campo que corregir",
   "settings.postsPerLoad": "Publicaciones por carga",
   "settings.editorWatermark": "Texto provisional del editor",
   "settings.extraFieldWatermark": "Texto provisional de los campos adicionales",
