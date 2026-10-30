@@ -150,6 +150,13 @@ describe("the Records window over 10,000 records arriving live", () => {
     await act(async () => { fireEvent.click(chosen); });
     const selectedTitle = chosen.querySelector(".records-row-title")?.textContent;
     const detail = () => document.querySelector(".records-detail-pane")?.textContent;
+    // What the reader sees: where the list is, its rows, and the selection and its detail.
+    const view = () => ({
+      scrollTop,
+      titles: titles(),
+      selected: options().find((option) => option.getAttribute("aria-selected") === "true")?.querySelector(".records-row-title")?.textContent,
+      detail: detail(),
+    });
     const before = { scrollTop, titles: titles(), detail: detail() };
     expect(before.detail).toContain(selectedTitle);
     for (let n = 3; n <= 7; n++) {
@@ -170,34 +177,43 @@ describe("the Records window over 10,000 records arriving live", () => {
     log("live record 8");
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     await scrollTo(10 * ROW);
+    const scrolledAway = view();
+    expect(scrolledAway).toEqual({ scrollTop: 10 * ROW, titles: atTop, selected: selectedTitle, detail: before.detail });
     await act(async () => { release(); });
-    expect(titles()).toEqual(atTop);
+    expect(view()).toEqual(scrolledAway);
 
     // Back at the top, it is there, and the selection and its detail stayed.
     await scrollTo(0);
     expect(titles().slice(0, 9)).toEqual([...Array.from({ length: 8 }, (_, i) => `live record ${8 - i}`), `seed record ${SEEDED}`]);
-    const selected = options().find((option) => option.getAttribute("aria-selected") === "true");
-    expect(selected?.querySelector(".records-row-title")?.textContent).toBe(selectedTitle);
-    expect(detail()).toBe(before.detail);
+    expect(view()).toMatchObject({ selected: selectedTitle, detail: before.detail });
 
     // Walking down a screen at a time loads every record once, in order, while
     // records keep arriving; the next page is read only once the distance left
     // below the visible part is no more than the visible height.
     let arrived = 8;
     let steps = 0;
+    // Every record there was before the walk; those arriving during it wait at the top.
+    const total = SEEDED + 8;
+    const loadedAtStart = options().length;
+    let paged = 0;
     while (scrollTop + VISIBLE < contentHeight()) {
       const remaining = contentHeight() - (scrollTop + VISIBLE + VISIBLE);
-      const loadedBefore = listbox().childElementCount;
+      const loadedBefore = options().length;
       await scrollTo(scrollTop + VISIBLE);
-      const loadedAfter = listbox().childElementCount;
+      const loadedAfter = options().length;
       if (remaining > VISIBLE) expect(loadedAfter).toBe(loadedBefore);
+      else if (loadedBefore < total) {
+        expect(loadedAfter).toBe(Math.min(loadedBefore + PAGE, total));
+        paged++;
+      }
       if (++steps % 50 === 0) {
         log(`live record ${++arrived}`);
         await liveTick();
       }
     }
+    expect(paged).toBe(Math.ceil((total - loadedAtStart) / PAGE));
     const shown = titles();
-    expect(shown).toHaveLength(SEEDED + 8);
+    expect(shown).toHaveLength(total);
     expect(new Set(shown).size).toBe(shown.length);
     expect(shown).toEqual(databaseOrder().slice(arrived - 8));
 
