@@ -8,7 +8,7 @@
 //     the path's latest row from an earlier session writes nothing.
 //   - recording never holds up the save: record returns while the store is locked, and quit can skip
 //     pending writes or give them a bound.
-//   - which writes are protected: posts, the registry, settings, attachments and their meta.json; not
+//   - which writes are protected: posts, the registry, settings, attachments and their assets.json; not
 //     the post index or view state.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -389,7 +389,7 @@ describe("protected writes", () => {
     clearCache(ws.dataDirectory);
   });
 
-  it("records an attachment's bytes and its meta.json, so a deleted post's attachments can be restored", async () => {
+  it("records an attachment's bytes and its assets.json, so a deleted post's attachments can be restored", async () => {
     const { createWorkspace } = await import("@main/core/services/workspaceStore.js");
     const { installAsset, assetDir, stagingDir } = await import("@main/core/services/assetStore.js");
     const ws = createWorkspace("Asset WS");
@@ -400,7 +400,7 @@ describe("protected writes", () => {
     installAsset(ws.dataDirectory, "post-1", "a.png", staged, { filename: "a.png", size: 6, uploadedAt: "2026-10-09T00:00:00.000Z" });
     const dir = assetDir(ws.dataDirectory, "post-1");
     expect(Buffer.from(rows(path.join(dir, "a.png"))[0]!.content).equals(bytes)).toBe(true);
-    expect(text(rows(path.join(dir, "meta.json"))[0]!)).toContain("2026-10-09T00:00:00.000Z");
+    expect(text(rows(path.join(dir, "assets.json"))[0]!)).toContain("2026-10-09T00:00:00.000Z");
   });
 
   it("does not record view state", () => {

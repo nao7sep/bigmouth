@@ -11,11 +11,11 @@
  * a file and a per-post directory mixed together, inconsistent and awkward. Keeping posts
  * and assets as two flat, parallel collections linked by post id makes the layout uniform.
  * Assets are files the user added, so each is recorded in the data-backup history when it is
- * saved, and so is meta.json each time it is written (data-backup-conventions).
+ * saved, and so is assets.json each time it is written (data-backup-conventions).
  *
- * A sidecar file {dataDir}/assets/{postId}/meta.json holds each asset's upload time, size,
+ * A sidecar file {dataDir}/assets/{postId}/assets.json holds each asset's upload time, size,
  * dimensions and metadata warning flag. The upload time is a recorded fact: a file missing from
- * meta.json is listed with its size only, so the backup is what can bring the rest back.
+ * assets.json is listed with its size only, so the backup is what can bring the rest back.
  *
  * An upload reaches the workspace as a staged file, {dataDir}/.staging/{nanoid}.part, which the main
  * process writes from the renderer's stream, hashing it as it goes, and {@link installAsset} renames
@@ -66,12 +66,16 @@ export interface AssetSourceMetadata {
 }
 
 /**
- * An asset as `meta.json` records it. `contentHash` is the SHA-256 of the bytes the
+ * An asset as `assets.json` records it. `contentHash` is the SHA-256 of the bytes the
  * details describe, and `mtimeMs` the file's modified time when that hash was
  * taken; `size` is its size then.
  */
 interface RecordedAsset extends AssetMeta { mtimeMs?: number }
-const META_FILENAME = "meta.json";
+const META_FILENAME = "assets.json";
+// The name earlier builds gave the attachment list. One found without an
+// `assets.json` beside it is renamed on first read, so its recorded upload
+// times carry over; the name stays reserved so a leftover is never listed.
+const LEGACY_META_FILENAME = "meta.json";
 
 /** An upload's bytes as the main process staged them: the staged file's name, their SHA-256 and their length. */
 export interface StagedUpload {
@@ -147,7 +151,7 @@ function regularFileStat(filePath: string): fs.Stats {
 }
 
 /**
- * The attached file was installed or removed, but `meta.json` could not be
+ * The attached file was installed or removed, but `assets.json` could not be
  * written after it: the change to the file stands, and only its record is
  * missing until the next read reconciles the folder.
  */
@@ -155,7 +159,7 @@ export class AssetRecordError extends Error {
   readonly asset: AssetMeta;
 
   constructor(asset: AssetMeta, cause: unknown) {
-    super(`The asset ${JSON.stringify(asset.filename)} changed, but meta.json could not be written`, { cause });
+    super(`The asset ${JSON.stringify(asset.filename)} changed, but assets.json could not be written`, { cause });
     this.name = "AssetRecordError";
     this.asset = asset;
   }
@@ -187,15 +191,15 @@ function ensureAssetDir(dataDir: string, postId: string): string {
 }
 
 /**
- * Lists a post's assets, reconciling `meta.json` against the files actually on
+ * Lists a post's assets, reconciling `assets.json` against the files actually on
  * disk — the files are the source of truth for what is attached, while
- * `meta.json` also holds what only the upload knew: its time, the image's size
+ * `assets.json` also holds what only the upload knew: its time, the image's size
  * and whether it carried metadata.
  * Cached entries whose file is gone are dropped; files present without a cached
  * entry are projected minimally (size only). This is what makes
  * the write paths below crash-safe without any backup/rollback machinery: an
  * interrupted upload or delete heals to a consistent list on the next read, and
- * a missing `meta.json` next to real files is recovered, never an error.
+ * a missing `assets.json` next to real files is recovered, never an error.
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
   const { assets, movedAside, unavailable } = reconcileAssets(assetDir(dataDir, postId), dataDir);
@@ -380,13 +384,13 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
 }
 
 /**
- * Merges the cached `meta.json` (if any) with the asset files on disk: keeps
+ * Merges the cached `assets.json` (if any) with the asset files on disk: keeps
  * cached entries whose file still exists, in their stored order, then appends a
  * projected entry for any asset file the cache doesn't know about (sorted by
  * name for determinism). The names the directory reserves for itself are
  * ignored — see isReservedAssetName, which installAsset refuses to store.
  *
- * A `meta.json` a newer version of BigMouth wrote, or one that could not be
+ * An `assets.json` a newer version of BigMouth wrote, or one that could not be
  * read at all, is not used, and `refusal` is what every write to this folder
  * raises, so the file stays exactly as it is.
  */
@@ -408,7 +412,7 @@ function reconcileAssets(dir: string, dataDir: string): {
   }
   const onDisk = new Set(filenames.filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, refusal, movedAside } = readAssetMeta(path.join(dir, META_FILENAME));
+  const { cached, refusal, movedAside } = readAssetMeta(adoptLegacyMeta(dir));
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
   const unavailable: string[] = [];
@@ -452,7 +456,7 @@ function reconcileAssets(dir: string, dataDir: string): {
  * same size within the filesystem's modified-time resolution is not caught; that
  * is accepted, as by the tools that use the same check. A recomputed hash that
  * matches gives the record the current modified time, which the next write of
- * `meta.json` keeps, so a checkout that only moved the time is read once more
+ * `assets.json` keeps, so a checkout that only moved the time is read once more
  * at most. One that differs becomes the file's new record: its size and hash,
  * with no upload facts.
  */
@@ -471,12 +475,31 @@ function checkRecordedHash(filePath: string, entry: RecordedAsset):
 }
 
 /**
- * The recorded entries of `meta.json`. Its upload times are facts the app
+ * The path of the folder's attachment list, renaming a `meta.json` an earlier
+ * build wrote to `assets.json` when only the old name exists. A failed rename
+ * leaves the old file where it is and reads it there; the next write then
+ * creates `assets.json` beside it, which is read from then on.
+ */
+function adoptLegacyMeta(dir: string): string {
+  const metaPath = path.join(dir, META_FILENAME);
+  const legacyPath = path.join(dir, LEGACY_META_FILENAME);
+  if (fs.existsSync(metaPath) || !fs.existsSync(legacyPath)) return metaPath;
+  try {
+    fs.renameSync(legacyPath, metaPath);
+    return metaPath;
+  } catch (err) {
+    logWarn("asset list under its old name could not be renamed; read where it is", { path: legacyPath, error: serializeError(err) });
+    return legacyPath;
+  }
+}
+
+/**
+ * The recorded entries of `assets.json`. Its upload times are facts the app
  * recorded and nothing can rebuild, so a file that cannot be read, or whose
  * entries are not asset records, is moved aside before anything is listed or
  * written (store-recovery-conventions); a failed move throws QuarantineError
  * and nothing is written. The files are then listed from the folder, as when
- * `meta.json` is absent.
+ * `assets.json` is absent.
  */
 function readAssetMeta(metaPath: string): {
   cached: RecordedAsset[];
@@ -554,7 +577,7 @@ function isAssetMeta(value: unknown): value is RecordedAsset {
  * because none was recorded — the file's modified time is when it was last
  * written, which a copy or a git checkout resets, so it is not taken for one
  * (content-lifecycle-conventions: a missing time is not made up). The next
- * upload or delete writes this entry to `meta.json` as it is, hash included.
+ * upload or delete writes this entry to `assets.json` as it is, hash included.
  * Listing itself never writes a sidecar, so an image added from Finder is read
  * whole at each listing until then; other files are not hashed here, since
  * nothing needs their hash. An unreadable image is omitted until it can be read.
@@ -567,10 +590,10 @@ function projectAssetFile(dataDir: string, dir: string, filename: string): Recor
 }
 
 /**
- * Calls `visit` with every content hash the `meta.json` files of a workspace
+ * Calls `visit` with every content hash the `assets.json` files of a workspace
  * record, reading them one at a time without the storage worker: the thumbnail
  * sweep runs in the main process and only needs to know which hashes are still
- * named. A post whose `meta.json` is missing or not an asset list names none.
+ * named. A post whose `assets.json` is missing or not an asset list names none.
  * Throws when the workspace folder or its assets cannot be read, since that says
  * nothing about which hashes it names, as when its volume is not mounted.
  */
@@ -587,7 +610,10 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
     if (!isPostId(postId)) continue;
     let text: string;
     try {
-      text = await fsp.readFile(assetPath(dataDir, postId, META_FILENAME), "utf8");
+      text = await readFirstPresent([
+        assetPath(dataDir, postId, META_FILENAME),
+        assetPath(dataDir, postId, LEGACY_META_FILENAME),
+      ]);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "ENOTDIR") continue;
@@ -601,6 +627,18 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
       if (typeof hash === "string") visit(hash);
     }
   }
+}
+
+/** The text of the first of `paths` that exists; ENOENT when none does. */
+async function readFirstPresent(paths: string[]): Promise<string> {
+  for (const [i, file] of paths.entries()) {
+    try {
+      return await fsp.readFile(file, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT" || i === paths.length - 1) throw err;
+    }
+  }
+  throw new Error("readFirstPresent needs at least one path");
 }
 
 /**
@@ -620,7 +658,7 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
 }
 
 function writeAssetMeta(metaPath: string, assets: RecordedAsset[]): void {
-  // recorded: meta.json holds upload times and dimensions that reconcileAssets cannot rebuild from
+  // recorded: assets.json holds upload times and dimensions that reconcileAssets cannot rebuild from
   // the files, so it is protected with the assets it describes.
   writeManagedText(metaPath, jsonStoreText("assetMeta", { assets }));
 }

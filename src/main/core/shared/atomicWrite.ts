@@ -19,7 +19,7 @@
  * store. It writes atomically, and STRICTLY AFTER the rename lands records the exact bytes it just
  * wrote (data-backup conventions). A managed-text write that reaches disk through the bare
  * {@link writeFileAtomic} instead is a silent backup gap — so the record sites (workspaces.json, each
- * workspace's config.json, posts/*.md, and asset meta.json) all go through here, and only the deliberate
+ * workspace's config.json, posts/*.md, and asset assets.json) all go through here, and only the deliberate
  * no-record sites (the secrets file, the volatile state.json, the rebuildable post index)
  * call writeFileAtomic directly, each with an inline "not recorded" reason at its call site.
  */

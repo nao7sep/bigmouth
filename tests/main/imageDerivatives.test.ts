@@ -408,13 +408,13 @@ describe("sweeping the cache", () => {
     const dataDirectory = path.join(root, name);
     for (const [postId, assets] of Object.entries(records)) {
       fs.mkdirSync(path.join(dataDirectory, "assets", postId), { recursive: true });
-      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "meta.json"), JSON.stringify({ formatVersion: 2, assets }));
+      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "assets.json"), JSON.stringify({ formatVersion: 2, assets }));
     }
     fs.mkdirSync(dataDirectory, { recursive: true });
     return dataDirectory;
   }
 
-  it("keeps what any registered workspace's meta.json records", async () => {
+  it("keeps what any registered workspace's assets.json records", async () => {
     const one = workspaceWith("one", { postA: [{ filename: "a.png", size: 1, contentHash: kept }] });
     const two = workspaceWith("two", { postB: [{ filename: "b.png", size: 1, contentHash: registered }, { filename: "c.txt", size: 1 }] });
     cacheFile(derivativeName(kept, "thumb"));

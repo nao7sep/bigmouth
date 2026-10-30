@@ -333,7 +333,7 @@ describe("uploadAsset", () => {
     const file = path.join(assetDir(dataDir, id), "clip.bin");
     expect(meta.size).toBe(bytes.length);
     expect(fs.readFileSync(file).equals(bytes)).toBe(true);
-    const [record] = JSON.parse(fs.readFileSync(path.join(assetDir(dataDir, id), "meta.json"), "utf8")).assets;
+    const [record] = JSON.parse(fs.readFileSync(path.join(assetDir(dataDir, id), "assets.json"), "utf8")).assets;
     expect(record.contentHash).toBe(createHash("sha256").update(bytes).digest("hex"));
     expect(staged()).toEqual([]);
   });
@@ -487,9 +487,9 @@ describe("uploadAsset", () => {
 
   // The reader has always filtered these names out of every listing, so storing
   // one meant bytes that were written, reported as saved, and then unreachable -
-  // and "meta.json" was worse: the sidecar write on the next line landed on the
+  // and "assets.json" was worse: the sidecar write on the next line landed on the
   // same path, destroying the user's file and the whole asset list with it.
-  it.each(["meta.json", "notes.tmp", ".env"])(
+  it.each(["assets.json", "meta.json", "notes.tmp", ".env"])(
     "refuses to store %s rather than losing it",
     async (name) => {
       const id = (await createDraft());
@@ -594,7 +594,7 @@ describe("uploadAsset", () => {
       vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
       await uploadResult(id, upload("a.png", PNG_1x1));
       await uploadResult(id, upload("b.txt", Buffer.from("notes")));
-      const metaFile = path.join(dataDir, "assets", id, "meta.json");
+      const metaFile = path.join(dataDir, "assets", id, "assets.json");
       const metaBefore = fs.readFileSync(metaFile, "utf8");
 
       vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
@@ -670,7 +670,7 @@ describe("an asset change whose record could not be saved", () => {
   it("keeps an added file and says its details were not saved", async () => {
     const id = (await createDraft());
     await uploadResult(id, upload("first.png", PNG_1x1));
-    const spy = failRenamesOnto("meta.json");
+    const spy = failRenamesOnto("assets.json");
     let result: AssetUploadResult;
     try {
       result = await uploadResult(id, upload("a.png", PNG_1x1));
@@ -717,11 +717,11 @@ describe("an asset change whose record could not be saved", () => {
     expect(fs.existsSync(path.join(dataDir, "assets", id, "a.png"))).toBe(false);
   });
 
-  it("keeps a deleted file deleted when meta.json cannot be rewritten, and lists it gone", async () => {
+  it("keeps a deleted file deleted when assets.json cannot be rewritten, and lists it gone", async () => {
     const id = (await createDraft());
     await uploadResult(id, upload("a.png", PNG_1x1));
     await uploadResult(id, upload("b.txt", Buffer.from("notes")));
-    const spy = failRenamesOnto("meta.json");
+    const spy = failRenamesOnto("assets.json");
     let result: AssetDeleteResult;
     try {
       result = (await invoke<AssetDeleteResult>(CHANNELS.deleteAsset, wsId, id, "a.png"));

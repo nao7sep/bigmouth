@@ -3,7 +3,7 @@
  * storage root (`BIGMOUTH_DATA_DIR` or `~/.bigmouth`, resolved in one place by {@link getAppRoot}),
  * holding the last version of each protected file saved in each session. What is protected is decided
  * at each write boundary: post files, the workspace registry, both settings files and an attachment's
- * `meta.json` call {@link record} after their write lands, and an installed attachment calls
+ * `assets.json` call {@link record} after their write lands, and an installed attachment calls
  * {@link recordFile}; the post index, view state, secrets and records never do. There is no capture at launch, on a timer or at exit, and no restore path.
  *
  * Recording runs on its own thread (backupWorker.ts), which applies every write in save order, so a slow

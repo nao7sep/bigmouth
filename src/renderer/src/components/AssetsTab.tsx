@@ -237,7 +237,7 @@ export function AssetsTab({
           operationalFailures.push({ file, reason: err.reason });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });
         } else {
-          // A failure that carries its own words, such as a meta.json a newer
+          // A failure that carries its own words, such as an assets.json a newer
           // version saved, is told in them.
           operationalFailures.push({ file, reason: carriedMessage(err) ?? message("assets.fileNotAdded") });
           reportProblem("Asset upload failed.", err, { postId, filename: file.name });

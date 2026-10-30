@@ -202,7 +202,7 @@ describe("canonical edit admission and committed writes", () => {
     const folder = path.join(dataDir, "assets", post.frontMatter.id);
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, "a.png"), "abc");
-    fs.writeFileSync(path.join(folder, "meta.json"), body);
+    fs.writeFileSync(path.join(folder, "assets.json"), body);
     expect(deletePost(dataDir, post.frontMatter.id)).toEqual({ cleanupIncomplete: false });
     expect(fs.existsSync(post.filePath)).toBe(false);
     expect(fs.existsSync(folder)).toBe(false);

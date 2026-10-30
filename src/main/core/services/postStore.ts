@@ -656,7 +656,7 @@ export function deletePost(dataDir: string, id: string): PostDeleteResult | null
     logWarn("deleted post source cleanup incomplete", { id, error: serializeError(error) });
   }
 
-  // The attachments go with the post whatever state their meta.json is in.
+  // The attachments go with the post whatever state their assets.json is in.
   const assets = assetDir(dataDir, id);
   try {
     if (fs.existsSync(assets)) fs.rmSync(assets, { recursive: true });

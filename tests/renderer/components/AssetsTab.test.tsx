@@ -150,9 +150,9 @@ describe("AssetsTab loading", () => {
     expect(getByText("Assets could not be loaded. Reopen this post to try again.")).toBeTruthy();
   });
 
-  it("says where an unreadable meta.json was moved, and keeps saying it through a later upload", async () => {
+  it("says where an unreadable assets.json was moved, and keeps saying it through a later upload", async () => {
     const movedAside = {
-      path: "/Users/me/Workspace/assets/p1/meta.json",
+      path: "/Users/me/Workspace/assets/p1/assets.json",
       movedTo: "/Users/me/Workspace/assets/p1/meta-20261006-031340-123-utc.invalid",
     };
     mockListAssets
@@ -316,7 +316,7 @@ describe("AssetsTab upload via file input", () => {
 
   it("tells an upload failure that carries its own words in them", async () => {
     mockListAssets.mockResolvedValue({ assets: [] });
-    const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
+    const metaPath = "/Users/me/Workspace/assets/p1/assets.json";
     mockUploadAsset.mockRejectedValue(
       new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })),
     );
@@ -723,7 +723,7 @@ describe("AssetsTab asset changes whose record could not be saved", () => {
 describe("AssetsTab delete failure with its own words", () => {
   it("keeps the delete failure and adds the reason it carries", async () => {
     mockListAssets.mockResolvedValue({ assets: [asset({ filename: "stay.png" })] });
-    const metaPath = "/Users/me/Workspace/assets/p1/meta.json";
+    const metaPath = "/Users/me/Workspace/assets/p1/assets.json";
     mockDeleteAsset.mockRejectedValue(new Error(carryingText({ key: "store.newerFormat", values: { path: metaPath } })));
     const { getByRole, getByTitle, getByText } = await renderTab();
 
