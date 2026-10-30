@@ -6,7 +6,9 @@ import path from "node:path";
 import type { RecordDetail, RecordKind, RecordsHealth, RecordsPage, RecordsQuery } from "@shared/records";
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
-import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
+import { FORMAT_VERSIONS } from "../shared/formatVersions.js";
+import { NewerFormatError, openSqliteStore, sqliteUserVersion } from "../shared/storeFormat.js";
+import { moveAsideInvalid } from "../shared/quarantine.js";
 import { readDetail, readPage, readSessions } from "./recordsQueries.js";
 
 /** A log line as emitted: its envelope, and the whole JSON object it serializes to. */
@@ -77,24 +79,39 @@ export function onRecordStored(listener: (() => void) | null): void {
   storedListener = listener;
 }
 
+/** A records database this build cannot use: an older format version, a mismatched shape, or not a database. */
+class UnusableRecordsError extends Error {}
+
+/** What opening the records database met that the caller logs once the session is open. */
+export type RecordsOpening = {
+  /** A database a newer version of BigMouth wrote, left exactly as it is. */
+  newer: NewerFormatError | null;
+  /** A database this build could not use, set aside so a new one could be created. */
+  setAside: { path: string; movedTo: string; detail: string } | null;
+};
+
 /**
- * Opens the database for one session, a process launch named by its start time. When it cannot be
- * opened, every entry goes to the session's fallback file under `logsDir` instead. A database a newer
- * version of BigMouth wrote is left exactly as it is, and returned as the refusal for the caller to log.
+ * Opens the database for one session, a process launch named by its start time. A database this build
+ * cannot use, whether an older format version, a mismatched shape or a file that is not a database, is
+ * set aside as `.invalid` and a new one created: records are optional diagnostics with no migration
+ * chain, and setting the old file aside keeps its rows for inspection (store-recovery-conventions).
+ * A database a newer version of BigMouth wrote is left exactly as it is. When no database can be
+ * opened, every entry goes to the session's fallback file under `logsDir` instead.
  */
-export function openRecords(dbPath: string, logsDir: string, sessionStart: Date): NewerFormatError | null {
+export function openRecords(dbPath: string, logsDir: string, sessionStart: Date): RecordsOpening {
+  const opening: RecordsOpening = { newer: null, setAside: null };
   let db: DatabaseSync | null = null;
-  let newer: NewerFormatError | null = null;
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    db = openSqliteStore("records", dbPath, (opened) => {
-      opened.exec(RECORDS_SCHEMA);
-      // Experimental internal stores have no migration chain. A mismarked old
-      // shape is refused inside the creation transaction, leaving its rows alone.
-      validateRecordsSchema(opened);
-    });
+    try {
+      db = openUsable(dbPath);
+    } catch (err) {
+      if (!(err instanceof UnusableRecordsError)) throw err;
+      opening.setAside = { path: dbPath, movedTo: setAside(dbPath), detail: err.message };
+      db = openUsable(dbPath);
+    }
   } catch (err) {
-    if (err instanceof NewerFormatError) newer = err;
+    if (err instanceof NewerFormatError) opening.newer = err;
     else reportFailure("records database could not be opened", err);
   }
   records = {
@@ -104,7 +121,43 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
     fallbackPath: path.join(logsDir, `${formatForFilename(sessionStart)}.log`),
   };
   if (!db) markGap();
-  return newer;
+  return opening;
+}
+
+function openUsable(dbPath: string): DatabaseSync {
+  try {
+    return openSqliteStore("records", dbPath, (opened) => {
+      // A database with no version yet, a fresh file or one that never held
+      // records, is completed here. An older version is set aside, never altered.
+      const recorded = sqliteUserVersion(opened);
+      if (recorded !== 0 && recorded < FORMAT_VERSIONS.records) throw new UnusableRecordsError(`it has format version ${recorded}`);
+      opened.exec(RECORDS_SCHEMA);
+      try {
+        validateRecordsSchema(opened);
+      } catch (cause) {
+        throw new UnusableRecordsError("its tables do not have the columns this version records", { cause });
+      }
+    });
+  } catch (err) {
+    if ((err as { errcode?: unknown }).errcode === SQLITE_NOTADB) {
+      throw new UnusableRecordsError("it is not a database", { cause: err });
+    }
+    throw err;
+  }
+}
+
+const SQLITE_NOTADB = 26;
+
+/**
+ * Moves an unusable database aside with its write-ahead files, which SQLite
+ * finds by the main file's name, so the set-aside copy still opens whole.
+ */
+function setAside(dbPath: string): string {
+  const movedTo = moveAsideInvalid(dbPath);
+  for (const suffix of ["-wal", "-shm"]) {
+    if (fs.existsSync(dbPath + suffix)) fs.renameSync(dbPath + suffix, movedTo + suffix);
+  }
+  return movedTo;
 }
 
 export function closeRecords(): void {

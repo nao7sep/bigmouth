@@ -18,8 +18,8 @@ export const FORMAT_VERSIONS = {
   state: 1,
   /** `api-keys.json`. */
   apiKeys: 1,
-  /** `records.sqlite3`. */
-  records: 1,
+  /** `records.sqlite3`; 2 covers `provider_calls.operation_id` and `elapsed_ms`. */
+  records: 2,
   /** `backups.sqlite3`; 2 added the session column and the parts table, before any release used 2. */
   backups: 2,
 } as const;

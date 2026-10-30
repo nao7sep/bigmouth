@@ -117,71 +117,116 @@ describe("records database format version", () => {
 
   it("stamps this build's format version and opens it again", () => {
     const file = path.join(root, "records.sqlite3");
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
     closeRecords();
-    expect(userVersion(file)).toBe(1);
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    expect(userVersion(file)).toBe(2);
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
     const stored = vi.fn();
     onRecordStored(stored);
     line();
     expect(stored).toHaveBeenCalledOnce();
   });
 
-  it("refuses the old provider-call shape without changing its bytes or history and uses fallback", () => {
-    const file = path.join(root, "records.sqlite3");
+  // A database this build cannot use is set aside whole, rows and shape, and a
+  // new one takes this session's records, so a launch never falls back to log
+  // files for that reason.
+  function expectSetAside(file: string, history: unknown[], schema: unknown[], version: number, detail: RegExp) {
     const logs = path.join(root, "logs");
+    const opening = openRecords(file, logs, new Date());
+    expect(opening.newer).toBeNull();
+    expect(opening.setAside).toMatchObject({ path: file, detail: expect.stringMatching(detail) });
+    const movedTo = opening.setAside!.movedTo;
+    expect(path.basename(movedTo)).toMatch(/^records-\d{8}-\d{6}-utc\.invalid$/);
+    const stored = vi.fn();
+    onRecordStored(stored);
+    writeProviderCall(providerCall({ stopped: true, operationId: "op", elapsedMs: 5 }));
+    closeRecords();
+    expect(stored).toHaveBeenCalledOnce();
+    expect(fs.existsSync(logs)).toBe(false);
+    expect(userVersion(file)).toBe(2);
+    const check = new DatabaseSync(movedTo);
+    try {
+      expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: version });
+      expect(check.prepare("SELECT * FROM provider_calls").all()).toEqual(history);
+      expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schema);
+    } finally { check.close(); }
+  }
+
+  function snapshot(file: string): { history: unknown[]; schema: unknown[] } {
+    const db = new DatabaseSync(file);
+    try {
+      return {
+        history: db.prepare("SELECT * FROM provider_calls").all(),
+        schema: db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all(),
+      };
+    } finally { db.close(); }
+  }
+
+  it("sets aside a version 1 database without the provider-call facts and starts a new one", () => {
+    const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec(`CREATE TABLE provider_calls (id INTEGER PRIMARY KEY, session TEXT NOT NULL, workspace_id TEXT NOT NULL,
       post_id TEXT NOT NULL, purpose TEXT NOT NULL, provider TEXT NOT NULL, started_at TEXT NOT NULL,
       finished_at TEXT NOT NULL, request TEXT NOT NULL, response TEXT, error TEXT); PRAGMA user_version = 1`);
     db.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
       VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}')`);
-    const history = db.prepare("SELECT * FROM provider_calls").all();
-    const schema = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
     db.close();
-    const bytes = fs.readFileSync(file);
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      openRecords(file, logs, new Date());
-      writeProviderCall(providerCall({ stopped: true }));
-      closeRecords();
-      expect(fs.readFileSync(file)).toEqual(bytes);
-      const check = new DatabaseSync(file);
-      try {
-        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-        expect(check.prepare("SELECT * FROM provider_calls").all()).toEqual(history);
-        expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schema);
-      } finally { check.close(); }
-      const [fallback] = fs.readdirSync(logs);
-      expect(JSON.parse(fs.readFileSync(path.join(logs, fallback), "utf8"))).toMatchObject({ record: "provider-call", stopped: true });
-    } finally { error.mockRestore(); }
+    const { history, schema } = snapshot(file);
+    expectSetAside(file, history, schema, 1, /format version 1/);
   });
 
-  it.each(["operation_id", "elapsed_ms"])("refuses a current-version database missing %s without changing it", (column) => {
+  it("sets aside a version 1 database even when its shape matches, rather than altering it", () => {
     const file = path.join(root, "records.sqlite3");
-    const logs = path.join(root, "logs");
+    const db = new DatabaseSync(file);
+    db.exec(RECORDS_SCHEMA + "PRAGMA user_version = 1;");
+    db.close();
+    const { history, schema } = snapshot(file);
+    expectSetAside(file, history, schema, 1, /format version 1/);
+  });
+
+  it.each(["operation_id", "elapsed_ms"])("sets aside a current-version database missing %s", (column) => {
+    const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec(RECORDS_SCHEMA.split("\n").filter((line) => !line.trim().startsWith(column + " ")).join("\n"));
     db.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
-      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}'); PRAGMA user_version = 1`);
-    const history = db.prepare("SELECT * FROM provider_calls").all();
-    const schema = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
+      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}'); PRAGMA user_version = 2`);
     db.close();
-    const bytes = fs.readFileSync(file);
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { history, schema } = snapshot(file);
+    expectSetAside(file, history, schema, 2, /columns/);
+  });
+
+  it("carries a set-aside database's write-ahead files with it, so its last rows are kept", () => {
+    const file = path.join(root, "records.sqlite3");
+    const writer = new DatabaseSync(file);
+    writer.exec(RECORDS_SCHEMA + "PRAGMA user_version = 1; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;");
+    writer.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
+      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{"last":true}')`);
+    // A copy taken while the writer is open leaves its newest row only in the
+    // write-ahead file, as a crash would.
+    const crashed = path.join(root, "crashed");
+    fs.mkdirSync(crashed);
+    for (const suffix of ["", "-wal", "-shm"]) fs.copyFileSync(file + suffix, path.join(crashed, "records.sqlite3" + suffix));
+    writer.close();
+    const copy = path.join(crashed, "records.sqlite3");
+    const opening = openRecords(copy, path.join(crashed, "logs"), new Date());
+    closeRecords();
+    const check = new DatabaseSync(opening.setAside!.movedTo);
     try {
-      openRecords(file, logs, new Date());
-      line();
-      closeRecords();
-      expect(fs.readFileSync(file)).toEqual(bytes);
-      expect(fs.readdirSync(logs)).toHaveLength(1);
-      const check = new DatabaseSync(file);
-      try {
-        expect(check.prepare("SELECT * FROM provider_calls").all()).toEqual(history);
-        expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schema);
-        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-      } finally { check.close(); }
-    } finally { error.mockRestore(); }
+      expect(check.prepare("SELECT request FROM provider_calls").all()).toEqual([{ request: '{"last":true}' }]);
+    } finally { check.close(); }
+  });
+
+  it("sets aside a file that is not a database", () => {
+    const file = path.join(root, "records.sqlite3");
+    const bytes = Buffer.from("not a database ".repeat(20));
+    fs.writeFileSync(file, bytes);
+    const opening = openRecords(file, path.join(root, "logs"), new Date());
+    line();
+    closeRecords();
+    expect(opening.setAside?.detail).toMatch(/not a database/);
+    expect(fs.readFileSync(opening.setAside!.movedTo)).toEqual(bytes);
+    expect(userVersion(file)).toBe(2);
+    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
   });
 
   it("reads a database without its format version as this build's, completing its schema", () => {
@@ -189,24 +234,25 @@ describe("records database format version", () => {
     const db = new DatabaseSync(file);
     db.exec("CREATE TABLE earlier (id INTEGER)");
     db.close();
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toBeNull();
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null });
     const stored = vi.fn();
     onRecordStored(stored);
     line();
     closeRecords();
     expect(stored).toHaveBeenCalledOnce();
-    expect(userVersion(file)).toBe(1);
+    expect(userVersion(file)).toBe(2);
     expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
   });
 
   it("writes to the fallback file over a database a newer version wrote, leaving it byte-identical", () => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
-    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 2");
+    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 3");
     db.close();
     const bytes = fs.readFileSync(file);
 
-    const refused = openRecords(file, path.join(root, "logs"), new Date());
+    const { newer: refused, setAside } = openRecords(file, path.join(root, "logs"), new Date());
+    expect(setAside).toBeNull();
     expect(refused).toBeInstanceOf(NewerFormatError);
     expect(refused?.filePath).toBe(file);
     line();

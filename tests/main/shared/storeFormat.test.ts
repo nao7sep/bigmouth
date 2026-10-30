@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewerFormatError, checkFormatVersion, openSqliteStore, readJsonStore } from "@main/core/shared/storeFormat.js";
+import { FORMAT_VERSIONS } from "@main/core/shared/formatVersions.js";
 
 let root: string;
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-sqlite-admission-")); });
@@ -13,7 +14,7 @@ describe("SQLite admission", () => {
   it("refuses a database a newer build wrote before setup, leaving it byte-identical", () => {
     const file = path.join(root, "store.sqlite3");
     const existing = new DatabaseSync(file);
-    existing.exec("PRAGMA user_version = 2");
+    existing.exec(`PRAGMA user_version = ${FORMAT_VERSIONS.records + 1}`);
     existing.close();
     const before = fs.readFileSync(file);
     const setup = vi.fn();
@@ -28,7 +29,7 @@ describe("SQLite admission", () => {
     existing.exec("CREATE TABLE first (id INTEGER)");
     existing.close();
     const db = openSqliteStore("records", file, (opened) => opened.exec("CREATE TABLE IF NOT EXISTS first (id INTEGER)"));
-    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: FORMAT_VERSIONS.records });
     db.close();
   });
 
@@ -45,7 +46,7 @@ describe("SQLite admission", () => {
 
     // The next open completes the interrupted creation.
     const db = openSqliteStore("records", file, (opened) => opened.exec("CREATE TABLE IF NOT EXISTS first (id INTEGER)"));
-    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: FORMAT_VERSIONS.records });
     expect(db.prepare("SELECT * FROM first").all()).toEqual([]);
     db.close();
   });
