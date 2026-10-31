@@ -1,5 +1,5 @@
 // The identity of every file BigMouth writes (file-identity-conventions): its
-// owner, each format's kind (the key below) and the version this build reads.
+// owner, each format's kind and the version this build reads.
 // No imports: the backup recorder's worker runs this file from source.
 
 /** `format.owner` of every BigMouth file: the product, never the repository. */
@@ -8,7 +8,7 @@ export const FORMAT_OWNER = "bigmouth";
 /** `writer.name`: the package whose code serializes BigMouth's files. */
 export const WRITER_NAME = "bigmouth";
 
-/** Each format's version, keyed by its `format.kind`. */
+/** Each format's version. */
 export const FORMAT_VERSIONS = {
   /** A post's `.md` file, in its front matter. */
   post: 1,
@@ -31,6 +31,19 @@ export const FORMAT_VERSIONS = {
 } as const;
 
 export type StoreFormat = keyof typeof FORMAT_VERSIONS;
+
+/** Each format's `format.kind`: lowercase kebab-case, as files carry it. */
+export const FORMAT_KINDS: Readonly<Record<StoreFormat, string>> = {
+  post: "post",
+  assetList: "asset-list",
+  workspaces: "workspaces",
+  appConfig: "app-config",
+  workspaceConfig: "workspace-config",
+  state: "state",
+  apiKeys: "api-keys",
+  records: "records",
+  backups: "backups",
+};
 
 /** `writer` as a file records it; written on every save, never read. */
 export type FileWriter = { name: string; version: string };

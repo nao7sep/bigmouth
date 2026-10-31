@@ -5,7 +5,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { FORMAT_OWNER, FORMAT_VERSIONS, isNewerThanBuild, type FileWriter, type StoreFormat } from "./formatVersions.ts";
+import { FORMAT_KINDS, FORMAT_OWNER, FORMAT_VERSIONS, isNewerThanBuild, type FileWriter, type StoreFormat } from "./formatVersions.ts";
 
 /** What a database's header says before anything is written to it. */
 export type SqliteHeaderCheck =
@@ -35,8 +35,8 @@ export function checkSqliteHeader(db: DatabaseSync, format: StoreFormat): Sqlite
   const rows = db.prepare("SELECT key, value FROM file_header WHERE key IN ('format.owner', 'format.kind')").all() as { key: string; value: string }[];
   const owner = rows.find((row) => row.key === "format.owner")?.value;
   const kind = rows.find((row) => row.key === "format.kind")?.value;
-  if (owner !== FORMAT_OWNER || kind !== format) {
-    return { kind: "unreadable", detail: `its file_header names ${owner ?? "no owner"} ${kind ?? "no kind"}, not ${FORMAT_OWNER} ${format}` };
+  if (owner !== FORMAT_OWNER || kind !== FORMAT_KINDS[format]) {
+    return { kind: "unreadable", detail: `its file_header names ${owner ?? "no owner"} ${kind ?? "no kind"}, not ${FORMAT_OWNER} ${FORMAT_KINDS[format]}` };
   }
   return { kind: "read" };
 }
@@ -50,7 +50,7 @@ export function writeSqliteHeader(db: DatabaseSync, format: StoreFormat, writer:
   db.exec("DELETE FROM file_header WHERE key LIKE 'writer.%'");
   const put = db.prepare("INSERT OR REPLACE INTO file_header (key, value) VALUES (?, ?)");
   put.run("format.owner", FORMAT_OWNER);
-  put.run("format.kind", format);
+  put.run("format.kind", FORMAT_KINDS[format]);
   put.run("writer.name", writer.name);
   put.run("writer.version", writer.version);
   db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);

@@ -748,7 +748,7 @@ describe("asset list format version", () => {
 
   it.each([
     ["no header", (assets: unknown) => ({ assets })],
-    ["another owner", (assets: unknown) => ({ format: { owner: "other", kind: "assetList", version: 1 }, assets })],
+    ["another owner", (assets: unknown) => ({ format: { owner: "other", kind: "asset-list", version: 1 }, assets })],
     ["another kind", (assets: unknown) => ({ ...fileHeader("state"), assets })],
   ])("moves aside an assets.json with %s and lists the files without it", (_name, content) => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));

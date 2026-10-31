@@ -549,7 +549,7 @@ describe("workspace config header", () => {
 
   it.each([
     ["no header", { timezone: "UTC" }],
-    ["another owner", { format: { owner: "other", kind: "workspaceConfig", version: 1 }, timezone: "UTC" }],
+    ["another owner", { format: { owner: "other", kind: "workspace-config", version: 1 }, timezone: "UTC" }],
     ["another kind", { ...fileHeader("appConfig"), timezone: "UTC" }],
   ])("refuses a file with %s, naming it, and leaves it byte-identical", (_name, content) => {
     const body = JSON.stringify(content);

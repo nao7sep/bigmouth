@@ -178,7 +178,7 @@ describe("canonical edit admission and committed writes", () => {
 
   it.each([
     ["damaged", "{ not json"],
-    ["written by a newer version", JSON.stringify({ format: { owner: "bigmouth", kind: "assetList", version: 999 }, assets: [] })],
+    ["written by a newer version", JSON.stringify({ format: { owner: "bigmouth", kind: "asset-list", version: 999 }, assets: [] })],
   ])("deletes a post whose attachment details are %s, with its attachments", (_case, body) => {
     const post = createPost(dataDir, "blogger", "en");
     const folder = path.join(dataDir, "assets", post.frontMatter.id);

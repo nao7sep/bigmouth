@@ -15,7 +15,7 @@ import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { message } from "@shared/i18n/translate";
 import { carryingText } from "@shared/i18n/carriedMessage";
-import { FORMAT_OWNER, FORMAT_VERSIONS, WRITER_NAME, isNewerThanBuild, type FileWriter, type StoreFormat } from "./formatVersions.js";
+import { FORMAT_KINDS, FORMAT_OWNER, FORMAT_VERSIONS, WRITER_NAME, isNewerThanBuild, type FileWriter, type StoreFormat } from "./formatVersions.js";
 import { checkSqliteHeader, writeSqliteHeader } from "./sqliteHeader.js";
 
 /** The keys the header takes at the top of a file; content never uses them there. */
@@ -26,7 +26,7 @@ export const WRITER: FileWriter = { name: WRITER_NAME, version: __APP_VERSION__ 
 
 /** The header a file of `format` starts with. */
 export function fileHeader(format: StoreFormat): { format: { owner: string; kind: string; version: number }; writer: FileWriter } {
-  return { format: { owner: FORMAT_OWNER, kind: format, version: FORMAT_VERSIONS[format] }, writer: { ...WRITER } };
+  return { format: { owner: FORMAT_OWNER, kind: FORMAT_KINDS[format], version: FORMAT_VERSIONS[format] }, writer: { ...WRITER } };
 }
 
 /** A parsed file's content without its header keys. */
@@ -85,8 +85,8 @@ export function checkHeader(format: StoreFormat, value: Record<string, unknown>)
   if (typeof owner !== "string" || typeof kind !== "string" || typeof version !== "number" || !Number.isInteger(version) || version < 1) {
     return { kind: "unreadable", detail: "its format header is not an owner, a kind and a whole version from 1" };
   }
-  if (owner !== FORMAT_OWNER || kind !== format) {
-    return { kind: "unreadable", detail: `its format header names ${owner} ${kind}, not ${FORMAT_OWNER} ${format}` };
+  if (owner !== FORMAT_OWNER || kind !== FORMAT_KINDS[format]) {
+    return { kind: "unreadable", detail: `its format header names ${owner} ${kind}, not ${FORMAT_OWNER} ${FORMAT_KINDS[format]}` };
   }
   return isNewerThanBuild(format, version) ? { kind: "newer", version } : { kind: "read", version };
 }

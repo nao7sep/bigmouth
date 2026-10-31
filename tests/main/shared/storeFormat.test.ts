@@ -106,10 +106,19 @@ describe("JSON admission", () => {
       header({ owner: "bigmouth", kind: "state", version: 0 }),
       header({ owner: "bigmouth", kind: "state", version: 1.5 }),
       header({ owner: "other", kind: "state", version: 1 }),
-      header({ owner: "bigmouth", kind: "apiKeys", version: 1 }),
+      header({ owner: "bigmouth", kind: "api-keys", version: 1 }),
+      header({ owner: "BigMouth", kind: "state", version: 1 }),
     ]) {
       expect(checkHeader("state", bad)).toMatchObject({ kind: "unreadable" });
     }
+  });
+
+  it("names kinds in lowercase kebab-case, and refuses another spelling", () => {
+    expect(fileHeader("apiKeys").format.kind).toBe("api-keys");
+    expect(fileHeader("assetList").format.kind).toBe("asset-list");
+    expect(fileHeader("workspaceConfig").format.kind).toBe("workspace-config");
+    expect(checkHeader("apiKeys", header({ owner: "bigmouth", kind: "api-keys", version: 1 }))).toEqual({ kind: "read", version: 1 });
+    expect(checkHeader("apiKeys", header({ owner: "bigmouth", kind: "apiKeys", version: 1 }))).toMatchObject({ kind: "unreadable" });
   });
 
   it("never reads writer", () => {

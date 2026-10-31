@@ -7,7 +7,7 @@
  * account; the machine-local workspace id is opaque (nanoid: mixed case,
  * `_`/`-`), so it lives in the container path and the key id is the provider:
  *
- *   { "format": { "owner": "bigmouth", "kind": "apiKeys", "version": 1 }, "writer": { … }, "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
+ *   { "format": { "owner": "bigmouth", "kind": "api-keys", "version": 1 }, "writer": { … }, "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
  *
  * Contract (api-key-storage-conventions):
  *   - The key id is the provider; its environment variable is the id
