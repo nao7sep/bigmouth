@@ -15,7 +15,7 @@ export type {
   ContentFont,
   EditablePostMetadata,
   GenerationPromptsData,
-  PostIndexEntry,
+  PostListEntry,
   PostStatus,
   Settings,
   Target,
@@ -27,7 +27,7 @@ import type { AnthropicSetKey } from "@shared/configSets";
 import type {
   AnalysisPrompt,
   GenerationPromptsData,
-  PostIndexEntry,
+  PostListEntry,
   PostStatus,
   Settings,
   Target,
@@ -40,8 +40,8 @@ import type {
  * Front matter as a post FILE holds it.
  *
  * Distinct from the shared `PostFrontMatter`, which also has to describe a list
- * summary: there, `updatedAtUtc` is optional (the index projection omits it) and
- * `excerpt` exists (the index derives it). On disk neither is true — every post
+ * summary: there, `updatedAtUtc` is optional (the list entry omits it) and
+ * `excerpt` exists (the list entry derives it). On disk neither is true — every post
  * file carries an update time, and no file carries an excerpt.
  *
  * Base fields (title, tags, metaDescription) are always in the post's native
@@ -81,12 +81,12 @@ export interface Post {
 }
 
 /**
- * A post in a list view. The core answers with the index projection, which is
+ * A post in a list view. The core answers with the list entry, which is
  * what a list needs and nothing more — the shared `PostSummary` carries the
  * looser boundary front matter instead.
  */
 export interface PostSummary {
-  frontMatter: PostIndexEntry;
+  frontMatter: PostListEntry;
 }
 
 // --- Workspace registry ---

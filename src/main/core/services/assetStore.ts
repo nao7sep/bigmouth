@@ -71,11 +71,7 @@ export interface AssetSourceMetadata {
  * taken; `size` is its size then.
  */
 interface RecordedAsset extends AssetMeta { mtimeMs?: number }
-const META_FILENAME = "assets.json";
-// The name earlier builds gave the attachment list. One found without an
-// `assets.json` beside it is renamed on first read, so its recorded upload
-// times carry over; the name stays reserved so a leftover is never listed.
-const LEGACY_META_FILENAME = "meta.json";
+const ASSET_LIST_FILENAME = "assets.json";
 
 /** An upload's bytes as the main process staged them: the staged file's name, their SHA-256 and their length. */
 export interface StagedUpload {
@@ -263,7 +259,7 @@ export function installAsset(
 
   const fromPath = stagedPath(dataDir, staged.name);
   const dir = ensureAssetDir(dataDir, postId);
-  const { assets: siblings, records, refusal, metaPath } = reconcileAssets(dir, dataDir);
+  const { assets: siblings, records, refusal } = reconcileAssets(dir, dataDir);
   if (refusal) throw refusal;
   const finalName = uniqueCaseInsensitiveName(filename, siblings);
   const destPath = assetPath(dataDir, postId, finalName);
@@ -296,7 +292,7 @@ export function installAsset(
   // recorded: an uploaded asset is a file the user added; deleting its post would otherwise lose it.
   if (installed !== null) recordFile(destPath, installed, staged.sha256, staged.size);
   try {
-    writeAssetMeta(metaPath, [...existing, { ...finalMeta, mtimeMs }]);
+    writeAssetList(path.join(dir, ASSET_LIST_FILENAME), [...existing, { ...finalMeta, mtimeMs }]);
   } catch (cause) {
     throw new AssetRecordError(finalMeta, cause);
   }
@@ -358,7 +354,8 @@ function uniqueCaseInsensitiveName(filename: string, siblings: AssetMeta[]): str
 export function deleteAsset(dataDir: string, postId: string, filename: string): void {
   const dir = assetDir(dataDir, postId);
   const filePath = assetPath(dataDir, postId, filename);
-  const { assets, records, refusal, metaPath } = reconcileAssets(dir, dataDir);
+  const { assets, records, refusal } = reconcileAssets(dir, dataDir);
+  const listPath = path.join(dir, ASSET_LIST_FILENAME);
   if (refusal) throw refusal;
   const remaining = records.filter((a) => a.filename !== filename);
 
@@ -369,12 +366,12 @@ export function deleteAsset(dataDir: string, postId: string, filename: string): 
 
   try {
     if (remaining.length === 0) {
-      if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+      if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
       // A contained directory link belongs to the workspace's layout; deleting
       // its last attachment leaves the link and its target directory in place.
       if (fs.existsSync(dir) && !fs.lstatSync(dir).isSymbolicLink() && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
     } else {
-      writeAssetMeta(metaPath, remaining);
+      writeAssetList(listPath, remaining);
     }
   } catch (cause) {
     throw new AssetRecordError(assets.find((a) => a.filename === filename) ?? { filename, size: 0 }, cause);
@@ -398,22 +395,19 @@ function reconcileAssets(dir: string, dataDir: string): {
   refusal: Error | null;
   unavailable: string[];
   movedAside?: { path: string; movedTo: string };
-  /** Where the folder's attachment list is read and written. */
-  metaPath: string;
 } {
   let filenames: string[];
   try {
     filenames = fs.readdirSync(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { assets: [], records: [], refusal: null, unavailable: [], metaPath: path.join(dir, META_FILENAME) };
+      return { assets: [], records: [], refusal: null, unavailable: [] };
     }
     throw error;
   }
   const onDisk = new Set(filenames.filter((entry) => !isReservedAssetName(entry)));
 
-  const metaPath = adoptLegacyMeta(dir);
-  const { cached, refusal, movedAside } = readAssetMeta(metaPath);
+  const { cached, refusal, movedAside } = readAssetList(path.join(dir, ASSET_LIST_FILENAME));
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
   const unavailable: string[] = [];
@@ -446,7 +440,7 @@ function reconcileAssets(dir: string, dataDir: string): {
       logWarn("asset could not be listed", { path: path.resolve(dir, filename), error: serializeError(error) });
     }
   }
-  return { assets: result, records, refusal, movedAside, unavailable, metaPath };
+  return { assets: result, records, refusal, movedAside, unavailable };
 }
 
 /**
@@ -476,46 +470,6 @@ function checkRecordedHash(filePath: string, entry: RecordedAsset):
 }
 
 /**
- * The path of the folder's attachment list, renaming a `meta.json` an earlier
- * build wrote to `assets.json` when only the old name exists. A failed rename
- * leaves the old file where it is, read and written there until a later read
- * renames it. An `assets.json`
- * beside a `meta.json` that is not an asset list is an attachment an earlier
- * build stored under that name: the list stays in `meta.json`, and the file is
- * left as it is, neither listed nor moved aside.
- */
-function adoptLegacyMeta(dir: string): string {
-  const metaPath = path.join(dir, META_FILENAME);
-  const legacyPath = path.join(dir, LEGACY_META_FILENAME);
-  if (!fs.existsSync(legacyPath)) return metaPath;
-  if (fs.existsSync(metaPath)) {
-    if (holdsAssetList(metaPath)) return metaPath;
-    logWarn("a file named assets.json is not an asset list; the list is kept in meta.json", { path: metaPath });
-    return legacyPath;
-  }
-  try {
-    fs.renameSync(legacyPath, metaPath);
-    return metaPath;
-  } catch (err) {
-    logWarn("asset list under its old name could not be renamed; read where it is", { path: legacyPath, error: serializeError(err) });
-    return legacyPath;
-  }
-}
-
-/**
- * Whether a file is BigMouth's attachment list, judged as readAssetMeta reads it.
- * One a newer build wrote, or one that could not be read, says nothing against
- * it, so it is taken as the list and refused or reported as such.
- */
-function holdsAssetList(filePath: string): boolean {
-  const read = readJsonStore("assetMeta", filePath);
-  if (read.kind === "newer" || read.kind === "inaccessible") return true;
-  if (read.kind !== "read") return false;
-  const assets = read.value.assets;
-  return Array.isArray(assets) && assets.every(isAssetMeta);
-}
-
-/**
  * The recorded entries of `assets.json`. Its upload times are facts the app
  * recorded and nothing can rebuild, so a file that cannot be read, or whose
  * entries are not asset records, is moved aside before anything is listed or
@@ -523,54 +477,54 @@ function holdsAssetList(filePath: string): boolean {
  * and nothing is written. The files are then listed from the folder, as when
  * `assets.json` is absent.
  */
-function readAssetMeta(metaPath: string): {
+function readAssetList(listPath: string): {
   cached: RecordedAsset[];
   refusal: Error | null;
   movedAside?: { path: string; movedTo: string };
 } {
-  const read = readJsonStore("assetMeta", metaPath);
+  const read = readJsonStore("assetList", listPath);
   switch (read.kind) {
     case "absent":
       return { cached: [], refusal: null };
     case "newer":
-      logWarn("asset metadata was written by a newer version of BigMouth; left unchanged, assets listed from the files on disk", {
-        path: metaPath,
+      logWarn("asset list was written by a newer version of BigMouth; left unchanged, assets listed from the files on disk", {
+        path: listPath,
         formatVersion: read.version,
       });
-      return { cached: [], refusal: new NewerFormatError(metaPath, read.version) };
+      return { cached: [], refusal: new NewerFormatError(listPath, read.version) };
     case "inaccessible":
       // A failed read says nothing about the bytes: the file is left as it is,
       // the assets are listed from the folder, and writes to it are refused.
       logWarn("asset metadata could not be read; left unchanged, assets listed from the files on disk", {
-        path: metaPath,
+        path: listPath,
         detail: read.detail,
         error: serializeError(read.error),
       });
-      return { cached: [], refusal: new UnreadableStoreError(metaPath, read.detail, read.error) };
+      return { cached: [], refusal: new UnreadableStoreError(listPath, read.detail, read.error) };
     case "unreadable":
-      return moveAsideUnreadableMeta(metaPath, read.detail, read.error);
+      return moveAsideUnreadableList(listPath, read.detail, read.error);
     case "read": {
       const assets = read.value.assets;
-      if (!Array.isArray(assets)) return moveAsideUnreadableMeta(metaPath, "its assets key is not an array", null);
-      if (!assets.every(isAssetMeta)) return moveAsideUnreadableMeta(metaPath, "one of its assets is not an asset record", null);
+      if (!Array.isArray(assets)) return moveAsideUnreadableList(listPath, "its assets key is not an array", null);
+      if (!assets.every(isAssetMeta)) return moveAsideUnreadableList(listPath, "one of its assets is not an asset record", null);
       return { cached: assets, refusal: null };
     }
   }
 }
 
-function moveAsideUnreadableMeta(
-  metaPath: string,
+function moveAsideUnreadableList(
+  listPath: string,
   detail: string,
   error: unknown,
 ): { cached: RecordedAsset[]; refusal: null; movedAside: { path: string; movedTo: string } } {
-  const movedTo = moveAsideInvalid(metaPath);
+  const movedTo = moveAsideInvalid(listPath);
   logWarn("asset metadata unreadable; moved aside, assets listed from the files on disk", {
-    path: metaPath,
+    path: listPath,
     movedTo,
     detail,
     ...(error ? { error: serializeError(error) } : {}),
   });
-  return { cached: [], refusal: null, movedAside: { path: metaPath, movedTo } };
+  return { cached: [], refusal: null, movedAside: { path: listPath, movedTo } };
 }
 
 function isAssetMeta(value: unknown): value is RecordedAsset {
@@ -630,25 +584,20 @@ export async function visitRecordedHashes(dataDir: string, visit: (hash: string)
   }
   for (const postId of posts) {
     if (!isPostId(postId)) continue;
-    // The first of the two names that holds an asset list: an `assets.json`
-    // that is an attachment an earlier build stored leaves the list in `meta.json`.
-    for (const name of [META_FILENAME, LEGACY_META_FILENAME]) {
-      let text: string;
-      try {
-        text = await fsp.readFile(assetPath(dataDir, postId, name), "utf8");
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code === "ENOENT" || code === "ENOTDIR") continue;
-        throw err;
-      }
-      let assets: unknown;
-      try { assets = (JSON.parse(text) as { assets?: unknown } | null)?.assets; } catch { continue; }
-      if (!Array.isArray(assets)) continue;
-      for (const asset of assets) {
-        const hash = (asset as { contentHash?: unknown } | null)?.contentHash;
-        if (typeof hash === "string") visit(hash);
-      }
-      break;
+    let text: string;
+    try {
+      text = await fsp.readFile(assetPath(dataDir, postId, ASSET_LIST_FILENAME), "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") continue;
+      throw err;
+    }
+    let assets: unknown;
+    try { assets = (JSON.parse(text) as { assets?: unknown } | null)?.assets; } catch { continue; }
+    if (!Array.isArray(assets)) continue;
+    for (const asset of assets) {
+      const hash = (asset as { contentHash?: unknown } | null)?.contentHash;
+      if (typeof hash === "string") visit(hash);
     }
   }
 }
@@ -669,9 +618,9 @@ export function safeResolveUnder(root: string, ...segments: string[]): string {
   return resolved;
 }
 
-function writeAssetMeta(metaPath: string, assets: RecordedAsset[]): void {
+function writeAssetList(listPath: string, assets: RecordedAsset[]): void {
   // recorded: assets.json holds upload times and dimensions that reconcileAssets cannot rebuild from
   // the files, so it is protected with the assets it describes.
-  writeManagedText(metaPath, jsonStoreText("assetMeta", { assets }));
+  writeManagedText(listPath, jsonStoreText("assetList", { assets }));
 }
 

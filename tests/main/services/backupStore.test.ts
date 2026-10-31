@@ -9,7 +9,7 @@
 //   - recording never holds up the save: record returns while the store is locked, and quit can skip
 //     pending writes or give them a bound.
 //   - which writes are protected: posts, the registry, settings, attachments and their assets.json; not
-//     the post index or view state.
+//     view state.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -24,7 +24,7 @@ import { record, recordFile, stopBackups } from "@main/core/services/backupStore
 import * as logger from "@main/core/services/logger.js";
 import { initStateStore, updateUiState } from "@main/core/services/stateStore.js";
 
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 let root: string;
 
 interface Row {
@@ -91,8 +91,8 @@ beforeEach(() => {
 
 afterEach(() => {
   // The recorder is settled in the shared teardown (tests/main/setup.ts) before this.
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -416,7 +416,6 @@ describe("protected writes", () => {
     const ws = createWorkspace("Posts WS");
     const post = createPost(ws.dataDirectory, "blogger", "en");
     expect(fs.readdirSync(path.join(ws.dataDirectory, "posts"))).toEqual([path.basename(post.filePath)]);
-    expect(rows(path.join(ws.dataDirectory, "posts", "index.json"))).toHaveLength(0);
     clearCache(ws.dataDirectory);
   });
 });

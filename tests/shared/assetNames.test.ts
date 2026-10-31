@@ -19,7 +19,7 @@ describe("asset filename rules", () => {
   });
 
   it("reserves bookkeeping names without relying on filesystem case behavior", () => {
-    expect(isReservedAssetName("META.JSON")).toBe(true);
+    expect(isReservedAssetName("ASSETS.JSON")).toBe(true);
     expect(isReservedAssetName("upload.TMP")).toBe(true);
     expect(isReservedAssetName("meta-20261006-031340-123-utc.INVALID")).toBe(true);
     expect(isReservedAssetName("photo.png")).toBe(false);

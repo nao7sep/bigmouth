@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkspace, deleteWorkspace, getWorkspace, initAppDir, listWorkspaces, openWorkspace, updateWorkspace } from "@main/core/services/workspaceStore.js";
+import { createWorkspace, removeWorkspace, getWorkspace, initAppDir, listWorkspaces, openWorkspace, updateWorkspace } from "@main/core/services/workspaceStore.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { getApiKeysPath, getWorkspacesJsonPath } from "@main/core/services/storagePaths.js";
 import { hasStoredApiKey, writeApiKey } from "@main/core/services/apiKeys.js";
@@ -35,7 +35,7 @@ describe("workspace registry publication failure", () => {
     if (state === "inaccessible") fs.mkdirSync(keyFile);
     else fs.writeFileSync(keyFile, bytes);
 
-    expect(deleteWorkspace(workspace.id)).toEqual({ keyCleanupIncomplete: true });
+    expect(removeWorkspace(workspace.id)).toEqual({ keyCleanupIncomplete: true });
     expect(initAppDir().workspaces).toEqual([]);
     if (state === "inaccessible") expect(fs.statSync(keyFile).isDirectory()).toBe(true);
     else expect(fs.readFileSync(keyFile, "utf8")).toBe(bytes);
@@ -52,7 +52,7 @@ describe("workspace registry publication failure", () => {
       rename(source, destination);
     });
 
-    expect(deleteWorkspace(workspace.id)).toEqual({ keyCleanupIncomplete: true });
+    expect(removeWorkspace(workspace.id)).toEqual({ keyCleanupIncomplete: true });
     expect(getWorkspace(workspace.id)).toBeUndefined();
     expect(initAppDir().workspaces).toEqual([]);
     expect(fs.readFileSync(getApiKeysPath(), "utf8")).toBe(keyBytes);
@@ -78,7 +78,7 @@ describe("workspace registry publication failure", () => {
     const workspace = createWorkspace("Drafts", path.join(root, "workspace"));
     const before = fs.readFileSync(getWorkspacesJsonPath(), "utf8");
     const refuse = refuseRegistryPublish();
-    const change = () => operation === "rename" ? updateWorkspace(workspace.id, { name: "New name" }) : deleteWorkspace(workspace.id);
+    const change = () => operation === "rename" ? updateWorkspace(workspace.id, { name: "New name" }) : removeWorkspace(workspace.id);
     expect(change).toThrow();
     expect(getWorkspace(workspace.id)).toEqual(workspace);
     expect(workspace.name).toBe("Drafts");

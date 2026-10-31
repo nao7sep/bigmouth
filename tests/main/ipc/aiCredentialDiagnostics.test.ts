@@ -34,7 +34,7 @@ vi.mock("@main/storageAccess.js", async () => {
 });
 
 const fetchMock = vi.fn<typeof fetch>();
-let home: string;
+let storageRoot: string;
 let ownerId = 0;
 let output: string[];
 const savedDataDir = process.env.BIGMOUTH_DATA_DIR;
@@ -44,11 +44,11 @@ beforeEach(() => {
   registerAnalysisHandlers();
   registerMetadataHandlers();
   registerImagingHandlers();
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ai-diagnostics-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ai-diagnostics-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
-  fixture.workspaceId = createWorkspace("Diagnostics", path.join(home, "workspace")).id;
-  initLogger(path.join(home, "records.sqlite3"), path.join(home, "logs"));
+  fixture.workspaceId = createWorkspace("Diagnostics", path.join(storageRoot, "workspace")).id;
+  initLogger(path.join(storageRoot, "records.sqlite3"), path.join(storageRoot, "logs"));
   output = [];
   vi.spyOn(console, "log").mockImplementation((...args) => { output.push(JSON.stringify(args)); });
   vi.spyOn(console, "error").mockImplementation((...args) => { output.push(JSON.stringify(args)); });
@@ -61,7 +61,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   if (savedDataDir === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = savedDataDir;
-  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 function response(text: string): Response {
@@ -104,7 +104,7 @@ async function invoke(kind: "analysis" | "metadata" | "imaging"): Promise<unknow
 }
 
 function logs(): Record<string, unknown>[] {
-  const db = new DatabaseSync(path.join(home, "records.sqlite3"), { readOnly: true });
+  const db = new DatabaseSync(path.join(storageRoot, "records.sqlite3"), { readOnly: true });
   try {
     return (db.prepare("SELECT event FROM log_records ORDER BY id").all() as { event: string }[]).map(row => JSON.parse(row.event));
   } finally { db.close(); }

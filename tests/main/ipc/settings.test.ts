@@ -42,9 +42,9 @@ vi.mock("@main/core/services/logger.js", () => ({
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { registerSettingsHandlers } from "@main/ipc/settings.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T = Settings>(channel: string, ...args: unknown[]): Promise<T> {
   return handlers.get(channel)!({}, ...args) as Promise<T>;
@@ -64,8 +64,8 @@ function validSettings(overrides: Partial<Settings> = {}): Settings {
 }
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-settings-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-settings-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   registerSettingsHandlers();
@@ -73,9 +73,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("settings IPC handlers", () => {

@@ -166,7 +166,7 @@ export function CenterPane({
   useEffect(() => {
     const offSaved = onPostContentSaved((event) => {
       if (event.postId !== postId) return;
-      // The event carries only the list projection (no updatedAtUtc — the index
+      // The event carries only the list projection (no updatedAtUtc — the list
       // excludes it), so there is nothing here to fold into the open post.
       setSaveError(null);
     });

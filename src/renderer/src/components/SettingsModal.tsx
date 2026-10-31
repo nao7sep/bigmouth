@@ -892,7 +892,7 @@ function RereadPostsSection({ workspaceId, onPostsReread }: { workspaceId: strin
         <p className="settings-hint">
           {t("settings.rereadDone", { count: summary.count })}
           {/* A skipped file is a post the app can no longer show. Saying only
-              what was indexed let one vanish under a success message. */}
+              what was listed let one vanish under a success message. */}
           {summary.skipped > 0 && <> {t("settings.rereadSkipped", { count: summary.skipped })}</>}
           {summary.duplicateSlugs > 0 && <> {t("settings.rereadDuplicates", { count: summary.duplicateSlugs })}</>}
           {/* Asset folders whose post is gone: nothing here deletes them (they

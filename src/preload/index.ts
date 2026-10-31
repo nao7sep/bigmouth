@@ -44,7 +44,7 @@ import type {
   UiState,
   Workspace,
   WorkspaceConfigView,
-  WorkspaceDeleteResult,
+  WorkspaceRemoveResult,
 } from "@shared/types";
 import type { InterfaceLanguage } from "@shared/i18n/languages";
 import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery, RecordsHealth } from "@shared/records";
@@ -164,7 +164,7 @@ const api = {
     ipcRenderer.invoke(CHANNELS.suggestWorkspaceLocation) as Promise<string>,
   updateWorkspace: (id: string, updates: { name: string }) =>
     ipcRenderer.invoke(CHANNELS.updateWorkspace, id, updates) as Promise<Workspace>,
-  deleteWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.deleteWorkspace, id) as Promise<WorkspaceDeleteResult>,
+  removeWorkspace: (id: string) => ipcRenderer.invoke(CHANNELS.removeWorkspace, id) as Promise<WorkspaceRemoveResult>,
   openExternal: (url: string) => ipcRenderer.invoke(CHANNELS.openExternal, url) as Promise<void>,
   // `send`, not `invoke`: a log write is fire-and-forget, so a failure to record
   // something can never turn into a second failure the caller has to handle.

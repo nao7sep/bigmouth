@@ -73,12 +73,12 @@ import { saveAnthropicSettings } from "@main/core/services/configStore.js";
 import { registerAiRequestHandlers } from "@main/ipc/aiRequests.js";
 import { registerImagingHandlers } from "@main/ipc/imaging.js";
 
-let home: string;
+let storageRoot: string;
 let dataDir: string;
 let wsId: string;
 let postId: string;
 
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 // A valid baseline set of options; tests clone and tweak it.
@@ -110,8 +110,8 @@ beforeEach(() => {
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.error).mockClear();
   fakeEvent = { sender: Object.assign(new EventEmitter(), { id: nextOwnerId++ }) };
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-imaging-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-imaging-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   handlers.clear();
@@ -135,11 +135,11 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
-  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("imaging generation IPC handler", () => {

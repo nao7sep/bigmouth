@@ -41,18 +41,18 @@ import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.
 import { DEFAULT_GENERATION_PROMPTS_DATA } from "@main/core/shared/defaults.js";
 import { registerGenerationPromptHandlers } from "@main/ipc/generationPrompts.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let wsDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return handlers.get(channel)!({}, ...args) as Promise<T>;
 }
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-generation-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-generation-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   registerGenerationPromptHandlers();
@@ -60,9 +60,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("generation-prompt IPC handlers", () => {

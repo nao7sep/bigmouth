@@ -20,7 +20,7 @@ import type {
   UiState,
   Workspace,
   WorkspaceConfigView,
-  WorkspaceDeleteResult,
+  WorkspaceRemoveResult,
   ImagingRelation,
   ImagingMood,
   ImagingLiteralness,
@@ -87,8 +87,8 @@ export function updateWorkspace(id: string, updates: { name: string }): Promise<
   return bridge().updateWorkspace(id, updates);
 }
 
-export function deleteWorkspace(id: string): Promise<WorkspaceDeleteResult> {
-  return bridge().deleteWorkspace(id);
+export function removeWorkspace(id: string): Promise<WorkspaceRemoveResult> {
+  return bridge().removeWorkspace(id);
 }
 
 // --- The records window (no workspace context) ---

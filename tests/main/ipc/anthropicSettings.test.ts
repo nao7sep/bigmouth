@@ -40,10 +40,10 @@ import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { registerAnthropicSettingsHandlers } from "@main/ipc/anthropicSettings.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 function invoke(channel: string, ...args: unknown[]): Promise<AnthropicSettingsView> {
@@ -60,8 +60,8 @@ function section(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-anthropic-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-anthropic-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   delete process.env.ANTHROPIC_API_KEY;
   initAppDir();
   handlers.clear();
@@ -72,11 +72,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   if (SAVED_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = SAVED_ANTHROPIC;
-  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("Anthropic section IPC", () => {

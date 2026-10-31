@@ -199,9 +199,9 @@ vi.mock("@main/core/services/logger.js", () => ({
 
 type PostStore = typeof import("@main/core/services/postStore.js");
 
-let home: string;
+let storageRoot: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const processOn = process.on.bind(process);
 let processOnSpy: MockInstance<typeof process.on>;
 
@@ -235,8 +235,8 @@ beforeAll(async () => {
   } finally {
     const { stopBackups } = await import("@main/core/services/backupStore.js");
     stopBackups(true);
-    if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-    else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+    if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+    else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
     dataDir = savedData;
     fs.rmSync(warmHome, { recursive: true, force: true });
     fs.rmSync(warmData, { recursive: true, force: true });
@@ -329,8 +329,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   processHandlers.clear();
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-quit-ws-"));
 });
 
@@ -344,9 +344,9 @@ afterEach(async () => {
   // removing its throwaway BIGMOUTH_DATA_DIR (Windows keeps the SQLite file locked).
   const { stopBackups } = await import("@main/core/services/backupStore.js");
   stopBackups(true);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -357,8 +357,8 @@ describe("startup", () => {
     await bootApp();
     expect(shell.startupCalls).toEqual(["singleton", "setPath:userData", "setPath:sessionData", "whenReady"]);
     expect(shell.frameworkPaths).toEqual([
-      ["userData", path.join(home, "electron")],
-      ["sessionData", path.join(home, "electron", "session")],
+      ["userData", path.join(storageRoot, "electron")],
+      ["sessionData", path.join(storageRoot, "electron", "session")],
     ]);
   });
 
@@ -370,7 +370,7 @@ describe("startup", () => {
     shell.exits.length = 0;
     shell.windowOpens = 0;
     shell.nativeErrorFailure = dialogFails;
-    fs.writeFileSync(path.join(home, "electron"), "not a directory");
+    fs.writeFileSync(path.join(storageRoot, "electron"), "not a directory");
     await import("@main/index.js");
     expect(shell.exits).toEqual([1]);
     expect(shell.nativeErrors).toEqual([[

@@ -1,9 +1,9 @@
 // The three AI features through their real IPC handlers and the real Anthropic
 // API, with only Electron's ipcMain substituted: metadata generation, image
 // prompts, and the streamed analysis, on a real workspace and post in a
-// throwaway home. Run only by npm run test:full, through vitest.live.config.ts.
+// throwaway storage root. Run only by npm run test:full, through vitest.live.config.ts.
 // The key comes from ANTHROPIC_API_KEY, which the app's own resolver reads
-// before any stored key; the throwaway home stores none.
+// before any stored key; the throwaway storage root stores none.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -83,7 +83,7 @@ function mostlyAsciiLetters(value: string): boolean {
 
 const HAS_JAPANESE = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u;
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let postId: string;
 let jaPostId: string;
@@ -107,13 +107,13 @@ beforeAll(() => {
       "ANTHROPIC_API_KEY is not set. The full run calls the real Anthropic API; export ANTHROPIC_API_KEY and run it again.",
     );
   }
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-live-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-live-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   registerMetadataHandlers();
   registerImagingHandlers();
   registerAnalysisHandlers();
-  const workspace = createLiveWorkspace(home);
+  const workspace = createLiveWorkspace(storageRoot);
   wsId = workspace.id;
   const post = createPost(workspace.dataDirectory, "blogger", "en");
   postId = post.frontMatter.id;
@@ -128,7 +128,7 @@ afterAll(() => {
   stopBackups(true);
   if (savedDataRoot === undefined) delete process.env.BIGMOUTH_DATA_DIR;
   else process.env.BIGMOUTH_DATA_DIR = savedDataRoot;
-  if (home) fs.rmSync(home, { recursive: true, force: true });
+  if (storageRoot) fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("the live AI handlers", () => {

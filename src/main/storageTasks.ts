@@ -19,7 +19,7 @@ import { workspaceWriteProblem } from "./core/shared/writeProblem.js";
 import { message } from "@shared/i18n/translate";
 import { ACCEPTED_SLUG_MAX_LENGTH } from "@shared/metadataFields";
 import type { AssetDeleteResult, AssetUploadResult, AssetUnsavedStep } from "@shared/ipc";
-import { projectIndexEntry } from "./core/services/postFile.js";
+import { projectListEntry } from "./core/services/postFile.js";
 
 function workspaceDir(id: string): string {
   const workspace = workspaceStore.getWorkspace(id);
@@ -42,7 +42,7 @@ function recordAssetEdit(dataDirectory: string, postId: string, filename: string
 // The reply's projection belongs to this published post, never a later queued
 // operation or another filesystem read. Keep filePath for main-process logs.
 function mutationResult(post: ReturnType<typeof postStore.updatePost>) {
-  return post ? { ...post, summary: projectIndexEntry(post.frontMatter, path.basename(post.filePath), post.content) } : null;
+  return post ? { ...post, summary: projectListEntry(post.frontMatter, path.basename(post.filePath), post.content) } : null;
 }
 
 // Workspaces whose leftover staged uploads this launch has cleared.
@@ -82,9 +82,9 @@ export const storageTasks = {
   addExistingWorkspace: (dataDirectory: string) => workspaceStore.openWorkspace(dataDirectory),
   suggestWorkspaceLocation: workspaceStore.suggestWorkspaceLocation,
   updateWorkspace: workspaceStore.updateWorkspace,
-  deleteWorkspace(id: string) {
+  removeWorkspace(id: string) {
     const removed = workspaceStore.getWorkspace(id);
-    const result = workspaceStore.deleteWorkspace(id);
+    const result = workspaceStore.removeWorkspace(id);
     if (result && removed) postStore.clearCache(removed.dataDirectory);
     return result;
   },

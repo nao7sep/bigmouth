@@ -20,7 +20,7 @@
  * wrote (data-backup conventions). A managed-text write that reaches disk through the bare
  * {@link writeFileAtomic} instead is a silent backup gap — so the record sites (workspaces.json, each
  * workspace's config.json, posts/*.md, and asset assets.json) all go through here, and only the deliberate
- * no-record sites (the secrets file, the volatile state.json, the rebuildable post index)
+ * no-record sites (the secrets file and the volatile state.json)
  * call writeFileAtomic directly, each with an inline "not recorded" reason at its call site.
  */
 

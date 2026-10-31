@@ -10,7 +10,7 @@
  *   Markdown, so callers keep trailing whitespace (two trailing spaces are a
  *   Markdown hard line break) by passing `trimLineEnds: false`.
  * - `truncate` derives a single-line, grapheme-safe preview label from an
- *   untitled post's body for the index.
+ *   untitled post's body for the post list.
  *
  * Cleanup is a commit/display-time operation, never mid-edit (see the
  * text-input-ime conventions).

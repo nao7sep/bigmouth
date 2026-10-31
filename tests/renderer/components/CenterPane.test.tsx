@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import type { Post, PostIndexEntry, PostMutationResult, PostFrontMatter } from "@shared/types";
+import type { Post, PostListEntry, PostMutationResult, PostFrontMatter } from "@shared/types";
 import { DEFAULT_CONTENT_FONT } from "@shared/types";
 
 // CenterPane's only backend seam is these api calls; mock the lot. Content
 // saves stream through queuePostContent (fire-and-forget) and come back as
 // events; the captured listeners let tests play the main process's part.
 const savedListeners = vi.hoisted(
-  () => new Set<(e: { postId: string; summary: PostIndexEntry }) => void>()
+  () => new Set<(e: { postId: string; summary: PostListEntry }) => void>()
 );
 const failedListeners = vi.hoisted(
   () => new Set<(e: { postId: string; kind: "retrying" | "unsaveable" }) => void>()
@@ -21,7 +21,7 @@ vi.mock("@renderer/api", () => ({
   deletePost: vi.fn(),
   listReferrers: vi.fn(),
   queuePostContent: vi.fn(),
-  onPostContentSaved: (cb: (e: { postId: string; summary: PostIndexEntry }) => void) => {
+  onPostContentSaved: (cb: (e: { postId: string; summary: PostListEntry }) => void) => {
     savedListeners.add(cb);
     return () => savedListeners.delete(cb);
   },
@@ -94,11 +94,11 @@ function fm(over: Partial<PostFrontMatter> = {}): PostFrontMatter {
 }
 
 /**
- * What main actually sends on a background save: the index projection. It has a
+ * What main actually sends on a background save: the list entry. It has a
  * fileName and deliberately no updatedAtUtc, so the test plays the real payload
  * rather than a full front matter the channel never carries.
  */
-function indexEntry(over: Partial<PostIndexEntry> = {}): PostIndexEntry {
+function listEntry(over: Partial<PostListEntry> = {}): PostListEntry {
   return {
     id: "p1",
     fileName: "20240101-000000-utc-p1.md",
@@ -328,7 +328,7 @@ describe("CenterPane content saves (streamed to the main process)", () => {
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeTruthy());
     act(() => {
-      savedListeners.forEach((cb) => cb({ postId: "p1", summary: indexEntry() }));
+      savedListeners.forEach((cb) => cb({ postId: "p1", summary: listEntry() }));
     });
     await waitFor(() => expect(container.querySelector(".toolbar-error")).toBeFalsy());
   });

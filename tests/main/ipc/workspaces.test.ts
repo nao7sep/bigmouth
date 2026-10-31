@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHANNELS } from "@shared/ipc";
-import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
+import type { Workspace, WorkspaceRemoveResult } from "@shared/types";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 
@@ -25,7 +25,7 @@ vi.mock("@main/storageAccess.js", async () => {
     addExistingWorkspace: async (...args: Parameters<typeof storageTasks.addExistingWorkspace>) => storageTasks.addExistingWorkspace(...args),
     suggestWorkspaceLocation: async (...args: Parameters<typeof workspaceStore.suggestWorkspaceLocation>) => workspaceStore.suggestWorkspaceLocation(...args),
     updateWorkspace: async (...args: Parameters<typeof workspaceStore.updateWorkspace>) => workspaceStore.updateWorkspace(...args),
-    deleteWorkspace: async (...args: Parameters<typeof storageTasks.deleteWorkspace>) => storageTasks.deleteWorkspace(...args),
+    removeWorkspace: async (...args: Parameters<typeof storageTasks.removeWorkspace>) => storageTasks.removeWorkspace(...args),
     clearCache: async (...args: Parameters<typeof postStore.clearCache>) => postStore.clearCache(...args),
   };
 });
@@ -50,9 +50,9 @@ import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
 import { registerWorkspaceHandlers } from "@main/ipc/workspaces.js";
 
-let home: string;
+let storageRoot: string;
 const tempDirs: string[] = [];
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `bigmouth-ipc-ws-${prefix}-`));
@@ -65,8 +65,8 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 }
 
 beforeEach(() => {
-  home = tempDir("home");
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = tempDir("storageRoot");
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   registerWorkspaceHandlers();
@@ -74,8 +74,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -137,7 +137,7 @@ describe("workspace IPC handlers", () => {
 
   it("adds an existing workspace folder once, named after the folder", async () => {
     const ws = await invoke<Workspace>(CHANNELS.createWorkspace, "Shared", tempDir("shared"));
-    await invoke(CHANNELS.deleteWorkspace, ws.id);
+    await invoke(CHANNELS.removeWorkspace, ws.id);
 
     const added = await invoke<Workspace>(CHANNELS.addExistingWorkspace, ws.dataDirectory);
     expect(added.name).toBe(path.basename(ws.dataDirectory));
@@ -190,7 +190,7 @@ describe("workspace IPC handlers", () => {
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
-    const result = (await invoke<WorkspaceDeleteResult>(CHANNELS.deleteWorkspace, ws.id));
+    const result = (await invoke<WorkspaceRemoveResult>(CHANNELS.removeWorkspace, ws.id));
     expect(result).toEqual({});
     expect(listWorkspaces()).toHaveLength(0);
     // The shared secrets file is keyed by workspace id; deletion must take the
@@ -199,7 +199,7 @@ describe("workspace IPC handlers", () => {
   });
 
   it("throws 'Workspace not found' when deleting an unknown id", async () => {
-    await expect(invoke(CHANNELS.deleteWorkspace, "nope")).rejects.toThrow(/not found/i);
+    await expect(invoke(CHANNELS.removeWorkspace, "nope")).rejects.toThrow(/not found/i);
   });
 
   it("returns the committed removal with a warning when stored key cleanup fails", async () => {
@@ -211,7 +211,7 @@ describe("workspace IPC handlers", () => {
       rename(source, destination);
     });
 
-    await expect(invoke<WorkspaceDeleteResult>(CHANNELS.deleteWorkspace, ws.id)).resolves.toEqual({ keyCleanupIncomplete: true });
+    await expect(invoke<WorkspaceRemoveResult>(CHANNELS.removeWorkspace, ws.id)).resolves.toEqual({ keyCleanupIncomplete: true });
     expect(await invoke<Workspace[]>(CHANNELS.listWorkspaces)).toEqual([]);
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
   });

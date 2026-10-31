@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initAppDir, createWorkspace, openWorkspace, suggestWorkspaceLocation, updateWorkspace, deleteWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
+import { initAppDir, createWorkspace, openWorkspace, suggestWorkspaceLocation, updateWorkspace, removeWorkspace, getWorkspace, listWorkspaces } from "@main/core/services/workspaceStore.js";
 import { getApiKeysPath } from "@main/core/services/storagePaths.js";
 import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
@@ -25,7 +25,7 @@ function unreadable(fn: () => unknown): UnreadableStoreError {
   throw new Error("expected an unreadable-store failure");
 }
 
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
 const DIRECTORY_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
@@ -53,8 +53,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -69,10 +69,10 @@ afterEach(() => {
 // user as "Unexpected end of JSON input".
 describe("an unreadable registry names itself", () => {
   function withRegistry(contents: string): () => void {
-    const home = tempDir("halt");
-    process.env.BIGMOUTH_DATA_DIR = home;
+    const storageRoot = tempDir("halt");
+    process.env.BIGMOUTH_DATA_DIR = storageRoot;
     initAppDir();
-    const registry = path.join(home, "workspaces.json");
+    const registry = path.join(storageRoot, "workspaces.json");
     fs.writeFileSync(registry, contents, "utf-8");
     return () => initAppDir();
   }
@@ -547,13 +547,13 @@ describe("updateWorkspace", () => {
   });
 });
 
-describe("deleteWorkspace", () => {
+describe("removeWorkspace", () => {
   it("removes the workspace and clears its stored API keys", () => {
     const ws = createWorkspace("Keyed", tempDir("ws"));
     writeApiKey(getApiKeysPath(), ws.id, "anthropic", "sk-secret");
     expect(hasStoredApiKey(getApiKeysPath(), ws.id, "anthropic")).toBe(true);
 
-    expect(deleteWorkspace(ws.id)).toEqual({});
+    expect(removeWorkspace(ws.id)).toEqual({});
     expect(getWorkspace(ws.id)).toBeUndefined();
     // The shared secrets file is keyed by workspace id; deletion must take its
     // keys with it rather than orphan them.
@@ -561,7 +561,7 @@ describe("deleteWorkspace", () => {
   });
 
   it("returns null for an unknown workspace id", () => {
-    expect(deleteWorkspace("nope")).toBeNull();
+    expect(removeWorkspace("nope")).toBeNull();
   });
 });
 

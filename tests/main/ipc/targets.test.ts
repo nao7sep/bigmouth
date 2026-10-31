@@ -44,9 +44,9 @@ import { initAppDir, createWorkspace, getWorkspace } from "@main/core/services/w
 import { createPost, getPost } from "@main/core/services/postStore.js";
 import { registerTargetHandlers } from "@main/ipc/targets.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return handlers.get(channel)!({}, ...args) as Promise<T>;
@@ -57,8 +57,8 @@ function target(name: string, overrides: Partial<Target> = {}): Target {
 }
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-targets-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-targets-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   registerTargetHandlers();
@@ -66,9 +66,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("targets IPC handlers", () => {

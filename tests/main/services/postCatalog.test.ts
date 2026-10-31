@@ -321,7 +321,7 @@ describe("reading the post files", () => {
     return path.join(dataDir, "posts", name);
   }
 
-  it("lists every post of a workspace with no index, each in its section and order", () => {
+  it("lists every post of a workspace from its files alone, each in its section and order", () => {
     const first = createPost(dataDir, "blogger", "en");
     const second = createPost(dataDir, "blogger", "en");
     changeStatus(dataDir, second.frontMatter.id, "published");
@@ -343,16 +343,6 @@ describe("reading the post files", () => {
     expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([good.frontMatter.id]);
     expect(unreadablePosts(dataDir)).toEqual([{ path: damaged, newer: false }]);
     expect(fs.readFileSync(damaged, "utf-8")).toContain("body");
-  });
-
-  it("deletes the index an earlier build kept, once the posts have been read", () => {
-    const post = createPost(dataDir, "blogger", "en");
-    const legacy = postsPath("index.json");
-    fs.writeFileSync(legacy, JSON.stringify({ formatVersion: 1, posts: [{ id: "stale", fileName: "gone.md", status: "draft" }] }));
-    clearCache(dataDir);
-
-    expect(listByStatus(dataDir, "draft").map((p) => p.frontMatter.id)).toEqual([post.frontMatter.id]);
-    expect(fs.existsSync(legacy)).toBe(false);
   });
 
   it("shows an outside edit once the posts are reread or the workspace reopened, not before", () => {

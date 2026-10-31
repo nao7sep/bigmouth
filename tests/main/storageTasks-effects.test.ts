@@ -4,7 +4,7 @@ import { AssetRecordError } from "@main/core/services/assetStore.js";
 
 const effects = vi.hoisted(() => ({
   getPost: vi.fn(), recordAssetChange: vi.fn(), assertUnambiguousPostId: vi.fn(), clearCache: vi.fn(),
-  installAsset: vi.fn(), deleteAsset: vi.fn(), getWorkspace: vi.fn(), deleteWorkspace: vi.fn(),
+  installAsset: vi.fn(), deleteAsset: vi.fn(), getWorkspace: vi.fn(), removeWorkspace: vi.fn(),
   sweepStaging: vi.fn(), unreadablePosts: vi.fn(),
 }));
 vi.mock("@main/core/services/postStore.js", async (original) => ({
@@ -19,7 +19,7 @@ vi.mock("@main/core/services/assetStore.js", async (original) => ({
 }));
 vi.mock("@main/core/services/workspaceStore.js", async (original) => ({
   ...await original<typeof import("@main/core/services/workspaceStore.js")>(),
-  getWorkspace: effects.getWorkspace, deleteWorkspace: effects.deleteWorkspace,
+  getWorkspace: effects.getWorkspace, removeWorkspace: effects.removeWorkspace,
 }));
 vi.mock("@main/core/services/logger.js", async (original) => ({
   ...await original<typeof import("@main/core/services/logger.js")>(),
@@ -35,7 +35,7 @@ beforeEach(() => {
   effects.recordAssetChange.mockReturnValue({ frontMatter: {} });
   effects.installAsset.mockReturnValue({ asset, changed: true });
   effects.getWorkspace.mockReturnValue({ dataDirectory: "/workspace" });
-  effects.deleteWorkspace.mockReturnValue({});
+  effects.removeWorkspace.mockReturnValue({});
 });
 
 describe("storage tasks own consequences before replying", () => {
@@ -73,18 +73,18 @@ describe("storage tasks own consequences before replying", () => {
     expect(effects.recordAssetChange).not.toHaveBeenCalled();
   });
   it.each([{}, { keyCleanupIncomplete: true }])("evicts the removed workspace before returning %j", (result) => {
-    effects.deleteWorkspace.mockReturnValue(result);
-    expect(storageTasks.deleteWorkspace("workspace")).toBe(result);
+    effects.removeWorkspace.mockReturnValue(result);
+    expect(storageTasks.removeWorkspace("workspace")).toBe(result);
     expect(effects.clearCache).toHaveBeenCalledExactlyOnceWith("/workspace");
   });
   it("preserves the cache if workspace removal failed", () => {
-    effects.deleteWorkspace.mockImplementation(() => { throw new Error("registry failed"); });
-    expect(() => storageTasks.deleteWorkspace("workspace")).toThrow("registry failed");
+    effects.removeWorkspace.mockImplementation(() => { throw new Error("registry failed"); });
+    expect(() => storageTasks.removeWorkspace("workspace")).toThrow("registry failed");
     expect(effects.clearCache).not.toHaveBeenCalled();
   });
   it("does not evict a workspace that was not removed", () => {
-    effects.deleteWorkspace.mockReturnValue(null);
-    expect(storageTasks.deleteWorkspace("workspace")).toBeNull();
+    effects.removeWorkspace.mockReturnValue(null);
+    expect(storageTasks.removeWorkspace("workspace")).toBeNull();
     expect(effects.clearCache).not.toHaveBeenCalled();
   });
   it("refuses a locked post before delete publication", () => {

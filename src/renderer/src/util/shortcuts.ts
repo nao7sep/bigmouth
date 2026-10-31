@@ -48,7 +48,7 @@ export const SHORTCUTS = {
   // key); Cmd+R is the command-modifier fallback, and a bare "r" stays type-ahead.
   renameWorkspace: { description: "shortcuts.renameWorkspace", chords: [[anyHeld("F2")], [command("r", "no")]] },
   // Backspace is the key a Mac keyboard labels delete.
-  removeWorkspace: { description: "workspaces.deleteTitle", chords: [[anyHeld("Delete"), anyHeld("Backspace")]] },
+  removeWorkspace: { description: "workspaces.removeTitle", chords: [[anyHeld("Delete"), anyHeld("Backspace")]] },
   newPost: { description: "shortcuts.newPost", chords: [[command("n", "no")]] },
   settings: { description: "settings.title", chords: [[command(",")]] },
   // Shift is tolerated so shifted-slash layouts (German QWERTZ) reach the chord.

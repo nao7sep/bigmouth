@@ -9,7 +9,7 @@ import {
   createWorkspace,
   addExistingWorkspace,
   updateWorkspace,
-  deleteWorkspace,
+  removeWorkspace,
   pickWorkspaceDirectory,
   suggestWorkspaceLocation,
   getPost,
@@ -166,12 +166,12 @@ describe("api wrappers — call-through and argument shape", () => {
       expect(b.updateWorkspace).toHaveBeenCalledWith("w1", { name: "New" });
     });
 
-    it("deleteWorkspace forwards the id and committed cleanup result", async () => {
+    it("removeWorkspace forwards the id and committed cleanup result", async () => {
       const b = bridge();
-      b.deleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
+      b.removeWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
       installBridge(b);
-      await expect(deleteWorkspace("w1")).resolves.toEqual({ keyCleanupIncomplete: true });
-      expect(b.deleteWorkspace).toHaveBeenCalledWith("w1");
+      await expect(removeWorkspace("w1")).resolves.toEqual({ keyCleanupIncomplete: true });
+      expect(b.removeWorkspace).toHaveBeenCalledWith("w1");
     });
 
     it("suggestWorkspaceLocation requests the independent default", () => {

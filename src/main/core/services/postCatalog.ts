@@ -7,16 +7,13 @@
  * `upsertEntries`, `removeEntry`). Nothing is stored beside the post files: the
  * Markdown files are the only authority. A file edited outside the app is seen
  * when the workspace is next opened or its posts are reread from Settings.
- *
- * `posts/index.json`, the list an earlier build kept, is deleted after the
- * first successful read; nothing reads it.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import type { PostStatus, PostIndexEntry } from "../shared/types.js";
+import type { PostStatus, PostListEntry } from "../shared/types.js";
 import type { UnreadablePostFile } from "@shared/types";
-import { readPost, projectIndexEntry } from "./postFile.js";
+import { readPost, projectListEntry } from "./postFile.js";
 import { NewerFormatError } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 import { isPostStatus } from "../shared/postLifecycle.js";
@@ -24,7 +21,7 @@ import { isPostId } from "../shared/filenames.js";
 
 interface Catalog {
   /** Readable posts by id; the first file in name order keeps an id. */
-  posts: Map<string, PostIndexEntry>;
+  posts: Map<string, PostListEntry>;
   /** Files whose front matter could not be read, shown as damaged with their path. */
   unreadable: UnreadablePostFile[];
 }
@@ -41,15 +38,15 @@ export function clearCache(dataDir: string): void {
   catalogs.delete(dataDir);
 }
 
-export function getEntry(dataDir: string, id: string): PostIndexEntry | null {
+export function getEntry(dataDir: string, id: string): PostListEntry | null {
   return catalog(dataDir).posts.get(id) ?? null;
 }
 
-export function allEntries(dataDir: string): PostIndexEntry[] {
+export function allEntries(dataDir: string): PostListEntry[] {
   return [...catalog(dataDir).posts.values()];
 }
 
-export function listByStatus(dataDir: string, status: PostStatus): PostIndexEntry[] {
+export function listByStatus(dataDir: string, status: PostStatus): PostListEntry[] {
   return allEntries(dataDir).filter((entry) => entry.status === status);
 }
 
@@ -62,12 +59,12 @@ export function countByStatus(dataDir: string, status: PostStatus): number {
 }
 
 /** Records a post the app wrote. */
-export function upsertEntry(dataDir: string, entry: PostIndexEntry): void {
+export function upsertEntry(dataDir: string, entry: PostListEntry): void {
   upsertEntries(dataDir, [entry]);
 }
 
 /** Records posts the app wrote in one bulk change. */
-export function upsertEntries(dataDir: string, entries: readonly PostIndexEntry[]): void {
+export function upsertEntries(dataDir: string, entries: readonly PostListEntry[]): void {
   const { posts } = catalog(dataDir);
   for (const entry of entries) posts.set(entry.id, entry);
 }
@@ -159,19 +156,7 @@ function readFromFiles(dataDir: string): { read: Catalog; skipped: { fileName: s
     }
     read.posts.set(result.entry.id, result.entry);
   }
-  removeLegacyIndex(dataDir);
   return { read, skipped };
-}
-
-// The list file an earlier build kept beside the posts. It held only copies of
-// their front matter, so once they have been read it has nothing to offer.
-function removeLegacyIndex(dataDir: string): void {
-  const legacy = path.join(postsDir(dataDir), "index.json");
-  try {
-    fs.rmSync(legacy, { force: true });
-  } catch (error) {
-    logWarn("old post index could not be deleted", { path: legacy, error: serializeError(error) });
-  }
 }
 
 /**
@@ -183,7 +168,7 @@ function removeLegacyIndex(dataDir: string): void {
 function entryFromFile(
   dataDir: string,
   fileName: string,
-): { entry: PostIndexEntry } | { reason: string; newer: boolean } {
+): { entry: PostListEntry } | { reason: string; newer: boolean } {
   const skip = (reason: string) => {
     logWarn("post file skipped", { dataDirectory: dataDir, fileName, reason });
     return { reason, newer: false };
@@ -196,7 +181,7 @@ function entryFromFile(
     if (!isPostId(post.frontMatter.id)) return skip(`invalid post id ${JSON.stringify(post.frontMatter.id)}`);
     // A status outside the five reaches no list section.
     if (!isPostStatus(post.frontMatter.status)) return skip(`unknown status ${JSON.stringify(post.frontMatter.status)}`);
-    return { entry: projectIndexEntry(post.frontMatter, fileName, post.content) };
+    return { entry: projectListEntry(post.frontMatter, fileName, post.content) };
   } catch (err) {
     // `reason` is what the user is shown; the serialized error is what makes the
     // line diagnosable, and the two are not interchangeable.
@@ -215,7 +200,7 @@ function postFileNames(dataDir: string): string[] {
     .sort();
 }
 
-function findDuplicateSlugGroups(entries: Iterable<PostIndexEntry>): DuplicateSlugGroup[] {
+function findDuplicateSlugGroups(entries: Iterable<PostListEntry>): DuplicateSlugGroup[] {
   const bySlug = new Map<string, DuplicateSlugGroup>();
   for (const entry of entries) {
     if (!entry.slug) continue;

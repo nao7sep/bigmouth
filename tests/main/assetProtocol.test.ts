@@ -52,11 +52,11 @@ import { configureImageDerivatives, derivativeName } from "@main/imageDerivative
 import { initAppDir, createWorkspace } from "@main/core/services/workspaceStore.js";
 import { assetDir } from "@main/core/services/assetStore.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let wsDataDir: string;
 const POST_ID = "post1";
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 function serve(url: string, headers: Record<string, string> = {}): Promise<Response> {
   return captured.handler!({ url, headers: new Headers(headers) } as Request);
@@ -65,8 +65,8 @@ function serve(url: string, headers: Record<string, string> = {}): Promise<Respo
 const bytes = async (res: Response) => Buffer.from(await res.arrayBuffer());
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-assetproto-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-assetproto-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   const ws = createWorkspace("WS");
   wsId = ws.id;
@@ -82,9 +82,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("registerAssetScheme", () => {
@@ -146,7 +146,7 @@ describe("workspace link boundaries", () => {
   it.skipIf(process.platform === "win32")("serves file links, including links leaving the workspace", async () => {
     const dir = assetDir(wsDataDir, POST_ID);
     const contained = path.join(wsDataDir, "shared.png");
-    const outside = path.join(home, "outside.png");
+    const outside = path.join(storageRoot, "outside.png");
     fs.writeFileSync(contained, "inside");
     fs.writeFileSync(outside, "outside");
     fs.symlinkSync(contained, path.join(dir, "contained.png"));
@@ -254,7 +254,7 @@ describe("thumbnails and display images", () => {
   let hash: string;
 
   beforeEach(async () => {
-    thumbnails = path.join(home, "thumbnails");
+    thumbnails = path.join(storageRoot, "thumbnails");
     photo = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: "#3366cc" } }).jpeg().toBuffer();
     hash = createHash("sha256").update(photo).digest("hex");
     fs.writeFileSync(path.join(assetDir(wsDataDir, POST_ID), "photo.jpg"), photo);

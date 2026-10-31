@@ -104,10 +104,10 @@ import { saveTargets } from "@main/core/services/configStore.js";
 import { clearCache, changeStatus } from "@main/core/services/postStore.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 const TARGET: Target = { name: "blogger", defaultLanguage: "en", requiresMetadata: false };
 
@@ -124,8 +124,8 @@ async function createDraft(target = "blogger", language = "en", sourceId?: strin
 beforeEach(() => {
   publication.summaryUnavailable = false;
   publication.afterMutation = null;
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-posts-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-posts-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   sent.length = 0;
@@ -139,9 +139,9 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("post IPC handlers — workspace resolution", () => {
@@ -522,7 +522,7 @@ describe("queuePostContent (the content stream)", () => {
       expect(saved[0].postId).toBe(id);
       expect(saved[0].summary.id).toBe(id);
       expect(saved[0].summary.fileName).toBe(path.basename(file));
-      // The payload is the index projection, which excludes updatedAtUtc — a
+      // The payload is the list entry, which excludes updatedAtUtc — a
       // consumer must never be able to read an edit time off it.
       expect(saved[0].summary).not.toHaveProperty("updatedAtUtc");
     } finally {

@@ -77,7 +77,7 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
     onSelect: (ws: Workspace) => void | Promise<void>;
     onCreated?: (ws: Workspace, firstRun: boolean) => void | Promise<void>;
     activeWorkspaceId: string | null;
-    onWorkspaceDeleted: (id: string) => boolean | Promise<boolean>;
+    onWorkspaceRemoved: (id: string) => boolean | Promise<boolean>;
     onWorkspaceUpdated: (ws: Workspace) => void;
     onWorkspaceRemovalCompleted: (ws: Workspace, result: { keyCleanupIncomplete?: boolean }) => void;
     onWorkspaceRemovalFailed: (ws: Workspace) => void;
@@ -113,13 +113,13 @@ vi.mock("@renderer/components/WorkspaceModal", () => ({
       </button>
       <button
         data-testid="ws-modal-delete-active"
-        onClick={() => void props.onWorkspaceDeleted("ws1")}
+        onClick={() => void props.onWorkspaceRemoved("ws1")}
       >
         delete-active
       </button>
       <button
         data-testid="ws-modal-delete-other"
-        onClick={() => void props.onWorkspaceDeleted("zzz")}
+        onClick={() => void props.onWorkspaceRemoved("zzz")}
       >
         delete-other
       </button>

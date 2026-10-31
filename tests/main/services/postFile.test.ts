@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import matter from "gray-matter";
 import type { PostFrontMatter } from "@main/core/shared/types.js";
-import { readPost, writePost, parsePostRaw, projectIndexEntry } from "@main/core/services/postFile.js";
+import { readPost, writePost, parsePostRaw, projectListEntry } from "@main/core/services/postFile.js";
 import { reread, clearCache as clearIndexCache } from "@main/core/services/postCatalog.js";
 
 let dir: string;
@@ -149,7 +149,7 @@ describe("front matter is YAML data", () => {
     expect(post.frontMatter).not.toHaveProperty("slug");
     expect(post.frontMatter).not.toHaveProperty("title");
     expect(post.frontMatter).not.toHaveProperty("extra");
-    expect(projectIndexEntry(post.frontMatter, "post.md", post.content)).toMatchObject({ id: "post-1", excerpt: "Body" });
+    expect(projectListEntry(post.frontMatter, "post.md", post.content)).toMatchObject({ id: "post-1", excerpt: "Body" });
     expect(reread(dir)).toMatchObject({ listed: 1, skipped: [] });
     expect(fs.readFileSync(file, "utf-8")).toBe(raw);
   });

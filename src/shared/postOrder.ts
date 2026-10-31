@@ -1,7 +1,7 @@
 /**
  * How a post list is ordered — one definition, used by both processes.
  *
- * The main process sorted from the index and the renderer re-sorted after an
+ * The main process sorted from its post list and the renderer re-sorted after an
  * optimistic mutation, and the two disagreed on every tie-breaker: main broke
  * ties on `id` descending, the renderer on `slug` descending, and the
  * renderer's draft comparator had no tie-breaker at all. Since the
@@ -31,7 +31,7 @@ export const LIST_TIME_KEY: Readonly<Record<PostStatus, ListTimeKey>> = {
   retired: "retiredAtUtc",
 };
 
-/** What ordering a post needs. Both `PostIndexEntry` and the boundary front matter satisfy it. */
+/** What ordering a post needs. Both `PostListEntry` and the boundary front matter satisfy it. */
 export interface OrderablePost {
   id: string;
   createdAtUtc: string;

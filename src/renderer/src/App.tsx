@@ -9,7 +9,7 @@ import {
   DEFAULT_PANE_RIGHT_WIDTH,
   type UiState,
   type Workspace,
-  type WorkspaceDeleteResult,
+  type WorkspaceRemoveResult,
 } from "@shared/types";
 import {
   LEFT_MAX,
@@ -244,7 +244,7 @@ export function App() {
     }
   }, [reportShellResult, resolveShellResult]);
 
-  const handleActiveWorkspaceDeleted = useCallback(
+  const handleActiveWorkspaceRemoved = useCallback(
     async (workspaceId: string) => {
       if (activeWorkspaceRef.current?.id !== workspaceId) return true;
 
@@ -264,7 +264,7 @@ export function App() {
     [clearActiveWorkspacePreference]
   );
 
-  const handleWorkspaceRemovalCompleted = useCallback((workspace: Workspace, result: WorkspaceDeleteResult) => {
+  const handleWorkspaceRemovalCompleted = useCallback((workspace: Workspace, result: WorkspaceRemoveResult) => {
     removalSelection.current.delete(workspace.id);
     // A stale picker may still offer this row while removal is running. Retire
     // only that identity, including a selection still awaiting another session's
@@ -380,7 +380,7 @@ export function App() {
         else return handleSelectWorkspace(workspace);
       }}
       activeWorkspaceId={activeWorkspace?.id ?? null}
-      onWorkspaceDeleted={handleActiveWorkspaceDeleted}
+      onWorkspaceRemoved={handleActiveWorkspaceRemoved}
       onWorkspaceUpdated={handleActiveWorkspaceUpdated}
       onWorkspaceRemovalCompleted={handleWorkspaceRemovalCompleted}
       onWorkspaceRemovalFailed={handleWorkspaceRemovalFailed}

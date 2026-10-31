@@ -89,7 +89,7 @@ export function registerPostHandlers(): void {
   });
 
   // Buffer a metadata field edit, as content is buffered. Checked against the
-  // index row, never the post file, because it runs per keystroke. The reply is
+  // list entry, never the post file, because it runs per keystroke. The reply is
   // the refusal (null when buffered) so the field can say why it will not save;
   // save outcomes after that ride the same events as content.
   ipcMain.handle(CHANNELS.queuePostMetadata, async (_event, wsId: string, id: string, edits: unknown) => {

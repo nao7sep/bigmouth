@@ -22,7 +22,7 @@ import type {
   ImagingOptions,
   Post,
   PostDeleteResult,
-  PostIndexEntry,
+  PostListEntry,
   PostListResponse,
   PostPageResponse,
   PostMutationResult,
@@ -32,7 +32,7 @@ import type {
   Target,
   UiState,
   Workspace,
-  WorkspaceDeleteResult,
+  WorkspaceRemoveResult,
 } from "./types";
 import type { PagedPostStatus } from "./postStatus";
 import type { InterfaceLanguage } from "./i18n/languages";
@@ -69,7 +69,7 @@ export const CHANNELS = {
   addExistingWorkspace: "workspace:addExisting",
   suggestWorkspaceLocation: "workspace:suggestLocation",
   updateWorkspace: "workspace:update",
-  deleteWorkspace: "workspace:delete",
+  removeWorkspace: "workspace:remove",
   openExternal: "shell:openExternal",
   // The renderer's only way into the session log: it is sandboxed and opens no
   // file of its own, so it forwards a structured record to main (logging
@@ -171,11 +171,11 @@ export interface PostContentSavedEvent {
   wsId: string;
   postId: string;
   /**
-   * The canonical list projection (one index row). It carries no updatedAtUtc —
-   * the index deliberately excludes it — so this is a list summary, never a
+   * The canonical list entry. It carries no updatedAtUtc —
+   * the list deliberately excludes it — so this is a list summary, never a
    * source for the post's edit time.
    */
-  summary: PostIndexEntry;
+  summary: PostListEntry;
 }
 
 export interface PostContentSaveFailedEvent {
@@ -372,7 +372,7 @@ export interface BigMouthApi {
   suggestWorkspaceLocation(): Promise<string>;
   /** Renames a workspace. A workspace's folder is where it is; there is no relocation. */
   updateWorkspace(id: string, updates: { name: string }): Promise<Workspace>;
-  deleteWorkspace(id: string): Promise<WorkspaceDeleteResult>;
+  removeWorkspace(id: string): Promise<WorkspaceRemoveResult>;
   /** Opens an allowed web or mail URL in the OS handler. */
   openExternal(url: string): Promise<void>;
   /** Native folder picker: a workspace folder to add, or the exact destination to create one at; null if cancelled. */

@@ -1,7 +1,7 @@
 // The canonical data shapes exchanged across the IPC boundary between the main
 // process and the renderer. The single source
 // of truth: the renderer imports these directly, and the core keeps only its
-// internal supersets (the on-disk `Post` with `filePath`, `PostIndexEntry`). It
+// internal supersets (the on-disk `Post` with `filePath`, `PostListEntry`). It
 // must stay environment-neutral (no DOM, no Node types), since `src/shared` is
 // type-checked under both the node and web configs.
 
@@ -16,7 +16,7 @@ export interface Workspace {
 }
 
 /** The workspace was removed; optional cleanup cannot undo that committed result. */
-export interface WorkspaceDeleteResult {
+export interface WorkspaceRemoveResult {
   keyCleanupIncomplete?: boolean;
 }
 
@@ -136,7 +136,7 @@ export interface PostFrontMatter {
  * A type alias, not an interface, so it stays assignable where the looser
  * PostFrontMatter (with its index signature) is expected.
  */
-export type PostIndexEntry = {
+export type PostListEntry = {
   id: string;
   fileName: string; // basename of the .md file, stable for the post's lifetime
   status: PostStatus;
@@ -168,7 +168,7 @@ export interface Post {
 
 /**
  * The result of a post mutation (update / status change): the full post for the
- * editor plus the canonical list summary (the index projection, including the
+ * editor plus the canonical list summary (the list entry, including the
  * derived excerpt) for the optimistic list update.
  */
 export interface PostMutationResult extends Post {

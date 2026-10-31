@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import type { AppConfig, Workspace } from "../shared/types.js";
-import type { WorkspaceDeleteResult } from "@shared/types";
+import type { WorkspaceRemoveResult } from "@shared/types";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
@@ -343,7 +343,7 @@ export function updateWorkspace(id: string, updates: { name: string }): Workspac
   return renamed;
 }
 
-export function deleteWorkspace(id: string): WorkspaceDeleteResult | null {
+export function removeWorkspace(id: string): WorkspaceRemoveResult | null {
   const config = ensureLoaded();
   const index = config.workspaces.findIndex((w) => w.id === id);
   if (index === -1) return null;

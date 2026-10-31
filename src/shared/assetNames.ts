@@ -65,10 +65,10 @@ export function collidingAssetFilenames(rawNames: readonly string[]): string[] {
 }
 
 /**
- * Names reserved for the asset list (and the name earlier builds gave it), a
- * copy of it moved aside, and temporary/hidden files.
+ * Names reserved for the asset list, a copy of it moved aside, and
+ * temporary/hidden files.
  */
 export function isReservedAssetName(name: string): boolean {
   const key = assetFilenameKey(name);
-  return key === "assets.json" || key === "meta.json" || name.startsWith(".") || key.endsWith(".tmp") || key.endsWith(".invalid");
+  return key === "assets.json" || name.startsWith(".") || key.endsWith(".tmp") || key.endsWith(".invalid");
 }

@@ -35,7 +35,7 @@ import { nanoid } from "nanoid";
 import type {
   Post,
   PostFrontMatter,
-  PostIndexEntry,
+  PostListEntry,
   PostSummary,
   PostStatus,
   EditablePostMetadata,
@@ -44,9 +44,9 @@ import { utcNow, formatUtcIso } from "../shared/timestamps.js";
 import { comparatorFor } from "@shared/postOrder";
 import type { UnreadablePostFile, PostDeleteResult } from "@shared/types";
 import { isPostId, postFileName } from "../shared/filenames.js";
-import { readPost, writePost, projectIndexEntry, contentSnapshot, serializePost } from "./postFile.js";
+import { readPost, writePost, projectListEntry, contentSnapshot, serializePost } from "./postFile.js";
 import { applyStatusTransition, isPostStatus } from "../shared/postLifecycle.js";
-import * as index from "./postCatalog.js";
+import * as catalog from "./postCatalog.js";
 import { carryingText } from "@shared/i18n/carriedMessage";
 import { assetDir } from "./assetStore.js";
 import { serializeError, warn as logWarn } from "./logger.js";
@@ -54,7 +54,7 @@ import { message, type Message } from "@shared/i18n/translate";
 import { validatePostUpdate } from "../shared/postUpdate.js";
 
 export function clearCache(dataDir: string): void {
-  index.clearCache(dataDir);
+  catalog.clearCache(dataDir);
 }
 
 /**
@@ -67,8 +67,8 @@ export function clearCache(dataDir: string): void {
  * Saying how many there are, after a reread the user asked for, is the path to
  * them that did not exist.
  */
-export function rereadPosts(dataDir: string): index.RereadResult & { orphanedAssets: number } {
-  const result = index.reread(dataDir);
+export function rereadPosts(dataDir: string): catalog.RereadResult & { orphanedAssets: number } {
+  const result = catalog.reread(dataDir);
   return { ...result, orphanedAssets: countOrphanedAssetDirs(dataDir) };
 }
 
@@ -80,7 +80,7 @@ function countOrphanedAssetDirs(dataDir: string): number {
   for (const name of fs.readdirSync(assetsRoot)) {
     if (name.startsWith(".")) continue;
     if (!fs.statSync(path.join(assetsRoot, name)).isDirectory()) continue;
-    if (!index.getEntry(dataDir, name)) orphans++;
+    if (!catalog.getEntry(dataDir, name)) orphans++;
   }
   return orphans;
 }
@@ -89,7 +89,7 @@ function postsDir(dataDir: string): string {
   return path.join(dataDir, "posts");
 }
 
-function filePathFor(dataDir: string, entry: PostIndexEntry): string {
+function filePathFor(dataDir: string, entry: PostListEntry): string {
   return path.join(postsDir(dataDir), entry.fileName);
 }
 
@@ -134,7 +134,7 @@ const pendingTimers = new Map<string, Map<string, NodeJS.Timeout>>();
  * forever. None is ever silent.
  */
 export type ContentSaveEvent =
-  | { kind: "saved"; dataDir: string; id: string; summary: PostIndexEntry }
+  | { kind: "saved"; dataDir: string; id: string; summary: PostListEntry }
   | { kind: "save-failed"; dataDir: string; id: string; message: string; error: unknown }
   | { kind: "post-missing"; dataDir: string; id: string }
   | { kind: "locked"; dataDir: string; id: string };
@@ -241,7 +241,7 @@ export function queueContent(dataDir: string, id: string, content: string, edite
  * not be written.
  */
 export function queueMetadata(dataDir: string, id: string, edits: EditablePostMetadata, editedAt = utcNow()): Message | null {
-  if (!index.getEntry(dataDir, id)) return message("metadata.refusedNotFound");
+  if (!catalog.getEntry(dataDir, id)) return message("metadata.refusedNotFound");
   const slug = edits.slug;
   if (typeof slug === "string" && slug.length > 0) {
     const conflict = slugConflictMessage(dataDir, id, slug);
@@ -272,7 +272,7 @@ function pendingAuthorSnapshot(dataDir: string, id: string, pending: PendingEdit
 }
 
 function scheduleIfSavable(dataDir: string, id: string, pending: PendingEdit): void {
-  const entry = index.getEntry(dataDir, id);
+  const entry = catalog.getEntry(dataDir, id);
   if (!entry) {
     reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
     return;
@@ -307,7 +307,7 @@ export function flushPostEdits(dataDir: string, id: string): boolean {
       reportTerminal(dataDir, id, POST_MISSING_REASON, { kind: "post-missing", dataDir, id });
       return false;
     }
-    const summary = index.getEntry(dataDir, id);
+    const summary = catalog.getEntry(dataDir, id);
     if (summary) contentSaveListener?.({ kind: "saved", dataDir, id, summary });
     return true;
   } catch (err) {
@@ -354,7 +354,7 @@ export function flushAllPendingEdits(): { id: string; message: string }[] {
 
 /** The post files the list could not read, each shown as damaged with its path. */
 export function unreadablePosts(dataDir: string): UnreadablePostFile[] {
-  return index.unreadableFiles(dataDir);
+  return catalog.unreadableFiles(dataDir);
 }
 
 /**
@@ -366,13 +366,13 @@ export function listByStatus(
   status: PostStatus,
   page?: { offset: number; limit: number },
 ): PostSummary[] {
-  const sorted = index.listByStatus(dataDir, status).sort(comparatorFor(status));
+  const sorted = catalog.listByStatus(dataDir, status).sort(comparatorFor(status));
   const shown = page ? sorted.slice(page.offset, page.offset + page.limit) : sorted;
   return shown.map((entry) => ({ frontMatter: entry }));
 }
 
 export function countByStatus(dataDir: string, status: PostStatus): number {
-  return index.countByStatus(dataDir, status);
+  return catalog.countByStatus(dataDir, status);
 }
 
 // --- Read ---
@@ -386,13 +386,13 @@ export function getPost(dataDir: string, id: string): Post | null {
 
 /** The post as its file holds it, or null when it is not listed or its file is gone. */
 function readFromDisk(dataDir: string, id: string): Post | null {
-  const entry = index.getEntry(dataDir, id);
+  const entry = catalog.getEntry(dataDir, id);
   if (!entry) return null;
 
   const filePath = filePathFor(dataDir, entry);
   if (!fs.existsSync(filePath)) {
     // The file vanished out of band; reread the list and report not-found.
-    index.reread(dataDir);
+    catalog.reread(dataDir);
     return null;
   }
   const post = readPost(filePath);
@@ -441,7 +441,7 @@ export function createPost(
   const filePath = path.join(postsDir(dataDir), fileName);
 
   writePost(filePath, frontMatter, "");
-  index.upsertEntry(dataDir, projectIndexEntry(frontMatter, fileName, ""));
+  catalog.upsertEntry(dataDir, projectListEntry(frontMatter, fileName, ""));
 
   return { frontMatter, content: "", filePath };
 }
@@ -500,7 +500,7 @@ function rewritePost(
   if (serializePost(onDisk.frontMatter, onDisk.content) !== serializePost(fm, post.content)) {
     writePost(post.filePath, fm, post.content, true);
   }
-  index.upsertEntry(dataDir, projectIndexEntry(fm, path.basename(post.filePath), post.content));
+  catalog.upsertEntry(dataDir, projectListEntry(fm, path.basename(post.filePath), post.content));
 
   if (writesPending) clearPending(dataDir, id);
   return post;
@@ -545,7 +545,7 @@ export function recordAssetChange(dataDir: string, id: string): Post | null {
 function slugConflictMessage(dataDir: string, id: string, slug: string): Message | null {
   const normalized = slug.toLowerCase();
   const pending = pendingEdits.get(dataDir);
-  for (const entry of index.allEntries(dataDir)) {
+  for (const entry of catalog.allEntries(dataDir)) {
     if (entry.id === id) continue;
     const buffered = pending?.get(entry.id)?.frontMatter;
     const current = buffered && "slug" in buffered ? buffered.slug : entry.slug;
@@ -586,43 +586,43 @@ export function setLocked(dataDir: string, id: string, locked: boolean): Post | 
  * is the single source of truth for a post's list representation — including
  * the derived excerpt — so callers never reconstruct it.
  */
-export function getPostSummary(dataDir: string, id: string): PostIndexEntry | null {
-  return index.getEntry(dataDir, id);
+export function getPostSummary(dataDir: string, id: string): PostListEntry | null {
+  return catalog.getEntry(dataDir, id);
 }
 
 // --- Referrers (posts that link this one as their source) ---
 
 export function listReferrers(dataDir: string, id: string): string[] {
-  return index
+  return catalog
     .allEntries(dataDir)
     .filter((entry) => entry.sourceId === id)
     .map((entry) => entry.id);
 }
 
 export function postExists(dataDir: string, id: string): boolean {
-  return index.getEntry(dataDir, id) !== null;
+  return catalog.getEntry(dataDir, id) !== null;
 }
 
 // --- Delete ---
 
 /** Refuse destructive work while copied Markdown files still share one attachment identity. */
 export function assertUnambiguousPostId(dataDir: string, id: string): UnreadablePostFile[] {
-  const unreadable = index.unreadableFiles(dataDir);
-  const files = index.duplicateFiles(dataDir, id);
+  const unreadable = catalog.unreadableFiles(dataDir);
+  const files = catalog.duplicateFiles(dataDir, id);
   if (files.length) throw new Error(carryingText(message("post.duplicateId", { paths: files.join("\n") })));
   return unreadable;
 }
 
 export function deletePost(dataDir: string, id: string): PostDeleteResult | null {
-  let entry = index.getEntry(dataDir, id);
+  let entry = catalog.getEntry(dataDir, id);
   if (!entry) return null;
   let filePath = filePathFor(dataDir, entry);
   if (fs.existsSync(filePath)) readPost(filePath);
-  const referrerPaths = new Set(index.allEntries(dataDir).filter((row) => row.sourceId === id).map((row) => filePathFor(dataDir, row)));
+  const referrerPaths = new Set(catalog.allEntries(dataDir).filter((row) => row.sourceId === id).map((row) => filePathFor(dataDir, row)));
   const unreadable = assertUnambiguousPostId(dataDir, id);
   // Only the current mapping, and the file's identity as it reads now, may
   // authorize both the unlink and its shared attachment cleanup.
-  entry = index.getEntry(dataDir, id);
+  entry = catalog.getEntry(dataDir, id);
   if (!entry) return null;
   filePath = filePathFor(dataDir, entry);
   // A file an outside edit gave another id is no longer this post: nothing is deleted.
@@ -635,7 +635,7 @@ export function deletePost(dataDir: string, id: string): PostDeleteResult | null
   // Discard buffered edits only once deletion succeeded (or the post is gone).
   // A refused unlink must leave authored work available to autosave and quit.
   clearPending(dataDir, id);
-  index.removeEntry(dataDir, id);
+  catalog.removeEntry(dataDir, id);
 
   // Referential integrity: a post that links the deleted one as its source
   // would otherwise dangle, so clear that link. This is a system operation, not
@@ -704,16 +704,16 @@ export interface BulkRewriteResult {
  */
 function rewriteMatchingPosts(
   dataDir: string,
-  matches: (entry: PostIndexEntry) => boolean,
+  matches: (entry: PostListEntry) => boolean,
   rewrite: (fm: PostFrontMatter) => void,
   continueAfterWriteFailure = false,
 ): BulkRewriteResult {
-  const rewritten: PostIndexEntry[] = [];
+  const rewritten: PostListEntry[] = [];
   const skipped: SkippedPostFile[] = [];
   // Cleanup has already reported unreadable known referrers.
   // An unrelated unreadable file must not make an otherwise complete deletion
   // look partial. This cached set limits diagnostics only, never selection.
-  const knownMatches = new Set(index.allEntries(dataDir).filter(matches).map((entry) => entry.fileName));
+  const knownMatches = new Set(catalog.allEntries(dataDir).filter(matches).map((entry) => entry.fileName));
   const sourceIds = new Set<string>();
   try {
     // A bulk operation selects from the source files, not cached membership:
@@ -723,22 +723,22 @@ function rewriteMatchingPosts(
       const filePath = path.join(postsDir(dataDir), fileName);
       if (!fs.existsSync(filePath)) continue;
       let post: Post;
-      let projected: PostIndexEntry;
+      let projected: PostListEntry;
       try {
         post = readPost(filePath);
         if (!isPostId(post.frontMatter.id) || !isPostStatus(post.frontMatter.status)) {
           throw new Error("Post identity or status is invalid");
         }
-        const current = projectIndexEntry(post.frontMatter, fileName, post.content);
+        const current = projectListEntry(post.frontMatter, fileName, post.content);
         // Preserve an existing usable owner, even when a new copy sorts before
         // it. Only a missing or incompatible owner permits survivor promotion.
-        const owner = index.getEntry(dataDir, current.id);
+        const owner = catalog.getEntry(dataDir, current.id);
         let ownerStillUsable = false;
         if (owner && owner.fileName !== fileName) {
           try {
             const owned = readPost(filePathFor(dataDir, owner));
             ownerStillUsable = owned.frontMatter.id === current.id && isPostStatus(owned.frontMatter.status);
-            if (ownerStillUsable) projectIndexEntry(owned.frontMatter, owner.fileName, owned.content);
+            if (ownerStillUsable) projectListEntry(owned.frontMatter, owner.fileName, owned.content);
           } catch (error) {
             // An unreadable owner is not evidence that a copy owns its edits.
             // Only an absent source permits promotion without reading identity.
@@ -752,7 +752,7 @@ function rewriteMatchingPosts(
         sourceIds.add(current.id);
         if (!matches(current)) continue;
         rewrite(post.frontMatter);
-        projected = projectIndexEntry(post.frontMatter, fileName, post.content);
+        projected = projectListEntry(post.frontMatter, fileName, post.content);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         logWarn("post file skipped by a bulk rewrite", { fileName, reason, error: serializeError(err) });
@@ -769,7 +769,7 @@ function rewriteMatchingPosts(
       }
     }
   } finally {
-    index.upsertEntries(dataDir, rewritten);
+    catalog.upsertEntries(dataDir, rewritten);
   }
   return { updated: rewritten.length, skipped };
 }

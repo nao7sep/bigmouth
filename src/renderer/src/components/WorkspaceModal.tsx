@@ -27,7 +27,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   addExistingWorkspace,
   createWorkspace,
-  deleteWorkspace,
+  removeWorkspace,
   listWorkspaces,
   pickWorkspaceDirectory,
   reportProblem,
@@ -35,7 +35,7 @@ import {
   updateWorkspace,
 } from "../api";
 import { presentFailure } from "../util/presentFailure";
-import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
+import type { Workspace, WorkspaceRemoveResult } from "@shared/types";
 import { useConfirm } from "./ConfirmHost";
 import { ModalShell } from "./ModalShell";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
@@ -57,9 +57,9 @@ interface WorkspaceModalProps {
    */
   onCreated?: (workspace: Workspace, firstRun: boolean) => void | Promise<void>;
   activeWorkspaceId: string | null;
-  onWorkspaceDeleted: (workspaceId: string) => boolean | Promise<boolean>;
+  onWorkspaceRemoved: (workspaceId: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated: (workspace: Workspace) => void;
-  onWorkspaceRemovalCompleted?: (workspace: Workspace, result: WorkspaceDeleteResult) => void;
+  onWorkspaceRemovalCompleted?: (workspace: Workspace, result: WorkspaceRemoveResult) => void;
   onWorkspaceRemovalFailed?: (workspace: Workspace) => void | Promise<void>;
   reloadVersion?: number;
   initialLoadError?: Message | null;
@@ -72,7 +72,7 @@ export function WorkspaceModal({
   onSelect,
   onCreated,
   activeWorkspaceId,
-  onWorkspaceDeleted,
+  onWorkspaceRemoved,
   onWorkspaceUpdated,
   onWorkspaceRemovalCompleted,
   onWorkspaceRemovalFailed,
@@ -329,11 +329,11 @@ export function WorkspaceModal({
     }
   };
 
-  const handleDelete = (ws: Workspace) => {
+  const handleRemove = (ws: Workspace) => {
     if (submittingRef.current || renamingRef.current) return;
     void confirm({
-      title: t("workspaces.deleteTitle"),
-      message: t("workspaces.deleteMessage", { name: ws.name }),
+      title: t("workspaces.removeTitle"),
+      message: t("workspaces.removeMessage", { name: ws.name }),
       confirmLabel: t("workspaces.remove"),
       failureMessage: message("workspaces.removeFailed", { name: ws.name }),
       danger: true,
@@ -346,14 +346,14 @@ export function WorkspaceModal({
         // session could not be unwound (unsaved changes); throw so the dialog
         // stays open and the deletion does not proceed.
         if (ws.id === activeWorkspaceId) {
-          const canDelete = await onWorkspaceDeleted(ws.id);
-          if (!canDelete) {
+          const canRemove = await onWorkspaceRemoved(ws.id);
+          if (!canRemove) {
             throw new Error("Resolve the unsaved changes in the active workspace before deleting it.");
           }
         }
-        let result: WorkspaceDeleteResult;
+        let result: WorkspaceRemoveResult;
         try {
-          result = await deleteWorkspace(ws.id);
+          result = await removeWorkspace(ws.id);
         } catch (err) {
           // Deletion failed: if this was the active workspace, the pre-check
           // already cleared it, so re-select it to restore the session before
@@ -363,7 +363,7 @@ export function WorkspaceModal({
           } else if (current.current && ws.id === activeWorkspaceId) {
             await onSelect(ws);
           }
-          throw err instanceof Error ? err : new Error("Failed to delete workspace.");
+          throw err instanceof Error ? err : new Error("Failed to remove workspace.");
         }
         onWorkspaceRemovalCompleted?.(ws, result);
         if (result.keyCleanupIncomplete && !onWorkspaceRemovalCompleted) {
@@ -423,7 +423,7 @@ export function WorkspaceModal({
       const ws = workspaces.find((w) => w.id === id);
       if (!ws) return;
       if (action === "rename") startRename(ws);
-      else handleDelete(ws);
+      else handleRemove(ws);
     },
     composingRef: listComposing.composingRef,
   });
@@ -590,7 +590,7 @@ export function WorkspaceModal({
           <button className="btn-toolbar" disabled={rowActionsDisabled} onClick={() => selected && startRename(selected)}>
             {t("common.rename")}
           </button>
-          <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleDelete(selected)}>
+          <button className="btn-toolbar btn-delete" disabled={rowActionsDisabled} onClick={() => selected && handleRemove(selected)}>
             {t("workspaces.remove")}
           </button>
         </div>

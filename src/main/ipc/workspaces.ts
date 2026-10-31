@@ -7,7 +7,7 @@ import {
   addExistingWorkspace,
   suggestWorkspaceLocation,
   updateWorkspace,
-  deleteWorkspace,
+  removeWorkspace,
 } from "../storageAccess.js";
 import { info, warn, error as logError, serializeError } from "../core/services/logger.js";
 import { imageDerivatives } from "../imageDerivatives.js";
@@ -72,14 +72,14 @@ export function registerWorkspaceHandlers(): void {
     return ws;
   });
 
-  ipcMain.handle(CHANNELS.deleteWorkspace, async (_event, id: string) => {
-    const deleted = await deleteWorkspace(id);
-    if (deleted === null) {
-      warn("workspace delete failed", { workspaceId: id, reason: "not-found" });
+  ipcMain.handle(CHANNELS.removeWorkspace, async (_event, id: string) => {
+    const removed = await removeWorkspace(id);
+    if (removed === null) {
+      warn("workspace remove failed", { workspaceId: id, reason: "not-found" });
       throw new Error("Workspace not found");
     }
     info("workspace removed from registry", { workspaceId: id });
     imageDerivatives()?.forgetWorkspace(id);
-    return deleted;
+    return removed;
   });
 }

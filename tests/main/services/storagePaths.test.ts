@@ -25,7 +25,7 @@ import {
   setDocumentsDirectory,
 } from "@main/core/services/storagePaths.js";
 
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_TEST_BASE = process.env.BIGMOUTH_TEST_BASE;
 const SAVED_TEST_UNSET = process.env.BIGMOUTH_TEST_UNSET;
 let fakeHome: string;
@@ -44,8 +44,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
   if (SAVED_TEST_BASE === undefined) delete process.env.BIGMOUTH_TEST_BASE;
   else process.env.BIGMOUTH_TEST_BASE = SAVED_TEST_BASE;
   if (SAVED_TEST_UNSET === undefined) delete process.env.BIGMOUTH_TEST_UNSET;
@@ -281,20 +281,20 @@ describe("workspace paths are cwd-independent", () => {
 // cannot drift.
 describe("standard subpaths", () => {
   it("names every store under the resolved root", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
-    process.env.BIGMOUTH_DATA_DIR = home;
+    const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
+    process.env.BIGMOUTH_DATA_DIR = storageRoot;
 
     initStorageRoot();
 
-    expect(getAppRoot()).toBe(home);
-    expect(getWorkspacesJsonPath()).toBe(path.join(home, "workspaces.json"));
-    expect(getLogsDir()).toBe(path.join(home, "logs"));
-    expect(getApiKeysPath()).toBe(path.join(home, "api-keys.json"));
-    expect(getStateJsonPath()).toBe(path.join(home, "state.json"));
-    expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
-    expect(getThumbnailsDir()).toBe(path.join(home, "thumbnails"));
+    expect(getAppRoot()).toBe(storageRoot);
+    expect(getWorkspacesJsonPath()).toBe(path.join(storageRoot, "workspaces.json"));
+    expect(getLogsDir()).toBe(path.join(storageRoot, "logs"));
+    expect(getApiKeysPath()).toBe(path.join(storageRoot, "api-keys.json"));
+    expect(getStateJsonPath()).toBe(path.join(storageRoot, "state.json"));
+    expect(getBackupsDbPath()).toBe(path.join(storageRoot, "backups.sqlite3"));
+    expect(getThumbnailsDir()).toBe(path.join(storageRoot, "thumbnails"));
 
-    removeTestTree(home);
+    removeTestTree(storageRoot);
   });
 
   it.skipIf(process.platform === "win32")(
@@ -333,14 +333,14 @@ describe("standard subpaths", () => {
     // atomicWrite, a cycle that survives only because ESM hoists function
     // declarations. initStorageRoot standing alone — no initAppDir, no
     // workspaces.json — is that cycle's absence, stated as a behaviour.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
-    process.env.BIGMOUTH_DATA_DIR = home;
+    const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-paths-"));
+    process.env.BIGMOUTH_DATA_DIR = storageRoot;
 
     initStorageRoot();
 
-    expect(getBackupsDbPath()).toBe(path.join(home, "backups.sqlite3"));
-    expect(fs.existsSync(path.join(home, "workspaces.json"))).toBe(false);
+    expect(getBackupsDbPath()).toBe(path.join(storageRoot, "backups.sqlite3"));
+    expect(fs.existsSync(path.join(storageRoot, "workspaces.json"))).toBe(false);
 
-    removeTestTree(home);
+    removeTestTree(storageRoot);
   });
 });

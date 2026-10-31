@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, act, cleanup, fireEvent, screen, within } from "@testing-library/react";
-import type { Workspace, WorkspaceDeleteResult } from "@shared/types";
+import type { Workspace, WorkspaceRemoveResult } from "@shared/types";
 
 // WorkspaceModal talks to the main process through these api calls:
 // pickWorkspaceDirectory backs both "Change" (the exact new destination)
@@ -11,7 +11,7 @@ vi.mock("@renderer/api", () => ({
   createWorkspace: vi.fn(),
   addExistingWorkspace: vi.fn(),
   updateWorkspace: vi.fn(),
-  deleteWorkspace: vi.fn(),
+  removeWorkspace: vi.fn(),
   pickWorkspaceDirectory: vi.fn(),
   suggestWorkspaceLocation: vi.fn(),
 }));
@@ -29,7 +29,7 @@ import {
   createWorkspace,
   addExistingWorkspace,
   updateWorkspace,
-  deleteWorkspace,
+  removeWorkspace,
   pickWorkspaceDirectory,
   suggestWorkspaceLocation,
 } from "@renderer/api";
@@ -38,7 +38,7 @@ const mockListWorkspaces = vi.mocked(listWorkspaces);
 const mockCreate = vi.mocked(createWorkspace);
 const mockAddExisting = vi.mocked(addExistingWorkspace);
 const mockUpdateWorkspace = vi.mocked(updateWorkspace);
-const mockDeleteWorkspace = vi.mocked(deleteWorkspace);
+const mockDeleteWorkspace = vi.mocked(removeWorkspace);
 const mockPickDirectory = vi.mocked(pickWorkspaceDirectory);
 const mockSuggestLocation = vi.mocked(suggestWorkspaceLocation);
 const mockWriteRendererLog = vi.fn();
@@ -74,7 +74,7 @@ async function renderModal() {
         onClose={onClose}
         onSelect={vi.fn()}
         activeWorkspaceId={WORKSPACE.id}
-        onWorkspaceDeleted={vi.fn()}
+        onWorkspaceRemoved={vi.fn()}
         onWorkspaceUpdated={vi.fn()}
       />
     </ConfirmProvider>
@@ -94,9 +94,9 @@ interface ModalOverrides {
   onSelect?: (ws: Workspace) => void | Promise<void>;
   onCreated?: (ws: Workspace, firstRun: boolean) => void | Promise<void>;
   activeWorkspaceId?: string | null;
-  onWorkspaceDeleted?: (id: string) => boolean | Promise<boolean>;
+  onWorkspaceRemoved?: (id: string) => boolean | Promise<boolean>;
   onWorkspaceUpdated?: (ws: Workspace) => void;
-  onWorkspaceRemovalCompleted?: (ws: Workspace, result: WorkspaceDeleteResult) => void;
+  onWorkspaceRemovalCompleted?: (ws: Workspace, result: WorkspaceRemoveResult) => void;
   onWorkspaceRemovalFailed?: (ws: Workspace) => void | Promise<void>;
   reloadVersion?: number;
 }
@@ -104,7 +104,7 @@ interface ModalOverrides {
 async function renderWith(over: ModalOverrides = {}) {
   const onClose = over.onClose ?? vi.fn();
   const onSelect = over.onSelect ?? vi.fn();
-  const onWorkspaceDeleted = over.onWorkspaceDeleted ?? vi.fn().mockResolvedValue(true);
+  const onWorkspaceRemoved = over.onWorkspaceRemoved ?? vi.fn().mockResolvedValue(true);
   const onWorkspaceUpdated = over.onWorkspaceUpdated ?? vi.fn();
   const element = (shown = true) => (
     <I18nProvider language={over.language ?? "en"} locale={over.language ?? "en"}>
@@ -116,7 +116,7 @@ async function renderWith(over: ModalOverrides = {}) {
         onSelect={onSelect}
         onCreated={over.onCreated}
         activeWorkspaceId={over.activeWorkspaceId === undefined ? WORKSPACE.id : over.activeWorkspaceId}
-        onWorkspaceDeleted={onWorkspaceDeleted}
+        onWorkspaceRemoved={onWorkspaceRemoved}
         onWorkspaceUpdated={onWorkspaceUpdated}
         onWorkspaceRemovalCompleted={over.onWorkspaceRemovalCompleted}
         onWorkspaceRemovalFailed={over.onWorkspaceRemovalFailed}
@@ -131,7 +131,7 @@ async function renderWith(over: ModalOverrides = {}) {
   await act(async () => {
     await Promise.resolve();
   });
-  return { onClose, onSelect, onWorkspaceDeleted, onWorkspaceUpdated, ...utils,
+  return { onClose, onSelect, onWorkspaceRemoved, onWorkspaceUpdated, ...utils,
     leaveModal: () => utils.rerender(element(false)),
   };
 }
@@ -920,9 +920,9 @@ describe("WorkspaceModal — delete", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockDeleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
     let unmountModal!: () => void;
-    const onWorkspaceDeleted = vi.fn(async () => { unmountModal(); return true; });
+    const onWorkspaceRemoved = vi.fn(async () => { unmountModal(); return true; });
     const completed = vi.fn();
-    const view = await renderWith({ onWorkspaceDeleted, onWorkspaceRemovalCompleted: completed });
+    const view = await renderWith({ onWorkspaceRemoved, onWorkspaceRemovalCompleted: completed });
     unmountModal = view.unmount;
     fireEvent.click(view.getByText("Remove"));
     await act(async () => { clickDeleteConfirm(); await Promise.resolve(); });
@@ -948,8 +948,8 @@ describe("WorkspaceModal — delete", () => {
     mockListWorkspaces.mockResolvedValueOnce([WORKSPACE]).mockResolvedValue([]);
     mockDeleteWorkspace.mockResolvedValue({ keyCleanupIncomplete: true });
     const onSelect = vi.fn();
-    const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
-    const { getByText, findByText, queryByRole } = await renderWith({ onSelect, onWorkspaceDeleted });
+    const onWorkspaceRemoved = vi.fn().mockResolvedValue(true);
+    const { getByText, findByText, queryByRole } = await renderWith({ onSelect, onWorkspaceRemoved });
 
     fireEvent.click(getByText("Remove"));
     await act(async () => {
@@ -958,7 +958,7 @@ describe("WorkspaceModal — delete", () => {
       await Promise.resolve();
     });
 
-    expect(onWorkspaceDeleted).toHaveBeenCalledWith(WORKSPACE.id);
+    expect(onWorkspaceRemoved).toHaveBeenCalledWith(WORKSPACE.id);
     expect(onSelect).not.toHaveBeenCalled();
     expect(mockListWorkspaces).toHaveBeenCalledTimes(2);
     expect(await findByText('"Alpha" was removed from the workspace list, but its stored API key could not be cleared.')).toBeTruthy();
@@ -973,8 +973,8 @@ describe("WorkspaceModal — delete", () => {
   it("deletes the selected non-active workspace after confirmation", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE, OTHER]);
     mockDeleteWorkspace.mockResolvedValue({});
-    const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
-    const { getByText } = await renderWith({ onWorkspaceDeleted });
+    const onWorkspaceRemoved = vi.fn().mockResolvedValue(true);
+    const { getByText } = await renderWith({ onWorkspaceRemoved });
 
     // Remove acts on the selected row: choose the non-active "Bravo" first.
     fireEvent.click(option("Bravo"));
@@ -988,14 +988,14 @@ describe("WorkspaceModal — delete", () => {
 
     expect(mockDeleteWorkspace).toHaveBeenCalledWith("ws2");
     // The active-workspace pre-check is skipped for a non-active target.
-    expect(onWorkspaceDeleted).not.toHaveBeenCalled();
+    expect(onWorkspaceRemoved).not.toHaveBeenCalled();
   });
 
   it("runs the active-workspace pre-check before deleting the active one", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockDeleteWorkspace.mockResolvedValue({});
-    const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
-    const { getByText } = await renderWith({ onWorkspaceDeleted });
+    const onWorkspaceRemoved = vi.fn().mockResolvedValue(true);
+    const { getByText } = await renderWith({ onWorkspaceRemoved });
 
     fireEvent.click(getByText("Remove")); // the selected row is the active workspace
     await act(async () => {
@@ -1004,14 +1004,14 @@ describe("WorkspaceModal — delete", () => {
       await Promise.resolve();
     });
 
-    expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws1");
+    expect(onWorkspaceRemoved).toHaveBeenCalledWith("ws1");
     expect(mockDeleteWorkspace).toHaveBeenCalledWith("ws1");
   });
 
   it("holds the dialog open with the veto reason when the active session refuses to unwind", async () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
-    const onWorkspaceDeleted = vi.fn().mockResolvedValue(false); // veto
-    const { getByText, findByText } = await renderWith({ onWorkspaceDeleted });
+    const onWorkspaceRemoved = vi.fn().mockResolvedValue(false); // veto
+    const { getByText, findByText } = await renderWith({ onWorkspaceRemoved });
 
     fireEvent.click(getByText("Remove"));
     await act(async () => {
@@ -1020,7 +1020,7 @@ describe("WorkspaceModal — delete", () => {
       await Promise.resolve();
     });
 
-    // The vetoed deletion surfaces inline and does not call deleteWorkspace.
+    // The vetoed deletion surfaces inline and does not call removeWorkspace.
     expect(
       await findByText('"Alpha" could not be removed. It remains in the workspace list; try again.'),
     ).toBeTruthy();
@@ -1031,8 +1031,8 @@ describe("WorkspaceModal — delete", () => {
     mockListWorkspaces.mockResolvedValue([WORKSPACE]);
     mockDeleteWorkspace.mockRejectedValue(new Error("delete failed on disk"));
     const onSelect = vi.fn();
-    const onWorkspaceDeleted = vi.fn().mockResolvedValue(true);
-    const { getByText, findByText } = await renderWith({ onSelect, onWorkspaceDeleted });
+    const onWorkspaceRemoved = vi.fn().mockResolvedValue(true);
+    const { getByText, findByText } = await renderWith({ onSelect, onWorkspaceRemoved });
 
     fireEvent.click(getByText("Remove"));
     await act(async () => {

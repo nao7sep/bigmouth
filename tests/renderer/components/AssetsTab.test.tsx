@@ -389,10 +389,10 @@ describe("AssetsTab upload via file input", () => {
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
     await act(async () => {
-      fireEvent.change(input, { target: { files: [makeFile("meta.json")] } });
+      fireEvent.change(input, { target: { files: [makeFile("assets.json")] } });
     });
 
-    expect(getByText(/^meta\.json: It uses a name BigMouth keeps/)).toBeTruthy();
+    expect(getByText(/^assets\.json: It uses a name BigMouth keeps/)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
     expect(mockUploadAsset).not.toHaveBeenCalled();
   });
@@ -553,7 +553,7 @@ describe("AssetsTab drag and drop", () => {
   });
 
   it("rejects an inspectable batch when every file uses a reserved name", () => {
-    const reserved = new File(["{}"], "meta.json");
+    const reserved = new File(["{}"], "assets.json");
     expect(inspectAssetDragOffer({
       types: ["Files"],
       items: [{ kind: "file", getAsFile: () => reserved }] as unknown as DataTransferItemList,

@@ -110,10 +110,10 @@ import { handleUpload, registerAssetHandlers } from "@main/ipc/assets.js";
 import { registerPostHandlers } from "@main/ipc/posts.js";
 import { StagingFile } from "@main/assetUpload.js";
 
-let home: string;
+let storageRoot: string;
 let wsId: string;
 let dataDir: string;
-const SAVED_HOME = process.env.BIGMOUTH_DATA_DIR;
+const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 
 const TARGET: Target = { name: "blogger", defaultLanguage: "en", requiresMetadata: false };
 
@@ -193,8 +193,8 @@ beforeEach(() => {
   transport.afterPublication = null;
   transport.beforeWorkspaceResolution = null;
   derivatives.current = null;
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
-  process.env.BIGMOUTH_DATA_DIR = home;
+  storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bigmouth-ipc-assets-"));
+  process.env.BIGMOUTH_DATA_DIR = storageRoot;
   initAppDir();
   handlers.clear();
   registerAssetHandlers();
@@ -207,9 +207,9 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCache(dataDir);
-  if (SAVED_HOME === undefined) delete process.env.BIGMOUTH_DATA_DIR;
-  else process.env.BIGMOUTH_DATA_DIR = SAVED_HOME;
-  fs.rmSync(home, { recursive: true, force: true });
+  if (SAVED_DATA_DIR === undefined) delete process.env.BIGMOUTH_DATA_DIR;
+  else process.env.BIGMOUTH_DATA_DIR = SAVED_DATA_DIR;
+  fs.rmSync(storageRoot, { recursive: true, force: true });
 });
 
 describe("asset IPC handlers — workspace resolution", () => {
@@ -489,7 +489,7 @@ describe("uploadAsset", () => {
   // one meant bytes that were written, reported as saved, and then unreachable -
   // and "assets.json" was worse: the sidecar write on the next line landed on the
   // same path, destroying the user's file and the whole asset list with it.
-  it.each(["assets.json", "meta.json", "notes.tmp", ".env"])(
+  it.each(["assets.json", "notes.tmp", ".env"])(
     "refuses to store %s rather than losing it",
     async (name) => {
       const id = (await createDraft());
@@ -557,7 +557,7 @@ describe("uploadAsset", () => {
   // A copy keeps the source's metadata (content-lifecycle-conventions).
   it("keeps the picked file's modified time and permissions on the copy", async () => {
     const id = (await createDraft());
-    const sourcePath = path.join(home, "picked.png");
+    const sourcePath = path.join(storageRoot, "picked.png");
     fs.writeFileSync(sourcePath, PNG_1x1);
     // Windows has no POSIX permission bits, so only the modified time is checked there.
     if (process.platform !== "win32") fs.chmodSync(sourcePath, 0o640);
@@ -573,7 +573,7 @@ describe("uploadAsset", () => {
 
   it("takes nothing from a source path that is not the uploaded file", async () => {
     const id = (await createDraft());
-    const other = path.join(home, "other.png");
+    const other = path.join(storageRoot, "other.png");
     fs.writeFileSync(other, Buffer.from("a different size"));
     const then = new Date("2021-03-04T05:06:07.000Z");
     fs.utimesSync(other, then, then);
@@ -594,15 +594,15 @@ describe("uploadAsset", () => {
       vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
       await uploadResult(id, upload("a.png", PNG_1x1));
       await uploadResult(id, upload("b.txt", Buffer.from("notes")));
-      const metaFile = path.join(dataDir, "assets", id, "assets.json");
-      const metaBefore = fs.readFileSync(metaFile, "utf8");
+      const listFile = path.join(dataDir, "assets", id, "assets.json");
+      const listBefore = fs.readFileSync(listFile, "utf8");
 
       vi.setSystemTime(new Date("2030-01-02T00:00:00.000Z"));
       const result = await uploadResult(id, upload("a.png", PNG_1x1));
 
       expect(result).toEqual({ ok: true, asset: expect.objectContaining({ filename: "a.png", uploadedAt: "2030-01-01T00:00:00.000Z" }) });
       expect(getPost(dataDir, id)!.frontMatter.updatedAtUtc).toBe("2030-01-01T00:00:00.000Z");
-      expect(fs.readFileSync(metaFile, "utf8")).toBe(metaBefore);
+      expect(fs.readFileSync(listFile, "utf8")).toBe(listBefore);
       expect((await invoke<AssetListing>(CHANNELS.listAssets, wsId, id)).assets.map((a) => a.filename)).toEqual(["a.png", "b.txt"]);
     } finally {
       vi.useRealTimers();

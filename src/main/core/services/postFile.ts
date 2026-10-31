@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
-import type { Post, PostFrontMatter, PostIndexEntry } from "../shared/types.js";
+import type { Post, PostFrontMatter, PostListEntry } from "../shared/types.js";
 import { multiline, truncate } from "../shared/textCleanup.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { FORMAT_VERSIONS } from "../shared/formatVersions.js";
@@ -162,7 +162,7 @@ export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; conte
   });
   const frontMatter = parsed.data as Record<string, unknown>;
   // Empty optional YAML text is absence in the app's typed model. Normalize it
-  // here so index projection and readers agree without rewriting the source.
+  // here so list entries and readers agree without rewriting the source.
   for (const key of OPTIONAL_TEXT_KEYS) {
     if (frontMatter[key] === null) delete frontMatter[key];
   }
@@ -262,31 +262,31 @@ export function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<st
 }
 
 /**
- * Projects a post's front matter into its index entry. Mirrors the *En strip so
- * an English post never carries a titleEn into the index.
+ * Projects a post's front matter into its list entry. Mirrors the *En strip so
+ * an English post never carries a titleEn into the post list.
  *
  * When the post has neither a title nor a titleEn, a body-derived `excerpt` is
  * stored so the list can show a meaningful label instead of the post id. Titled
- * posts carry no excerpt, so editing their body never churns the index. The
+ * posts carry no excerpt, so editing their body never churns the post list. The
  * excerpt is a display label derived from the body, which the post file keeps
  * whole; `excerptCut` tells the renderer to mark the cut.
  */
-export function projectIndexEntry(
+export function projectListEntry(
   frontMatter: PostFrontMatter,
   fileName: string,
   body: string
-): PostIndexEntry {
+): PostListEntry {
   // `gray-matter` returns untyped YAML data. This is the boundary where a slug
-  // becomes an index value used by case-insensitive comparisons, so reject a
+  // becomes a list value used by case-insensitive comparisons, so reject a
   // present non-string instead of letting it masquerade as the declared type
-  // and crash a later `.toLowerCase()` call. Rebuild/scans catch this error and
+  // and crash a later `.toLowerCase()` call. Reread/scans catch this error and
   // retain their existing per-file skip diagnostics.
   const slug = (frontMatter as Record<string, unknown>).slug;
   if (slug !== undefined && typeof slug !== "string") {
     throw new Error(`slug must be a string, got ${slug === null ? "null" : typeof slug}`);
   }
 
-  const entry: PostIndexEntry = {
+  const entry: PostListEntry = {
     id: frontMatter.id,
     fileName,
     status: frontMatter.status,
