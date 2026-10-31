@@ -1,22 +1,40 @@
 /**
- * How every store reads and writes its format version (store-recovery-conventions):
- * `formatVersion` at the top of a JSON file or a post's front matter, and
- * `PRAGMA user_version` in SQLite. A store without its marker is read through
- * its current owner, under the app's explicit disposable-data decision. The marker exists so a store
- * a newer build wrote is reported by name and never written by this one; it is
- * checked where a store is loaded or opened. The single-instance lock leaves no
- * other writer to change a store's format while it is open, so writes do not
- * recheck it. What each store does with an absent, newer, inaccessible or
- * unreadable store is its own load path's choice.
+ * How every store says what it is (file-identity-conventions, store-recovery-conventions):
+ * the `format` and `writer` header at the top of a JSON file or a post's front
+ * matter, and `PRAGMA user_version` with a `file_header` table in SQLite. The
+ * header is checked where a store is loaded or opened: a file of another owner
+ * or kind, or without the header, is unreadable, and one a newer build wrote is
+ * reported by name and never written by this one. `writer` is written on every
+ * save and never read. The single-instance lock leaves no other writer to change
+ * a store's format while it is open, so writes do not recheck it. What each
+ * store does with an absent, newer, inaccessible or unreadable store is its own
+ * load path's choice.
  */
 
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { message } from "@shared/i18n/translate";
 import { carryingText } from "@shared/i18n/carriedMessage";
-import { FORMAT_VERSIONS, isNewerThanBuild, type StoreFormat } from "./formatVersions.js";
+import { FORMAT_OWNER, FORMAT_VERSIONS, WRITER_NAME, isNewerThanBuild, type FileWriter, type StoreFormat } from "./formatVersions.js";
+import { checkSqliteHeader, writeSqliteHeader } from "./sqliteHeader.js";
 
-export const FORMAT_VERSION_KEY = "formatVersion";
+/** The keys the header takes at the top of a file; content never uses them there. */
+export const HEADER_KEYS: readonly string[] = ["format", "writer"];
+
+/** What this build writes as `writer`. */
+export const WRITER: FileWriter = { name: WRITER_NAME, version: __APP_VERSION__ };
+
+/** The header a file of `format` starts with. */
+export function fileHeader(format: StoreFormat): { format: { owner: string; kind: string; version: number }; writer: FileWriter } {
+  return { format: { owner: FORMAT_OWNER, kind: format, version: FORMAT_VERSIONS[format] }, writer: { ...WRITER } };
+}
+
+/** A parsed file's content without its header keys. */
+export function withoutHeader<T extends Record<string, unknown>>(value: T): T {
+  const content = { ...value };
+  for (const key of HEADER_KEYS) delete content[key];
+  return content;
+}
 
 /** A store this build cannot read because a newer version of BigMouth wrote it. */
 export class NewerFormatError extends Error {
@@ -53,14 +71,24 @@ export type FormatCheck =
   | { kind: "newer"; version: number }
   | { kind: "unreadable"; detail: string };
 
-/** Checks the `formatVersion` of a parsed JSON store or front matter. */
-export function checkFormatVersion(format: StoreFormat, value: Record<string, unknown>): FormatCheck {
-  const recorded = value[FORMAT_VERSION_KEY];
-  if (recorded === undefined) return { kind: "read", version: 1 };
-  if (typeof recorded !== "number" || !Number.isInteger(recorded) || recorded < 1) {
-    return { kind: "unreadable", detail: `its ${FORMAT_VERSION_KEY} is not a whole number from 1` };
+/**
+ * Checks the `format` header of a parsed JSON store or front matter. `writer`
+ * is not looked at. Other keys inside `format` are ignored, so a later release
+ * can add an optional one without a format change.
+ */
+export function checkHeader(format: StoreFormat, value: Record<string, unknown>): FormatCheck {
+  const header = value.format;
+  if (header === null || typeof header !== "object" || Array.isArray(header)) {
+    return { kind: "unreadable", detail: "it has no format header" };
   }
-  return isNewerThanBuild(format, recorded) ? { kind: "newer", version: recorded } : { kind: "read", version: recorded };
+  const { owner, kind, version } = header as Record<string, unknown>;
+  if (typeof owner !== "string" || typeof kind !== "string" || typeof version !== "number" || !Number.isInteger(version) || version < 1) {
+    return { kind: "unreadable", detail: "its format header is not an owner, a kind and a whole version from 1" };
+  }
+  if (owner !== FORMAT_OWNER || kind !== format) {
+    return { kind: "unreadable", detail: `its format header names ${owner} ${kind}, not ${FORMAT_OWNER} ${format}` };
+  }
+  return isNewerThanBuild(format, version) ? { kind: "newer", version } : { kind: "read", version };
 }
 
 /**
@@ -76,7 +104,7 @@ export type JsonStoreRead =
   | { kind: "inaccessible"; detail: string; error: unknown }
   | { kind: "unreadable"; detail: string; error: unknown };
 
-/** Reads a JSON store whose top level is an object, optionally carrying its format version. */
+/** Reads a JSON store whose top level is an object starting with its header; `value` is the content without it. */
 export function readJsonStore(format: StoreFormat, filePath: string): JsonStoreRead {
   let text: string;
   try {
@@ -95,23 +123,25 @@ export function readJsonStore(format: StoreFormat, filePath: string): JsonStoreR
     return { kind: "unreadable", detail: "it does not contain a JSON object", error: null };
   }
   const value = parsed as Record<string, unknown>;
-  const check = checkFormatVersion(format, value);
+  const check = checkHeader(format, value);
   if (check.kind === "unreadable") return { ...check, error: null };
   if (check.kind === "newer") return check;
-  return { kind: "read", version: check.version, value };
+  return { kind: "read", version: check.version, value: withoutHeader(value) };
 }
 
-/** A JSON store's file text: this build's format version, then the body's keys. */
+/** A JSON store's file text: the header, then the body's keys. */
 export function jsonStoreText(format: StoreFormat, body: Record<string, unknown>): string {
-  return JSON.stringify({ [FORMAT_VERSION_KEY]: FORMAT_VERSIONS[format], ...body }, null, 2) + "\n";
+  return JSON.stringify({ ...fileHeader(format), ...withoutHeader(body) }, null, 2) + "\n";
 }
 
 /**
- * Opens a SQLite store, refusing one a newer build wrote before anything is
- * written to it. `prepare` sets the connection up and creates the schema with
- * `IF NOT EXISTS`, so it also completes a store whose creation was interrupted;
- * a store without its version (SQLite's 0) is stamped with this build's. Throws
- * NewerFormatError for a newer store, and closes the connection on any failure.
+ * Opens a SQLite store, refusing one a newer build wrote, or one without
+ * BigMouth's header for `format`, before anything is written to it. `prepare`
+ * sets the connection up and creates the schema with `IF NOT EXISTS`; the header
+ * is written in the same transaction, so a new file gets it on creation and an
+ * existing one has its writer rows rewritten. Throws NewerFormatError for a
+ * newer store and UnreadableStoreError for one without the header, and closes
+ * the connection on any failure.
  */
 export function openSqliteStore(
   format: StoreFormat,
@@ -120,12 +150,13 @@ export function openSqliteStore(
 ): DatabaseSync {
   const db = new DatabaseSync(filePath);
   try {
-    const recorded = sqliteUserVersion(db);
-    if (isNewerThanBuild(format, recorded)) throw new NewerFormatError(filePath, recorded);
+    const check = checkSqliteHeader(db, format);
+    if (check.kind === "newer") throw new NewerFormatError(filePath, check.version);
+    if (check.kind === "unreadable") throw new UnreadableStoreError(filePath, check.detail);
     db.exec("BEGIN IMMEDIATE");
     try {
       prepare(db);
-      if (recorded === 0) db.exec(`PRAGMA user_version = ${FORMAT_VERSIONS[format]}`);
+      writeSqliteHeader(db, format, WRITER);
       db.exec("COMMIT");
     } catch (error) {
       try { db.exec("ROLLBACK"); } catch { /* Preserve the original diagnostic. */ }
@@ -137,9 +168,4 @@ export function openSqliteStore(
     try { db.close(); } catch { /* Preserve the original diagnostic. */ }
     throw error;
   }
-}
-
-/** A database's `user_version`; SQLite's 0 means none was set. */
-export function sqliteUserVersion(db: DatabaseSync): number {
-  return (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
 }

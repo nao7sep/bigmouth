@@ -151,7 +151,7 @@ describe("authoritative post files", () => {
     const copy = path.join(dataDir, "posts", "000-copy.md");
     const copyBytes = fs.readFileSync(primary.filePath, "utf8");
     fs.writeFileSync(copy, copyBytes);
-    const unreadable = copyBytes.replace("formatVersion: 1", "formatVersion: 999");
+    const unreadable = copyBytes.replace("  kind: post\n  version: 1\n", "  kind: post\n  version: 999\n");
     fs.writeFileSync(primary.filePath, unreadable);
     expect(renameTarget(dataDir, "blogger", "journal").updated).toBe(0);
     expect(fs.readFileSync(primary.filePath, "utf8")).toBe(unreadable);
@@ -178,7 +178,7 @@ describe("canonical edit admission and committed writes", () => {
 
   it.each([
     ["damaged", "{ not json"],
-    ["written by a newer version", JSON.stringify({ formatVersion: 999, assets: [] })],
+    ["written by a newer version", JSON.stringify({ format: { owner: "bigmouth", kind: "assetList", version: 999 }, assets: [] })],
   ])("deletes a post whose attachment details are %s, with its attachments", (_case, body) => {
     const post = createPost(dataDir, "blogger", "en");
     const folder = path.join(dataDir, "assets", post.frontMatter.id);
@@ -216,7 +216,7 @@ describe("canonical edit admission and committed writes", () => {
     const referrer = createPost(dataDir, "blogger", "en", source.frontMatter.id);
     queueContent(dataDir, source.frontMatter.id, "keep buffered text");
     const originalPost = fs.readFileSync(source.filePath, "utf8");
-    fs.writeFileSync(source.filePath, fs.readFileSync(source.filePath, "utf8").replace("formatVersion: 1", "formatVersion: 999"));
+    fs.writeFileSync(source.filePath, fs.readFileSync(source.filePath, "utf8").replace("  kind: post\n  version: 1\n", "  kind: post\n  version: 999\n"));
     expect(() => deletePost(dataDir, source.frontMatter.id)).toThrow();
     expect(fs.existsSync(source.filePath)).toBe(true);
     expect(getPost(dataDir, referrer.frontMatter.id)?.frontMatter.sourceId).toBe(source.frontMatter.id);

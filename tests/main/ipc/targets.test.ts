@@ -43,6 +43,7 @@ vi.mock("@main/core/services/logger.js", () => ({
 import { initAppDir, createWorkspace, getWorkspace } from "@main/core/services/workspaceStore.js";
 import { createPost, getPost } from "@main/core/services/postStore.js";
 import { registerTargetHandlers } from "@main/ipc/targets.js";
+import { fileHeader } from "../fileHeader.js";
 
 let storageRoot: string;
 let wsId: string;
@@ -220,7 +221,7 @@ describe("targets IPC handlers", () => {
 it("exposes duplicated targets only for repair and refuses ambiguous bulk rename", async () => {
   const ws = getWorkspace(wsId)!;
   const rows = [target("Blog"), target(" Blog ", { defaultLanguage: "ja" })];
-  fs.writeFileSync(path.join(ws.dataDirectory, "config.json"), JSON.stringify({ formatVersion: 1, targets: rows }));
+  fs.writeFileSync(path.join(ws.dataDirectory, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), targets: rows }));
   await expect(invoke(CHANNELS.listTargets, wsId)).rejects.toThrow(/settings.targetsDuplicate/);
   expect(await invoke(CHANNELS.listTargets, wsId, true)).toEqual(rows);
   await expect(invoke(CHANNELS.renameTarget, wsId, "Blog", "Notes")).rejects.toThrow(/settings.targetsDuplicate/);

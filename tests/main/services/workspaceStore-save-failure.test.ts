@@ -31,7 +31,7 @@ describe("workspace registry publication failure", () => {
   it.each(["damaged", "newer", "inaccessible"] as const)("preserves a %s key store and reports incomplete cleanup after removal", (state) => {
     const workspace = createWorkspace("Drafts", path.join(root, "workspace"));
     const keyFile = getApiKeysPath();
-    const bytes = state === "newer" ? '{"formatVersion":99,"opaque":"protected-data"}' : "{ damaged-key-data";
+    const bytes = state === "newer" ? '{"format":{"owner":"bigmouth","kind":"apiKeys","version":99},"opaque":"protected-data"}' : "{ damaged-key-data";
     if (state === "inaccessible") fs.mkdirSync(keyFile);
     else fs.writeFileSync(keyFile, bytes);
 

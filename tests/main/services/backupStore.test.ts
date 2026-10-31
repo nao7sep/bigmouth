@@ -361,6 +361,40 @@ describe("best effort", () => {
   });
 });
 
+describe("backups header", () => {
+  function headerRows(): Record<string, string> {
+    const db = new DatabaseSync(storeFile(), { readOnly: true });
+    try {
+      const found = db.prepare("SELECT key, value FROM file_header").all() as { key: string; value: string }[];
+      return Object.fromEntries(found.map((row) => [row.key, row.value]));
+    } finally { db.close(); }
+  }
+
+  it("gives a new store BigMouth's backups header", () => {
+    const file = path.join(root, "doc.md");
+    record(file, Buffer.from("text"));
+    settleBackups();
+    expect(headerRows()).toEqual({ "format.owner": "bigmouth", "format.kind": "backups", "writer.name": "bigmouth", "writer.version": expect.any(String) });
+  });
+
+  it("refuses a store of another kind without changing it, and records nothing", async () => {
+    const db = new DatabaseSync(storeFile());
+    db.exec(`CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO file_header VALUES ('format.owner', 'bigmouth'), ('format.kind', 'records');
+      PRAGMA user_version = 1`);
+    db.close();
+    const before = fs.readFileSync(storeFile());
+    const { spy: warn, until: warned } = watchWarnings();
+    try {
+      record(path.join(root, "doc.md"), Buffer.from("not recorded"));
+      settleBackups();
+      settleBackups();
+      await warned(/could not be opened/);
+      expect(fs.readFileSync(storeFile())).toEqual(before);
+    } finally { warn.mockRestore(); }
+  });
+});
+
 describe("protected writes", () => {
   it("records the workspace registry on create and config only on its first edit", async () => {
     const { createWorkspace } = await import("@main/core/services/workspaceStore.js");

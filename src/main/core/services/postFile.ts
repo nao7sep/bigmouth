@@ -13,8 +13,7 @@ import matter from "gray-matter";
 import type { Post, PostFrontMatter, PostListEntry } from "../shared/types.js";
 import { multiline, truncate } from "../shared/textCleanup.js";
 import { writeManagedText } from "../shared/atomicWrite.js";
-import { FORMAT_VERSIONS } from "../shared/formatVersions.js";
-import { FORMAT_VERSION_KEY, NewerFormatError, checkFormatVersion } from "../shared/storeFormat.js";
+import { HEADER_KEYS, NewerFormatError, checkHeader, fileHeader, withoutHeader } from "../shared/storeFormat.js";
 
 // Length, in graphemes, of a body-derived preview label for an untitled post.
 const EXCERPT_MAX_CHARS = 100;
@@ -44,7 +43,7 @@ const BODY_MULTILINE_OPTS = {
 } as const;
 
 // Canonical front-matter key order written into every `.md` file, after the
-// format version. Keeping a fixed order makes files stable across rewrites and
+// header. Keeping a fixed order makes files stable across rewrites and
 // easy to diff.
 const CANONICAL_KEYS = [
   "id",
@@ -75,7 +74,7 @@ const CANONICAL_KEYS = [
  * included, is what the author makes (content-lifecycle-conventions' Modified).
  */
 const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
-  FORMAT_VERSION_KEY,
+  ...HEADER_KEYS,
   "id",
   "status",
   "createdAtUtc",
@@ -87,7 +86,7 @@ const NON_CONTENT_KEYS: ReadonlySet<string> = new Set([
   "locked",
 ]);
 
-const CANONICAL_KEY_SET = new Set<string>([FORMAT_VERSION_KEY, ...CANONICAL_KEYS]);
+const CANONICAL_KEY_SET = new Set<string>([...HEADER_KEYS, ...CANONICAL_KEYS]);
 
 // The known keys' shapes. The identity, status and created and updated times are
 // text whenever they are present; the other text keys may also be empty (YAML's
@@ -173,20 +172,22 @@ export function parsePostRaw(raw: string): { frontMatter: PostFrontMatter; conte
 }
 
 /**
- * Reads a post file. One a newer version of BigMouth wrote throws
- * NewerFormatError, and every write of an existing post reads it first, so such
- * a file is never written. One whose known keys do not have their shape throws
- * too, and is left as it is.
+ * Reads a post file. Its front matter must start with BigMouth's post header,
+ * hand-written posts included; one without it throws and is left as it is. One
+ * a newer version of BigMouth wrote throws NewerFormatError, and every write of
+ * an existing post reads it first, so such a file is never written. One whose
+ * known keys do not have their shape throws too. The front matter returned
+ * leaves the header out.
  */
 export function readPost(filePath: string): Post {
   const raw = fs.readFileSync(filePath, "utf-8");
   const { frontMatter, content } = parsePostRaw(raw);
-  const check = checkFormatVersion("postFile", frontMatter);
+  const check = checkHeader("post", frontMatter);
   if (check.kind === "newer") throw new NewerFormatError(filePath, check.version);
   if (check.kind === "unreadable") throw new Error(`${path.basename(filePath)}: ${check.detail}`);
   const problem = frontMatterShapeProblem(frontMatter);
   if (problem) throw new Error(`${path.basename(filePath)}: ${problem}`);
-  return { frontMatter, content, filePath };
+  return { frontMatter: withoutHeader(frontMatter), content, filePath };
 }
 
 /** The file text a post serializes to, with the same cleanup the write applies. */
@@ -232,13 +233,13 @@ export function writePost(filePath: string, frontMatter: PostFrontMatter, conten
 }
 
 /**
- * Returns front matter with this build's format version first, the keys in
+ * Returns front matter with this build's header first, the keys in
  * canonical order and English supplement fields stripped for English posts.
  * Unknown keys are preserved (after the known ones) so hand-added front matter
  * survives a rewrite.
  */
 export function canonicalizeFrontMatter(frontMatter: PostFrontMatter): Record<string, unknown> {
-  const cleanFm: Record<string, unknown> = { [FORMAT_VERSION_KEY]: FORMAT_VERSIONS.postFile };
+  const cleanFm: Record<string, unknown> = { ...fileHeader("post") };
   for (const key of CANONICAL_KEYS) {
     const value = frontMatter[key];
     if (value !== undefined) cleanFm[key] = value;

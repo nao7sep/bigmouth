@@ -11,6 +11,7 @@ import path from "node:path";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { initStateStore, getUiState, updateUiState } from "@main/core/services/stateStore.js";
+import { fileHeader, newerHeader } from "../fileHeader.js";
 
 const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const tempDirs: string[] = [];
@@ -92,7 +93,7 @@ describe("stateStore — persistence", () => {
   });
 
   it("falls back to the default zoom when the stored value is not a number", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({ formatVersion: 1, zoomLevel: "big" }), "utf-8");
+    fs.writeFileSync(statePath(), JSON.stringify({ ...fileHeader("state"), zoomLevel: "big" }), "utf-8");
     initStateStore();
     expect(getUiState().zoomLevel).toBe(defaultUiState().zoomLevel);
   });
@@ -108,7 +109,7 @@ describe("stateStore — self-healing", () => {
   it("replaces a non-finite or wrong-typed field with its default on load", () => {
     fs.writeFileSync(
       statePath(),
-      JSON.stringify({ formatVersion: 1, paneLeftWidth: "wide", paneRightWidth: Infinity, activeWorkspaceId: 7 }),
+      JSON.stringify({ ...fileHeader("state"), paneLeftWidth: "wide", paneRightWidth: Infinity, activeWorkspaceId: 7 }),
     );
     initStateStore();
     // Bad number/string fields heal to defaults; a numeric id is not a string, so it heals too.
@@ -118,7 +119,7 @@ describe("stateStore — self-healing", () => {
   it("keeps the valid fields of a partially-bad file", () => {
     fs.writeFileSync(
       statePath(),
-      JSON.stringify({ formatVersion: 1, paneLeftWidth: 520, paneRightWidth: null, activeWorkspaceId: "ws-keep" }),
+      JSON.stringify({ ...fileHeader("state"), paneLeftWidth: 520, paneRightWidth: null, activeWorkspaceId: "ws-keep" }),
     );
     initStateStore();
     expect(getUiState()).toEqual({ ...defaultUiState(), paneLeftWidth: 520, activeWorkspaceId: "ws-keep" });
@@ -136,7 +137,7 @@ describe("stateStore — records list width", () => {
   });
 
   it("falls back to the default for a width that is not a number", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({ formatVersion: 1, recordsListWidth: "wide" }));
+    fs.writeFileSync(statePath(), JSON.stringify({ ...fileHeader("state"), recordsListWidth: "wide" }));
     initStateStore();
     expect(getUiState().recordsListWidth).toBe(RECORDS_LIST_WIDTH.default);
   });
@@ -147,17 +148,20 @@ describe("stateStore — format version", () => {
   it("writes this build's format version and reads the state back", () => {
     initStateStore();
     updateUiState({ zoomLevel: 2 });
-    expect(JSON.parse(fs.readFileSync(statePath(), "utf-8"))).toEqual({ formatVersion: 1, ...defaultUiState(), zoomLevel: 2 });
+    expect(JSON.parse(fs.readFileSync(statePath(), "utf-8"))).toEqual({ ...fileHeader("state"), ...defaultUiState(), zoomLevel: 2 });
     expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 2 });
   });
 
-  it("reads a state.json without its format version as this build's format", () => {
-    fs.writeFileSync(statePath(), JSON.stringify({ zoomLevel: 3 }));
-    expect(initStateStore()).toEqual({ ...defaultUiState(), zoomLevel: 3 });
+  it.each([
+    ["no header", { zoomLevel: 3 }],
+    ["another kind", { ...fileHeader("appConfig"), zoomLevel: 3 }],
+  ])("uses defaults for a state.json with %s", (_name, content) => {
+    fs.writeFileSync(statePath(), JSON.stringify(content));
+    expect(initStateStore()).toEqual(defaultUiState());
   });
 
   it("keeps view state in memory over a state.json a newer version wrote, leaving it byte-identical", () => {
-    const body = JSON.stringify({ formatVersion: 2, zoomLevel: 4 });
+    const body = JSON.stringify({ ...newerHeader("state", 2), zoomLevel: 4 });
     fs.writeFileSync(statePath(), body);
 
     expect(initStateStore()).toEqual(defaultUiState());

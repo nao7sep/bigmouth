@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NewerFormatError, checkFormatVersion, openSqliteStore, readJsonStore } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, WRITER, checkHeader, fileHeader, jsonStoreText, openSqliteStore, readJsonStore } from "@main/core/shared/storeFormat.js";
 import { FORMAT_VERSIONS } from "@main/core/shared/formatVersions.js";
 
 let root: string;
@@ -23,14 +23,51 @@ describe("SQLite admission", () => {
     expect(fs.readFileSync(file)).toEqual(before);
   });
 
-  it("reads a database without its version as this build's format and stamps it", () => {
+  function headerRows(db: DatabaseSync): Record<string, string> {
+    const rows = db.prepare("SELECT key, value FROM file_header").all() as { key: string; value: string }[];
+    return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  }
+
+  it("gives a new database the header on creation", () => {
+    const file = path.join(root, "store.sqlite3");
+    const db = openSqliteStore("records", file, (opened) => opened.exec("CREATE TABLE IF NOT EXISTS first (id INTEGER)"));
+    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+    expect(headerRows(db)).toEqual({
+      "format.owner": "bigmouth",
+      "format.kind": "records",
+      "writer.name": "bigmouth",
+      "writer.version": WRITER.version,
+    });
+    db.close();
+  });
+
+  it("rewrites the writer rows on every open and never reads them", () => {
+    const file = path.join(root, "store.sqlite3");
+    openSqliteStore("records", file, () => {}).close();
+    const edit = new DatabaseSync(file);
+    edit.exec("UPDATE file_header SET value = 'someone-else' WHERE key = 'writer.name'; INSERT INTO file_header VALUES ('writer.caller.name', 'x')");
+    edit.close();
+    const db = openSqliteStore("records", file, () => {});
+    expect(headerRows(db)["writer.name"]).toBe("bigmouth");
+    expect(headerRows(db)).not.toHaveProperty("writer.caller.name");
+    db.close();
+  });
+
+  it.each([
+    ["tables but no version", "CREATE TABLE first (id INTEGER)"],
+    ["a version but no file_header table", "CREATE TABLE first (id INTEGER); PRAGMA user_version = 1"],
+    ["another owner", "CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO file_header VALUES ('format.owner', 'other'), ('format.kind', 'records'); PRAGMA user_version = 1"],
+    ["another kind", "CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO file_header VALUES ('format.owner', 'bigmouth'), ('format.kind', 'backups'); PRAGMA user_version = 1"],
+  ])("refuses a database with %s as unreadable, leaving it byte-identical", (_name, sql) => {
     const file = path.join(root, "store.sqlite3");
     const existing = new DatabaseSync(file);
-    existing.exec("CREATE TABLE first (id INTEGER)");
+    existing.exec(sql);
     existing.close();
-    const db = openSqliteStore("records", file, (opened) => opened.exec("CREATE TABLE IF NOT EXISTS first (id INTEGER)"));
-    expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: FORMAT_VERSIONS.records });
-    db.close();
+    const before = fs.readFileSync(file);
+    const setup = vi.fn();
+    expect(() => openSqliteStore("records", file, setup)).toThrow(UnreadableStoreError);
+    expect(setup).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file)).toEqual(before);
   });
 
   it("commits the schema and the version together, so a failed setup leaves neither", () => {
@@ -53,10 +90,43 @@ describe("SQLite admission", () => {
 });
 
 describe("JSON admission", () => {
-  it("reads a store without its version as this build's format", () => {
-    expect(checkFormatVersion("state", {})).toEqual({ kind: "read", version: 1 });
-    expect(checkFormatVersion("state", { formatVersion: 2 })).toEqual({ kind: "newer", version: 2 });
-    expect(checkFormatVersion("state", { formatVersion: "1" })).toMatchObject({ kind: "unreadable" });
+  const header = (format: Record<string, unknown>) => ({ format, writer: { name: "bigmouth", version: "1.0.0" } });
+
+  it("reads exactly BigMouth's header for the kind, and refuses anything else", () => {
+    expect(checkHeader("state", header({ owner: "bigmouth", kind: "state", version: 1 }))).toEqual({ kind: "read", version: 1 });
+    expect(checkHeader("state", header({ owner: "bigmouth", kind: "state", version: 2 }))).toEqual({ kind: "newer", version: 2 });
+    expect(checkHeader("state", header({ owner: "bigmouth", kind: "state", version: 1, later: true }))).toEqual({ kind: "read", version: 1 });
+    for (const bad of [
+      {},
+      { formatVersion: 1 },
+      { format: 1 },
+      { format: "state" },
+      header({ owner: "bigmouth", kind: "state" }),
+      header({ owner: "bigmouth", kind: "state", version: "1" }),
+      header({ owner: "bigmouth", kind: "state", version: 0 }),
+      header({ owner: "bigmouth", kind: "state", version: 1.5 }),
+      header({ owner: "other", kind: "state", version: 1 }),
+      header({ owner: "bigmouth", kind: "apiKeys", version: 1 }),
+    ]) {
+      expect(checkHeader("state", bad)).toMatchObject({ kind: "unreadable" });
+    }
+  });
+
+  it("never reads writer", () => {
+    const format = { owner: "bigmouth", kind: "state", version: 1 };
+    for (const writer of [undefined, null, "x", { name: "other", version: 99 }]) {
+      expect(checkHeader("state", { format, writer })).toEqual({ kind: "read", version: 1 });
+    }
+  });
+
+  it("writes the header first and gives readers the content without it", () => {
+    const file = path.join(root, "state.json");
+    fs.writeFileSync(file, jsonStoreText("state", { zoomLevel: 2, format: "content may not take it" }));
+    const written = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(Object.keys(written)).toEqual(["format", "writer", "zoomLevel"]);
+    expect(written.format).toEqual(fileHeader("state").format);
+    expect(written.writer).toEqual(WRITER);
+    expect(readJsonStore("state", file)).toEqual({ kind: "read", version: 1, value: { zoomLevel: 2 } });
   });
 
   it("tells a file that could not be read apart from content that cannot be used", () => {

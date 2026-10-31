@@ -160,6 +160,7 @@ it.each(["async", "session-end"] as const)("runs real store writes, the quit flu
     await build({
       configFile: false,
       logLevel: "silent",
+      define: { __APP_VERSION__: JSON.stringify("0.0.0-test") },
       resolve: { alias: { "@shared": path.resolve("src/shared") } },
       ssr: { noExternal: true },
       build: {

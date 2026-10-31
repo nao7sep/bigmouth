@@ -20,9 +20,10 @@ import {
   renameTarget,
   unreadablePosts,
 } from "@main/core/services/postStore.js";
-import { NewerFormatError } from "@main/core/shared/storeFormat.js";
+import { NewerFormatError, WRITER } from "@main/core/shared/storeFormat.js";
 import * as logger from "@main/core/services/logger.js";
 import { POST_STATUSES } from "@main/core/shared/postLifecycle.js";
+import { POST_HEADER_YAML } from "../fileHeader.js";
 
 let dataDir: string;
 
@@ -397,28 +398,45 @@ describe("reading the post files", () => {
   });
 });
 
-// A post file's format version, which tells a build whether it can read the file.
-describe("post file format version", () => {
-  it("writes this build's format version first in a new post's front matter", () => {
+// A post file's header, which tells a build what the file is and whether it can read it.
+describe("post file header", () => {
+  const HEADER = `format:\n  owner: bigmouth\n  kind: post\n  version: 1\nwriter:\n  name: bigmouth\n  version: ${WRITER.version}\n`;
+
+  it("writes this build's header first in a new post's front matter, and keeps it out of what is read", () => {
     const post = createPost(dataDir, "blogger", "en");
-    expect(fs.readFileSync(post.filePath, "utf-8")).toMatch(/^---\nformatVersion: 1\nid: /);
-    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.formatVersion).toBe(1);
+    expect(fs.readFileSync(post.filePath, "utf-8").startsWith(`---\n${HEADER}id: `)).toBe(true);
+    const read = getPost(dataDir, post.frontMatter.id)!.frontMatter as Record<string, unknown>;
+    expect(read).not.toHaveProperty("format");
+    expect(read).not.toHaveProperty("writer");
   });
 
-  it("reads a post file without its format version as this build's format", () => {
+  it.each([
+    ["no header", ""],
+    ["another owner", `format:\n  owner: other\n  kind: post\n  version: 1\n`],
+    ["another kind", `format:\n  owner: bigmouth\n  kind: state\n  version: 1\n`],
+    ["a format that is not a map", "format: 1\n"],
+  ])("shows a post file with %s as damaged and leaves it byte-identical", (_name, header) => {
     const post = createPost(dataDir, "blogger", "en");
-    const body = fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1\n", "");
+    const body = fs.readFileSync(post.filePath, "utf-8").replace(HEADER, header);
     fs.writeFileSync(post.filePath, body);
     clearCache(dataDir);
 
+    expect(rereadPosts(dataDir).skipped.map((s) => s.fileName)).toEqual([path.basename(post.filePath)]);
+    expect(unreadablePosts(dataDir)).toEqual([{ path: post.filePath, newer: false }]);
+    expect(fs.readFileSync(post.filePath, "utf-8")).toBe(body);
+  });
+
+  it("ignores writer when reading a post", () => {
+    const post = createPost(dataDir, "blogger", "en");
+    fs.writeFileSync(post.filePath, fs.readFileSync(post.filePath, "utf-8").replace("  name: bigmouth\n", "  name: someone-else\n"));
+    clearCache(dataDir);
     expect(rereadPosts(dataDir).skipped).toEqual([]);
-    expect(getPost(dataDir, post.frontMatter.id)?.frontMatter.id).toBe(post.frontMatter.id);
   });
 
   it("skips a post file a newer version wrote and leaves it byte-identical", () => {
     const kept = createPost(dataDir, "blogger", "en");
     const newer = createPost(dataDir, "blogger", "en");
-    const body = fs.readFileSync(newer.filePath, "utf-8").replace("formatVersion: 1", "formatVersion: 2");
+    const body = fs.readFileSync(newer.filePath, "utf-8").replace("  kind: post\n  version: 1\n", "  kind: post\n  version: 2\n");
     fs.writeFileSync(newer.filePath, body);
 
     const rebuilt = rereadPosts(dataDir);
@@ -432,7 +450,7 @@ describe("post file format version", () => {
 
   it("refuses to write a post whose file a newer version replaced, leaving it byte-identical", () => {
     const post = createPost(dataDir, "blogger", "en");
-    const body = fs.readFileSync(post.filePath, "utf-8").replace("formatVersion: 1", "formatVersion: 2");
+    const body = fs.readFileSync(post.filePath, "utf-8").replace("  kind: post\n  version: 1\n", "  kind: post\n  version: 2\n");
     fs.writeFileSync(post.filePath, body);
 
     expect(() => changeStatus(dataDir, post.frontMatter.id, "verified")).toThrow(NewerFormatError);
@@ -461,9 +479,9 @@ it("identifies the workspace root in skipped-file and duplicate warnings", () =>
   const warnings = vi.spyOn(logger, "warn").mockImplementation(() => {});
   try {
     for (const root of [dataDir, otherRoot]) {
-      fs.writeFileSync(path.join(root, "posts", "bad.md"), "---\nid: [invalid]\n---\nBody");
+      fs.writeFileSync(path.join(root, "posts", "bad.md"), `---\n${POST_HEADER_YAML}id: [invalid]\n---\nBody`);
       for (const [fileName, id] of [["a.md", "same-id"], ["b.md", "same-id"], ["c.md", "other-id"]]) {
-        fs.writeFileSync(path.join(root, "posts", fileName), `---\nid: ${id}\nstatus: draft\nslug: shared-slug\n---\nBody`);
+        fs.writeFileSync(path.join(root, "posts", fileName), `---\n${POST_HEADER_YAML}id: ${id}\nstatus: draft\nslug: shared-slug\n---\nBody`);
       }
       expect(rereadPosts(root)).toMatchObject({ listed: 2 });
     }

@@ -13,6 +13,7 @@ import {
 import * as logger from "@main/core/services/logger.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { QuarantineError } from "@main/core/shared/quarantine.js";
+import { fileHeader, newerHeader } from "../fileHeader.js";
 
 let dir: string;
 let keyFile: string;
@@ -34,7 +35,7 @@ afterEach(() => {
 
 describe("apiKeys secret store", () => {
   it.runIf(process.platform !== "win32")("leaves a future secret store permissions and bytes untouched", () => {
-    const bytes = '{"formatVersion":99,"workspaces":{}}';
+    const bytes = JSON.stringify({ ...newerHeader("apiKeys", 99), workspaces: {} });
     fs.writeFileSync(keyFile, bytes, { mode: 0o644 });
     expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     expect(() => writeApiKey(keyFile, W1, "anthropic", "key")).toThrow(NewerFormatError);
@@ -53,12 +54,12 @@ describe("apiKeys secret store", () => {
     const raw = fs.readFileSync(keyFile, "utf-8");
     expect(raw).not.toContain("sk-ant-secret"); // obfuscated, not plaintext
     // Nested: workspace -> keys -> provider id.
-    expect(JSON.parse(raw)).toEqual({ formatVersion: 1, workspaces: { [W1]: { keys: { anthropic: expect.stringMatching(/^obf:/) } } } });
+    expect(JSON.parse(raw)).toEqual({ ...fileHeader("apiKeys"), workspaces: { [W1]: { keys: { anthropic: expect.stringMatching(/^obf:/) } } } });
 
     writeApiKey(keyFile, W1, "anthropic", "");
     expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
     // The emptied workspace bucket leaves no trace.
-    expect(JSON.parse(fs.readFileSync(keyFile, "utf-8"))).toEqual({ formatVersion: 1, workspaces: {} });
+    expect(JSON.parse(fs.readFileSync(keyFile, "utf-8"))).toEqual({ ...fileHeader("apiKeys"), workspaces: {} });
   });
 
   it("keeps keys independent across workspaces", () => {
@@ -84,7 +85,7 @@ describe("apiKeys secret store", () => {
 
   it("clears the requested raw workspace scope even when its individual key entries cannot be read", () => {
     const other = { keys: { anthropic: "other-workspace-key" }, future: { kept: true } };
-    fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: {
+    fs.writeFileSync(keyFile, JSON.stringify({ ...fileHeader("apiKeys"), workspaces: {
       [W1]: { keys: { "Unknown-Key": "uninterpretable-stored-value" } }, [W2]: other,
     } }));
 
@@ -189,7 +190,7 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(
         keyFile,
         JSON.stringify({
-          formatVersion: 1,
+          ...fileHeader("apiKeys"),
           workspaces: {
             [W1]: { keys: { anthropic: 123 } },
             [W2]: { keys: { anthropic: "real-pasted" } },
@@ -201,7 +202,7 @@ describe("apiKeys secret store", () => {
     });
 
     it("treats a workspaces key of the wrong shape as a damaged file", () => {
-      const wrongShape = '{"formatVersion":1,"workspaces":[],"future":"keep me"}\n';
+      const wrongShape = JSON.stringify({ ...fileHeader("apiKeys"), workspaces: [], future: "keep me" }) + "\n";
       fs.writeFileSync(keyFile, wrongShape);
       expect(keyFileProblem(keyFile)).toMatchObject({ key: "settings.keyFileDamaged" });
       const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
@@ -211,7 +212,7 @@ describe("apiKeys secret store", () => {
 
     it("ignores a workspace entry of another shape and keeps it when another workspace's key is written", () => {
       const other = { configs: { c1: { keys: { anthropic: "obf:x" } } } };
-      fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: { [W1]: other, [W2]: { keys: { anthropic: "kept" } } } }));
+      fs.writeFileSync(keyFile, JSON.stringify({ ...fileHeader("apiKeys"), workspaces: { [W1]: other, [W2]: { keys: { anthropic: "kept" } } } }));
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("kept");
       expect(keyFileProblem(keyFile)).toBeNull();
@@ -230,7 +231,7 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(
         keyFile,
         JSON.stringify({
-          formatVersion: 1,
+          ...fileHeader("apiKeys"),
           workspaces: {
             [W1]: { keys: { anthropic: "obf:!!!not-base64!!!" } },
           },
@@ -287,7 +288,7 @@ describe("file permissions (POSIX only)", () => {
       const warnSpy = vi.spyOn(freshLogger, "warn").mockImplementation(() => {});
       const chmodSpy = vi.spyOn(fs, "chmodSync");
       try {
-        fs.writeFileSync(keyFile, JSON.stringify({ formatVersion: 1, workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
+        fs.writeFileSync(keyFile, JSON.stringify({ ...fileHeader("apiKeys"), workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
         fs.chmodSync(keyFile, 0o644);
         chmodSpy.mockClear();
 
@@ -308,21 +309,26 @@ describe("file permissions (POSIX only)", () => {
     }
   });
 
-  describe("format version", () => {
-    it("reads a file without its format version as this build's format", () => {
-      fs.writeFileSync(keyFile, JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } }));
-      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-plain");
-      expect(keyFileProblem(keyFile)).toBeNull();
+  describe("header", () => {
+    it("reads a file without the header as damaged, with no keys, and leaves it in place", () => {
+      const body = JSON.stringify({ workspaces: { [W1]: { keys: { anthropic: "sk-plain" } } } });
+      fs.writeFileSync(keyFile, body);
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      try {
+        expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
+        expect(keyFileProblem(keyFile)).not.toBeNull();
+        expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
+      } finally { warnSpy.mockRestore(); }
     });
 
-    it("writes this build's format version first and reads the key back", () => {
+    it("writes this build's header first and reads the key back", () => {
       writeApiKey(keyFile, W1, "anthropic", "sk-round-trip");
-      expect(Object.keys(JSON.parse(fs.readFileSync(keyFile, "utf-8")))).toEqual(["formatVersion", "workspaces"]);
+      expect(Object.keys(JSON.parse(fs.readFileSync(keyFile, "utf-8")))).toEqual(["format", "writer", "workspaces"]);
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("sk-round-trip");
     });
 
     it("reads a file a newer version wrote as no key, refuses to store into it, and leaves it byte-identical", () => {
-      const body = JSON.stringify({ formatVersion: 2, vaults: { [W1]: { anthropic: "obf:c2stZnV0dXJl" } } });
+      const body = JSON.stringify({ ...newerHeader("apiKeys", 2), vaults: { [W1]: { anthropic: "obf:c2stZnV0dXJl" } } });
       fs.writeFileSync(keyFile, body);
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       try {

@@ -6,7 +6,7 @@ import path from "node:path";
 import type { RecordDetail, RecordKind, RecordsHealth, RecordsPage, RecordsQuery } from "@shared/records";
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
-import { NewerFormatError, openSqliteStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, openSqliteStore } from "../shared/storeFormat.js";
 import { moveAsideInvalid } from "../shared/quarantine.js";
 import { readDetail, readPage, readSessions } from "./recordsQueries.js";
 
@@ -78,7 +78,7 @@ export function onRecordStored(listener: (() => void) | null): void {
   storedListener = listener;
 }
 
-/** A records database this build cannot use: a mismatched shape, or not a database. */
+/** A records database this build cannot use: no BigMouth records header, a mismatched shape, or not a database. */
 class UnusableRecordsError extends Error {}
 
 /** What opening the records database met that the caller logs once the session is open. */
@@ -93,8 +93,9 @@ export type RecordsOpening = {
 
 /**
  * Opens the database for one session, a process launch named by its start time. A database this build
- * cannot use, whether a mismatched shape or a file that is not a database, is
- * set aside as `.invalid` and a new one created: records are optional diagnostics, and setting the file aside keeps its rows for inspection (store-recovery-conventions).
+ * cannot use, whether one without BigMouth's records header, a mismatched shape or a file that is not
+ * a database, is set aside as `.invalid` and a new one created: records are optional diagnostics, and
+ * setting the file aside keeps its rows for inspection (store-recovery-conventions).
  * A database a newer version of BigMouth wrote is left exactly as it is. When no database can be
  * opened, every entry goes to the session's fallback file under `logsDir` instead.
  */
@@ -130,8 +131,6 @@ export function openRecords(dbPath: string, logsDir: string, sessionStart: Date)
 function openUsable(dbPath: string): DatabaseSync {
   try {
     return openSqliteStore("records", dbPath, (opened) => {
-      // A database with no version yet, a fresh file or one that never held
-      // records, is completed here.
       opened.exec(RECORDS_SCHEMA);
       try {
         validateRecordsSchema(opened);
@@ -140,6 +139,7 @@ function openUsable(dbPath: string): DatabaseSync {
       }
     });
   } catch (err) {
+    if (err instanceof UnreadableStoreError) throw new UnusableRecordsError(err.detail, { cause: err });
     if ((err as { errcode?: unknown }).errcode === SQLITE_NOTADB) {
       throw new UnusableRecordsError("it is not a database", { cause: err });
     }

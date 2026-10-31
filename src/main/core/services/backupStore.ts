@@ -20,6 +20,7 @@ import fs from "node:fs";
 import { Worker } from "node:worker_threads";
 import { getBackupsDbPath } from "./storagePaths.js";
 import { formatUtcIso } from "../shared/timestamps.js";
+import { WRITER } from "../shared/storeFormat.js";
 import { warn as logWarn, serializeError } from "./logger.js";
 import type { BackupWorkerNotice, BackupWorkerRequest, BackupWrite } from "./backupWorker.js";
 
@@ -70,7 +71,7 @@ function ensureRecorder(): Recorder | null {
   if (recorderFailed) return null;
   try {
     if (!recorderModule) throw new Error("The backup recorder's module is not known.");
-    const worker = new Worker(recorderModule);
+    const worker = new Worker(recorderModule, { workerData: { writer: WRITER } });
     worker.unref();
     const owner: Recorder = { worker, inFlight: [] };
     // The thread applied the oldest write it was sent; a descriptor is closed on this thread, which opened it.

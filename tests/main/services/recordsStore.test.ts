@@ -106,6 +106,11 @@ describe("stored-record signal", () => {
 });
 
 // records.sqlite3's format version, which tells a build whether it can read the database.
+// BigMouth's records header, as a database this build wrote carries it.
+const RECORDS_HEADER = `CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO file_header VALUES ('format.owner', 'bigmouth'), ('format.kind', 'records'), ('writer.name', 'bigmouth'), ('writer.version', '1.0.0');
+PRAGMA user_version = 1;`;
+
 describe("records database format version", () => {
   function userVersion(file: string): number {
     const db = new DatabaseSync(file);
@@ -153,9 +158,10 @@ describe("records database format version", () => {
     } finally { check.close(); }
   }
 
-  // The records schema less one column: a database this build cannot use.
+  // The records schema less one column, under BigMouth's records header: a
+  // database whose header reads but whose shape this build cannot use.
   function schemaWithout(column: string): string {
-    return RECORDS_SCHEMA.split("\n").filter((line) => !line.trim().startsWith(column + " ")).join("\n");
+    return RECORDS_SCHEMA.split("\n").filter((line) => !line.trim().startsWith(column + " ")).join("\n") + RECORDS_HEADER;
   }
 
   function snapshot(file: string): { history: unknown[]; schema: unknown[] } {
@@ -299,17 +305,19 @@ describe("records database format version", () => {
     expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
   });
 
-  it("reads a database without its format version as this build's, completing its schema", () => {
+  it.each([
+    ["no format version", "CREATE TABLE earlier (id INTEGER)", /no format version/],
+    ["no file_header table", RECORDS_SCHEMA + "PRAGMA user_version = 1;", /no file_header/],
+    ["another kind", RECORDS_SCHEMA + RECORDS_HEADER.replace("'records'", "'backups'"), /backups/],
+  ])("sets aside a database with %s and starts a new one", (_name, sql, detail) => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
-    db.exec("CREATE TABLE earlier (id INTEGER)");
+    db.exec(sql);
     db.close();
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
-    const stored = vi.fn();
-    onRecordStored(stored);
+    const opening = openRecords(file, path.join(root, "logs"), new Date());
+    expect(opening.setAside).toMatchObject({ path: file, detail: expect.stringMatching(detail) });
     line();
     closeRecords();
-    expect(stored).toHaveBeenCalledOnce();
     expect(userVersion(file)).toBe(1);
     expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
   });

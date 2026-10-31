@@ -33,6 +33,7 @@ import {
   type DerivativeOutcome,
 } from "@main/imageDerivatives.js";
 import { warn } from "@main/core/services/logger.js";
+import { fileHeader } from "./fileHeader.js";
 
 let root: string;
 let thumbnails: string;
@@ -408,7 +409,7 @@ describe("sweeping the cache", () => {
     const dataDirectory = path.join(root, name);
     for (const [postId, assets] of Object.entries(records)) {
       fs.mkdirSync(path.join(dataDirectory, "assets", postId), { recursive: true });
-      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "assets.json"), JSON.stringify({ formatVersion: 1, assets }));
+      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "assets.json"), JSON.stringify({ ...fileHeader("assetList"), assets }));
     }
     fs.mkdirSync(dataDirectory, { recursive: true });
     return dataDirectory;

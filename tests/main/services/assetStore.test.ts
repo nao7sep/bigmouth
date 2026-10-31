@@ -20,6 +20,7 @@ import {
 } from "@main/core/services/assetStore.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { QuarantineError } from "@main/core/shared/quarantine.js";
+import { fileHeader, newerHeader } from "../fileHeader.js";
 
 let dataDir: string;
 const POST = "post-1";
@@ -684,9 +685,9 @@ describe("an unusable assets.json is moved aside", () => {
 
   it.each([
     ["is not JSON", "{ not json"],
-    ["has an assets key that is not a list", JSON.stringify({ formatVersion: 1, assets: {} })],
-    ["holds an entry that is not an asset record", JSON.stringify({ formatVersion: 1, assets: [null] })],
-    ["holds an entry with a wrong field", JSON.stringify({ formatVersion: 1, assets: [{ filename: "a.png", size: "3" }] })],
+    ["has an assets key that is not a list", JSON.stringify({ ...fileHeader("assetList"), assets: {} })],
+    ["holds an entry that is not an asset record", JSON.stringify({ ...fileHeader("assetList"), assets: [null] })],
+    ["holds an entry with a wrong field", JSON.stringify({ ...fileHeader("assetList"), assets: [{ filename: "a.png", size: "3" }] })],
   ])("keeps the bytes of one that %s and lists the files from the folder", (_name, body) => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     fs.writeFileSync(path.join(dir(), "assets.json"), body);
@@ -728,7 +729,7 @@ describe("asset list format version", () => {
   it("does not trust recorded upload details that carry no content hash", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const file = path.join(assetDir(dataDir, POST), "assets.json");
-    const hashless = JSON.stringify({ formatVersion: 1, assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
+    const hashless = JSON.stringify({ ...fileHeader("assetList"), assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
     fs.writeFileSync(file, hashless);
     expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
     expect(fs.readFileSync(file, "utf-8")).toBe(hashless);
@@ -736,20 +737,33 @@ describe("asset list format version", () => {
 
   const listFile = () => path.join(assetDir(dataDir, POST), "assets.json");
 
-  it("writes this build's format version and reads the list back", () => {
+  it("writes this build's header and reads the list back", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     expect(JSON.parse(fs.readFileSync(listFile(), "utf-8"))).toEqual({
-      formatVersion: 1,
+      ...fileHeader("assetList"),
       assets: [{ ...meta("a.png"), contentHash: createHash("sha256").update("abc").digest("hex"), mtimeMs: fs.statSync(path.join(assetDir(dataDir, POST), "a.png")).mtimeMs }],
     });
     expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);
   });
 
-  it("reads an assets.json without its format version as this build's format", () => {
+  it.each([
+    ["no header", (assets: unknown) => ({ assets })],
+    ["another owner", (assets: unknown) => ({ format: { owner: "other", kind: "assetList", version: 1 }, assets })],
+    ["another kind", (assets: unknown) => ({ ...fileHeader("state"), assets })],
+  ])("moves aside an assets.json with %s and lists the files without it", (_name, content) => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const { assets } = JSON.parse(fs.readFileSync(listFile(), "utf-8"));
-    fs.writeFileSync(listFile(), JSON.stringify({ assets: [{ ...assets[0], width: 7 }] }));
-    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), width: 7, contentHash: sha("abc") }]);
+    fs.writeFileSync(listFile(), JSON.stringify(content([{ ...assets[0], width: 7 }])));
+    const listing = listAssets(dataDir, POST);
+    expect(listing.assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
+    expect(fs.readdirSync(assetDir(dataDir, POST)).filter((name) => name.endsWith(".invalid"))).toHaveLength(1);
+  });
+
+  it("ignores writer when reading the list", () => {
+    install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
+    const list = JSON.parse(fs.readFileSync(listFile(), "utf-8"));
+    fs.writeFileSync(listFile(), JSON.stringify({ ...list, writer: { name: "someone-else", version: 99 } }));
+    expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);
   });
 
   it("lists from the files over an assets.json it could not read, refuses writes, and never moves it", () => {
@@ -767,7 +781,7 @@ describe("asset list format version", () => {
 
   it("lists from the files over an assets.json a newer version wrote, refuses writes, and leaves it byte-identical", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    const body = JSON.stringify({ formatVersion: 999, items: [] });
+    const body = JSON.stringify({ ...newerHeader("assetList", 999), items: [] });
     fs.writeFileSync(listFile(), body);
 
     expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);

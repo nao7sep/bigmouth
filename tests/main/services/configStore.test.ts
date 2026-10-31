@@ -31,6 +31,7 @@ import type { AnthropicSettingsInput } from "@shared/types";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { rowFor } from "@shared/aiModels";
 import { buildClaudeParams } from "@main/core/ai/claudeRequest.js";
+import { fileHeader, newerHeader } from "../fileHeader.js";
 
 let dataDir: string;
 let homeDir: string;
@@ -39,10 +40,10 @@ const SAVED_DATA_DIR = process.env.BIGMOUTH_DATA_DIR;
 const SAVED_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 
 // A workspace for an already-initialized data directory under the current home.
-/** The sets a config file holds; every write records this build's format version first. */
+/** The sets a config file holds; every write records this build's header first. */
 function setsIn(filePath: string): Record<string, unknown> {
-  const { formatVersion, ...sets } = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  expect(formatVersion).toBe(1);
+  const { format, writer, ...sets } = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  expect({ format, writer }).toEqual(fileHeader("workspaceConfig"));
   return sets;
 }
 
@@ -76,7 +77,7 @@ describe("time zone", () => {
   function writeConfig(fields: Record<string, unknown>): void {
     const configPath = path.join(dataDir, "config.json");
     const current = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : {};
-    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...current, ...fields }), "utf-8");
+    fs.writeFileSync(configPath, JSON.stringify({ ...fileHeader("workspaceConfig"), ...current, ...fields }), "utf-8");
   }
 
   it("defaults a new workspace to System", () => {
@@ -139,7 +140,7 @@ describe("corrupt config files", () => {
     const authoredTargets = [{ rowId: "r1", name: "blog", defaultLanguage: "en", requiresMetadata: false }];
     fs.writeFileSync(
       configPath,
-      JSON.stringify({ formatVersion: 1, ...healthy, targets: authoredTargets, analysisPrompts: "not an array" }),
+      JSON.stringify({ ...fileHeader("workspaceConfig"), ...healthy, targets: authoredTargets, analysisPrompts: "not an array" }),
       "utf-8",
     );
 
@@ -162,7 +163,7 @@ describe("corrupt config files", () => {
   it("ignores a key this build does not know and keeps it through a write", () => {
     const configPath = path.join(dataDir, "config.json");
     const healthy = makeDefaultConfig();
-    fs.writeFileSync(configPath, JSON.stringify({ formatVersion: 1, ...healthy, aiConfigs: [{ id: "c1" }] }), "utf-8");
+    fs.writeFileSync(configPath, JSON.stringify({ ...fileHeader("workspaceConfig"), ...healthy, aiConfigs: [{ id: "c1" }] }), "utf-8");
 
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
     expect(getConfigNotice(dataDir)).toBeNull();
@@ -178,7 +179,7 @@ describe("corrupt config files", () => {
     ["a model that is not a string", { "anthropic.metadata": 7 }],
   ])("reads %s as the built-in without rewriting", (_case, sets) => {
     const configPath = path.join(dataDir, "config.json");
-    const stored = JSON.stringify({ formatVersion: 1, ...sets });
+    const stored = JSON.stringify({ ...fileHeader("workspaceConfig"), ...sets });
     fs.writeFileSync(configPath, stored, "utf8");
 
     const { endpoint, models, thinking } = getAnthropicSettingsForClient(ws);
@@ -203,7 +204,7 @@ describe("settings", () => {
     fs.writeFileSync(
       path.join(dataDir, "config.json"),
       JSON.stringify({
-        formatVersion: 1,
+        ...fileHeader("workspaceConfig"),
         schemaVersion: 1,
         timezone: "UTC",
         supportedLanguages: ["en"],
@@ -340,7 +341,7 @@ describe("the Anthropic section", () => {
     // A model with no row sends no thinking; its role's choice is kept for when a listed row returns.
     expect(saved()).toEqual({ "anthropic.analysis": "claude-next-9", "anthropic.thinking.analysis": "between_tools" });
 
-    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
+    fs.writeFileSync(file(), JSON.stringify({ ...fileHeader("workspaceConfig"), "anthropic.analysis": "claude-opus-5-5", "anthropic.thinking.analysis": "between_tools" }));
     expect(getRoleCall(ws, "analysis").thinking).toBe("adaptive");
     expect(getAnthropicSettingsForClient(ws).thinking.analysis).toBe("adaptive");
   });
@@ -426,7 +427,7 @@ describe("settings stored by set", () => {
   });
 
   it("keeps other known copies and unknown keys on write, and stores only the prompts the user changed", () => {
-    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, version: 7, timezone: "UTC", targets: [] }));
+    fs.writeFileSync(file(), JSON.stringify({ ...fileHeader("workspaceConfig"), version: 7, timezone: "UTC", targets: [] }));
     const generationPrompts = { prompts: { ...DEFAULT_GENERATION_PROMPTS_DATA.prompts, title: "Custom" } };
     saveGenerationPrompts(dataDir, generationPrompts);
     expect(saved()).toEqual({ timezone: "UTC", generationPrompts: { prompts: { title: "Custom" } }, version: 7 });
@@ -434,7 +435,7 @@ describe("settings stored by set", () => {
   });
 
   it("reads a prompt the file does not hold as its built-in, and ignores one this build does not have", () => {
-    const partial = { formatVersion: 1, generationPrompts: { prompts: { title: "Custom", retiredPrompt: "Old" } } };
+    const partial = { ...fileHeader("workspaceConfig"), generationPrompts: { prompts: { title: "Custom", retiredPrompt: "Old" } } };
     fs.writeFileSync(file(), JSON.stringify(partial));
     const warning = vi.spyOn(logger, "warn");
     try {
@@ -445,9 +446,9 @@ describe("settings stored by set", () => {
   });
 
   it("reads a partial contentFont as absent rather than merging its members", () => {
-    fs.writeFileSync(file(), JSON.stringify({ formatVersion: 1, contentFont: { family: "Custom" } }));
+    fs.writeFileSync(file(), JSON.stringify({ ...fileHeader("workspaceConfig"), contentFont: { family: "Custom" } }));
     expect(getSettings(dataDir).contentFont).toEqual(DEFAULT_CONTENT_FONT);
-    expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual({ formatVersion: 1, contentFont: { family: "Custom" } });
+    expect(JSON.parse(fs.readFileSync(file(), "utf8"))).toEqual({ ...fileHeader("workspaceConfig"), contentFont: { family: "Custom" } });
   });
 
   it("changing one role's model writes only that role's set", () => {
@@ -496,7 +497,7 @@ it("a partial dialog save preserves another set changed after the dialog opened"
 it("warns on each read of an invalid workspace set and names its key", () => {
   const warning = vi.spyOn(logger, "warn");
   try {
-    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, contentFont: { family: "Partial" } }));
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), contentFont: { family: "Partial" } }));
     getSettings(dataDir);
     getTargets(dataDir);
     expect(warning).toHaveBeenCalledTimes(2);
@@ -509,13 +510,13 @@ it.each([
   ["a target with a blank name", { targets: [{ name: " ", defaultLanguage: "en", requiresMetadata: false }] }, "targets"],
   ["an analysis prompt with a blank name", { analysisPrompts: [{ name: "", text: "t" }] }, "analysisPrompts"],
 ])("reads %s as its built-in, by the validator Save uses", (_case, stored, key) => {
-  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, ...stored }));
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), ...stored }));
   const config = { ...makeDefaultConfig(), ...getSettings(dataDir), targets: getTargets(dataDir), analysisPrompts: getAnalysisPrompts(dataDir) };
   expect(config[key as keyof typeof config]).toEqual(makeDefaultConfig()[key as keyof ReturnType<typeof makeDefaultConfig>]);
 });
 
 it("a settings save writes every set from what the store holds", () => {
-  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, supportedLanguages: ["ja", "en", "ja"] }));
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), supportedLanguages: ["ja", "en", "ja"] }));
   const saved = saveSettings(dataDir, { uiFontFamily: "Iosevka" });
   expect(saved.supportedLanguages).toEqual(["en", "ja"]);
   expect(setsIn(path.join(dataDir, "config.json"))).toEqual({
@@ -528,7 +529,7 @@ describe("a registered workspace's config.json", () => {
   const file = () => path.join(dataDir, "config.json");
 
   it("opens with built-ins when it holds only sets this build does not know, and keeps them", () => {
-    fs.writeFileSync(file(), JSON.stringify({ aiConfigs: [{ id: "c1" }] }));
+    fs.writeFileSync(file(), JSON.stringify({ ...fileHeader("workspaceConfig"), aiConfigs: [{ id: "c1" }] }));
     expect(getSettings(dataDir)).toEqual(DEFAULT_SETTINGS);
     expect(getConfigNotice(dataDir)).toBeNull();
     saveSettings(dataDir, { ...DEFAULT_SETTINGS, uiFontFamily: "Inter" });
@@ -543,22 +544,29 @@ describe("a registered workspace's config.json", () => {
   });
 });
 
-describe("workspace config format version", () => {
+describe("workspace config header", () => {
   const file = () => path.join(dataDir, "config.json");
 
-  it("reads a file without its format version as this build's format", () => {
-    fs.writeFileSync(file(), JSON.stringify({ timezone: "UTC" }));
-    expect(getSettings(dataDir).timezone).toBe("UTC");
+  it.each([
+    ["no header", { timezone: "UTC" }],
+    ["another owner", { format: { owner: "other", kind: "workspaceConfig", version: 1 }, timezone: "UTC" }],
+    ["another kind", { ...fileHeader("appConfig"), timezone: "UTC" }],
+  ])("refuses a file with %s, naming it, and leaves it byte-identical", (_name, content) => {
+    const body = JSON.stringify(content);
+    fs.writeFileSync(file(), body);
+    expect(() => getSettings(dataDir)).toThrow(UnreadableStoreError);
+    expect(() => saveSettings(dataDir, { timezone: "Asia/Tokyo" })).toThrow(UnreadableStoreError);
+    expect(fs.readFileSync(file(), "utf8")).toBe(body);
   });
 
-  it("writes this build's format version and reads it back", () => {
+  it("writes this build's header and reads it back", () => {
     saveSettings(dataDir, { timezone: "UTC" });
-    expect(fs.readFileSync(file(), "utf8")).toBe('{\n  "formatVersion": 1,\n  "timezone": "UTC"\n}\n');
+    expect(fs.readFileSync(file(), "utf8")).toBe(JSON.stringify({ ...fileHeader("workspaceConfig"), timezone: "UTC" }, null, 2) + "\n");
     expect(getSettings(dataDir).timezone).toBe("UTC");
   });
 
   it("refuses a file a newer version wrote, naming it, and leaves it byte-identical", () => {
-    const body = '{ "formatVersion": 2, "timezone": "UTC", "future": [1] }';
+    const body = JSON.stringify({ ...newerHeader("workspaceConfig", 2), timezone: "UTC", future: [1] });
     fs.writeFileSync(file(), body);
 
     expect(() => getSettings(dataDir)).toThrow(NewerFormatError);
@@ -588,7 +596,7 @@ describe("operation snapshots and duplicate-name repair", () => {
       { name: "Blog", defaultLanguage: "ja", requiresMetadata: true },
     ];
     const prompts = [{ name: "Review", text: "First" }, { name: " Review ", text: "Second" }];
-    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, targets, analysisPrompts: prompts }));
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), targets, analysisPrompts: prompts }));
     for (const [load, key] of [[getTargets, "settings.targetsDuplicate"], [getAnalysisPrompts, "settings.analysisPromptsDuplicate"]] as const) {
       try { load(dataDir); throw new Error("expected refusal"); }
       catch (error) { expect(carriedMessage(error)).toEqual({ key }); }
@@ -607,7 +615,7 @@ describe("operation snapshots and duplicate-name repair", () => {
 
   it("builds a coherent workspace projection from one read even with duplicate targets", () => {
     const stored = { timezone: "UTC", targets: [{ name: "Blog", defaultLanguage: "en", requiresMetadata: false }, { name: "Blog", defaultLanguage: "ja", requiresMetadata: true }] };
-    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1, ...stored }));
+    fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), ...stored }));
     const read = vi.spyOn(storeFormat, "readJsonStore");
     try {
       expect(getWorkspaceConfig(dataDir)).toMatchObject({ settings: { timezone: "UTC" }, targets: [], notice: { key: "session.settingsInvalid" } });
@@ -617,7 +625,7 @@ describe("operation snapshots and duplicate-name repair", () => {
 });
 
 it("can repair duplicated rows by removing every target or resetting analysis prompts to built-ins", () => {
-  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ formatVersion: 1,
+  fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"),
     targets: [{ name: "Blog", defaultLanguage: "en", requiresMetadata: false }, { name: "Blog", defaultLanguage: "ja", requiresMetadata: true }],
     analysisPrompts: [{ name: "Review", text: "One" }, { name: "Review", text: "Two" }],
   }));

@@ -164,7 +164,6 @@ export function keptStoredSets(
 ): Record<string, unknown> {
   const kept: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(stored)) {
-    if (key === "formatVersion") continue;
     if (!knownKeys.includes(key) || (!isUsable(key, value) && !edited(key))) kept[key] = value;
   }
   return kept;

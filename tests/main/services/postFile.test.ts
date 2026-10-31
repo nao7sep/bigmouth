@@ -6,6 +6,7 @@ import matter from "gray-matter";
 import type { PostFrontMatter } from "@main/core/shared/types.js";
 import { readPost, writePost, parsePostRaw, projectListEntry } from "@main/core/services/postFile.js";
 import { reread, clearCache as clearIndexCache } from "@main/core/services/postCatalog.js";
+import { POST_HEADER_YAML } from "../fileHeader.js";
 
 let dir: string;
 
@@ -141,7 +142,7 @@ describe("front matter is YAML data", () => {
   });
 
   it("normalizes empty optional text and indexes an empty slug without writing the file", () => {
-    const raw = "---\nid: post-1\nstatus: draft\nslug:\ntitle: null\nextra:\n---\n\nBody";
+    const raw = `---\n${POST_HEADER_YAML}id: post-1\nstatus: draft\nslug:\ntitle: null\nextra:\n---\n\nBody`;
     const file = path.join(dir, "posts", "post.md");
     fs.mkdirSync(path.dirname(file));
     fs.writeFileSync(file, raw);

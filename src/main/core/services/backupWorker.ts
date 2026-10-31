@@ -2,14 +2,16 @@
 // that applies backup writes to backups.sqlite3 in save order, so a slow or
 // locked store never holds up a save or the storage requests behind it. It is
 // started by backupStore on the storage worker and runs this file from source in
-// tests, so it imports only Node and the dependency-free format table.
+// tests, so it imports only Node, the dependency-free format table and the
+// SQLite header built on it. The writer it records is the one its starter passes.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 
-import { FORMAT_VERSIONS } from "../shared/formatVersions.ts";
+import type { FileWriter } from "../shared/formatVersions.ts";
+import { checkSqliteHeader, writeSqliteHeader } from "../shared/sqliteHeader.ts";
 
 export type BackupWrite =
   | { kind: "record"; file: string; sessionId: string; path: string; bytes: Uint8Array; writtenAt: string }
@@ -28,6 +30,7 @@ if (parentPort === null) {
   throw new Error("The backup recorder requires a parent port.");
 }
 const port = parentPort;
+const writer = (workerData as { writer: FileWriter }).writer;
 
 // The unique index below keeps one saved version per path and session.
 const SCHEMA = `
@@ -65,7 +68,8 @@ function close(): void {
   openFile = null;
 }
 
-// Refuse newer or incompatible existing stores without altering their history.
+// Refuse newer stores, and ones without BigMouth's backups header or with
+// another shape, without altering their history.
 // Schema creation and validation share one transaction so a rejected store
 // keeps its original tables, indexes and version.
 function open(file: string): DatabaseSync | null {
@@ -75,19 +79,20 @@ function open(file: string): DatabaseSync | null {
   let opened: DatabaseSync | null = null;
   try {
     opened = new DatabaseSync(file);
-    const { user_version: version } = opened.prepare("PRAGMA user_version").get() as { user_version: number };
-    if (version > FORMAT_VERSIONS.backups) {
+    const check = checkSqliteHeader(opened, "backups");
+    if (check.kind === "newer") {
       opened.close();
       disabledFile = file;
-      warn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", { file, formatVersion: version });
+      warn("backup store was written by a newer version of BigMouth; left unchanged, recording disabled for this session", { file, formatVersion: check.version });
       return null;
     }
+    if (check.kind === "unreadable") throw new Error(`The backup store cannot be used: ${check.detail}.`);
     opened.exec("BEGIN IMMEDIATE");
     try {
       opened.exec(SCHEMA);
       opened.prepare("SELECT id, session_id, path, content, content_sha256, byte_size, written_at_utc FROM backups LIMIT 0").all();
       opened.exec(INDEXES);
-      opened.exec(`PRAGMA user_version = ${FORMAT_VERSIONS.backups}`);
+      writeSqliteHeader(opened, "backups", writer);
       opened.exec("COMMIT");
     } catch (error) {
       try { opened.exec("ROLLBACK"); } catch { /* Preserve the original diagnostic. */ }

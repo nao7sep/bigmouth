@@ -14,7 +14,6 @@ import type { AppConfig, Workspace } from "../shared/types.js";
 import type { WorkspaceRemoveResult } from "@shared/types";
 import { writeManagedText } from "../shared/atomicWrite.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
-import { isWorkspaceConfig } from "../shared/workspaceConfigShape.js";
 import { initializeWorkspaceData } from "./dataDir.js";
 import { clearWorkspaceKeys } from "./apiKeys.js";
 import { serializeError, warn } from "./logger.js";
@@ -163,14 +162,15 @@ function isWorkspaceDirectory(dir: string): boolean {
     case "inaccessible":
       throw new UnreadableStoreError(path.join(dir, "config.json"), read.detail, read.error);
     case "unreadable":
-      // JSON that parses but is not ours belongs to another tool's folder. A file
+      // JSON that parses but has no BigMouth workspace header belongs to another
+      // tool's folder, such as a static-site config. A file
       // that cannot be parsed beside posts/ and assets/ is a workspace config
       // that is damaged: saying so, with its path, beats calling the folder no
       // workspace at all.
       if (read.error === null) return false;
       throw new UnreadableStoreError(path.join(dir, "config.json"), read.detail, read.error);
     case "read":
-      return isWorkspaceConfig(read.value);
+      return true;
   }
 }
 

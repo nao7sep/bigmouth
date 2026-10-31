@@ -255,7 +255,7 @@ describe("listPosts", () => {
     const broken = path.join(posts, "20260101-000000-utc-broken.md");
     const newer = path.join(posts, "20260101-000001-utc-newer.md");
     fs.writeFileSync(broken, "---\nid: [unclosed\n---\nbody\n");
-    fs.writeFileSync(newer, "---\nformatVersion: 99\nid: NEWERxxxxxxxxxxxxxxxx\nstatus: draft\n---\nbody\n");
+    fs.writeFileSync(newer, "---\nformat:\n  owner: bigmouth\n  kind: post\n  version: 99\nid: NEWERxxxxxxxxxxxxxxxx\nstatus: draft\n---\nbody\n");
     await invoke(CHANNELS.rereadPosts, wsId);
 
     const res = (await invoke<PostListResponse>(CHANNELS.listPosts, wsId, FIRST_PAGES, 0));

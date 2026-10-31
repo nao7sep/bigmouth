@@ -13,6 +13,7 @@ import { initializeWorkspaceData } from "@main/core/services/dataDir.js";
 import { writeApiKey, hasStoredApiKey } from "@main/core/services/apiKeys.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
+import { fileHeader, newerHeader } from "../fileHeader.js";
 
 /** The unreadable-store failure `fn` throws: what the user is told, and the detail for the log. */
 function unreadable(fn: () => unknown): UnreadableStoreError {
@@ -77,11 +78,16 @@ describe("an unreadable registry names itself", () => {
     return () => initAppDir();
   }
 
+  const registryText = (content: Record<string, unknown>) => JSON.stringify({ ...fileHeader("workspaces"), ...content });
+
   it.each([
     ["truncated JSON", "{ \"workspaces\": ["],
     ["a JSON value that is not an object", "[]"],
-    ["a workspaces key that is not an array", '{ "workspaces": {} }'],
-    ["a workspace entry missing its fields", '{ "workspaces": [{ "id": "a" }] }'],
+    ["no header", '{ "workspaces": [] }'],
+    ["another owner", JSON.stringify({ format: { owner: "other", kind: "workspaces", version: 1 }, workspaces: [] })],
+    ["another kind", JSON.stringify({ ...fileHeader("workspaceConfig"), workspaces: [] })],
+    ["a workspaces key that is not an array", registryText({ workspaces: {} })],
+    ["a workspace entry missing its fields", registryText({ workspaces: [{ id: "a" }] })],
   ])("names the path and says it was left alone for %s", (_name, contents) => {
     const reload = withRegistry(contents);
     const registryPath = path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
@@ -94,7 +100,7 @@ describe("an unreadable registry names itself", () => {
     const first = tempDir("identity-a");
     const second = tempDir("identity-b");
     const raw = JSON.stringify({
-      formatVersion: 1,
+      ...fileHeader("workspaces"),
       workspaces: [
         { id: "same", name: "A", dataDirectory: first },
         { id: "same", name: "B", dataDirectory: second },
@@ -112,7 +118,7 @@ describe("an unreadable registry names itself", () => {
     const link = path.join(linkParent, "same-folder");
     fs.symlinkSync(real, link, DIRECTORY_LINK_TYPE);
     const raw = JSON.stringify({
-      formatVersion: 1,
+      ...fileHeader("workspaces"),
       workspaces: [
         { id: "one", name: "A", dataDirectory: real },
         { id: "two", name: "B", dataDirectory: link },
@@ -334,7 +340,7 @@ describe("openWorkspace gating", () => {
     const dir = tempDir("sparse");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
-    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ formatVersion: 1, timezone: "UTC" }));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ ...fileHeader("workspaceConfig"), timezone: "UTC" }));
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
   });
 
@@ -351,15 +357,25 @@ describe("openWorkspace gating", () => {
     expect(fs.readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(foreign);
   });
 
+  it("rejects a folder whose config.json is another BigMouth file", () => {
+    const dir = tempDir("other-kind");
+    fs.mkdirSync(path.join(dir, "posts"));
+    fs.mkdirSync(path.join(dir, "assets"));
+    const appConfig = JSON.stringify({ ...fileHeader("appConfig"), theme: "dark" });
+    fs.writeFileSync(path.join(dir, "config.json"), appConfig);
+    expect(() => openWorkspace(dir)).toThrow(/workspaces\.notAWorkspace/);
+    expect(fs.readFileSync(path.join(dir, "config.json"), "utf-8")).toBe(appConfig);
+  });
+
   it("names a damaged config.json beside posts/ and assets/ instead of calling the folder no workspace", () => {
     const dir = tempDir("damaged");
     fs.mkdirSync(path.join(dir, "posts"));
     fs.mkdirSync(path.join(dir, "assets"));
     const configPath = path.join(dir, "config.json");
-    fs.writeFileSync(configPath, '{ "formatVersion": 1, ');
+    fs.writeFileSync(configPath, '{ "format": { "owner": "bigmouth", ');
     expect(carriedMessage(unreadable(() => openWorkspace(dir)))).toEqual({ key: "store.unreadable", values: { path: configPath } });
     expect(listWorkspaces()).toHaveLength(0);
-    expect(fs.readFileSync(configPath, "utf-8")).toBe('{ "formatVersion": 1, ');
+    expect(fs.readFileSync(configPath, "utf-8")).toBe('{ "format": { "owner": "bigmouth", ');
   });
 
   it("rejects opening a workspace nested inside a registered workspace", () => {
@@ -565,19 +581,19 @@ describe("removeWorkspace", () => {
   });
 });
 
-// The registry's format version, which tells a build whether it can read the file.
-describe("workspace registry format version", () => {
+// The registry's header, which tells a build what the file is and whether it can read it.
+describe("workspace registry header", () => {
   const registry = () => path.join(process.env.BIGMOUTH_DATA_DIR!, "workspaces.json");
 
-  it("writes this build's format version and reads the registry back", () => {
+  it("writes this build's header and reads the registry back", () => {
     const ws = createWorkspace("A", tempDir("fmt"));
-    expect(JSON.parse(fs.readFileSync(registry(), "utf8"))).toEqual({ formatVersion: 1, workspaces: [ws] });
+    expect(JSON.parse(fs.readFileSync(registry(), "utf8"))).toEqual({ ...fileHeader("workspaces"), workspaces: [ws] });
     expect(initAppDir().workspaces).toEqual([ws]);
   });
 
-  it("reads a registry without its format version as this build's format", () => {
+  it("ignores writer when reading the registry", () => {
     const workspaces = [{ id: "a", name: "A", dataDirectory: tempDir("fmt") }];
-    fs.writeFileSync(registry(), JSON.stringify({ workspaces }));
+    fs.writeFileSync(registry(), JSON.stringify({ format: fileHeader("workspaces").format, writer: "anything", workspaces }));
     expect(initAppDir().workspaces).toEqual(workspaces);
   });
 
@@ -590,7 +606,7 @@ describe("workspace registry format version", () => {
   });
 
   it("halts on a registry a newer version wrote, naming it, and leaves it byte-identical", () => {
-    const body = JSON.stringify({ formatVersion: 2, workspaces: { future: true } });
+    const body = JSON.stringify({ ...newerHeader("workspaces", 2), workspaces: { future: true } });
     fs.writeFileSync(registry(), body);
 
     expect(() => initAppDir()).toThrow(NewerFormatError);
@@ -601,17 +617,17 @@ describe("workspace registry format version", () => {
   it("opens a workspace folder whose config.json a newer version wrote, leaving the file to say so when read", () => {
     const dir = tempDir("fmt");
     initializeWorkspaceData(dir);
-    const body = JSON.stringify({ formatVersion: 2, sets: {} });
+    const body = JSON.stringify({ ...newerHeader("workspaceConfig", 2), sets: {} });
     fs.writeFileSync(path.join(dir, "config.json"), body);
 
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
     expect(fs.readFileSync(path.join(dir, "config.json"), "utf8")).toBe(body);
   });
 
-  it("opens a workspace folder whose config.json holds only its format version", () => {
+  it("opens a workspace folder whose config.json holds only its header", () => {
     const dir = tempDir("fmt");
     initializeWorkspaceData(dir);
-    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ formatVersion: 1 }));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(fileHeader("workspaceConfig")));
     expect(openWorkspace(dir).dataDirectory).toBe(dir);
   });
 });

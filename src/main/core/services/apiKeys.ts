@@ -7,7 +7,7 @@
  * account; the machine-local workspace id is opaque (nanoid: mixed case,
  * `_`/`-`), so it lives in the container path and the key id is the provider:
  *
- *   { "formatVersion": 1, "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
+ *   { "format": { "owner": "bigmouth", "kind": "apiKeys", "version": 1 }, "writer": { … }, "workspaces": { "<wsId>": { "keys": { "anthropic": "obf:…" } } } }
  *
  * Contract (api-key-storage-conventions):
  *   - The key id is the provider; its environment variable is the id
@@ -41,7 +41,7 @@ import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { message, type Message } from "@shared/i18n/translate";
 import { moveAsideInvalid } from "../shared/quarantine.js";
-import { FORMAT_VERSION_KEY, NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
+import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
 const SECRETS_FILE_MODE = 0o600;
@@ -183,11 +183,9 @@ function writeFile(filePath: string, raw: Record<string, unknown>): void {
   // backups.sqlite3 stay no more sensitive than ordinary user text (data-backup conventions: secrets are
   // never recorded). A key lost to a wipe is re-entered by the user; the live file keeps its own 0600
   // protection below, which is where a secret is guarded — not here.
-  const body = { ...raw };
-  delete body[FORMAT_VERSION_KEY];
   writeFileAtomic(
     filePath,
-    jsonStoreText("apiKeys", body),
+    jsonStoreText("apiKeys", raw),
     ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined,
   );
 }
