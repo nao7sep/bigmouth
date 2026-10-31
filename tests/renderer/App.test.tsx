@@ -187,7 +187,7 @@ beforeEach(() => {
   mockGetUiState.mockResolvedValue(uiState(""));
   // Default: one workspace is registered, so a launch is not a first run.
   mockList.mockResolvedValue([WS1]);
-  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "light", systemLanguage: "en" });
+  mockGetAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notices: [], systemAppearance: "light", systemLanguage: "en" });
   mockUpdateUiState.mockImplementation((patch) => Promise.resolve({ ...uiState(""), ...patch }));
   sessionFlush.mockReset().mockResolvedValue(true);
 });
@@ -329,24 +329,26 @@ describe("App bootstrap — first run", () => {
   });
 });
 
-describe("App bootstrap — app settings recovery", () => {
-  it("names where an unreadable app settings file was moved and what the app started with", async () => {
+describe("App bootstrap — stores the launch left off", () => {
+  it("shows each notice about a records or backups database left off for the session", async () => {
     mockGetAppSettings.mockResolvedValue({
       settings: { theme: "system", language: "system" },
-      notice: message("app.settingsRecovered", { path: "/home/me/.bigmouth/config-20260918-020000-000-utc.invalid" }),
+      notices: [
+        message("startup.recordsOff", { path: "/home/me/.bigmouth/records.sqlite3" }),
+        message("startup.backupsOff", { path: "/home/me/.bigmouth/backups.sqlite3" }),
+      ],
       systemAppearance: "light",
       systemLanguage: "en",
     });
     const { findByText } = await renderApp();
 
-    expect(
-      await findByText(/moved to \/home\/me\/\.bigmouth\/config-20260918-020000-000-utc\.invalid.*back to System/),
-    ).toBeTruthy();
+    expect(await findByText(/Records are off for this session: BigMouth could not use \/home\/me\/\.bigmouth\/records\.sqlite3/)).toBeTruthy();
+    expect(await findByText(/Backups are off for this session: BigMouth could not use \/home\/me\/\.bigmouth\/backups\.sqlite3/)).toBeTruthy();
   });
 
-  it("stays quiet when nothing was reset", async () => {
+  it("stays quiet when every store opened", async () => {
     const { queryByText } = await renderApp();
-    expect(queryByText(/app settings file/)).toBeNull();
+    expect(queryByText(/are off for this session/)).toBeNull();
   });
 });
 

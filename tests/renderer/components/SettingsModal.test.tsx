@@ -117,7 +117,7 @@ function anthropic(overrides?: Partial<AnthropicSettingsView>): AnthropicSetting
 // Seed every loader so the modal's all-or-nothing Promise.all resolves and the
 // editor renders. `ai` lets a test vary just the AI fixture.
 function seedLoaders(ai: AnthropicSettingsView = anthropic()) {
-  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notice: null, systemAppearance: "dark", systemLanguage: "ja" });
+  mock.getAppSettings.mockResolvedValue({ settings: { theme: "system", language: "system" }, notices: [], systemAppearance: "dark", systemLanguage: "ja" });
   mock.saveAppSettings.mockImplementation((next) => Promise.resolve({ theme: "system", language: "system", ...next }));
   mock.getSettings.mockResolvedValue(settings());
   mock.getAnthropicSettings.mockResolvedValue(ai);
@@ -438,27 +438,11 @@ describe("SettingsModal — Save flow (Anthropic section)", () => {
   });
 
   it("says why stored keys cannot be used beside the key field", async () => {
-    const { getByRole } = await renderModal(anthropic({ keyNotice: { key: "settings.keyFileDamaged", values: { path: "/k/api-keys.json" } } }));
+    const { getByRole } = await renderModal(anthropic({ keyNotice: { key: "store.unreadable", values: { path: "/k/api-keys.json" } } }));
     const panel = openAiTab(getByRole);
-    expect(within(panel).getByText(/The API key file \/k\/api-keys.json is damaged/)).toBeTruthy();
+    expect(within(panel).getByText(/BigMouth could not read \/k\/api-keys.json/)).toBeTruthy();
   });
 
-  it("stays open to say where a damaged key file was moved by the save", async () => {
-    const { getByRole, onClose } = await renderModal(anthropic({ keyNotice: { key: "settings.keyFileDamaged", values: { path: "/k/api-keys.json" } } }));
-    mock.saveAnthropicSettings.mockResolvedValue(anthropic({
-      hasApiKey: true,
-      keyNotice: { key: "settings.keyFileMovedAside", values: { path: "/k/api-keys-moved.invalid" } },
-    }));
-    const panel = openAiTab(getByRole);
-    fireEvent.change(within(panel).getByLabelText("API Key"), { target: { value: "sk-new" } });
-    await act(async () => {
-      fireEvent.click(getByRole("button", { name: "Save" }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(onClose).not.toHaveBeenCalled();
-    expect(within(openAiTab(getByRole)).getByText(/moved to \/k\/api-keys-moved.invalid/)).toBeTruthy();
-  });
 
   it("surfaces a save error and keeps the modal open", async () => {
     const { getByRole, onClose, getByText } = await renderModal();

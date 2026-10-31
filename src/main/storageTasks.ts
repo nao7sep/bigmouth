@@ -12,7 +12,9 @@ import { initStateStore } from "./core/services/stateStore.js";
 import { initAppSettingsStore } from "./core/services/appSettingsStore.js";
 import { initLogger, closeLogger, info, warn, error, storeLogRecord, getRecordsPath, serializeError } from "./core/services/logger.js";
 import { stopBackups } from "./core/services/backupStore.js";
-import { getLogsDir, getRecordsDbPath, getThumbnailsDir, setDocumentsDirectory } from "./core/services/storagePaths.js";
+import { getLogsDir, getRecordsDbPath, getThumbnailsDir, initStorageRoot, setDocumentsDirectory } from "./core/services/storagePaths.js";
+import { checkLaunchFiles, refusedFilesError } from "./core/services/launchCheck.js";
+import { setStartupNotices } from "./core/services/startupNotices.js";
 
 import { validateMetadataEdit } from "./core/shared/postUpdate.js";
 import { workspaceWriteProblem } from "./core/shared/writeProblem.js";
@@ -52,10 +54,19 @@ export const storageTasks = {
   /** `documentsDirectory` is the OS's Documents folder, which only the main process can ask Electron for. */
   initialize(documentsDirectory?: string) {
     if (documentsDirectory) setDocumentsDirectory(documentsDirectory);
+    // Every file the launch opens is checked before any is written, so a
+    // refused one stops the launch untouched, named with the others.
+    initStorageRoot();
+    const launch = checkLaunchFiles();
+    if (launch.refused.length > 0) throw refusedFilesError(launch.refused);
     const config = initAppDir();
-    initLogger(getRecordsDbPath(), getLogsDir());
+    const recordsOff = initLogger(getRecordsDbPath(), getLogsDir());
     const state = initStateStore();
     const settings = initAppSettingsStore();
+    setStartupNotices([
+      ...(recordsOff ? [message("startup.recordsOff", { path: recordsOff.path })] : []),
+      ...(launch.backupsOff ? [message("startup.backupsOff", { path: launch.backupsOff })] : []),
+    ]);
     return { config, state, settings, recordsPath: getRecordsPath(), thumbnailsDir: getThumbnailsDir() };
   },
   flush: postStore.flushAllPendingEdits,

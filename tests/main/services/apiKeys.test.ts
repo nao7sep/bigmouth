@@ -9,10 +9,11 @@ import {
   writeApiKey,
   clearWorkspaceKeys,
   keyFileProblem,
+  keyFileRefusal,
+  writeApiKeyThen,
 } from "@main/core/services/apiKeys.js";
 import * as logger from "@main/core/services/logger.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
-import { QuarantineError } from "@main/core/shared/quarantine.js";
 import { fileHeader, newerHeader } from "../fileHeader.js";
 
 let dir: string;
@@ -153,20 +154,36 @@ describe("apiKeys secret store", () => {
       fs.writeFileSync(keyFile, "{ not json");
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBeNull();
       expect(hasStoredApiKey(keyFile, W1, "anthropic")).toBe(false);
-      expect(keyFileProblem(keyFile)).toEqual({ key: "settings.keyFileDamaged", values: { path: keyFile } });
+      expect(keyFileProblem(keyFile)).toEqual({ key: "store.unreadable", values: { path: keyFile } });
       expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
       expect(fs.readFileSync(keyFile, "utf8")).toBe("{ not json");
     });
 
-    it("sets a damaged file aside when a key is saved, starts a new one and says where the old one went", () => {
+    it("refuses saving a key into a damaged file, naming it, and leaves it byte-identical", () => {
       fs.writeFileSync(keyFile, "{ not json");
-      const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
-      // Preserved aside under the derived-filename grammar: <stem>-<millisecond UTC
-      // stamp>.invalid — never the full "api-keys.json" name with ".invalid" dot-appended.
-      expect(path.basename(movedTo!)).toMatch(/^api-keys-\d{8}-\d{6}-utc\.invalid$/);
-      expect(fs.readFileSync(movedTo!, "utf8")).toBe("{ not json");
+      expect(() => writeApiKey(keyFile, W1, "anthropic", "new-key")).toThrow(UnreadableStoreError);
+      expect(fs.readdirSync(dir)).toEqual(["api-keys.json"]);
+      expect(fs.readFileSync(keyFile, "utf8")).toBe("{ not json");
+    });
+
+    it("refuses before anything is written when the rest of an all-or-nothing save cannot run", () => {
+      fs.writeFileSync(keyFile, "{ not json");
+      const then = vi.fn();
+      expect(() => writeApiKeyThen(keyFile, W1, "anthropic", "new-key", then)).toThrow(UnreadableStoreError);
+      expect(then).not.toHaveBeenCalled();
+      expect(fs.readFileSync(keyFile, "utf8")).toBe("{ not json");
+    });
+
+    it("puts the key file back exactly as it was when the rest of the save fails", () => {
+      writeApiKey(keyFile, W1, "anthropic", "old-key");
+      const before = fs.readFileSync(keyFile, "utf8");
+      expect(() => writeApiKeyThen(keyFile, W1, "anthropic", "new-key", () => { throw new Error("config refused"); })).toThrow("config refused");
+      expect(fs.readFileSync(keyFile, "utf8")).toBe(before);
+      fs.rmSync(keyFile);
+      expect(() => writeApiKeyThen(keyFile, W1, "anthropic", "new-key", () => { throw new Error("config refused"); })).toThrow("config refused");
+      expect(fs.existsSync(keyFile)).toBe(false);
+      expect(writeApiKeyThen(keyFile, W1, "anthropic", "new-key", () => "saved")).toBe("saved");
       expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
-      expect(keyFileProblem(keyFile)).toBeNull();
     });
 
     it("leaves a damaged file in place when a workspace is removed", () => {
@@ -204,10 +221,10 @@ describe("apiKeys secret store", () => {
     it("treats a workspaces key of the wrong shape as a damaged file", () => {
       const wrongShape = JSON.stringify({ ...fileHeader("apiKeys"), workspaces: [], future: "keep me" }) + "\n";
       fs.writeFileSync(keyFile, wrongShape);
-      expect(keyFileProblem(keyFile)).toMatchObject({ key: "settings.keyFileDamaged" });
-      const movedTo = writeApiKey(keyFile, W1, "anthropic", "new-key");
-      expect(fs.readFileSync(movedTo!, "utf8")).toBe(wrongShape);
-      expect(resolveApiKey(keyFile, W1, "anthropic")).toBe("new-key");
+      expect(keyFileProblem(keyFile)).toMatchObject({ key: "store.unreadable" });
+      expect(keyFileRefusal(keyFile)).toEqual({ path: keyFile, newer: false });
+      expect(() => writeApiKey(keyFile, W1, "anthropic", "new-key")).toThrow(UnreadableStoreError);
+      expect(fs.readFileSync(keyFile, "utf8")).toBe(wrongShape);
     });
 
     it("ignores a workspace entry of another shape and keeps it when another workspace's key is written", () => {
@@ -217,7 +234,7 @@ describe("apiKeys secret store", () => {
       expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("kept");
       expect(keyFileProblem(keyFile)).toBeNull();
 
-      expect(writeApiKey(keyFile, W2, "anthropic", "changed")).toBeNull();
+      writeApiKey(keyFile, W2, "anthropic", "changed");
       const stored = JSON.parse(fs.readFileSync(keyFile, "utf8"));
       expect(stored.workspaces[W1]).toEqual(other);
       expect(resolveApiKey(keyFile, W2, "anthropic")).toBe("changed");
@@ -345,19 +362,17 @@ describe("file permissions (POSIX only)", () => {
     });
   });
 
-  describe("a damaged file that cannot be moved aside", () => {
-    it("refuses the key save and is never written over", () => {
-      const body = "{ not json";
-      fs.writeFileSync(keyFile, body);
-      const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
-        throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
-      });
-      try {
-        expect(() => writeApiKey(keyFile, W1, "anthropic", "sk-new")).toThrow(QuarantineError);
-      } finally {
-        rename.mockRestore();
-      }
-      expect(fs.readFileSync(keyFile, "utf-8")).toBe(body);
+  describe("the launch check", () => {
+    it("names a newer or unreadable file and passes an absent or usable one, writing nothing", () => {
+      expect(keyFileRefusal(keyFile)).toBeNull();
+      writeApiKey(keyFile, W1, "anthropic", "sk");
+      expect(keyFileRefusal(keyFile)).toBeNull();
+      const newer = JSON.stringify({ ...newerHeader("apiKeys", 2), workspaces: {} });
+      fs.writeFileSync(keyFile, newer);
+      expect(keyFileRefusal(keyFile)).toEqual({ path: keyFile, newer: true });
+      fs.writeFileSync(keyFile, "{ not json");
+      expect(keyFileRefusal(keyFile)).toEqual({ path: keyFile, newer: false });
+      expect(fs.readFileSync(keyFile, "utf8")).toBe("{ not json");
     });
   });
 });

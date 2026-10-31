@@ -38,8 +38,8 @@ import { existingMode, flushStagedFile, writeManagedText } from "../shared/atomi
 import { createHash } from "node:crypto";
 import { recordFile } from "./backupStore.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
-import { moveAsideInvalid } from "../shared/quarantine.js";
 import type { AssetListing } from "@shared/types";
+import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { isPostId } from "../shared/filenames.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
@@ -198,10 +198,11 @@ function ensureAssetDir(dataDir: string, postId: string): string {
  * a missing `assets.json` next to real files is recovered, never an error.
  */
 export function listAssets(dataDir: string, postId: string): AssetListing {
-  const { assets, movedAside, unavailable } = reconcileAssets(assetDir(dataDir, postId), dataDir);
+  const { assets, refusal, unavailable } = reconcileAssets(assetDir(dataDir, postId), dataDir);
+  const refused = refusal ? carriedMessage(refusal) : null;
   return {
     assets: assets.map(details),
-    ...(movedAside ? { movedAside } : {}),
+    ...(refused ? { refused } : {}),
     ...(unavailable.length ? { unavailable } : {}),
   };
 }
@@ -394,7 +395,6 @@ function reconcileAssets(dir: string, dataDir: string): {
   records: RecordedAsset[];
   refusal: Error | null;
   unavailable: string[];
-  movedAside?: { path: string; movedTo: string };
 } {
   let filenames: string[];
   try {
@@ -407,7 +407,7 @@ function reconcileAssets(dir: string, dataDir: string): {
   }
   const onDisk = new Set(filenames.filter((entry) => !isReservedAssetName(entry)));
 
-  const { cached, refusal, movedAside } = readAssetList(path.join(dir, ASSET_LIST_FILENAME));
+  const { cached, refusal } = readAssetList(path.join(dir, ASSET_LIST_FILENAME));
   const result: RecordedAsset[] = [];
   const records: RecordedAsset[] = [];
   const unavailable: string[] = [];
@@ -440,7 +440,7 @@ function reconcileAssets(dir: string, dataDir: string): {
       logWarn("asset could not be listed", { path: path.resolve(dir, filename), error: serializeError(error) });
     }
   }
-  return { assets: result, records, refusal, movedAside, unavailable };
+  return { assets: result, records, refusal, unavailable };
 }
 
 /**
@@ -470,18 +470,13 @@ function checkRecordedHash(filePath: string, entry: RecordedAsset):
 }
 
 /**
- * The recorded entries of `assets.json`. Its upload times are facts the app
- * recorded and nothing can rebuild, so a file that cannot be read, or whose
- * entries are not asset records, is moved aside before anything is listed or
- * written (store-recovery-conventions); a failed move throws QuarantineError
- * and nothing is written. The files are then listed from the folder, as when
- * `assets.json` is absent.
+ * The recorded entries of `assets.json`. One a newer version of BigMouth wrote,
+ * one that cannot be read, or one whose entries are not asset records is not
+ * used and left exactly as it is (store-recovery-conventions): the files are
+ * listed from the folder, as when `assets.json` is absent, and `refusal` is what
+ * every write to this folder raises, naming the file.
  */
-function readAssetList(listPath: string): {
-  cached: RecordedAsset[];
-  refusal: Error | null;
-  movedAside?: { path: string; movedTo: string };
-} {
+function readAssetList(listPath: string): { cached: RecordedAsset[]; refusal: Error | null } {
   const read = readJsonStore("assetList", listPath);
   switch (read.kind) {
     case "absent":
@@ -495,36 +490,30 @@ function readAssetList(listPath: string): {
     case "inaccessible":
       // A failed read says nothing about the bytes: the file is left as it is,
       // the assets are listed from the folder, and writes to it are refused.
-      logWarn("asset metadata could not be read; left unchanged, assets listed from the files on disk", {
+      logWarn("asset list could not be read; left unchanged, assets listed from the files on disk", {
         path: listPath,
         detail: read.detail,
         error: serializeError(read.error),
       });
       return { cached: [], refusal: new UnreadableStoreError(listPath, read.detail, read.error) };
     case "unreadable":
-      return moveAsideUnreadableList(listPath, read.detail, read.error);
+      return refuseUnreadableList(listPath, read.detail, read.error);
     case "read": {
       const assets = read.value.assets;
-      if (!Array.isArray(assets)) return moveAsideUnreadableList(listPath, "its assets key is not an array", null);
-      if (!assets.every(isAssetMeta)) return moveAsideUnreadableList(listPath, "one of its assets is not an asset record", null);
+      if (!Array.isArray(assets)) return refuseUnreadableList(listPath, "its assets key is not an array", null);
+      if (!assets.every(isAssetMeta)) return refuseUnreadableList(listPath, "one of its assets is not an asset record", null);
       return { cached: assets, refusal: null };
     }
   }
 }
 
-function moveAsideUnreadableList(
-  listPath: string,
-  detail: string,
-  error: unknown,
-): { cached: RecordedAsset[]; refusal: null; movedAside: { path: string; movedTo: string } } {
-  const movedTo = moveAsideInvalid(listPath);
-  logWarn("asset metadata unreadable; moved aside, assets listed from the files on disk", {
+function refuseUnreadableList(listPath: string, detail: string, error: unknown): { cached: RecordedAsset[]; refusal: Error } {
+  logWarn("asset list unreadable; left unchanged, assets listed from the files on disk", {
     path: listPath,
-    movedTo,
     detail,
     ...(error ? { error: serializeError(error) } : {}),
   });
-  return { cached: [], refusal: null, movedAside: { path: listPath, movedTo } };
+  return { cached: [], refusal: new UnreadableStoreError(listPath, detail, error) };
 }
 
 function isAssetMeta(value: unknown): value is RecordedAsset {

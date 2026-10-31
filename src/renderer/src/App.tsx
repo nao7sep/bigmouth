@@ -119,14 +119,14 @@ export function App() {
     return () => observer.disconnect();
   }, [activeWorkspace]);
 
-  // The app-wide settings file is read before the window exists (it carries the
-  // theme); a file it could not use is reported here, once, by path.
+  // Stores the launch left off, such as a records or backups database BigMouth
+  // cannot use, are reported here, once each, by path.
   useEffect(() => {
     let cancelled = false;
     getAppSettings()
-      .then(({ notice }) => {
-        if (cancelled || notice === null) return;
-        reportShellResult("app-settings-notice", notice);
+      .then(({ notices }) => {
+        if (cancelled) return;
+        notices.forEach((notice, index) => reportShellResult(`startup-notice-${index}`, notice));
       })
       .catch((err: unknown) => reportProblem("renderer: app settings load failed", err));
     return () => {

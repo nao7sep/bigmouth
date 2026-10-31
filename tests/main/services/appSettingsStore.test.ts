@@ -1,5 +1,5 @@
 // The storage root's config.json holds the app-wide settings (the theme). These
-// tests cover sparse writes and recovery without seeding defaults.
+// tests cover sparse writes, and stopping on a file that cannot be used.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as logger from "@main/core/services/logger.js";
@@ -9,7 +9,6 @@ import path from "node:path";
 import { initAppDir } from "@main/core/services/workspaceStore.js";
 import { getAppRoot } from "@main/core/services/storagePaths.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
-import { QuarantineError } from "@main/core/shared/quarantine.js";
 import { carriedMessage } from "@shared/i18n/carriedMessage";
 import { message } from "@shared/i18n/translate";
 import {
@@ -50,12 +49,10 @@ afterEach(() => {
 });
 
 describe("appSettingsStore", () => {
-  it("leaves a file it could not read in place, uses built-ins, tells the user, and refuses saves", () => {
+  it("stops, naming a file it could not read, and leaves it in place", () => {
     // A directory where the file should be fails the read itself, as a permission error does.
     fs.mkdirSync(configPath());
-    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-    expect(getAppSettingsLoad().notice).toEqual(message("app.settingsInaccessible", { path: configPath() }));
-    expect(() => saveAppSettings({ theme: "dark" })).toThrow(UnreadableStoreError);
+    expect(carriedMessage(captured(() => initAppSettingsStore()))).toEqual(message("store.unreadable", { path: configPath() }));
     expect(fs.statSync(configPath()).isDirectory()).toBe(true);
     expect(quarantined()).toEqual([]);
   });
@@ -63,7 +60,7 @@ describe("appSettingsStore", () => {
   it("keeps defaults in memory on first launch", () => {
     expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
     expect(fs.existsSync(configPath())).toBe(false);
-    expect(getAppSettingsLoad()).toEqual({ settings: { theme: "system", language: "system" }, notice: null });
+    expect(getAppSettingsLoad()).toEqual({ settings: { theme: "system", language: "system" }, notices: [] });
   });
 
   it("reads a saved theme back without rewriting the file", () => {
@@ -81,17 +78,14 @@ describe("appSettingsStore", () => {
   it.each([
     ["invalid JSON", "{ theme"],
     ["a non-object", "[]"],
-  ])("moves %s aside, resets, and reports where it went", (_label, body) => {
+    ["no header", JSON.stringify({ theme: "dark" })],
+    ["another kind", JSON.stringify({ ...fileHeader("workspaceConfig"), theme: "dark" })],
+  ])("stops on %s, naming the file, and leaves it byte-identical", (_label, body) => {
     fs.writeFileSync(configPath(), body);
-    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-
-    const moved = quarantined();
-    expect(moved).toHaveLength(1);
-    expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
-    expect(fs.existsSync(configPath())).toBe(false);
-    expect(getAppSettingsLoad().notice).toEqual(
-      message("app.settingsRecovered", { path: path.join(getAppRoot(), moved[0]!) }),
-    );
+    expect(() => initAppSettingsStore()).toThrow(UnreadableStoreError);
+    expect(carriedMessage(captured(() => initAppSettingsStore()))).toEqual(message("store.unreadable", { path: configPath() }));
+    expect(fs.readFileSync(configPath(), "utf-8")).toBe(body);
+    expect(quarantined()).toEqual([]);
   });
 
   it("reads a saved language back, and follows the computer for an unknown one", () => {
@@ -159,29 +153,7 @@ it("warns on each load of an invalid app set and names its key", () => {
 });
 
 describe("appSettingsStore header", () => {
-  it.each([
-    ["no header", { theme: "dark" }],
-    ["another kind", { ...fileHeader("workspaceConfig"), theme: "dark" }],
-  ])("moves aside a file with %s and uses built-ins", (_name, content) => {
-    const body = JSON.stringify(content);
-    fs.writeFileSync(configPath(), body);
-    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-    const moved = quarantined();
-    expect(moved).toHaveLength(1);
-    expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
-  });
 
-  it("moves damaged content aside and reports where it went", () => {
-    const body = '{ "theme": ';
-    fs.writeFileSync(configPath(), body);
-    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-    const moved = quarantined();
-    expect(moved).toHaveLength(1);
-    expect(fs.readFileSync(path.join(getAppRoot(), moved[0]!), "utf-8")).toBe(body);
-    expect(getAppSettingsLoad().notice).toEqual(
-      message("app.settingsRecovered", { path: path.join(getAppRoot(), moved[0]!) }),
-    );
-  });
 
   it("writes this build's header and reads it back", () => {
     initAppSettingsStore();
@@ -190,36 +162,17 @@ describe("appSettingsStore header", () => {
     expect(initAppSettingsStore()).toEqual({ theme: "dark", language: "system" });
   });
 
-  it("leaves a file a newer version wrote byte-identical, uses built-ins, tells the user, and refuses saves", () => {
+  it("stops on a file a newer version wrote, naming it, and leaves it byte-identical", () => {
     const body = JSON.stringify({ ...newerHeader("appConfig", 2), theme: "dark", future: true });
     fs.writeFileSync(configPath(), body);
 
-    expect(initAppSettingsStore()).toEqual({ theme: "system", language: "system" });
-    expect(getAppSettingsLoad().notice).toEqual(message("app.settingsNewer", { path: configPath() }));
-    expect(() => saveAppSettings({ theme: "light" })).toThrow(NewerFormatError);
-
+    expect(() => initAppSettingsStore()).toThrow(NewerFormatError);
+    expect(carriedMessage(captured(() => initAppSettingsStore()))).toEqual(message("store.newerFormat", { path: configPath() }));
     expect(fs.readFileSync(configPath(), "utf8")).toBe(body);
     expect(quarantined()).toEqual([]);
   });
 });
 
-// store-recovery-conventions: a failed quarantine rename propagates, so nothing resets over the bytes.
-it("stops with a message naming an unreadable file it could not move aside, and leaves it in place", () => {
-  fs.writeFileSync(configPath(), "{ theme");
-  const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
-    throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
-  });
-  try {
-    expect(() => initAppSettingsStore()).toThrow(QuarantineError);
-    expect(carriedMessage(captured(() => initAppSettingsStore()))).toEqual(
-      message("store.quarantineFailed", { path: configPath() }),
-    );
-  } finally {
-    rename.mockRestore();
-  }
-  expect(fs.readFileSync(configPath(), "utf-8")).toBe("{ theme");
-  expect(quarantined()).toEqual([]);
-});
 
 function captured(run: () => unknown): unknown {
   try {

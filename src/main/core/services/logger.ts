@@ -14,11 +14,15 @@ type DebugLogEnv = Readonly<Record<string, string | undefined>>;
 // the real envelope value.
 const ENVELOPE_KEYS = new Set(["time", "level", "message"]);
 
-/** Starts this launch's session in the records database. Must be called once at startup. */
-export function initLogger(recordsDbPath: string, logsDir: string): void {
-  const { newer, setAside, failed } = openRecords(recordsDbPath, logsDir, utcNow());
-  if (setAside) {
-    warn("records database could not be used by this version of BigMouth; set aside and a new one created", setAside);
+/**
+ * Starts this launch's session in the records database. Must be called once at
+ * startup. Returns the database it could not use, left as it is, so the user
+ * can be told records are off for the session.
+ */
+export function initLogger(recordsDbPath: string, logsDir: string): { path: string; detail: string } | null {
+  const { newer, unusable, failed } = openRecords(recordsDbPath, logsDir, utcNow());
+  if (unusable) {
+    warn("records database could not be used by this version of BigMouth; left unchanged, this session's records go to its log file", unusable);
   }
   if (newer) {
     warn("records database was written by a newer version of BigMouth; left unchanged, this session's records go to its log file", {
@@ -29,6 +33,7 @@ export function initLogger(recordsDbPath: string, logsDir: string): void {
   if (failed) {
     warn("records database could not be opened; this session's records go to its log file", { error: serializeError(failed) });
   }
+  return unusable;
 }
 
 /** Closes the records database. Called on a clean shutdown. */

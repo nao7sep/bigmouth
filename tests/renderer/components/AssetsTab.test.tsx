@@ -150,25 +150,16 @@ describe("AssetsTab loading", () => {
     expect(getByText("Assets could not be loaded. Reopen this post to try again.")).toBeTruthy();
   });
 
-  it("says where an unreadable assets.json was moved, and keeps saying it through a later upload", async () => {
-    const movedAside = {
-      path: "/Users/me/Workspace/assets/p1/assets.json",
-      movedTo: "/Users/me/Workspace/assets/p1/meta-20261006-031340-123-utc.invalid",
-    };
-    mockListAssets
-      .mockResolvedValueOnce({ assets: [asset({ filename: "a.png", uploadedAt: undefined })], movedAside })
-      .mockResolvedValue({ assets: [asset({ filename: "a.png", uploadedAt: undefined }), asset({ filename: "b.png" })] });
-    mockUploadAsset.mockResolvedValue({ asset: asset({ filename: "b.png" }) });
+  it("names an attachment list it cannot use, as long as the list stays refused", async () => {
+    const listPath = "/Users/me/Workspace/assets/p1/assets.json";
+    mockListAssets.mockResolvedValue({
+      assets: [asset({ filename: "a.png", uploadedAt: undefined })],
+      refused: { key: "store.unreadable", values: { path: listPath } },
+    });
     const { container, getByText } = await renderTab();
-    const notice = `BigMouth could not read ${movedAside.path} and moved it to ${movedAside.movedTo}. The attached files are listed from the folder, and the upload times and image details that file held are now unknown.`;
+    const notice = `BigMouth could not read ${listPath}, so the file was left unchanged. Repair or move it, then try again.`;
     expect(getByText(notice)).toBeTruthy();
     expect(container.querySelector(".assets-result--warning")).toBeTruthy();
-
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    await act(async () => {
-      fireEvent.change(input, { target: { files: [makeFile("b.png")] } });
-    });
-    expect(getByText(notice)).toBeTruthy();
   });
 
   it("renders an image asset with a thumbnail and an exif note", async () => {

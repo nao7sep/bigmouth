@@ -85,6 +85,25 @@ function parseAppConfig(source: Record<string, unknown>, filePath: string): AppC
   return { workspaces };
 }
 
+/**
+ * Whether the registry would stop the launch, read without writing anything:
+ * one a newer build wrote, or one that cannot be read or does not hold a valid
+ * list. Null when it is absent or usable.
+ */
+export function registryRefusal(): { path: string; newer: boolean } | null {
+  const registryPath = getWorkspacesJsonPath();
+  const read = readJsonStore("workspaces", registryPath);
+  if (read.kind === "absent") return null;
+  if (read.kind === "newer") return { path: registryPath, newer: true };
+  if (read.kind !== "read") return { path: registryPath, newer: false };
+  try {
+    parseAppConfig(read.value, registryPath);
+    return null;
+  } catch {
+    return { path: registryPath, newer: false };
+  }
+}
+
 /** Resolves the storage root, then loads (or materializes) the registry in it. */
 export function initAppDir(): AppConfig {
   initStorageRoot();

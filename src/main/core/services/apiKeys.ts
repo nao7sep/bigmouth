@@ -40,7 +40,6 @@ import type { AiProvider } from "@shared/aiModels";
 import { obfuscate, deobfuscate } from "../shared/obfuscation.js";
 import { writeFileAtomic } from "../shared/atomicWrite.js";
 import { message, type Message } from "@shared/i18n/translate";
-import { moveAsideInvalid } from "../shared/quarantine.js";
 import { NewerFormatError, UnreadableStoreError, jsonStoreText, readJsonStore } from "../shared/storeFormat.js";
 import { serializeError, warn as logWarn } from "./logger.js";
 
@@ -193,34 +192,42 @@ function writeFile(filePath: string, raw: Record<string, unknown>): void {
 /**
  * Changes one workspace's keys and persists only if that changed the file,
  * dropping an emptied workspace so a cleared scope leaves no trace. Every other
- * entry is written back as it was read. A file that must not be written is
- * refused before anything changes. A damaged file is set aside first, and the
- * path it went to is returned.
+ * entry is written back as it was read. A file that must not be written, a
+ * newer one or one that cannot be read or is damaged, is refused before anything
+ * changes and left exactly as it is.
  */
-function update(filePath: string, workspaceId: string, mutate: (keys: Record<string, string>) => void): string | null {
-  const read = readFile(filePath);
-  if (read.refusal) throw read.refusal;
+function update(filePath: string, workspaceId: string, mutate: (keys: Record<string, string>) => void): void {
+  const read = writableRead(filePath);
   const workspaces = read.raw.workspaces as Record<string, unknown>;
   const keys = { ...(read.keys.workspaces[workspaceId]?.keys ?? {}) };
   const before = JSON.stringify(keys);
   mutate(keys);
-  if (JSON.stringify(keys) === before) return null;
-  let movedTo: string | null = null;
-  if (read.damaged) {
-    // A failed move throws, so the damaged bytes are never written over.
-    movedTo = moveAsideInvalid(filePath);
-    logWarn("api-keys.json was damaged; set aside to save a key, starting a new file", {
-      path: filePath,
-      movedTo,
-      detail: read.damaged.detail,
-    });
-    warned.delete("damaged");
-  }
+  if (JSON.stringify(keys) === before) return;
   const next = { ...workspaces };
   if (Object.keys(keys).length > 0) next[workspaceId] = { keys };
   else delete next[workspaceId];
   writeFile(filePath, { ...read.raw, workspaces: next });
-  return movedTo;
+}
+
+// The file as read when it may be written; throws, naming it, when it may not.
+function writableRead(filePath: string): KeysRead {
+  const read = readFile(filePath);
+  if (read.refusal) throw read.refusal;
+  if (read.damaged) throw new UnreadableStoreError(filePath, read.damaged.detail, read.damaged.error);
+  return read;
+}
+
+/**
+ * Whether the key file would stop the launch, read without warning or writing:
+ * one a newer build wrote, or one that cannot be read or holds no workspace
+ * list. Null when it is absent or usable.
+ */
+export function keyFileRefusal(filePath: string): { path: string; newer: boolean } | null {
+  const read = readJsonStore("apiKeys", filePath);
+  if (read.kind === "absent") return null;
+  if (read.kind === "newer") return { path: filePath, newer: true };
+  if (read.kind !== "read" || !isObject(read.value.workspaces)) return { path: filePath, newer: false };
+  return null;
 }
 
 /** What the user should be told about the key file, or null when it can be used. */
@@ -228,7 +235,7 @@ export function keyFileProblem(filePath: string): Message | null {
   const read = readFile(filePath);
   if (read.refusal instanceof NewerFormatError) return message("store.newerFormat", { path: filePath });
   if (read.refusal) return message("settings.keyFileInaccessible", { path: filePath });
-  if (read.damaged) return message("settings.keyFileDamaged", { path: filePath });
+  if (read.damaged) return message("store.unreadable", { path: filePath });
   return null;
 }
 
@@ -273,16 +280,37 @@ export function hasEnvApiKey(provider: AiProvider): boolean {
   return envApiKey(provider) !== null;
 }
 
-/**
- * Store (obfuscated, trimmed) or, for a blank key, remove the workspace's key.
- * Returns where a damaged key file was moved to make room, or null.
- */
-export function writeApiKey(filePath: string, workspaceId: string, provider: AiProvider, key: string): string | null {
+/** Store (obfuscated, trimmed) or, for a blank key, remove the workspace's key. */
+export function writeApiKey(filePath: string, workspaceId: string, provider: AiProvider, key: string): void {
   const trimmed = key.trim();
-  return update(filePath, workspaceId, (keys) => {
+  update(filePath, workspaceId, (keys) => {
     if (trimmed.length > 0) keys[provider] = obfuscate(trimmed);
     else delete keys[provider];
   });
+}
+
+/**
+ * Stores the workspace's key, then runs `then`, the rest of one save; when that
+ * throws, the key file is put back exactly as it was, so the save lands whole or
+ * not at all. Refuses before anything is written when the key file may not be.
+ */
+export function writeApiKeyThen<T>(filePath: string, workspaceId: string, provider: AiProvider, key: string, then: () => T): T {
+  writableRead(filePath);
+  let before: string | null = null;
+  try {
+    before = fs.readFileSync(filePath, "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  writeApiKey(filePath, workspaceId, provider, key);
+  try {
+    return then();
+  } catch (error) {
+    // not recorded: the secret store's own bytes, restored as they were.
+    if (before === null) fs.rmSync(filePath, { force: true });
+    else writeFileAtomic(filePath, before, ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined);
+    throw error;
+  }
 }
 
 /**

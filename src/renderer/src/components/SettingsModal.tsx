@@ -327,7 +327,6 @@ export function SettingsModal({
       onSettingsChanged();
       if (!current.current) {
         if (skips.length > 0) reportStorageResult(renameSkipsResult(skips), "warning");
-        if (savedAnthropic.keyNotice?.key === "settings.keyFileMovedAside") reportStorageResult(savedAnthropic.keyNotice, "warning");
         return;
       }
       setAppSettings(savedAppSettings);
@@ -344,10 +343,9 @@ export function SettingsModal({
       initialTargets.current = editableSavedTargets;
       setPrompts(savedPrompts);
       initialPrompts.current = savedPrompts;
-      // Where this save moved a damaged key file stays on screen, like a rename
-      // that skipped posts.
+      // A rename that skipped posts stays on screen to say which.
       if (skips.length > 0) setRenameSkips(skips);
-      else if (savedAnthropic.keyNotice?.key !== "settings.keyFileMovedAside") close();
+      else close();
     } catch (err) {
       const failure = presentFailure(message(current.current ? "settings.saveFailed" : "app.storageChangeFailed"), "renderer: settings save failed", err);
       if (current.current) setSaveError(failure);

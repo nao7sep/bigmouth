@@ -261,6 +261,21 @@ describe("the Anthropic section", () => {
     });
   });
 
+  it("saves neither the key nor the sets when the workspace config.json is refused", () => {
+    const body = JSON.stringify({ ...newerHeader("workspaceConfig", 2), future: true });
+    fs.writeFileSync(file(), body);
+    expect(() => saveAnthropicSettings(ws, input({ apiKey: "sk-ant-secret" }))).toThrow(NewerFormatError);
+    expect(fs.existsSync(getApiKeysPath())).toBe(false);
+    expect(fs.readFileSync(file(), "utf8")).toBe(body);
+  });
+
+  it("puts the key back when the sets cannot be saved", () => {
+    saveAnthropicSettings(ws, input({ apiKey: "sk-ant-old" }));
+    const keysBefore = fs.readFileSync(getApiKeysPath(), "utf8");
+    expect(() => saveAnthropicSettings(ws, input({ apiKey: "sk-ant-new", endpoint: "not a url" }))).toThrow();
+    expect(fs.readFileSync(getApiKeysPath(), "utf8")).toBe(keysBefore);
+  });
+
   it("keeps the key out of the workspace file and in the storage-root secrets file, under the provider id", () => {
     saveAnthropicSettings(ws, input({ apiKey: "sk-ant-secret" }));
 

@@ -141,7 +141,7 @@ export function AssetsTab({
   const [dragState, setDragState] = useState<DragState>("idle");
   const [uploadNotice, setUploadNotice] = useState<AssetNotice | null>(null);
   // Its own slot, so no later upload result replaces it before it is read.
-  const [recoveryNotice, setRecoveryNotice] = useState<Message | null>(null);
+  const [refusedNotice, setRefusedNotice] = useState<Message | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assetsRef = useRef<AssetMeta[]>([]);
   const uploadTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -159,17 +159,14 @@ export function AssetsTab({
     const version = ++listingVersion.current;
     setListingPending(true);
     try {
-      const { assets: list, movedAside, unavailable = [] } = await listAssets(postId, workspaceId);
-      if (!current.current || listingVersion.current !== version) {
-        if (movedAside) reportStorageResult(message("assets.metaMovedAside", { ...movedAside }), "warning");
-        return null;
-      }
+      const { assets: list, refused, unavailable = [] } = await listAssets(postId, workspaceId);
+      if (!current.current || listingVersion.current !== version) return null;
       setLoadError(null);
       setUnavailable(unavailable);
       if (unavailable.length === 0) setDismissedUnavailable(null);
       assetsRef.current = list;
       publishPostAssets(workspaceId, postId, list);
-      if (movedAside) setRecoveryNotice(message("assets.metaMovedAside", { ...movedAside }));
+      setRefusedNotice(refused ?? null);
       return null;
     } catch (err) {
       if (!current.current || listingVersion.current !== version) return null;
@@ -192,7 +189,7 @@ export function AssetsTab({
     clearPostAssets(workspaceId, postId);
     setLoadError(null);
     setUploadNotice(null);
-    setRecoveryNotice(null);
+    setRefusedNotice(null);
     const refresh = () => void load().then((failure) => {
       if (failure && current.current) setLoadError(failure);
     });
@@ -492,14 +489,14 @@ export function AssetsTab({
         </button>
       </div>
 
-      {recoveryNotice && (
+      {refusedNotice && (
         <OperationalResult
           severity="warning"
           className="assets-result assets-result--warning"
           dismissClassName="assets-result-dismiss"
-          onDismiss={() => setRecoveryNotice(null)}
+          onDismiss={() => setRefusedNotice(null)}
         >
-          {text(recoveryNotice)}
+          {text(refusedNotice)}
         </OperationalResult>
       )}
 

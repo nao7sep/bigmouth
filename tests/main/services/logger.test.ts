@@ -126,21 +126,17 @@ describe("records", () => {
     expect(lines[1]).toMatchObject({ level: "info", message: "kept anyway", count: 1 });
   });
 
-  it("says in the new database where an unusable one was set aside", () => {
+  it("leaves an unusable database as it is, says so in the log file, and returns it for the notice", () => {
     closeLogger();
     fs.rmSync(dbPath, { force: true });
-    fs.writeFileSync(dbPath, "not a database ".repeat(20));
-    initLogger(dbPath, logsDir);
-    const [line] = readLogLines();
-    expect(line).toMatchObject({
-      level: "warn",
-      message: expect.stringMatching(/set aside and a new one created/),
-      path: dbPath,
-      movedTo: expect.stringMatching(/records-\d{8}-\d{6}-utc\.invalid$/),
-      detail: expect.stringMatching(/not a database/),
-    });
-    expect(fs.existsSync(line!.movedTo as string)).toBe(true);
-    expect(fs.existsSync(logsDir)).toBe(false);
+    const bytes = "not a database ".repeat(20);
+    fs.writeFileSync(dbPath, bytes);
+    expect(initLogger(dbPath, logsDir)).toEqual({ path: dbPath, detail: expect.stringMatching(/not a database/) });
+    const fallback = getRecordsPath()!;
+    expect(path.dirname(fallback)).toBe(logsDir);
+    const [line] = fs.readFileSync(fallback, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(line).toMatchObject({ level: "warn", message: expect.stringMatching(/left unchanged/), path: dbPath });
+    expect(fs.readFileSync(dbPath, "utf8")).toBe(bytes);
   });
 });
 

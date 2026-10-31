@@ -7,7 +7,6 @@ import type { RecordDetail, RecordKind, RecordsHealth, RecordsPage, RecordsQuery
 import type { DatabaseSync } from "node:sqlite";
 import { formatForFilename, formatUtcIso } from "../shared/timestamps.js";
 import { NewerFormatError, UnreadableStoreError, openSqliteStore } from "../shared/storeFormat.js";
-import { moveAsideInvalid } from "../shared/quarantine.js";
 import { readDetail, readPage, readSessions } from "./recordsQueries.js";
 
 /** A log line as emitted: its envelope, and the whole JSON object it serializes to. */
@@ -85,8 +84,8 @@ class UnusableRecordsError extends Error {}
 export type RecordsOpening = {
   /** A database a newer version of BigMouth wrote, left exactly as it is. */
   newer: NewerFormatError | null;
-  /** A database this build could not use, set aside so a new one could be created. */
-  setAside: { path: string; movedTo: string; detail: string } | null;
+  /** A database this build cannot use, left exactly as it is and off for the session. */
+  unusable: { path: string; detail: string } | null;
   /** Why no database could be opened, when that was not a newer version's; entries go to the fallback file. */
   failed: Error | null;
 };
@@ -94,25 +93,19 @@ export type RecordsOpening = {
 /**
  * Opens the database for one session, a process launch named by its start time. A database this build
  * cannot use, whether one without BigMouth's records header, a mismatched shape or a file that is not
- * a database, is set aside as `.invalid` and a new one created: records are optional diagnostics, and
- * setting the file aside keeps its rows for inspection (store-recovery-conventions).
- * A database a newer version of BigMouth wrote is left exactly as it is. When no database can be
- * opened, every entry goes to the session's fallback file under `logsDir` instead.
+ * a database, or one a newer version of BigMouth wrote, is left exactly as it is and off for the
+ * session (store-recovery-conventions, What a refused file does): every entry then goes to the
+ * session's fallback file under `logsDir`, as it does when no database can be opened at all.
  */
 export function openRecords(dbPath: string, logsDir: string, sessionStart: Date): RecordsOpening {
-  const opening: RecordsOpening = { newer: null, setAside: null, failed: null };
+  const opening: RecordsOpening = { newer: null, unusable: null, failed: null };
   let db: DatabaseSync | null = null;
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    try {
-      db = openUsable(dbPath);
-    } catch (err) {
-      if (!(err instanceof UnusableRecordsError)) throw err;
-      opening.setAside = { path: dbPath, movedTo: setAside(dbPath), detail: err.message };
-      db = openUsable(dbPath);
-    }
+    db = openUsable(dbPath);
   } catch (err) {
     if (err instanceof NewerFormatError) opening.newer = err;
+    else if (err instanceof UnusableRecordsError) opening.unusable = { path: dbPath, detail: err.message };
     else {
       opening.failed = err instanceof Error ? err : new Error(String(err));
       reportFailure("records database could not be opened", err);
@@ -148,25 +141,6 @@ function openUsable(dbPath: string): DatabaseSync {
 }
 
 const SQLITE_NOTADB = 26;
-
-/**
- * Moves an unusable database aside with its write-ahead files, which SQLite
- * finds by the main file's name, so the set-aside copy still opens whole. A
- * write-ahead file that cannot follow stays where it is and nothing is created
- * over it; the error names where the main file went, so the two can be rejoined.
- */
-function setAside(dbPath: string): string {
-  const movedTo = moveAsideInvalid(dbPath);
-  for (const suffix of ["-wal", "-shm"]) {
-    if (!fs.existsSync(dbPath + suffix)) continue;
-    try {
-      fs.renameSync(dbPath + suffix, movedTo + suffix);
-    } catch (cause) {
-      throw new Error(`The records database was set aside as ${movedTo}, but ${dbPath + suffix} could not be moved with it.`, { cause });
-    }
-  }
-  return movedTo;
-}
 
 export function closeRecords(): void {
   try {

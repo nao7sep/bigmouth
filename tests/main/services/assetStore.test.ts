@@ -19,7 +19,6 @@ import {
   type StagedUpload,
 } from "@main/core/services/assetStore.js";
 import { NewerFormatError, UnreadableStoreError } from "@main/core/shared/storeFormat.js";
-import { QuarantineError } from "@main/core/shared/quarantine.js";
 import { fileHeader, newerHeader } from "../fileHeader.js";
 
 let dataDir: string;
@@ -678,49 +677,36 @@ describe("listAssets self-heals against the files on disk", () => {
 });
 
 // store-recovery-conventions: assets.json holds upload times nothing can rebuild,
-// so an unusable one is moved aside before the files are listed without it.
-describe("an unusable assets.json is moved aside", () => {
+// so one that cannot be used is refused alone and left exactly as it is.
+describe("an unusable assets.json is refused alone", () => {
   const dir = () => assetDir(dataDir, POST);
-  const invalidFiles = () => fs.readdirSync(dir()).filter((name) => name.endsWith(".invalid"));
 
   it.each([
     ["is not JSON", "{ not json"],
+    ["has no header", JSON.stringify({ assets: [] })],
     ["has an assets key that is not a list", JSON.stringify({ ...fileHeader("assetList"), assets: {} })],
     ["holds an entry that is not an asset record", JSON.stringify({ ...fileHeader("assetList"), assets: [null] })],
     ["holds an entry with a wrong field", JSON.stringify({ ...fileHeader("assetList"), assets: [{ filename: "a.png", size: "3" }] })],
-  ])("keeps the bytes of one that %s and lists the files from the folder", (_name, body) => {
+  ])("lists the files over one that %s, names it, refuses changes, and leaves it byte-identical", (_name, body) => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    fs.writeFileSync(path.join(dir(), "assets.json"), body);
+    const listPath = path.join(dir(), "assets.json");
+    fs.writeFileSync(listPath, body);
 
     const listing = listAssets(dataDir, POST);
 
     expect(listing.assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
-    expect(invalidFiles()).toHaveLength(1);
-    const [moved] = invalidFiles();
-    expect(moved).toMatch(/^assets-\d{8}-\d{6}-utc\.invalid$/);
-    expect(fs.readFileSync(path.join(dir(), moved), "utf8")).toBe(body);
-    expect(listing.movedAside).toEqual({ path: path.join(dir(), "assets.json"), movedTo: path.join(dir(), moved) });
-    // Absent now, so nothing is written until the next upload or delete.
-    expect(fs.existsSync(path.join(dir(), "assets.json"))).toBe(false);
-    expect(listAssets(dataDir, POST).movedAside).toBeUndefined();
+    expect(listing.refused).toEqual({ key: "store.unreadable", values: { path: listPath } });
+    expect(() => install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(UnreadableStoreError);
+    expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(UnreadableStoreError);
+    expect(fs.readFileSync(listPath, "utf8")).toBe(body);
+    expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "assets.json"]);
   });
 
-  it("writes nothing when the move fails, leaving assets.json and the files as they were", () => {
+  it("names one a newer version wrote", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
-    const metaPath = path.join(dir(), "assets.json");
-    fs.writeFileSync(metaPath, "{ not json");
-    const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation(() => {
-      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
-    });
-    try {
-      expect(() => install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(QuarantineError);
-      expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(QuarantineError);
-      expect(() => listAssets(dataDir, POST)).toThrow(QuarantineError);
-    } finally {
-      renameSpy.mockRestore();
-    }
-    expect(fs.readFileSync(metaPath, "utf8")).toBe("{ not json");
-    expect(fs.readdirSync(dir()).sort()).toEqual(["a.png", "assets.json"]);
+    const listPath = path.join(dir(), "assets.json");
+    fs.writeFileSync(listPath, JSON.stringify({ ...newerHeader("assetList", 2), assets: [] }));
+    expect(listAssets(dataDir, POST).refused).toEqual({ key: "store.newerFormat", values: { path: listPath } });
   });
 });
 
@@ -750,13 +736,15 @@ describe("asset list format version", () => {
     ["no header", (assets: unknown) => ({ assets })],
     ["another owner", (assets: unknown) => ({ format: { owner: "other", kind: "asset-list", version: 1 }, assets })],
     ["another kind", (assets: unknown) => ({ ...fileHeader("state"), assets })],
-  ])("moves aside an assets.json with %s and lists the files without it", (_name, content) => {
+  ])("refuses an assets.json with %s and lists the files without it", (_name, content) => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const { assets } = JSON.parse(fs.readFileSync(listFile(), "utf-8"));
-    fs.writeFileSync(listFile(), JSON.stringify(content([{ ...assets[0], width: 7 }])));
+    const body = JSON.stringify(content([{ ...assets[0], width: 7 }]));
+    fs.writeFileSync(listFile(), body);
     const listing = listAssets(dataDir, POST);
     expect(listing.assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
-    expect(fs.readdirSync(assetDir(dataDir, POST)).filter((name) => name.endsWith(".invalid"))).toHaveLength(1);
+    expect(listing.refused).toMatchObject({ key: "store.unreadable" });
+    expect(fs.readFileSync(listFile(), "utf8")).toBe(body);
   });
 
   it("ignores writer when reading the list", () => {
@@ -772,7 +760,7 @@ describe("asset list format version", () => {
     fs.rmSync(listFile());
     fs.mkdirSync(listFile());
 
-    expect(listAssets(dataDir, POST)).toEqual({ assets: [{ filename: "a.png", size: 3, contentHash: sha("abc") }] });
+    expect(listAssets(dataDir, POST)).toEqual({ assets: [{ filename: "a.png", size: 3, contentHash: sha("abc") }], refused: { key: "store.unreadable", values: { path: listFile() } } });
     expect(() => install(dataDir, POST, "b.png", Buffer.from("de"), meta("b.png", 2))).toThrow(UnreadableStoreError);
     expect(() => deleteAsset(dataDir, POST, "a.png")).toThrow(UnreadableStoreError);
     expect(fs.statSync(listFile()).isDirectory()).toBe(true);

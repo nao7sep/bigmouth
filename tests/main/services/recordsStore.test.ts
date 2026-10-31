@@ -19,7 +19,6 @@ import {
 } from "@main/core/services/recordsStore.js";
 import { RECORDS_SCHEMA } from "@main/core/services/recordsSchema.js";
 import { NewerFormatError } from "@main/core/shared/storeFormat.js";
-import { QuarantineError } from "@main/core/shared/quarantine.js";
 
 let root: string;
 
@@ -123,40 +122,15 @@ describe("records database format version", () => {
 
   it("stamps this build's format version and opens it again", () => {
     const file = path.join(root, "records.sqlite3");
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, unusable: null, failed: null });
     closeRecords();
     expect(userVersion(file)).toBe(1);
-    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, setAside: null, failed: null });
+    expect(openRecords(file, path.join(root, "logs"), new Date())).toEqual({ newer: null, unusable: null, failed: null });
     const stored = vi.fn();
     onRecordStored(stored);
     line();
     expect(stored).toHaveBeenCalledOnce();
   });
-
-  // A database this build cannot use is set aside whole, rows and shape, and a
-  // new one takes this session's records, so a launch never falls back to log
-  // files for that reason.
-  function expectSetAside(file: string, history: unknown[], schema: unknown[], version: number, detail: RegExp) {
-    const logs = path.join(root, "logs");
-    const opening = openRecords(file, logs, new Date());
-    expect(opening.newer).toBeNull();
-    expect(opening.setAside).toMatchObject({ path: file, detail: expect.stringMatching(detail) });
-    const movedTo = opening.setAside!.movedTo;
-    expect(path.basename(movedTo)).toMatch(/^records-\d{8}-\d{6}-utc\.invalid$/);
-    const stored = vi.fn();
-    onRecordStored(stored);
-    writeProviderCall(providerCall({ stopped: true, operationId: "op", elapsedMs: 5 }));
-    closeRecords();
-    expect(stored).toHaveBeenCalledOnce();
-    expect(fs.existsSync(logs)).toBe(false);
-    expect(userVersion(file)).toBe(1);
-    const check = new DatabaseSync(movedTo);
-    try {
-      expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: version });
-      expect(check.prepare("SELECT * FROM provider_calls").all()).toEqual(history);
-      expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schema);
-    } finally { check.close(); }
-  }
 
   // The records schema less one column, under BigMouth's records header: a
   // database whose header reads but whose shape this build cannot use.
@@ -164,162 +138,69 @@ describe("records database format version", () => {
     return RECORDS_SCHEMA.split("\n").filter((line) => !line.trim().startsWith(column + " ")).join("\n") + RECORDS_HEADER;
   }
 
-  function snapshot(file: string): { history: unknown[]; schema: unknown[] } {
-    const db = new DatabaseSync(file);
-    try {
-      return {
-        history: db.prepare("SELECT * FROM provider_calls").all(),
-        schema: db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all(),
-      };
-    } finally { db.close(); }
+  // A database this build cannot use stays byte-identical and off for the
+  // session: nothing moves it, and the session's records go to its log file.
+  function expectLeftOff(file: string, detail: RegExp) {
+    const logs = path.join(root, "logs");
+    const before = fs.readdirSync(root).map((name) => [name, fs.readFileSync(path.join(root, name))] as const);
+    const opening = openRecords(file, logs, new Date());
+    expect(opening).toMatchObject({ newer: null, failed: null, unusable: { path: file, detail: expect.stringMatching(detail) } });
+    line();
+    writeProviderCall(providerCall({ stopped: true }));
+    closeRecords();
+    for (const [name, bytes] of before) expect(fs.readFileSync(path.join(root, name)).equals(bytes)).toBe(true);
+    expect(fs.readdirSync(root).sort()).toEqual([...before.map(([name]) => name), "logs"].sort());
+    expect(fs.readdirSync(logs)).toHaveLength(1);
   }
 
-  it.each(["operation_id", "elapsed_ms"])("sets aside a database missing %s and starts a new one", (column) => {
+  it.each(["operation_id", "elapsed_ms"])("leaves a database missing %s untouched and off", (column) => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec(schemaWithout(column));
     db.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
-      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}'); PRAGMA user_version = 1`);
+      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{}')`);
     db.close();
-    const { history, schema } = snapshot(file);
-    expectSetAside(file, history, schema, 1, /columns/);
-  });
-
-  // A crashed writer's newest rows can sit only in the write-ahead file. SQLite
-  // folds that file back into the main one when its last connection closes, so
-  // another connection is held open here, as a crash leaves it, to keep the
-  // write-ahead file apart through the set-aside.
-  function crashedWithWal(): { file: string; holder: DatabaseSync } {
-    const file = path.join(root, "records.sqlite3");
-    const writer = new DatabaseSync(file);
-    writer.exec(schemaWithout("elapsed_ms") + "PRAGMA user_version = 1; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;");
-    writer.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
-      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{"last":true}')`);
-    const holder = new DatabaseSync(file);
-    holder.prepare("SELECT COUNT(*) FROM provider_calls").get();
-    writer.close();
-    expect(fs.statSync(file + "-wal").size).toBeGreaterThan(0);
-    return { file, holder };
-  }
-
-  it("carries a set-aside database's write-ahead files with it, so its last rows are kept", () => {
-    const { file, holder } = crashedWithWal();
-    try {
-      const opening = openRecords(file, path.join(root, "logs"), new Date());
-      closeRecords();
-      const movedTo = opening.setAside!.movedTo;
-      expect(fs.existsSync(movedTo + "-wal")).toBe(true);
-      const check = new DatabaseSync(movedTo);
-      try {
-        expect(check.prepare("SELECT request FROM provider_calls").all()).toEqual([{ request: '{"last":true}' }]);
-      } finally { check.close(); }
-    } finally { holder.close(); }
-  });
-
-  it("names where the database went when its write-ahead file cannot follow, and creates nothing over it", () => {
-    const { file, holder } = crashedWithWal();
-    const rename = fs.renameSync;
-    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
-      if (String(from).endsWith("-wal")) throw Object.assign(new Error("busy"), { code: "EBUSY" });
-      rename(from, to);
-    });
-    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
-    try {
-      const logs = path.join(root, "logs");
-      const opening = openRecords(file, logs, new Date());
-      expect(opening.setAside).toBeNull();
-      const movedTo = fs.readdirSync(root).find((name) => name.endsWith(".invalid"));
-      expect(movedTo).toBeDefined();
-      expect(opening.failed?.message).toContain(path.join(root, movedTo!));
-      expect(opening.failed?.message).toContain(file + "-wal");
-      expect(fs.existsSync(file)).toBe(false);
-      expect(fs.existsSync(file + "-wal")).toBe(true);
-      line();
-      closeRecords();
-      expect(fs.readdirSync(logs)).toHaveLength(1);
-    } finally {
-      spy.mockRestore();
-      console.mockRestore();
-      holder.close();
-    }
-  });
-
-  it("falls back to the log file when the database cannot be set aside, leaving it in place", () => {
-    const file = path.join(root, "records.sqlite3");
-    const db = new DatabaseSync(file);
-    db.exec(schemaWithout("elapsed_ms") + "PRAGMA user_version = 1;");
-    db.close();
-    const bytes = fs.readFileSync(file);
-    const spy = vi.spyOn(fs, "renameSync").mockImplementation(() => { throw Object.assign(new Error("denied"), { code: "EACCES" }); });
-    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
-    try {
-      const logs = path.join(root, "logs");
-      const opening = openRecords(file, logs, new Date());
-      expect(opening.setAside).toBeNull();
-      expect(opening.failed).toBeInstanceOf(QuarantineError);
-      line();
-      closeRecords();
-      expect(fs.readFileSync(file).equals(bytes)).toBe(true);
-      expect(fs.readdirSync(root).sort()).toEqual(["logs", "records.sqlite3"]);
-      expect(fs.readdirSync(logs)).toHaveLength(1);
-    } finally {
-      spy.mockRestore();
-      console.mockRestore();
-    }
-  });
-
-  it("falls back to the log file when the database opened after the set-aside is unusable too", () => {
-    const file = path.join(root, "records.sqlite3");
-    const db = new DatabaseSync(file);
-    db.exec(schemaWithout("elapsed_ms") + "PRAGMA user_version = 1;");
-    db.close();
-    // The move leaves a copy behind, so the second open meets the same database.
-    const spy = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => { fs.copyFileSync(from, to); });
-    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {});
-    try {
-      const logs = path.join(root, "logs");
-      const opening = openRecords(file, logs, new Date());
-      expect(opening.setAside).toMatchObject({ path: file });
-      expect(fs.existsSync(opening.setAside!.movedTo)).toBe(true);
-      expect(opening.failed?.message).toMatch(/columns/);
-      line();
-      closeRecords();
-      expect(userVersion(file)).toBe(1);
-      expect(fs.readdirSync(logs)).toHaveLength(1);
-    } finally {
-      spy.mockRestore();
-      console.mockRestore();
-    }
-  });
-
-  it("sets aside a file that is not a database", () => {
-    const file = path.join(root, "records.sqlite3");
-    const bytes = Buffer.from("not a database ".repeat(20));
-    fs.writeFileSync(file, bytes);
-    const opening = openRecords(file, path.join(root, "logs"), new Date());
-    line();
-    closeRecords();
-    expect(opening.setAside?.detail).toMatch(/not a database/);
-    expect(fs.readFileSync(opening.setAside!.movedTo)).toEqual(bytes);
-    expect(userVersion(file)).toBe(1);
-    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
+    expectLeftOff(file, /columns/);
   });
 
   it.each([
     ["no format version", "CREATE TABLE earlier (id INTEGER)", /no format version/],
     ["no file_header table", RECORDS_SCHEMA + "PRAGMA user_version = 1;", /no file_header/],
     ["another kind", RECORDS_SCHEMA + RECORDS_HEADER.replace("'records'", "'backups'"), /backups/],
-  ])("sets aside a database with %s and starts a new one", (_name, sql, detail) => {
+  ])("leaves a database with %s untouched and off", (_name, sql, detail) => {
     const file = path.join(root, "records.sqlite3");
     const db = new DatabaseSync(file);
     db.exec(sql);
     db.close();
-    const opening = openRecords(file, path.join(root, "logs"), new Date());
-    expect(opening.setAside).toMatchObject({ path: file, detail: expect.stringMatching(detail) });
-    line();
-    closeRecords();
-    expect(userVersion(file)).toBe(1);
-    expect(fs.existsSync(path.join(root, "logs"))).toBe(false);
+    expectLeftOff(file, detail);
+  });
+
+  it("leaves a file that is not a database untouched and off", () => {
+    const file = path.join(root, "records.sqlite3");
+    fs.writeFileSync(file, Buffer.from("not a database ".repeat(20)));
+    expectLeftOff(file, /not a database/);
+  });
+
+  // A crashed writer's newest rows can sit only in the write-ahead file. SQLite
+  // folds that file back into the main one when its last connection closes, so
+  // another connection is held open here, as a crash leaves it.
+  it("leaves an unusable database's write-ahead file where it is", () => {
+    const file = path.join(root, "records.sqlite3");
+    const writer = new DatabaseSync(file);
+    writer.exec(schemaWithout("elapsed_ms") + "PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;");
+    writer.exec(`INSERT INTO provider_calls (session, workspace_id, post_id, purpose, provider, started_at, finished_at, request)
+      VALUES ('s', 'ws', 'p', 'analysis', 'anthropic', 't', 't', '{"last":true}')`);
+    const holder = new DatabaseSync(file);
+    holder.prepare("SELECT COUNT(*) FROM provider_calls").get();
+    writer.close();
+    try {
+      const wal = fs.readFileSync(file + "-wal");
+      const opening = openRecords(file, path.join(root, "logs"), new Date());
+      closeRecords();
+      expect(opening.unusable).toMatchObject({ path: file });
+      expect(fs.readFileSync(file + "-wal").equals(wal)).toBe(true);
+      expect(fs.readdirSync(root).filter((name) => name.endsWith(".invalid"))).toEqual([]);
+    } finally { holder.close(); }
   });
 
   it("writes to the fallback file over a database a newer version wrote, leaving it byte-identical", () => {
@@ -329,8 +210,8 @@ describe("records database format version", () => {
     db.close();
     const bytes = fs.readFileSync(file);
 
-    const { newer: refused, setAside } = openRecords(file, path.join(root, "logs"), new Date());
-    expect(setAside).toBeNull();
+    const { newer: refused, unusable } = openRecords(file, path.join(root, "logs"), new Date());
+    expect(unusable).toBeNull();
     expect(refused).toBeInstanceOf(NewerFormatError);
     expect(refused?.filePath).toBe(file);
     line();

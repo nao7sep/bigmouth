@@ -257,13 +257,21 @@ function anthropicSettingsView(workspace: Workspace, config: WorkspaceConfig): A
  * a blank key keeps the stored one. When saving the key set a damaged key file
  * aside, the returned notice says where it went.
  */
+/**
+ * Saves the key and the workspace's Anthropic sets as one change: the workspace
+ * config.json is read first, so one that is refused stops the save before the
+ * key is written, and a sets write that fails puts the key file back.
+ */
 export function saveAnthropicSettings(workspace: Workspace, input: AnthropicSettingsInput): AnthropicSettingsView {
-  const movedTo = input.apiKey?.trim() ? apiKeys.writeApiKey(getApiKeysPath(), workspace.id, "anthropic", input.apiKey) : null;
   const models = {} as Record<AiRole, string>;
   for (const role of AI_ROLE_IDS) models[role] = input.models[role].trim();
-  const config = writeSets(workspace.dataDirectory, anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking }));
-  const view = anthropicSettingsView(workspace, config);
-  return movedTo ? { ...view, keyNotice: message("settings.keyFileMovedAside", { path: movedTo }) } : view;
+  const changes = anthropicSets({ endpoint: input.endpoint.trim(), models, thinking: input.thinking });
+  const snapshot = readSnapshot(workspace.dataDirectory);
+  const write = () => writeSets(workspace.dataDirectory, changes, snapshot);
+  const config = input.apiKey?.trim()
+    ? apiKeys.writeApiKeyThen(getApiKeysPath(), workspace.id, "anthropic", input.apiKey, write)
+    : write();
+  return anthropicSettingsView(workspace, config);
 }
 
 // --- Targets ------------------------------------------------------------------

@@ -86,10 +86,10 @@ export interface AppSettings {
 }
 
 /** App settings as the renderer reads them, plus what the user is told about
- *  the file this launch could not use (null when there is nothing to tell). */
+ *  stores this launch left off, such as an unusable records database. */
 export interface AppSettingsLoad {
   settings: AppSettings;
-  notice: Message | null;
+  notices: Message[];
 }
 
 /** App settings as Settings shows them: with what each System choice resolves to now. */
@@ -263,14 +263,15 @@ export interface AssetMeta {
 }
 
 /**
- * A post's attached files. `movedAside` is set when the asset metadata could not
- * be read and was moved to `movedTo`, so the files are listed from the folder.
+ * A post's attached files. `refused` names an attachment list a newer version
+ * wrote or that cannot be read: it is left as it is, the files are listed from
+ * the folder, and changes to them are refused.
  */
 export interface AssetListing {
   assets: AssetMeta[];
   /** Filenames omitted because the corresponding entry could not be inspected. */
   unavailable?: string[];
-  movedAside?: { path: string; movedTo: string };
+  refused?: Message;
 }
 
 // --- AI settings ---
