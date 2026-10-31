@@ -5,7 +5,7 @@ export const FORMAT_VERSIONS = {
   /** A post's `.md` file, in its front matter. */
   postFile: 1,
   /** An asset folder's `assets.json`. */
-  assetList: 2, // Recorded upload details are bound to the installed content hash.
+  assetList: 1,
   /** The storage root's `workspaces.json`. */
   workspaces: 1,
   /** The storage root's `config.json`. */
@@ -16,10 +16,10 @@ export const FORMAT_VERSIONS = {
   state: 1,
   /** `api-keys.json`. */
   apiKeys: 1,
-  /** `records.sqlite3`; 2 covers `provider_calls.operation_id` and `elapsed_ms`. */
-  records: 2,
-  /** `backups.sqlite3`; 2 added the session column and the parts table, before any release used 2. */
-  backups: 2,
+  /** `records.sqlite3`. */
+  records: 1,
+  /** `backups.sqlite3`. */
+  backups: 1,
 } as const;
 
 export type StoreFormat = keyof typeof FORMAT_VERSIONS;

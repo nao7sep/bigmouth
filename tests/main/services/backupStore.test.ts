@@ -163,7 +163,7 @@ describe("one row per path per session", () => {
     expect(rows(changed).map(text)).toEqual(["old!", "new!"]);
   });
 
-  it("refuses a store from before sessions without changing its bytes, columns or earlier history", async () => {
+  it("refuses a store missing the session column without changing its bytes, columns or earlier history", async () => {
     const file = path.join(root, "doc.md");
     const db = new DatabaseSync(storeFile());
     db.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
@@ -321,11 +321,11 @@ describe("best effort", () => {
     }
   });
 
-  it("refuses a current-version backups table with a missing required column without changing history", async () => {
+  it("refuses a backups table with a missing required column without changing history", async () => {
     const db = new DatabaseSync(storeFile());
     db.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, session_id TEXT, path TEXT NOT NULL, content BLOB NOT NULL,
       content_sha256 TEXT NOT NULL, written_at_utc TEXT NOT NULL);
-      PRAGMA user_version = 2`);
+      PRAGMA user_version = 1`);
     db.prepare(`INSERT INTO backups (session_id, path, content, content_sha256, written_at_utc)
       VALUES ('earlier', 'kept.md', ?, 'x', '2026-01-01T00:00:00.000Z')`).run(Buffer.from("old"));
     const schemaBefore = db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all();
@@ -342,7 +342,7 @@ describe("best effort", () => {
       expect(fs.readFileSync(storeFile())).toEqual(bytesBefore);
       const check = new DatabaseSync(storeFile());
       try {
-        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+        expect(check.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
         expect(check.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY name").all()).toEqual(schemaBefore);
         expect(check.prepare("SELECT * FROM backups").all()).toEqual(historyBefore);
       } finally { check.close(); }
@@ -351,7 +351,7 @@ describe("best effort", () => {
 
   it("leaves a store a newer version wrote byte-identical and records nothing", () => {
     const db = new DatabaseSync(storeFile());
-    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 3");
+    db.exec("CREATE TABLE future (id INTEGER); PRAGMA user_version = 2");
     db.close();
     const before = fs.readFileSync(storeFile());
     record(path.join(root, "doc.md"), Buffer.from("not recorded"));

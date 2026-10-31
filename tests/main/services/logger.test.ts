@@ -129,9 +129,7 @@ describe("records", () => {
   it("says in the new database where an unusable one was set aside", () => {
     closeLogger();
     fs.rmSync(dbPath, { force: true });
-    const old = new DatabaseSync(dbPath);
-    old.exec("CREATE TABLE earlier (id INTEGER); PRAGMA user_version = 1");
-    old.close();
+    fs.writeFileSync(dbPath, "not a database ".repeat(20));
     initLogger(dbPath, logsDir);
     const [line] = readLogLines();
     expect(line).toMatchObject({
@@ -139,7 +137,7 @@ describe("records", () => {
       message: expect.stringMatching(/set aside and a new one created/),
       path: dbPath,
       movedTo: expect.stringMatching(/records-\d{8}-\d{6}-utc\.invalid$/),
-      detail: expect.stringMatching(/format version 1/),
+      detail: expect.stringMatching(/not a database/),
     });
     expect(fs.existsSync(line!.movedTo as string)).toBe(true);
     expect(fs.existsSync(logsDir)).toBe(false);

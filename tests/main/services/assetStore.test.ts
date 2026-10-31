@@ -725,13 +725,13 @@ describe("an unusable assets.json is moved aside", () => {
 
 // assets.json's format version, which tells a build whether it can read the file.
 describe("asset list format version", () => {
-  it("does not certify hashless disposable prior-format upload facts as current", () => {
+  it("does not trust recorded upload details that carry no content hash", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     const file = path.join(assetDir(dataDir, POST), "assets.json");
-    const prior = JSON.stringify({ formatVersion: 1, assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
-    fs.writeFileSync(file, prior);
+    const hashless = JSON.stringify({ formatVersion: 1, assets: [{ ...meta("a.png"), width: 7, height: 8, hasMetadata: true }] });
+    fs.writeFileSync(file, hashless);
     expect(listAssets(dataDir, POST).assets).toEqual([{ filename: "a.png", size: 3, contentHash: sha("abc") }]);
-    expect(fs.readFileSync(file, "utf-8")).toBe(prior);
+    expect(fs.readFileSync(file, "utf-8")).toBe(hashless);
   });
 
   const listFile = () => path.join(assetDir(dataDir, POST), "assets.json");
@@ -739,7 +739,7 @@ describe("asset list format version", () => {
   it("writes this build's format version and reads the list back", () => {
     install(dataDir, POST, "a.png", Buffer.from("abc"), meta("a.png"));
     expect(JSON.parse(fs.readFileSync(listFile(), "utf-8"))).toEqual({
-      formatVersion: 2,
+      formatVersion: 1,
       assets: [{ ...meta("a.png"), contentHash: createHash("sha256").update("abc").digest("hex"), mtimeMs: fs.statSync(path.join(assetDir(dataDir, POST), "a.png")).mtimeMs }],
     });
     expect(listAssets(dataDir, POST).assets).toEqual([{ ...meta("a.png"), contentHash: sha("abc") }]);

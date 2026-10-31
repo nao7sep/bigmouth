@@ -379,7 +379,7 @@ describe("sweeping the cache", () => {
     fs.writeFileSync(path.join(thumbnails, name), "x");
   }
 
-  it("removes derivatives no asset names, older formats and leftover temporary files, and keeps the rest", async () => {
+  it("removes derivatives no asset names, other format versions and leftover temporary files, and keeps the rest", async () => {
     const cache = new ImageDerivatives(thumbnails, controlledGenerator().generate);
     cache.register(registered, "ws", path.join(root, "r.png"));
     for (const hash of [kept, registered, unused]) {
@@ -408,7 +408,7 @@ describe("sweeping the cache", () => {
     const dataDirectory = path.join(root, name);
     for (const [postId, assets] of Object.entries(records)) {
       fs.mkdirSync(path.join(dataDirectory, "assets", postId), { recursive: true });
-      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "assets.json"), JSON.stringify({ formatVersion: 2, assets }));
+      fs.writeFileSync(path.join(dataDirectory, "assets", postId, "assets.json"), JSON.stringify({ formatVersion: 1, assets }));
     }
     fs.mkdirSync(dataDirectory, { recursive: true });
     return dataDirectory;

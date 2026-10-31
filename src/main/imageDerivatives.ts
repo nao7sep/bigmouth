@@ -143,7 +143,7 @@ export class ImageDerivatives {
 
   /**
    * Removes the derivatives no asset names: those of a hash outside `referenced`
-   * and not registered this session, those of an older format version, and
+   * and not registered this session, those of another format version, and
    * temporary files an interrupted generation left. It runs after every lane,
    * so nothing is being made meanwhile. Returns how many files it removed.
    */
