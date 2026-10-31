@@ -81,11 +81,11 @@ describe("records IPC", () => {
 
   it("reads a page for a valid query and logs nothing", async () => {
     const after = { time: "2026-10-02T08:00:00.000Z", kind: "log", id: 3 };
-    await expect(invoke(CHANNELS.readRecordsPage, { ...query, level: "attention", after })).resolves.toEqual({
+    await expect(invoke(CHANNELS.readRecordsPage, { ...query, level: "warningsAndErrors", after })).resolves.toEqual({
       records: [],
       more: false,
     });
-    expect(state.reads).toEqual([{ op: "page", query: { ...query, level: "attention", after } }]);
+    expect(state.reads).toEqual([{ op: "page", query: { ...query, level: "warningsAndErrors", after } }]);
     expect(state.logged).toEqual([]);
   });
 

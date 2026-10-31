@@ -537,7 +537,7 @@
   "records.kindProviderCall": "Chamada ao provedor",
   "records.level": "Nível",
   "records.allLevels": "Todos os níveis",
-  "records.levelAttention": "Avisos e erros",
+  "records.levelWarningsAndErrors": "Avisos e erros",
   "records.levelError": "Erro",
   "records.levelWarn": "Aviso",
   "records.levelInfo": "Informação",

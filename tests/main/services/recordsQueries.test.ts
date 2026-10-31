@@ -111,7 +111,7 @@ describe("readPage", () => {
     expect(titles({ search: "post-1", kind: "log" })).toEqual(["careful with 50% of it"]);
   });
 
-  it("filters for attention: warning and error lines and failed provider calls", () => {
+  it("filters for warnings and errors: warning and error lines and failed provider calls", () => {
     openRecords(dbPath, path.join(root, "logs"), LATER);
     line("2026-10-02T08:00:01.000Z", "info", "calm");
     line("2026-10-02T08:00:02.000Z", "warn", "careful");
@@ -120,7 +120,7 @@ describe("readPage", () => {
     call("2026-10-02T08:00:05.000Z", undefined, "succeeded");
     call("2026-10-02T08:00:06.000Z", { message: "quota" }, "failed");
 
-    const page = readPage(reader(), query({ level: "attention" }));
+    const page = readPage(reader(), query({ level: "warningsAndErrors" }));
     expect(page.records.map((record) => record.text ?? record.title)).toEqual(["failed", "broken", "careful"]);
     expect(titles({ level: "debug" })).toEqual(["detail"]);
   });
@@ -135,7 +135,7 @@ describe("readPage", () => {
       ["finished", "info", false],
       ["stopped", "info", true],
     ]);
-    expect(readPage(reader(), query({ level: "attention" })).records).toEqual([]);
+    expect(readPage(reader(), query({ level: "warningsAndErrors" })).records).toEqual([]);
     expect(readDetail(reader(), "provider-call", all[1]!.id)).toMatchObject({ stopped: true, error: null });
   });
 
@@ -257,7 +257,7 @@ describe("bounded records page merge", () => {
       line("2026-10-02T08:00:01.000Z", "info", `other ${i}`);
       call("2026-10-02T08:00:01.000Z", undefined);
     }
-    const page = readPage(reader(), query({ session: EARLIER.toISOString(), level: "attention", search: "needle_50%" }));
+    const page = readPage(reader(), query({ session: EARLIER.toISOString(), level: "warningsAndErrors", search: "needle_50%" }));
     expect(page.more).toBe(false);
     expect(page.records.map(({ kind, level }) => [kind, level])).toEqual([["provider-call", "error"], ["log", "warn"]]);
     expect(readPage(reader(), query({ search: "needleX50x" })).records).toEqual([]);
